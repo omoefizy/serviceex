@@ -45,9 +45,9 @@ export interface SlideContent {
  */
 export type OutputMode = 'show' | 'black' | 'clear' | 'logo'
 
-export interface OutputState {
+/** What the operator sends to the output window. `text` is empty when no slide is live. */
+export interface OutputState extends SlideContent {
   mode: OutputMode
-  slide: SlideContent | null
 }
 
 /** The editable fields of a song, used when creating or updating one. */
@@ -69,10 +69,8 @@ export interface SongsApi {
 export interface WorshipDeckApi {
   songs: SongsApi
   output: {
-    getState(): Promise<OutputState>
-    setSlide(slide: SlideContent): void
-    setMode(mode: OutputMode): void
-    open(): void
+    /** Sends the operator's output state to the output window. */
+    send(state: OutputState): void
     /** Subscribe to output state changes. Returns an unsubscribe function. */
     onState(listener: (state: OutputState) => void): () => void
   }

@@ -294,6 +294,83 @@ button {
   white-space: pre-line;
 }
 
+.output-modes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.logo-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2cqw;
+  color: #fff;
+  font-size: 4cqw;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.logo-placeholder svg {
+  width: 12cqw;
+  height: 12cqw;
+  fill: currentColor;
+}
+
+/* ---------- Output window ---------- */
+
+.output {
+  container-type: size;
+  position: relative;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+  cursor: none;
+}
+
+.output-frame {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: output-fade 400ms ease forwards;
+}
+
+@keyframes output-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.output-text-box {
+  position: absolute;
+  inset: 6% 5%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.output-text {
+  max-width: 100%;
+  margin: 0;
+  color: #fff;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  white-space: pre-line;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
 /* ---------- Modal ---------- */
 
 .modal-backdrop {

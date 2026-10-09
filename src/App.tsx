@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { LivePreview } from './components/LivePreview'
 import { SlideGrid } from './components/SlideGrid'
 import { SongList } from './components/SongList'
-import { useOperatorStore } from './store'
+import { selectOutputState, useOperatorStore } from './store'
 
 /** True when a key press is meant for a text field or the add-song modal, not for slide navigation. */
 function isTyping(target: EventTarget | null): boolean {
@@ -11,6 +11,13 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 function App() {
+  // Mirror the operator state to the output window.
+  useEffect(() => {
+    const send = () => window.api.output.send(selectOutputState(useOperatorStore.getState()))
+    send()
+    return useOperatorStore.subscribe(send)
+  }, [])
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.altKey || e.ctrlKey || e.metaKey || isTyping(e.target)) return

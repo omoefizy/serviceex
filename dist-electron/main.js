@@ -1,4 +1,4 @@
-import { app, ipcMain, BrowserWindow } from "electron";
+import { app, ipcMain, BrowserWindow, screen } from "electron";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -111,6 +111,30 @@ function registerSongIpc() {
   });
   ipcMain.handle("songs:delete", (_event, id) => deleteSong(assertId(id)));
 }
+const MODES = ["show", "black", "clear", "logo"];
+let lastState = { mode: "black", text: "", background: "#000" };
+function assertOutputState(value) {
+  const state = value;
+  if (typeof state !== "object" || state === null || !MODES.includes(state.mode) || typeof state.text !== "string" || typeof state.background !== "string") {
+    throw new TypeError("Output state needs a mode, text and background");
+  }
+  return { mode: state.mode, text: state.text, background: state.background };
+}
+function registerOutputIpc(getOutputWindow) {
+  ipcMain.on("output:send", (_event, state) => {
+    var _a;
+    try {
+      lastState = assertOutputState(state);
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+    (_a = getOutputWindow()) == null ? void 0 : _a.webContents.send("output:state", lastState);
+  });
+}
+function sendLastOutputState(win2) {
+  win2.webContents.send("output:state", lastState);
+}
 const __dirname$1 = path.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path.join(__dirname$1, "..");
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
@@ -118,6 +142,7 @@ const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
 const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
 let win;
+let outputWin = null;
 function createWindow() {
   win = new BrowserWindow({
     icon: path.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
@@ -133,6 +158,33 @@ function createWindow() {
   } else {
     win.loadFile(path.join(RENDERER_DIST, "index.html"));
   }
+  win.on("closed", () => {
+    win = null;
+    outputWin == null ? void 0 : outputWin.close();
+  });
+}
+function createOutputWindow() {
+  const primaryId = screen.getPrimaryDisplay().id;
+  const external = screen.getAllDisplays().find((display) => display.id !== primaryId);
+  outputWin = new BrowserWindow({
+    title: "WorshipDeck Output",
+    backgroundColor: "#000",
+    ...external ? { ...external.bounds, fullscreen: true, frame: false } : { width: 960, height: 540, resizable: true },
+    webPreferences: {
+      preload: path.join(__dirname$1, "preload.mjs")
+    }
+  });
+  outputWin.webContents.on("did-finish-load", () => {
+    if (outputWin) sendLastOutputState(outputWin);
+  });
+  outputWin.on("closed", () => {
+    outputWin = null;
+  });
+  if (VITE_DEV_SERVER_URL) {
+    outputWin.loadURL(`${VITE_DEV_SERVER_URL}#/output`);
+  } else {
+    outputWin.loadFile(path.join(RENDERER_DIST, "index.html"), { hash: "/output" });
+  }
 }
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
@@ -143,11 +195,14 @@ app.on("window-all-closed", () => {
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
+    createOutputWindow();
   }
 });
 app.whenReady().then(() => {
   registerSongIpc();
+  registerOutputIpc(() => outputWin);
   createWindow();
+  createOutputWindow();
 });
 export {
   MAIN_DIST,

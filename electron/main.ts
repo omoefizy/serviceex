@@ -1,8 +1,9 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, screen } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import './db'
 import { registerSongIpc } from './ipc/songs'
+import { registerOutputIpc, sendLastOutputState } from './ipc/output'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -25,6 +26,7 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null
+let outputWin: BrowserWindow | null = null
 
 function createWindow() {
   win = new BrowserWindow({
@@ -45,6 +47,42 @@ function createWindow() {
     // win.loadFile('dist/index.html')
     win.loadFile(path.join(RENDERER_DIST, 'index.html'))
   }
+
+  // The output window has no use without the operator window.
+  win.on('closed', () => {
+    win = null
+    outputWin?.close()
+  })
+}
+
+/** Opens the projector output: fullscreen on a secondary display if there is one, otherwise a 16:9 window. */
+function createOutputWindow() {
+  const primaryId = screen.getPrimaryDisplay().id
+  const external = screen.getAllDisplays().find((display) => display.id !== primaryId)
+
+  outputWin = new BrowserWindow({
+    title: 'WorshipDeck Output',
+    backgroundColor: '#000',
+    ...(external
+      ? { ...external.bounds, fullscreen: true, frame: false }
+      : { width: 960, height: 540, resizable: true }),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.mjs'),
+    },
+  })
+
+  outputWin.webContents.on('did-finish-load', () => {
+    if (outputWin) sendLastOutputState(outputWin)
+  })
+  outputWin.on('closed', () => {
+    outputWin = null
+  })
+
+  if (VITE_DEV_SERVER_URL) {
+    outputWin.loadURL(`${VITE_DEV_SERVER_URL}#/output`)
+  } else {
+    outputWin.loadFile(path.join(RENDERER_DIST, 'index.html'), { hash: '/output' })
+  }
 }
 
 // Quit when all windows are closed, except on macOS. There, it's common
@@ -62,10 +100,13 @@ app.on('activate', () => {
   // dock icon is clicked and there are no other windows open.
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow()
+    createOutputWindow()
   }
 })
 
 app.whenReady().then(() => {
   registerSongIpc()
+  registerOutputIpc(() => outputWin)
   createWindow()
+  createOutputWindow()
 })

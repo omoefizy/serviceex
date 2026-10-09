@@ -27,4 +27,13 @@ const songs = {
   update: (id, input) => electron.ipcRenderer.invoke("songs:update", id, input),
   delete: (id) => electron.ipcRenderer.invoke("songs:delete", id)
 };
-electron.contextBridge.exposeInMainWorld("api", { songs });
+const output = {
+  send: (state) => electron.ipcRenderer.send("output:send", state),
+  onState(listener) {
+    const handler = (_event, state) => listener(state);
+    electron.ipcRenderer.on("output:state", handler);
+    return () => electron.ipcRenderer.off("output:state", handler);
+  }
+};
+const api = { songs, output };
+electron.contextBridge.exposeInMainWorld("api", api);

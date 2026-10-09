@@ -5,7 +5,7 @@ export function SlideGrid() {
   const song = useOperatorStore((s) => s.selectedSong)
   const slides = useOperatorStore((s) => s.slides)
   const liveSlideIndex = useOperatorStore((s) => s.liveSlideIndex)
-  const goLive = useOperatorStore((s) => s.goLive)
+  const showSlide = useOperatorStore((s) => s.showSlide)
   const gridRef = useRef<HTMLDivElement>(null)
 
   // Keep the live slide visible when the arrow keys move past the edge of the panel.
@@ -32,7 +32,7 @@ export function SlideGrid() {
             key={index}
             data-index={index}
             className={`slide-card${index === liveSlideIndex ? ' live' : ''}`}
-            onClick={() => goLive(index)}
+            onClick={() => showSlide(index)}
           >
             <span className="slide-number">{index + 1}</span>
             <span className="slide-text">{text}</span>

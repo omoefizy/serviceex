@@ -1,5 +1,5 @@
 import { ipcRenderer, contextBridge } from 'electron'
-import type { SongsApi } from '../shared/types'
+import type { OutputState, SongsApi, WorshipDeckApi } from '../shared/types'
 
 // --------- Expose some API to the Renderer process ---------
 contextBridge.exposeInMainWorld('ipcRenderer', {
@@ -32,4 +32,14 @@ const songs: SongsApi = {
   delete: (id) => ipcRenderer.invoke('songs:delete', id),
 }
 
-contextBridge.exposeInMainWorld('api', { songs })
+const output: WorshipDeckApi['output'] = {
+  send: (state) => ipcRenderer.send('output:send', state),
+  onState(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, state: OutputState) => listener(state)
+    ipcRenderer.on('output:state', handler)
+    return () => ipcRenderer.off('output:state', handler)
+  },
+}
+
+const api: WorshipDeckApi = { songs, output }
+contextBridge.exposeInMainWorld('api', api)
