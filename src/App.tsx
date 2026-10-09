@@ -1,34 +1,38 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/electron-vite.animate.svg'
-import './App.css'
+import { useEffect } from 'react'
+import { LivePreview } from './components/LivePreview'
+import { SlideGrid } from './components/SlideGrid'
+import { SongList } from './components/SongList'
+import { useOperatorStore } from './store'
+
+/** True when a key press is meant for a text field or the add-song modal, not for slide navigation. */
+function isTyping(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || !!target.closest('.modal')
+}
 
 function App() {
-  const [count, setCount] = useState(0)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey || isTyping(e.target)) return
+      const { nextSlide, previousSlide } = useOperatorStore.getState()
+      if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        nextSlide()
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        previousSlide()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   return (
-    <>
-      <div>
-        <a href="https://electron-vite.github.io" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+    <main className="operator">
+      <SongList />
+      <SlideGrid />
+      <LivePreview />
+    </main>
   )
 }
 
