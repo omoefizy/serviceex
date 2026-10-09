@@ -1,5 +1,5 @@
 import { ipcRenderer, contextBridge } from 'electron'
-import type { BibleApi, OutputState, SongsApi, WorshipDeckApi } from '../shared/types'
+import type { BibleApi, OutputState, ServicesApi, SongsApi, WorshipDeckApi } from '../shared/types'
 
 // --------- Expose some API to the Renderer process ---------
 contextBridge.exposeInMainWorld('ipcRenderer', {
@@ -40,6 +40,16 @@ const bible: BibleApi = {
   listBooks: () => ipcRenderer.invoke('bible:listBooks'),
 }
 
+const services: ServicesApi = {
+  create: (name, date) => ipcRenderer.invoke('services:create', name, date),
+  list: () => ipcRenderer.invoke('services:list'),
+  get: (id) => ipcRenderer.invoke('services:get', id),
+  delete: (id) => ipcRenderer.invoke('services:delete', id),
+  addItem: (serviceId, type, refId, payload) => ipcRenderer.invoke('services:addItem', serviceId, type, refId, payload),
+  removeItem: (itemId) => ipcRenderer.invoke('services:removeItem', itemId),
+  reorderItems: (serviceId, orderedItemIds) => ipcRenderer.invoke('services:reorderItems', serviceId, orderedItemIds),
+}
+
 const output: WorshipDeckApi['output'] = {
   send: (state) => ipcRenderer.send('output:send', state),
   onState(listener) {
@@ -49,5 +59,5 @@ const output: WorshipDeckApi['output'] = {
   },
 }
 
-const api: WorshipDeckApi = { songs, bible, output }
+const api: WorshipDeckApi = { songs, bible, services, output }
 contextBridge.exposeInMainWorld('api', api)

@@ -10,6 +10,8 @@ export function SongList() {
   const [adding, setAdding] = useState(false)
   const selectedId = useOperatorStore((s) => s.selectedSong?.id ?? null)
   const selectSong = useOperatorStore((s) => s.selectSong)
+  const service = useOperatorStore((s) => s.service)
+  const addToSchedule = useOperatorStore((s) => s.addToSchedule)
 
   const refresh = useCallback(async (query: string) => {
     try {
@@ -29,6 +31,15 @@ export function SongList() {
   async function handleSelect(id: number) {
     const song = await window.api.songs.get(id)
     selectSong(song ?? null)
+  }
+
+  async function handleAddToSchedule(id: number) {
+    try {
+      await addToSchedule('song', id, null)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
   }
 
   async function handleCreate(input: SongInput) {
@@ -59,13 +70,22 @@ export function SongList() {
 
       <ul className="songs">
         {songs.map((song) => (
-          <li key={song.id}>
+          <li key={song.id} className="song-row">
             <button
               className={`song${song.id === selectedId ? ' selected' : ''}`}
               onClick={() => handleSelect(song.id)}
             >
               <span className="song-title">{song.title}</span>
               {song.author && <span className="song-author">{song.author}</span>}
+            </button>
+            <button
+              className="icon-button add-to-schedule"
+              aria-label={`Add ${song.title} to schedule`}
+              title={service ? `Add to ${service.name}` : 'Create a service first'}
+              disabled={!service}
+              onClick={() => handleAddToSchedule(song.id)}
+            >
+              +
             </button>
           </li>
         ))}

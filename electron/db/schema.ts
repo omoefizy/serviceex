@@ -29,7 +29,8 @@ export function initSchema(db: Database.Database): void {
       service_id INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
       type TEXT NOT NULL,
       ref_id INTEGER,
-      order_index INTEGER NOT NULL
+      order_index INTEGER NOT NULL,
+      payload TEXT
     );
 
     CREATE TABLE IF NOT EXISTS bible_versions (
@@ -48,4 +49,10 @@ export function initSchema(db: Database.Database): void {
       UNIQUE (version_id, book, chapter, verse)
     );
   `)
+
+  // Databases created before service_items had a payload column get it added here.
+  const serviceItemColumns = db.prepare('PRAGMA table_info(service_items)').all() as { name: string }[]
+  if (!serviceItemColumns.some((column) => column.name === 'payload')) {
+    db.exec('ALTER TABLE service_items ADD COLUMN payload TEXT')
+  }
 }

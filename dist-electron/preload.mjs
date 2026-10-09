@@ -33,6 +33,15 @@ const bible = {
   searchText: (version, query) => electron.ipcRenderer.invoke("bible:searchText", version, query),
   listBooks: () => electron.ipcRenderer.invoke("bible:listBooks")
 };
+const services = {
+  create: (name, date) => electron.ipcRenderer.invoke("services:create", name, date),
+  list: () => electron.ipcRenderer.invoke("services:list"),
+  get: (id) => electron.ipcRenderer.invoke("services:get", id),
+  delete: (id) => electron.ipcRenderer.invoke("services:delete", id),
+  addItem: (serviceId, type, refId, payload) => electron.ipcRenderer.invoke("services:addItem", serviceId, type, refId, payload),
+  removeItem: (itemId) => electron.ipcRenderer.invoke("services:removeItem", itemId),
+  reorderItems: (serviceId, orderedItemIds) => electron.ipcRenderer.invoke("services:reorderItems", serviceId, orderedItemIds)
+};
 const output = {
   send: (state) => electron.ipcRenderer.send("output:send", state),
   onState(listener) {
@@ -41,5 +50,5 @@ const output = {
     return () => electron.ipcRenderer.off("output:state", handler);
   }
 };
-const api = { songs, bible, output };
+const api = { songs, bible, services, output };
 electron.contextBridge.exposeInMainWorld("api", api);

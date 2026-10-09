@@ -23,12 +23,40 @@ export interface Service {
   date: string | null
 }
 
-export interface ServiceItem {
+export type ServiceItemType = 'song' | 'scripture' | 'announcement'
+
+/** A scripture passage saved in a service, verses included so it shows without another lookup. */
+export interface ScripturePayload {
+  /** Such as "John 3:16-18 KJV". */
+  title: string
+  verses: { text: string; caption: string }[]
+}
+
+export interface AnnouncementPayload {
+  title: string
+  /** Split into slides on blank lines, like song lyrics. */
+  body: string
+}
+
+export type ServiceItemPayload = ScripturePayload | AnnouncementPayload
+
+interface ServiceItemFields {
   id: number
   service_id: number
-  type: string
-  ref_id: number | null
   order: number
+  /** Song title, scripture reference or announcement title. */
+  title: string
+}
+
+/** Songs point at the songs table through `ref_id`; scripture and announcements carry their content in `payload`. */
+export type ServiceItem =
+  | (ServiceItemFields & { type: 'song'; ref_id: number; payload: null })
+  | (ServiceItemFields & { type: 'scripture'; ref_id: null; payload: ScripturePayload })
+  | (ServiceItemFields & { type: 'announcement'; ref_id: null; payload: AnnouncementPayload })
+
+export interface ServiceWithItems extends Service {
+  /** In run order. */
+  items: ServiceItem[]
 }
 
 /** What the output window renders for a slide. `background` is any CSS background value. */
@@ -94,10 +122,31 @@ export interface BibleApi {
   listBooks(): Promise<string[]>
 }
 
+export interface ServicesApi {
+  /** `date` is YYYY-MM-DD or null. */
+  create(name: string, date: string | null): Promise<Service>
+  /** Newest date first; undated services last. */
+  list(): Promise<Service[]>
+  get(id: number): Promise<ServiceWithItems | undefined>
+  /** Deletes the service and its items. Resolves to false if it does not exist. */
+  delete(id: number): Promise<boolean>
+  /** Appends an item. Songs pass a song id and a null payload; scripture and announcements pass a null refId. */
+  addItem(
+    serviceId: number,
+    type: ServiceItemType,
+    refId: number | null,
+    payload: ServiceItemPayload | null,
+  ): Promise<ServiceItem>
+  removeItem(itemId: number): Promise<boolean>
+  /** Resolves to false unless `orderedItemIds` lists each of the service's items exactly once. */
+  reorderItems(serviceId: number, orderedItemIds: number[]): Promise<boolean>
+}
+
 /** The API the preload script exposes to the renderer as `window.api`. */
 export interface WorshipDeckApi {
   songs: SongsApi
   bible: BibleApi
+  services: ServicesApi
   output: {
     /** Sends the operator's output state to the output window. */
     send(state: OutputState): void

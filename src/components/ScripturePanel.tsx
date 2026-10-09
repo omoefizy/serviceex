@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import type { BibleVersionCode } from '../../shared/types'
+import type { BibleVersionCode, ScripturePayload } from '../../shared/types'
 import { formatReference, parseReference, type ScriptureReference } from '../lib/parseReference'
 import { useOperatorStore } from '../store'
 
@@ -12,10 +12,14 @@ export function ScripturePanel() {
   const [input, setInput] = useState('')
   const [version, setVersion] = useState<BibleVersionCode>('KJV')
   const [loaded, setLoaded] = useState<ScriptureReference | null>(null)
+  /** The passage last loaded into the grid, ready to add to the schedule. */
+  const [result, setResult] = useState<ScripturePayload | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [hasBible, setHasBible] = useState<boolean | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const selectScripture = useOperatorStore((s) => s.selectScripture)
+  const service = useOperatorStore((s) => s.service)
+  const addToSchedule = useOperatorStore((s) => s.addToSchedule)
   const reference = parseReference(input)
 
   useEffect(() => {
@@ -40,11 +44,13 @@ export function ScripturePanel() {
         setError(books.length > 0 ? `${formatReference(ref)} is not in the ${ver}.` : null)
         return false
       }
-      selectScripture(
-        `${formatReference(ref)} ${ver}`,
-        verses.map((v) => ({ text: v.text, caption: `${v.book} ${v.chapter}:${v.verse} ${ver}` })),
-      )
+      const passage: ScripturePayload = {
+        title: `${formatReference(ref)} ${ver}`,
+        verses: verses.map((v) => ({ text: v.text, caption: `${v.book} ${v.chapter}:${v.verse} ${ver}` })),
+      }
+      selectScripture(passage.title, passage.verses)
       setLoaded(ref)
+      setResult(passage)
       setError(null)
       return true
     } catch (err) {
@@ -61,6 +67,15 @@ export function ScripturePanel() {
     }
     // Hand the keyboard back to slide navigation once the verses are in the grid.
     if (await load(reference, version)) inputRef.current?.blur()
+  }
+
+  async function handleAddToSchedule(passage: ScripturePayload) {
+    try {
+      await addToSchedule('scripture', null, passage)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
   }
 
   function handleVersionChange(next: BibleVersionCode) {
@@ -107,6 +122,19 @@ export function ScripturePanel() {
       </form>
 
       <p className="hint">{hint}</p>
+      {result && (
+        <div className="scripture-result">
+          <span>{result.title}</span>
+          <button
+            className="button"
+            title={service ? `Add to ${service.name}` : 'Create a service first'}
+            disabled={!service}
+            onClick={() => handleAddToSchedule(result)}
+          >
+            + Schedule
+          </button>
+        </div>
+      )}
       {error && <p className="error">{error}</p>}
     </section>
   )

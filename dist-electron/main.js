@@ -30,7 +30,8 @@ function initSchema(db2) {
       service_id INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
       type TEXT NOT NULL,
       ref_id INTEGER,
-      order_index INTEGER NOT NULL
+      order_index INTEGER NOT NULL,
+      payload TEXT
     );
 
     CREATE TABLE IF NOT EXISTS bible_versions (
@@ -49,6 +50,10 @@ function initSchema(db2) {
       UNIQUE (version_id, book, chapter, verse)
     );
   `);
+  const serviceItemColumns = db2.prepare("PRAGMA table_info(service_items)").all();
+  if (!serviceItemColumns.some((column) => column.name === "payload")) {
+    db2.exec("ALTER TABLE service_items ADD COLUMN payload TEXT");
+  }
 }
 const dbPath = path.join(app.getPath("userData"), "worshipdeck.db");
 const db = new Database(dbPath);
@@ -98,7 +103,7 @@ const updateSong = db.transaction(
 function deleteSong(id) {
   return db.prepare("DELETE FROM songs WHERE id = ?").run(id).changes > 0;
 }
-function assertId(value) {
+function assertId$1(value) {
   if (!Number.isInteger(value) || value < 1) {
     throw new TypeError("Song id must be a positive integer");
   }
@@ -116,16 +121,16 @@ function registerSongIpc() {
     "songs:list",
     (_event, search) => listSongs(typeof search === "string" ? search : void 0)
   );
-  ipcMain.handle("songs:get", (_event, id) => getSong(assertId(id)));
+  ipcMain.handle("songs:get", (_event, id) => getSong(assertId$1(id)));
   ipcMain.handle("songs:create", (_event, input) => {
     const { title, author, lyrics } = assertSongInput(input);
     return createSong(title, author, lyrics);
   });
   ipcMain.handle("songs:update", (_event, id, input) => {
     const { title, author, lyrics } = assertSongInput(input);
-    return updateSong(assertId(id), title, author, lyrics);
+    return updateSong(assertId$1(id), title, author, lyrics);
   });
-  ipcMain.handle("songs:delete", (_event, id) => deleteSong(assertId(id)));
+  ipcMain.handle("songs:delete", (_event, id) => deleteSong(assertId$1(id)));
 }
 const VERSE_COLUMNS = "v.book, v.chapter, v.verse, v.text";
 const FROM_VERSION = "FROM verses v JOIN bible_versions b ON b.id = v.version_id WHERE b.code = @version";
@@ -195,6 +200,146 @@ function registerBibleIpc() {
     (_event, version, query) => searchText(assertVersion(version), typeof query === "string" ? query : "")
   );
   ipcMain.handle("bible:listBooks", () => listBooks());
+}
+const SELECT_ITEMS = `
+  SELECT i.id, i.service_id, i.type, i.ref_id, i.order_index, i.payload, s.title AS song_title
+  FROM service_items i
+  LEFT JOIN songs s ON i.type = 'song' AND s.id = i.ref_id`;
+function toItem(row) {
+  const fields = { id: row.id, service_id: row.service_id, order: row.order_index };
+  if (row.type === "song") {
+    return { ...fields, type: "song", ref_id: row.ref_id, payload: null, title: row.song_title ?? "Missing song" };
+  }
+  if (row.type === "scripture") {
+    const payload2 = JSON.parse(row.payload ?? "{}");
+    return { ...fields, type: "scripture", ref_id: null, payload: payload2, title: payload2.title };
+  }
+  const payload = JSON.parse(row.payload ?? "{}");
+  return { ...fields, type: "announcement", ref_id: null, payload, title: payload.title };
+}
+function getItem(id) {
+  const row = db.prepare(`${SELECT_ITEMS} WHERE i.id = ?`).get(id);
+  return row && toItem(row);
+}
+function createService(name, date) {
+  const result = db.prepare("INSERT INTO services (name, date) VALUES (?, ?)").run(name, date);
+  return { id: Number(result.lastInsertRowid), name, date };
+}
+function listServices() {
+  return db.prepare("SELECT id, name, date FROM services ORDER BY date IS NULL, date DESC, id DESC").all();
+}
+function getService(id) {
+  const service = db.prepare("SELECT id, name, date FROM services WHERE id = ?").get(id);
+  if (!service) return void 0;
+  const rows = db.prepare(`${SELECT_ITEMS} WHERE i.service_id = ? ORDER BY i.order_index, i.id`).all(id);
+  return { ...service, items: rows.map(toItem) };
+}
+function deleteService(id) {
+  return db.prepare("DELETE FROM services WHERE id = ?").run(id).changes > 0;
+}
+const addItem = db.transaction(
+  (serviceId, type, refId, payload) => {
+    if (!db.prepare("SELECT 1 FROM services WHERE id = ?").get(serviceId)) {
+      throw new Error(`Service ${serviceId} does not exist`);
+    }
+    if (type === "song" && !db.prepare("SELECT 1 FROM songs WHERE id = ?").get(refId)) {
+      throw new Error(`Song ${refId} does not exist`);
+    }
+    const { next } = db.prepare("SELECT COALESCE(MAX(order_index) + 1, 0) AS next FROM service_items WHERE service_id = ?").get(serviceId);
+    const result = db.prepare("INSERT INTO service_items (service_id, type, ref_id, order_index, payload) VALUES (?, ?, ?, ?, ?)").run(serviceId, type, refId, next, payload === null ? null : JSON.stringify(payload));
+    return getItem(Number(result.lastInsertRowid));
+  }
+);
+function removeItem(itemId) {
+  return db.prepare("DELETE FROM service_items WHERE id = ?").run(itemId).changes > 0;
+}
+const reorderItems = db.transaction((serviceId, orderedItemIds) => {
+  const current = new Set(
+    db.prepare("SELECT id FROM service_items WHERE service_id = ?").all(serviceId).map(
+      (row) => row.id
+    )
+  );
+  const requested = new Set(orderedItemIds);
+  if (requested.size !== orderedItemIds.length || requested.size !== current.size || orderedItemIds.some((id) => !current.has(id))) {
+    return false;
+  }
+  const update = db.prepare("UPDATE service_items SET order_index = ? WHERE id = ?");
+  orderedItemIds.forEach((id, index) => update.run(index, id));
+  return true;
+});
+const ITEM_TYPES = ["song", "scripture", "announcement"];
+function assertId(value, name = "Id") {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new TypeError(`${name} must be a positive integer`);
+  }
+  return value;
+}
+function assertName(value) {
+  if (typeof value !== "string" || value.trim() === "") throw new TypeError("Service needs a non-empty name");
+  return value.trim();
+}
+function assertDate(value) {
+  if (value === null || value === void 0 || value === "") return null;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new TypeError("Service date must be YYYY-MM-DD or null");
+  }
+  return value;
+}
+function assertTitle(value) {
+  if (typeof value !== "string" || value.trim() === "") throw new TypeError("Item needs a non-empty title");
+  return value.trim();
+}
+function assertScripture(value) {
+  const payload = value;
+  if (typeof payload !== "object" || payload === null || !Array.isArray(payload.verses) || payload.verses.length === 0) {
+    throw new TypeError("Scripture needs a title and at least one verse");
+  }
+  const verses = payload.verses.map((verse) => {
+    if (typeof (verse == null ? void 0 : verse.text) !== "string" || typeof verse.caption !== "string") {
+      throw new TypeError("Each verse needs text and a caption");
+    }
+    return { text: verse.text, caption: verse.caption };
+  });
+  return { title: assertTitle(payload.title), verses };
+}
+function assertAnnouncement(value) {
+  const payload = value;
+  if (typeof payload !== "object" || payload === null || typeof payload.body !== "string") {
+    throw new TypeError("Announcement needs a title and body text");
+  }
+  return { title: assertTitle(payload.title), body: payload.body };
+}
+function assertItem(type, refId, payload) {
+  if (!ITEM_TYPES.includes(type)) {
+    throw new TypeError(`Item type must be one of ${ITEM_TYPES.join(", ")}`);
+  }
+  if (type === "song") {
+    if (payload !== null && payload !== void 0) throw new TypeError("Song items have no payload");
+    return { type, refId: assertId(refId, "Song id"), payload: null };
+  }
+  if (refId !== null && refId !== void 0) throw new TypeError(`${type} items have no refId`);
+  return type === "scripture" ? { type, refId: null, payload: assertScripture(payload) } : { type: "announcement", refId: null, payload: assertAnnouncement(payload) };
+}
+function registerServiceIpc() {
+  ipcMain.handle(
+    "services:create",
+    (_event, name, date) => createService(assertName(name), assertDate(date))
+  );
+  ipcMain.handle("services:list", () => listServices());
+  ipcMain.handle("services:get", (_event, id) => getService(assertId(id, "Service id")));
+  ipcMain.handle("services:delete", (_event, id) => deleteService(assertId(id, "Service id")));
+  ipcMain.handle("services:addItem", (_event, serviceId, type, refId, payload) => {
+    const item = assertItem(type, refId, payload);
+    return addItem(assertId(serviceId, "Service id"), item.type, item.refId, item.payload);
+  });
+  ipcMain.handle("services:removeItem", (_event, itemId) => removeItem(assertId(itemId, "Item id")));
+  ipcMain.handle("services:reorderItems", (_event, serviceId, orderedItemIds) => {
+    if (!Array.isArray(orderedItemIds)) throw new TypeError("Item ids must be an array");
+    return reorderItems(
+      assertId(serviceId, "Service id"),
+      orderedItemIds.map((id) => assertId(id, "Item id"))
+    );
+  });
 }
 const MODES = ["show", "black", "clear", "logo"];
 let lastState = { mode: "black", text: "", caption: "", background: "#000" };
@@ -286,6 +431,7 @@ app.on("activate", () => {
 app.whenReady().then(() => {
   registerSongIpc();
   registerBibleIpc();
+  registerServiceIpc();
   registerOutputIpc(() => outputWin);
   createWindow();
   createOutputWindow();

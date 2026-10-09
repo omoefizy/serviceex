@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { LivePreview } from './components/LivePreview'
+import { SchedulePanel } from './components/SchedulePanel'
 import { ScripturePanel } from './components/ScripturePanel'
 import { SlideGrid } from './components/SlideGrid'
 import { SongList } from './components/SongList'
@@ -23,6 +24,12 @@ function App() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Cmd+Down (Ctrl+Down off macOS) runs the schedule: next item, first slide live.
+      if (e.key === 'ArrowDown' && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && !isTyping(e.target)) {
+        e.preventDefault()
+        useOperatorStore.getState().nextItem().catch(console.error)
+        return
+      }
       if (e.altKey || e.ctrlKey || e.metaKey || isTyping(e.target)) return
       const { nextSlide, previousSlide } = useOperatorStore.getState()
       if (e.key === 'ArrowRight') {
@@ -68,6 +75,7 @@ function App() {
       </div>
       <SlideGrid />
       <LivePreview />
+      <SchedulePanel />
     </main>
   )
 }

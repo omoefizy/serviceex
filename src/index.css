@@ -56,7 +56,7 @@ button {
 
 .operator {
   display: grid;
-  grid-template-columns: minmax(240px, 280px) 1fr minmax(320px, 420px);
+  grid-template-columns: minmax(240px, 280px) 1fr minmax(320px, 420px) auto;
   gap: 1px;
   height: 100%;
   background: var(--border);
@@ -249,6 +249,71 @@ button {
 .song-author {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.song-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.song-row .song {
+  flex: 1;
+  min-width: 0;
+}
+
+.icon-button {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-button:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--panel-raised);
+  color: var(--text);
+}
+
+.icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Only show a song's add button on hover or focus, so the list stays calm. */
+.song-row .add-to-schedule {
+  opacity: 0;
+}
+
+.song-row:hover .add-to-schedule:not(:disabled),
+.song-row .add-to-schedule:focus-visible {
+  opacity: 1;
+}
+
+.scripture-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-raised);
 }
 
 /* ---------- Slide grid ---------- */
@@ -461,6 +526,139 @@ button {
   letter-spacing: 0.02em;
   text-align: center;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+/* ---------- Schedule ---------- */
+
+.schedule {
+  width: 280px;
+}
+
+.schedule.collapsed {
+  display: flex;
+  width: 36px;
+  background: var(--panel);
+}
+
+.schedule-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 16px 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.schedule-toggle:hover {
+  color: var(--text);
+}
+
+.schedule-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.schedule-toggle-label {
+  writing-mode: vertical-rl;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.schedule-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.schedule-items {
+  flex: 1;
+  min-height: 0;
+  margin: 0 -4px;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.schedule-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px;
+}
+
+.schedule-item.drop-before {
+  border-top-color: var(--accent);
+}
+
+.schedule-item.drop-after {
+  border-bottom-color: var(--accent);
+}
+
+.schedule-item.dragging {
+  opacity: 0.4;
+}
+
+.schedule-item.active {
+  background: var(--accent-soft);
+}
+
+.schedule-item-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  cursor: grab;
+}
+
+.schedule-item-main:hover {
+  background: var(--panel-raised);
+}
+
+.schedule-item-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.schedule-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.schedule-item.active .item-icon {
+  stroke: var(--accent);
+}
+
+.schedule-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 /* ---------- Modal ---------- */
