@@ -50,12 +50,24 @@ export interface OutputState {
   slide: SlideContent | null
 }
 
+/** The editable fields of a song, used when creating or updating one. */
+export type SongInput = Pick<Song, 'title' | 'author' | 'lyrics'>
+
+export interface SongsApi {
+  /** Lists songs, optionally filtered by title, author or lyrics. */
+  list(search?: string): Promise<SongSummary[]>
+  get(id: number): Promise<Song | undefined>
+  /** Creates a song and splits its lyrics into slides on blank lines. */
+  create(input: SongInput): Promise<Song>
+  /** Updates a song and rebuilds its slides. Resolves to false if the song does not exist. */
+  update(id: number, input: SongInput): Promise<boolean>
+  /** Resolves to false if the song does not exist. */
+  delete(id: number): Promise<boolean>
+}
+
 /** The API the preload script exposes to the renderer as `window.api`. */
 export interface WorshipDeckApi {
-  songs: {
-    search(query: string): Promise<SongSummary[]>
-    slides(songId: number): Promise<Slide[]>
-  }
+  songs: SongsApi
   output: {
     getState(): Promise<OutputState>
     setSlide(slide: SlideContent): void

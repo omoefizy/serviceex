@@ -20,3 +20,11 @@ electron.contextBridge.exposeInMainWorld("ipcRenderer", {
   // You can expose other APTs you need here.
   // ...
 });
+const songs = {
+  list: (search) => electron.ipcRenderer.invoke("songs:list", search),
+  get: (id) => electron.ipcRenderer.invoke("songs:get", id),
+  create: (input) => electron.ipcRenderer.invoke("songs:create", input),
+  update: (id, input) => electron.ipcRenderer.invoke("songs:update", id, input),
+  delete: (id) => electron.ipcRenderer.invoke("songs:delete", id)
+};
+electron.contextBridge.exposeInMainWorld("api", { songs });

@@ -1,4 +1,5 @@
 import { ipcRenderer, contextBridge } from 'electron'
+import type { SongsApi } from '../shared/types'
 
 // --------- Expose some API to the Renderer process ---------
 contextBridge.exposeInMainWorld('ipcRenderer', {
@@ -22,3 +23,13 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
   // You can expose other APTs you need here.
   // ...
 })
+
+const songs: SongsApi = {
+  list: (search) => ipcRenderer.invoke('songs:list', search),
+  get: (id) => ipcRenderer.invoke('songs:get', id),
+  create: (input) => ipcRenderer.invoke('songs:create', input),
+  update: (id, input) => ipcRenderer.invoke('songs:update', id, input),
+  delete: (id) => ipcRenderer.invoke('songs:delete', id),
+}
+
+contextBridge.exposeInMainWorld('api', { songs })
