@@ -3,7 +3,7 @@ import type { OutputMode, OutputState } from '../../shared/types'
 
 const MODES: OutputMode[] = ['show', 'black', 'clear', 'logo']
 
-let lastState: OutputState = { mode: 'black', text: '', background: '#000' }
+let lastState: OutputState = { mode: 'black', text: '', caption: '', background: '#000' }
 
 function assertOutputState(value: unknown): OutputState {
   const state = value as Partial<OutputState> | null
@@ -12,11 +12,12 @@ function assertOutputState(value: unknown): OutputState {
     state === null ||
     !MODES.includes(state.mode as OutputMode) ||
     typeof state.text !== 'string' ||
+    typeof state.caption !== 'string' ||
     typeof state.background !== 'string'
   ) {
-    throw new TypeError('Output state needs a mode, text and background')
+    throw new TypeError('Output state needs a mode, text, caption and background')
   }
-  return { mode: state.mode as OutputMode, text: state.text, background: state.background }
+  return { mode: state.mode as OutputMode, text: state.text, caption: state.caption, background: state.background }
 }
 
 /** Forwards output state from the operator window to the output window. */

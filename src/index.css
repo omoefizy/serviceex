@@ -154,6 +154,63 @@ button {
   outline-offset: 1px;
 }
 
+/* ---------- Library tabs ---------- */
+
+.library {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel);
+}
+
+.library-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 12px 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.library-tab {
+  flex: 1;
+  padding: 6px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.library-tab.active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.library-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.library-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.library-page[hidden] {
+  display: none;
+}
+
+.library-page > .panel {
+  flex: 1;
+}
+
+.version-select {
+  width: auto;
+  padding: 4px 8px;
+}
+
 /* ---------- Song list ---------- */
 
 .songs {
@@ -253,6 +310,15 @@ button {
   white-space: pre-line;
 }
 
+.slide-caption {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 /* ---------- Live preview ---------- */
 
 .live-badge {
@@ -282,6 +348,20 @@ button {
   border-radius: 4px;
   background: #000;
   overflow: hidden;
+}
+
+.preview-slide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2cqw;
+}
+
+.preview-caption {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 2.6cqw;
+  font-weight: 500;
 }
 
 .preview-text {
@@ -356,6 +436,7 @@ button {
   position: absolute;
   inset: 6% 5%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
@@ -368,6 +449,17 @@ button {
   line-height: 1.25;
   text-align: center;
   white-space: pre-line;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.output-caption {
+  flex-shrink: 0;
+  margin: 2.5cqh 0 0;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 3.2cqh;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-align: center;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 

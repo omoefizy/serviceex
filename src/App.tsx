@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { LivePreview } from './components/LivePreview'
+import { ScripturePanel } from './components/ScripturePanel'
 import { SlideGrid } from './components/SlideGrid'
 import { SongList } from './components/SongList'
 import { selectOutputState, useOperatorStore } from './store'
@@ -11,6 +12,8 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 function App() {
+  const [libraryTab, setLibraryTab] = useState<'songs' | 'scripture'>('songs')
+
   // Mirror the operator state to the output window.
   useEffect(() => {
     const send = () => window.api.output.send(selectOutputState(useOperatorStore.getState()))
@@ -36,7 +39,33 @@ function App() {
 
   return (
     <main className="operator">
-      <SongList />
+      <div className="library">
+        <div className="library-tabs" role="tablist">
+          <button
+            role="tab"
+            aria-selected={libraryTab === 'songs'}
+            className={`library-tab${libraryTab === 'songs' ? ' active' : ''}`}
+            onClick={() => setLibraryTab('songs')}
+          >
+            Songs
+          </button>
+          <button
+            role="tab"
+            aria-selected={libraryTab === 'scripture'}
+            className={`library-tab${libraryTab === 'scripture' ? ' active' : ''}`}
+            onClick={() => setLibraryTab('scripture')}
+          >
+            Scripture
+          </button>
+        </div>
+        {/* Both stay mounted so each keeps its search text when switching tabs. */}
+        <div className="library-page" hidden={libraryTab !== 'songs'}>
+          <SongList />
+        </div>
+        <div className="library-page" hidden={libraryTab !== 'scripture'}>
+          <ScripturePanel />
+        </div>
+      </div>
       <SlideGrid />
       <LivePreview />
     </main>

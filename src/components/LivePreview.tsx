@@ -10,11 +10,11 @@ const MODES: { mode: OutputMode; label: string }[] = [
 ]
 
 export function LivePreview() {
-  const text = useOperatorStore((s) => (s.liveSlideIndex === null ? null : s.slides[s.liveSlideIndex]))
+  const slide = useOperatorStore((s) => (s.liveSlideIndex === null ? null : s.slides[s.liveSlideIndex]))
   const mode = useOperatorStore((s) => s.outputMode)
   const background = useOperatorStore((s) => s.background)
   const setOutputMode = useOperatorStore((s) => s.setOutputMode)
-  const onAir = mode === 'show' && text !== null
+  const onAir = mode === 'show' && slide !== null
 
   return (
     <section className="panel preview-panel">
@@ -39,7 +39,12 @@ export function LivePreview() {
       </div>
 
       <div className="preview-screen" style={{ background: mode === 'black' ? '#000' : background }}>
-        {mode === 'show' && text !== null && <p className="preview-text">{text}</p>}
+        {mode === 'show' && slide !== null && (
+          <div className="preview-slide">
+            <p className="preview-text">{slide.text}</p>
+            {slide.caption && <p className="preview-caption">{slide.caption}</p>}
+          </div>
+        )}
         {mode === 'logo' && <LogoPlaceholder />}
       </div>
     </section>

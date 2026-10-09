@@ -32,6 +32,22 @@ function initSchema(db2) {
       ref_id INTEGER,
       order_index INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS bible_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS verses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      version_id INTEGER NOT NULL REFERENCES bible_versions(id) ON DELETE CASCADE,
+      book TEXT NOT NULL,
+      chapter INTEGER NOT NULL,
+      verse INTEGER NOT NULL,
+      text TEXT NOT NULL,
+      UNIQUE (version_id, book, chapter, verse)
+    );
   `);
 }
 const dbPath = path.join(app.getPath("userData"), "worshipdeck.db");
@@ -111,14 +127,83 @@ function registerSongIpc() {
   });
   ipcMain.handle("songs:delete", (_event, id) => deleteSong(assertId(id)));
 }
+const VERSE_COLUMNS = "v.book, v.chapter, v.verse, v.text";
+const FROM_VERSION = "FROM verses v JOIN bible_versions b ON b.id = v.version_id WHERE b.code = @version";
+function getVerse(version, book, chapter, verse) {
+  return db.prepare(
+    `SELECT ${VERSE_COLUMNS} ${FROM_VERSION}
+         AND v.book = @book AND v.chapter = @chapter AND v.verse = @verse`
+  ).get({ version, book, chapter, verse });
+}
+function getRange(version, book, chapter, verseStart, verseEnd) {
+  return db.prepare(
+    `SELECT ${VERSE_COLUMNS} ${FROM_VERSION}
+         AND v.book = @book AND v.chapter = @chapter AND v.verse BETWEEN @verseStart AND @verseEnd
+       ORDER BY v.verse`
+  ).all({ version, book, chapter, verseStart, verseEnd });
+}
+function searchText(version, query) {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const pattern = `%${trimmed.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  return db.prepare(
+    `SELECT ${VERSE_COLUMNS} ${FROM_VERSION}
+         AND v.text LIKE @pattern ESCAPE '\\'
+       ORDER BY v.id
+       LIMIT 100`
+  ).all({ version, pattern });
+}
+function listBooks() {
+  return db.prepare("SELECT book FROM verses GROUP BY book ORDER BY MIN(id)").all().map(
+    (row) => row.book
+  );
+}
+const VERSIONS = ["KJV", "WEB"];
+function assertVersion(value) {
+  if (!VERSIONS.includes(value)) {
+    throw new TypeError(`Bible version must be one of ${VERSIONS.join(", ")}`);
+  }
+  return value;
+}
+function assertBook(value) {
+  if (typeof value !== "string" || value.trim() === "") throw new TypeError("Book must be a non-empty string");
+  return value;
+}
+function assertNumber(value, name) {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new TypeError(`${name} must be a positive integer`);
+  }
+  return value;
+}
+function registerBibleIpc() {
+  ipcMain.handle(
+    "bible:getVerse",
+    (_event, version, book, chapter, verse) => getVerse(assertVersion(version), assertBook(book), assertNumber(chapter, "Chapter"), assertNumber(verse, "Verse"))
+  );
+  ipcMain.handle(
+    "bible:getRange",
+    (_event, version, book, chapter, verseStart, verseEnd) => getRange(
+      assertVersion(version),
+      assertBook(book),
+      assertNumber(chapter, "Chapter"),
+      assertNumber(verseStart, "First verse"),
+      assertNumber(verseEnd, "Last verse")
+    )
+  );
+  ipcMain.handle(
+    "bible:searchText",
+    (_event, version, query) => searchText(assertVersion(version), typeof query === "string" ? query : "")
+  );
+  ipcMain.handle("bible:listBooks", () => listBooks());
+}
 const MODES = ["show", "black", "clear", "logo"];
-let lastState = { mode: "black", text: "", background: "#000" };
+let lastState = { mode: "black", text: "", caption: "", background: "#000" };
 function assertOutputState(value) {
   const state = value;
-  if (typeof state !== "object" || state === null || !MODES.includes(state.mode) || typeof state.text !== "string" || typeof state.background !== "string") {
-    throw new TypeError("Output state needs a mode, text and background");
+  if (typeof state !== "object" || state === null || !MODES.includes(state.mode) || typeof state.text !== "string" || typeof state.caption !== "string" || typeof state.background !== "string") {
+    throw new TypeError("Output state needs a mode, text, caption and background");
   }
-  return { mode: state.mode, text: state.text, background: state.background };
+  return { mode: state.mode, text: state.text, caption: state.caption, background: state.background };
 }
 function registerOutputIpc(getOutputWindow) {
   ipcMain.on("output:send", (_event, state) => {
@@ -200,6 +285,7 @@ app.on("activate", () => {
 });
 app.whenReady().then(() => {
   registerSongIpc();
+  registerBibleIpc();
   registerOutputIpc(() => outputWin);
   createWindow();
   createOutputWindow();

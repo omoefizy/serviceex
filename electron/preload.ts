@@ -1,5 +1,5 @@
 import { ipcRenderer, contextBridge } from 'electron'
-import type { OutputState, SongsApi, WorshipDeckApi } from '../shared/types'
+import type { BibleApi, OutputState, SongsApi, WorshipDeckApi } from '../shared/types'
 
 // --------- Expose some API to the Renderer process ---------
 contextBridge.exposeInMainWorld('ipcRenderer', {
@@ -32,6 +32,14 @@ const songs: SongsApi = {
   delete: (id) => ipcRenderer.invoke('songs:delete', id),
 }
 
+const bible: BibleApi = {
+  getVerse: (version, book, chapter, verse) => ipcRenderer.invoke('bible:getVerse', version, book, chapter, verse),
+  getRange: (version, book, chapter, verseStart, verseEnd) =>
+    ipcRenderer.invoke('bible:getRange', version, book, chapter, verseStart, verseEnd),
+  searchText: (version, query) => ipcRenderer.invoke('bible:searchText', version, query),
+  listBooks: () => ipcRenderer.invoke('bible:listBooks'),
+}
+
 const output: WorshipDeckApi['output'] = {
   send: (state) => ipcRenderer.send('output:send', state),
   onState(listener) {
@@ -41,5 +49,5 @@ const output: WorshipDeckApi['output'] = {
   },
 }
 
-const api: WorshipDeckApi = { songs, output }
+const api: WorshipDeckApi = { songs, bible, output }
 contextBridge.exposeInMainWorld('api', api)

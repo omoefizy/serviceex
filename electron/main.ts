@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import './db'
 import { registerSongIpc } from './ipc/songs'
+import { registerBibleIpc } from './ipc/bible'
 import { registerOutputIpc, sendLastOutputState } from './ipc/output'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -106,6 +107,7 @@ app.on('activate', () => {
 
 app.whenReady().then(() => {
   registerSongIpc()
+  registerBibleIpc()
   registerOutputIpc(() => outputWin)
   createWindow()
   createOutputWindow()

@@ -34,6 +34,8 @@ export interface ServiceItem {
 /** What the output window renders for a slide. `background` is any CSS background value. */
 export interface SlideContent {
   text: string
+  /** Small line under the text, such as "John 3:16 KJV". Empty for none. */
+  caption: string
   background: string
 }
 
@@ -65,9 +67,37 @@ export interface SongsApi {
   delete(id: number): Promise<boolean>
 }
 
+/** Public domain Bible versions loaded by `npm run import:bible`. */
+export type BibleVersionCode = 'KJV' | 'WEB'
+
+export interface Verse {
+  /** Full book name, such as "1 Corinthians". */
+  book: string
+  chapter: number
+  verse: number
+  text: string
+}
+
+export interface BibleApi {
+  getVerse(version: BibleVersionCode, book: string, chapter: number, verse: number): Promise<Verse | undefined>
+  /** Verses `verseStart` to `verseEnd` inclusive, in order. */
+  getRange(
+    version: BibleVersionCode,
+    book: string,
+    chapter: number,
+    verseStart: number,
+    verseEnd: number,
+  ): Promise<Verse[]>
+  /** Verses whose text contains `query`, in Bible order, capped at 100. */
+  searchText(version: BibleVersionCode, query: string): Promise<Verse[]>
+  /** Book names in Bible order. Empty until the Bible data is imported. */
+  listBooks(): Promise<string[]>
+}
+
 /** The API the preload script exposes to the renderer as `window.api`. */
 export interface WorshipDeckApi {
   songs: SongsApi
+  bible: BibleApi
   output: {
     /** Sends the operator's output state to the output window. */
     send(state: OutputState): void

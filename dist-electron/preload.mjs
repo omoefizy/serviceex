@@ -27,6 +27,12 @@ const songs = {
   update: (id, input) => electron.ipcRenderer.invoke("songs:update", id, input),
   delete: (id) => electron.ipcRenderer.invoke("songs:delete", id)
 };
+const bible = {
+  getVerse: (version, book, chapter, verse) => electron.ipcRenderer.invoke("bible:getVerse", version, book, chapter, verse),
+  getRange: (version, book, chapter, verseStart, verseEnd) => electron.ipcRenderer.invoke("bible:getRange", version, book, chapter, verseStart, verseEnd),
+  searchText: (version, query) => electron.ipcRenderer.invoke("bible:searchText", version, query),
+  listBooks: () => electron.ipcRenderer.invoke("bible:listBooks")
+};
 const output = {
   send: (state) => electron.ipcRenderer.send("output:send", state),
   onState(listener) {
@@ -35,5 +41,5 @@ const output = {
     return () => electron.ipcRenderer.off("output:state", handler);
   }
 };
-const api = { songs, output };
+const api = { songs, bible, output };
 electron.contextBridge.exposeInMainWorld("api", api);

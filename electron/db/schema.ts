@@ -31,5 +31,21 @@ export function initSchema(db: Database.Database): void {
       ref_id INTEGER,
       order_index INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS bible_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS verses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      version_id INTEGER NOT NULL REFERENCES bible_versions(id) ON DELETE CASCADE,
+      book TEXT NOT NULL,
+      chapter INTEGER NOT NULL,
+      verse INTEGER NOT NULL,
+      text TEXT NOT NULL,
+      UNIQUE (version_id, book, chapter, verse)
+    );
   `)
 }

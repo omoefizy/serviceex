@@ -13,7 +13,7 @@ interface Frame {
 function looksSame(a: OutputState, b: OutputState): boolean {
   if (a.mode !== b.mode) return false
   if (a.mode === 'black') return true
-  return a.background === b.background && (a.mode !== 'show' || a.text === b.text)
+  return a.background === b.background && (a.mode !== 'show' || (a.text === b.text && a.caption === b.caption))
 }
 
 export function LogoPlaceholder() {
@@ -27,10 +27,11 @@ export function LogoPlaceholder() {
   )
 }
 
-/** Slide text at the largest font size that still fits the screen. */
-function FittedText({ text }: { text: string }) {
+/** Slide text at the largest font size that still fits the screen, with an optional caption line under it. */
+function FittedText({ text, caption }: { text: string; caption: string }) {
   const boxRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLParagraphElement>(null)
+  const captionRef = useRef<HTMLParagraphElement>(null)
 
   useLayoutEffect(() => {
     const box = boxRef.current
@@ -38,12 +39,17 @@ function FittedText({ text }: { text: string }) {
     if (!box || !el) return
 
     const fit = () => {
+      const captionEl = captionRef.current
+      const captionHeight = captionEl
+        ? captionEl.offsetHeight + parseFloat(getComputedStyle(captionEl).marginTop)
+        : 0
+      const height = box.clientHeight - captionHeight
       let low = 8
       let high = Math.max(low, box.clientHeight * 0.16)
       while (high - low > 0.5) {
         const size = (low + high) / 2
         el.style.fontSize = `${size}px`
-        if (el.scrollWidth <= box.clientWidth && el.scrollHeight <= box.clientHeight) low = size
+        if (el.scrollWidth <= box.clientWidth && el.scrollHeight <= height) low = size
         else high = size
       }
       el.style.fontSize = `${low}px`
@@ -53,13 +59,18 @@ function FittedText({ text }: { text: string }) {
     const observer = new ResizeObserver(fit)
     observer.observe(box)
     return () => observer.disconnect()
-  }, [text])
+  }, [text, caption])
 
   return (
     <div className="output-text-box" ref={boxRef}>
       <p className="output-text" ref={textRef}>
         {text}
       </p>
+      {caption && (
+        <p className="output-caption" ref={captionRef}>
+          {caption}
+        </p>
+      )}
     </div>
   )
 }
@@ -98,7 +109,7 @@ export function OutputView() {
           className="output-frame"
           style={{ background: state.mode === 'black' ? '#000' : state.background }}
         >
-          {state.mode === 'show' && state.text !== '' && <FittedText text={state.text} />}
+          {state.mode === 'show' && state.text !== '' && <FittedText text={state.text} caption={state.caption} />}
           {state.mode === 'logo' && <LogoPlaceholder />}
         </div>
       ))}
