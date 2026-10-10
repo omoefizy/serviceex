@@ -1,5 +1,5 @@
-import { ipcRenderer, contextBridge } from 'electron'
-import type { BibleApi, OutputState, ServicesApi, SongsApi, WorshipDeckApi } from '../shared/types'
+import { ipcRenderer, contextBridge, webUtils } from 'electron'
+import type { BibleApi, OutputState, ServicesApi, SongFilesApi, SongsApi, WorshipDeckApi } from '../shared/types'
 
 // --------- Expose some API to the Renderer process ---------
 contextBridge.exposeInMainWorld('ipcRenderer', {
@@ -50,6 +50,16 @@ const services: ServicesApi = {
   reorderItems: (serviceId, orderedItemIds) => ipcRenderer.invoke('services:reorderItems', serviceId, orderedItemIds),
 }
 
+const songFiles: SongFilesApi = {
+  pickFiles: () => ipcRenderer.invoke('songFiles:pickFiles'),
+  pickFolder: () => ipcRenderer.invoke('songFiles:pickFolder'),
+  // Dropped File objects carry no path in the renderer since Electron 32; webUtils reads it here.
+  pathForFile: (file) => webUtils.getPathForFile(file),
+  scan: (paths) => ipcRenderer.invoke('songFiles:scan', paths),
+  import: (songs) => ipcRenderer.invoke('songFiles:import', songs),
+  export: (songIds, format) => ipcRenderer.invoke('songFiles:export', songIds, format),
+}
+
 const output: WorshipDeckApi['output'] = {
   send: (state) => ipcRenderer.send('output:send', state),
   onState(listener) {
@@ -59,5 +69,5 @@ const output: WorshipDeckApi['output'] = {
   },
 }
 
-const api: WorshipDeckApi = { songs, bible, services, output }
+const api: WorshipDeckApi = { songs, bible, services, songFiles, output }
 contextBridge.exposeInMainWorld('api', api)

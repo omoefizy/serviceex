@@ -8,7 +8,10 @@ export function initSchema(db: Database.Database): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
       author TEXT,
-      lyrics TEXT
+      lyrics TEXT,
+      copyright TEXT,
+      tags TEXT,
+      arrangement TEXT
     );
 
     CREATE TABLE IF NOT EXISTS slides (
@@ -50,9 +53,16 @@ export function initSchema(db: Database.Database): void {
     );
   `)
 
-  // Databases created before service_items had a payload column get it added here.
-  const serviceItemColumns = db.prepare('PRAGMA table_info(service_items)').all() as { name: string }[]
-  if (!serviceItemColumns.some((column) => column.name === 'payload')) {
-    db.exec('ALTER TABLE service_items ADD COLUMN payload TEXT')
+  // Columns added after the first release. Older databases get them here; CREATE TABLE above covers new ones.
+  addColumnIfMissing(db, 'service_items', 'payload', 'TEXT')
+  addColumnIfMissing(db, 'songs', 'copyright', 'TEXT')
+  addColumnIfMissing(db, 'songs', 'tags', 'TEXT') // JSON array of strings
+  addColumnIfMissing(db, 'songs', 'arrangement', 'TEXT') // JSON SongArrangement
+}
+
+function addColumnIfMissing(db: Database.Database, table: string, column: string, type: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+  if (!columns.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`)
   }
 }

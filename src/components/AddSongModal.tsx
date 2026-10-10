@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { buildSongSlides, DEFAULT_ARRANGEMENT } from '../../shared/lyrics'
 import type { SongInput } from '../../shared/types'
-import { splitIntoSlides } from '../lib/slides'
 
 interface Props {
   onSave(input: SongInput): Promise<void>
@@ -14,7 +14,7 @@ export function AddSongModal({ onSave, onCancel }: Props) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const slideCount = splitIntoSlides(lyrics).length
+  const slideCount = buildSongSlides(lyrics).length
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -30,7 +30,14 @@ export function AddSongModal({ onSave, onCancel }: Props) {
     setSaving(true)
     setError(null)
     try {
-      await onSave({ title: title.trim(), author: author.trim() || null, lyrics })
+      await onSave({
+        title: title.trim(),
+        author: author.trim() || null,
+        copyright: null,
+        tags: [],
+        arrangement: DEFAULT_ARRANGEMENT,
+        lyrics,
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setSaving(false)
@@ -59,7 +66,10 @@ export function AddSongModal({ onSave, onCancel }: Props) {
 
         <label className="field">
           <span>
-            Lyrics <small>Leave a blank line between slides · {slideCount} slide{slideCount === 1 ? '' : 's'}</small>
+            Lyrics{' '}
+            <small>
+              A blank line or a [Section] label starts a new slide · {slideCount} slide{slideCount === 1 ? '' : 's'}
+            </small>
           </span>
           <textarea className="input lyrics" value={lyrics} onChange={(e) => setLyrics(e.target.value)} rows={12} />
         </label>

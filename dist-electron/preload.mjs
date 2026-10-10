@@ -42,6 +42,15 @@ const services = {
   removeItem: (itemId) => electron.ipcRenderer.invoke("services:removeItem", itemId),
   reorderItems: (serviceId, orderedItemIds) => electron.ipcRenderer.invoke("services:reorderItems", serviceId, orderedItemIds)
 };
+const songFiles = {
+  pickFiles: () => electron.ipcRenderer.invoke("songFiles:pickFiles"),
+  pickFolder: () => electron.ipcRenderer.invoke("songFiles:pickFolder"),
+  // Dropped File objects carry no path in the renderer since Electron 32; webUtils reads it here.
+  pathForFile: (file) => electron.webUtils.getPathForFile(file),
+  scan: (paths) => electron.ipcRenderer.invoke("songFiles:scan", paths),
+  import: (songs2) => electron.ipcRenderer.invoke("songFiles:import", songs2),
+  export: (songIds, format) => electron.ipcRenderer.invoke("songFiles:export", songIds, format)
+};
 const output = {
   send: (state) => electron.ipcRenderer.send("output:send", state),
   onState(listener) {
@@ -50,5 +59,5 @@ const output = {
     return () => electron.ipcRenderer.off("output:state", handler);
   }
 };
-const api = { songs, bible, services, output };
+const api = { songs, bible, services, songFiles, output };
 electron.contextBridge.exposeInMainWorld("api", api);

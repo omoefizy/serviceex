@@ -1,10 +1,23 @@
 // Types shared by the main process, the preload script and the renderer.
 // Keep this file free of runtime code: it is imported with `import type` only.
 
+/** How a song's sections play and how its slides are cut. */
+export interface SongArrangement {
+  /** Section labels in play order, repeats allowed, such as ["Verse 1", "Chorus", "Verse 2", "Chorus"]. Empty plays sections as written. */
+  order: string[]
+  /** Splits any slide longer than this many lines; null keeps slides as the blank lines and labels cut them. */
+  linesPerSlide: 2 | 3 | 4 | null
+}
+
 export interface Song {
   id: number
   title: string
   author: string | null
+  /** Copyright or licence line, such as "© 2001 Example Music · CCLI 1234567". */
+  copyright: string | null
+  tags: string[]
+  arrangement: SongArrangement
+  /** Plain text. A line like [Verse 1] starts a section; a blank line or a section label starts a new slide. */
   lyrics: string
 }
 
@@ -81,13 +94,13 @@ export interface OutputState extends SlideContent {
 }
 
 /** The editable fields of a song, used when creating or updating one. */
-export type SongInput = Pick<Song, 'title' | 'author' | 'lyrics'>
+export type SongInput = Omit<Song, 'id'>
 
 export interface SongsApi {
   /** Lists songs, optionally filtered by title, author or lyrics. */
   list(search?: string): Promise<SongSummary[]>
   get(id: number): Promise<Song | undefined>
-  /** Creates a song and splits its lyrics into slides on blank lines. */
+  /** Creates a song and splits its lyrics into slides (see shared/lyrics.ts). */
   create(input: SongInput): Promise<Song>
   /** Updates a song and rebuilds its slides. Resolves to false if the song does not exist. */
   update(id: number, input: SongInput): Promise<boolean>
@@ -142,11 +155,53 @@ export interface ServicesApi {
   reorderItems(serviceId: number, orderedItemIds: number[]): Promise<boolean>
 }
 
+export type SongFileFormat = 'text' | 'openlyrics' | 'opensong'
+
+/** A song read from a file, waiting in the import preview. */
+export interface ImportedSong {
+  /** The file it came from, such as "Hymns/Amazing Grace.xml". */
+  source: string
+  format: SongFileFormat
+  song: SongInput
+  /** Set when the title matches a library song, or an earlier song in the same import. */
+  duplicateOf: 'library' | 'import' | null
+}
+
+export interface ImportScan {
+  songs: ImportedSong[]
+  /** Files that were not songs or could not be read. */
+  problems: { source: string; error: string }[]
+}
+
+export type ExportFormat = 'openlyrics' | 'text'
+
+export interface ExportResult {
+  written: number
+  /** The file written, or the folder for several songs. */
+  location: string
+}
+
+export interface SongFilesApi {
+  /** Shows a file picker and reads the chosen files. Resolves to null if cancelled. */
+  pickFiles(): Promise<ImportScan | null>
+  /** Shows a folder picker and reads the song files in it. Resolves to null if cancelled. */
+  pickFolder(): Promise<ImportScan | null>
+  /** The path of a file or folder dropped on the window. */
+  pathForFile(file: File): string
+  /** Reads song files and folders by path. */
+  scan(paths: string[]): Promise<ImportScan>
+  /** Adds the songs in one transaction. Resolves to the number added. */
+  import(songs: SongInput[]): Promise<number>
+  /** Asks where to save, then writes the songs (null means every song). Resolves to null if cancelled. */
+  export(songIds: number[] | null, format: ExportFormat): Promise<ExportResult | null>
+}
+
 /** The API the preload script exposes to the renderer as `window.api`. */
 export interface WorshipDeckApi {
   songs: SongsApi
   bible: BibleApi
   services: ServicesApi
+  songFiles: SongFilesApi
   output: {
     /** Sends the operator's output state to the output window. */
     send(state: OutputState): void

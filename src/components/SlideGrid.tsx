@@ -28,7 +28,7 @@ export function SlideGrid() {
       {song && slides.length === 0 && <p className="empty">This song has no lyrics.</p>}
 
       <div className="slide-grid" ref={gridRef}>
-        {slides.map(({ text, caption }, index) => (
+        {slides.map(({ text, caption, label }, index) => (
           <button
             key={index}
             data-index={index}
@@ -37,7 +37,7 @@ export function SlideGrid() {
           >
             <span className="slide-number">{index + 1}</span>
             <span className="slide-text">{text}</span>
-            {caption && <span className="slide-caption">{caption}</span>}
+            {(label || caption) && <span className="slide-caption">{label ?? caption}</span>}
           </button>
         ))}
       </div>

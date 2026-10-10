@@ -1,0 +1,470 @@
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { buildSongSlides, findSection, isArrangement, LINES_PER_SLIDE_OPTIONS, parseLyrics } from '../../shared/lyrics'
+import type { ExportFormat, Song, SongArrangement, SongInput } from '../../shared/types'
+import { duplicateSection, mergeWithNext, splitSlideAt, type ToolResult } from '../lib/lyricsTools'
+import { useOperatorStore } from '../store'
+
+/** The editor's fields as typed. */
+interface Form {
+  title: string
+  author: string
+  copyright: string
+  /** Comma separated. */
+  tags: string
+  arrangement: SongArrangement
+  lyrics: string
+}
+
+interface Draft {
+  form: Form
+  savedAt: number
+}
+
+// Drafts live in this window's localStorage, one per song, until the song is saved or the draft discarded.
+const draftKey = (id: number) => `worshipdeck.songDraft.${id}`
+
+function isForm(value: unknown): value is Form {
+  const form = value as Partial<Form> | null
+  return (
+    typeof form === 'object' &&
+    form !== null &&
+    ['title', 'author', 'copyright', 'tags', 'lyrics'].every((key) => typeof form[key as keyof Form] === 'string') &&
+    isArrangement(form.arrangement)
+  )
+}
+
+function readDraft(id: number): Draft | null {
+  try {
+    const draft = JSON.parse(localStorage.getItem(draftKey(id)) ?? 'null') as Partial<Draft> | null
+    return draft && isForm(draft.form) && typeof draft.savedAt === 'number' ? (draft as Draft) : null
+  } catch {
+    return null
+  }
+}
+
+function writeDraft(id: number, form: Form): void {
+  try {
+    localStorage.setItem(draftKey(id), JSON.stringify({ form, savedAt: Date.now() } satisfies Draft))
+  } catch {
+    // Drafts are a safety net; editing still works without storage.
+  }
+}
+
+function clearDraft(id: number): void {
+  try {
+    localStorage.removeItem(draftKey(id))
+  } catch {
+    // See writeDraft.
+  }
+}
+
+function toForm(song: Omit<Song, 'id'>): Form {
+  return {
+    title: song.title,
+    author: song.author ?? '',
+    copyright: song.copyright ?? '',
+    tags: song.tags.join(', '),
+    arrangement: song.arrangement,
+    // The section tools count lines, so keep one kind of line break.
+    lyrics: song.lyrics.replace(/\r\n?/g, '\n'),
+  }
+}
+
+function toInput(form: Form): SongInput {
+  return {
+    title: form.title.trim(),
+    author: form.author.trim() || null,
+    copyright: form.copyright.trim() || null,
+    tags: [...new Set(form.tags.split(',').map((tag) => tag.trim()).filter(Boolean))],
+    arrangement: form.arrangement,
+    lyrics: form.lyrics,
+  }
+}
+
+const sameForm = (a: Form | null, b: Form | null) => JSON.stringify(a) === JSON.stringify(b)
+
+/** Keeps the cursor in the lyrics box when a tool button is clicked. */
+const keepFocus = (e: MouseEvent) => e.preventDefault()
+
+export function SongEditor({ songId }: { songId: number }) {
+  /** The song as stored in the library. */
+  const [saved, setSaved] = useState<Form | null>(null)
+  const [form, setForm] = useState<Form | null>(null)
+  const [restoredAt, setRestoredAt] = useState<number | null>(null)
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [toolMessage, setToolMessage] = useState<string | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const deletedRef = useRef(false)
+  const latestRef = useRef({ form, saved })
+  latestRef.current = { form, saved }
+
+  const editSong = useOperatorStore((s) => s.editSong)
+  const songSaved = useOperatorStore((s) => s.songSaved)
+  const songDeleted = useOperatorStore((s) => s.songDeleted)
+
+  const dirty = form !== null && saved !== null && !sameForm(form, saved)
+  const sections = useMemo(() => parseLyrics(form?.lyrics ?? ''), [form?.lyrics])
+  const slides = useMemo(() => (form ? buildSongSlides(form.lyrics, form.arrangement) : []), [form])
+  /** Each section label once, in written order, for the play order buttons. */
+  const labels = useMemo(() => {
+    const byKey = new Map<string, string>()
+    for (const { label } of sections) {
+      if (label && !byKey.has(label.toLowerCase())) byKey.set(label.toLowerCase(), label)
+    }
+    return [...byKey.values()]
+  }, [sections])
+
+  // Load the song, then any draft that differs from it.
+  useEffect(() => {
+    let cancelled = false
+    window.api.songs.get(songId).then(
+      (song) => {
+        if (cancelled) return
+        if (!song) {
+          setError('This song no longer exists.')
+          return
+        }
+        const stored = toForm(song)
+        const draft = readDraft(songId)
+        setSaved(stored)
+        if (draft && !sameForm(draft.form, stored)) {
+          setForm(draft.form)
+          setRestoredAt(draft.savedAt)
+          setDraftSavedAt(draft.savedAt)
+        } else {
+          if (draft) clearDraft(songId)
+          setForm(stored)
+        }
+      },
+      (err) => !cancelled && setError(err instanceof Error ? err.message : String(err)),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [songId])
+
+  // Autosave a draft shortly after typing stops; drop it once the form matches the library again.
+  useEffect(() => {
+    if (!form || !saved) return
+    if (sameForm(form, saved)) {
+      clearDraft(songId)
+      setDraftSavedAt(null)
+      return
+    }
+    const timer = setTimeout(() => {
+      writeDraft(songId, form)
+      setDraftSavedAt(Date.now())
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [form, saved, songId])
+
+  // Keep the last keystrokes when the editor closes or the window reloads before the autosave timer fires.
+  useEffect(() => {
+    const flush = () => {
+      const { form, saved } = latestRef.current
+      if (!deletedRef.current && form && saved && !sameForm(form, saved)) writeDraft(songId, form)
+    }
+    window.addEventListener('beforeunload', flush)
+    return () => {
+      window.removeEventListener('beforeunload', flush)
+      flush()
+    }
+  }, [songId])
+
+  function update(patch: Partial<Form>) {
+    setForm((current) => current && { ...current, ...patch })
+  }
+
+  function updateArrangement(patch: Partial<SongArrangement>) {
+    setForm((current) => current && { ...current, arrangement: { ...current.arrangement, ...patch } })
+  }
+
+  function applyTool(tool: (lyrics: string, position: number) => ToolResult) {
+    const el = textareaRef.current
+    if (!el || !form) return
+    const result = tool(form.lyrics, el.selectionStart)
+    if ('error' in result) {
+      setToolMessage(result.error)
+      return
+    }
+    setToolMessage(null)
+    update({ lyrics: result.lyrics })
+    requestAnimationFrame(() => {
+      el.focus()
+      el.setSelectionRange(result.cursor, result.cursor)
+    })
+  }
+
+  async function handleSave() {
+    if (!form || saving) return
+    if (!form.title.trim()) {
+      setError('A song needs a title.')
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      const input = toInput(form)
+      if (!(await window.api.songs.update(songId, input))) throw new Error('This song no longer exists.')
+      const stored = toForm(input)
+      setSaved(stored)
+      // Show the tidied fields, unless typing carried on while saving.
+      setForm((current) => (sameForm(current, form) ? stored : current))
+      setRestoredAt(null)
+      clearDraft(songId)
+      await songSaved({ id: songId, ...input })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete() {
+    try {
+      deletedRef.current = true
+      await window.api.songs.delete(songId)
+      clearDraft(songId)
+      await songDeleted(songId)
+    } catch (err) {
+      deletedRef.current = false
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  /** Exports the song as saved in the library; unsaved edits are not included. */
+  async function handleExport(format: ExportFormat, menuItem: HTMLElement) {
+    menuItem.closest('details')?.removeAttribute('open')
+    try {
+      const result = await window.api.songFiles.export([songId], format)
+      if (result) setToolMessage(`Exported to ${result.location}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  function handleDiscardDraft() {
+    setForm(saved)
+    setRestoredAt(null)
+    clearDraft(songId)
+  }
+
+  function handleKeyDown(e: KeyboardEvent) {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault()
+      handleSave()
+    }
+  }
+
+  if (!form) {
+    return (
+      <section className="panel song-editor">
+        <header className="panel-header">
+          <h2>Edit song</h2>
+          <button className="button" onClick={() => editSong(null)}>
+            Close
+          </button>
+        </header>
+        {error ? <p className="error">{error}</p> : <p className="empty">Loading…</p>}
+      </section>
+    )
+  }
+
+  const status = saving
+    ? 'Saving…'
+    : !dirty
+      ? 'All changes saved'
+      : draftSavedAt
+        ? 'Draft autosaved · not saved to library'
+        : 'Unsaved changes'
+  const missingLabels = form.arrangement.order.filter((label) => !findSection(sections, label))
+
+  return (
+    <section className="panel song-editor" onKeyDown={handleKeyDown}>
+      <header className="panel-header">
+        <h2>{form.title.trim() || 'Untitled song'}</h2>
+        <div className="editor-actions">
+          <span className="hint">{status}</span>
+          {confirmingDelete ? (
+            <>
+              <span className="error">Delete this song for good?</span>
+              <button className="button" onClick={() => setConfirmingDelete(false)} autoFocus>
+                Cancel
+              </button>
+              <button className="button danger" onClick={handleDelete}>
+                Delete song
+              </button>
+            </>
+          ) : (
+            <button className="button" onClick={() => setConfirmingDelete(true)}>
+              Delete
+            </button>
+          )}
+          <details className="menu">
+            <summary className="button" title={dirty ? 'Exports the last saved version' : undefined}>
+              Export
+            </summary>
+            <div className="menu-items">
+              <button className="button" onClick={(e) => handleExport('openlyrics', e.currentTarget)}>
+                OpenLyrics XML…
+              </button>
+              <button className="button" onClick={(e) => handleExport('text', e.currentTarget)}>
+                Plain text…
+              </button>
+            </div>
+          </details>
+          <button className="button" onClick={() => editSong(null)}>
+            Close
+          </button>
+          <button className="button primary" disabled={!dirty || saving} onClick={handleSave} title="Save (⌘S)">
+            Save
+          </button>
+        </div>
+      </header>
+
+      {restoredAt !== null && (
+        <div className="editor-banner">
+          <span>Restored an unsaved draft from {new Date(restoredAt).toLocaleString()}.</span>
+          <button className="button" onClick={handleDiscardDraft}>
+            Discard draft
+          </button>
+        </div>
+      )}
+      {confirmingDelete && (
+        <p className="hint">Any service that lists this song will show it as “Missing song”.</p>
+      )}
+      {error && <p className="error">{error}</p>}
+
+      <div className="editor-fields">
+        <label className="field">
+          <span>Title</span>
+          <input className="input" value={form.title} onChange={(e) => update({ title: e.target.value })} required />
+        </label>
+        <label className="field">
+          <span>Author</span>
+          <input className="input" value={form.author} onChange={(e) => update({ author: e.target.value })} />
+        </label>
+        <label className="field">
+          <span>Copyright</span>
+          <input
+            className="input"
+            placeholder="© 2001 Publisher · CCLI 1234567"
+            value={form.copyright}
+            onChange={(e) => update({ copyright: e.target.value })}
+          />
+        </label>
+        <label className="field">
+          <span>
+            Tags <small>Comma separated</small>
+          </span>
+          <input
+            className="input"
+            placeholder="hymn, christmas"
+            value={form.tags}
+            onChange={(e) => update({ tags: e.target.value })}
+          />
+        </label>
+      </div>
+
+      <div className="editor-toolbar">
+        <button type="button" className="button" onMouseDown={keepFocus} onClick={() => applyTool(splitSlideAt)}>
+          Split slide here
+        </button>
+        <button type="button" className="button" onMouseDown={keepFocus} onClick={() => applyTool(mergeWithNext)}>
+          Merge with next
+        </button>
+        <button type="button" className="button" onMouseDown={keepFocus} onClick={() => applyTool(duplicateSection)}>
+          Duplicate section
+        </button>
+        <label className="editor-lines">
+          Lines per slide
+          <select
+            className="input"
+            value={form.arrangement.linesPerSlide ?? ''}
+            onChange={(e) =>
+              updateArrangement({
+                linesPerSlide: e.target.value ? (Number(e.target.value) as SongArrangement['linesPerSlide']) : null,
+              })
+            }
+          >
+            <option value="">Any</option>
+            {LINES_PER_SLIDE_OPTIONS.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {toolMessage && <p className="hint">{toolMessage}</p>}
+
+      <div className="editor-arrangement">
+        <span className="editor-arrangement-label">Play order</span>
+        <div className="chips">
+          {form.arrangement.order.length === 0 && <span className="hint">As written</span>}
+          {form.arrangement.order.map((label, index) => (
+            <span key={index} className={`chip${findSection(sections, label) ? '' : ' missing'}`}>
+              {label}
+              <button
+                type="button"
+                aria-label={`Remove ${label} from play order`}
+                onClick={() => updateArrangement({ order: form.arrangement.order.filter((_, i) => i !== index) })}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+        <div className="chips">
+          {labels.map((label) => (
+            <button
+              key={label}
+              type="button"
+              className="chip add"
+              onClick={() => updateArrangement({ order: [...form.arrangement.order, label] })}
+            >
+              + {label}
+            </button>
+          ))}
+          {labels.length === 0 && <span className="hint">Label sections like [Chorus] to build a play order.</span>}
+          {form.arrangement.order.length > 0 && (
+            <button type="button" className="button" onClick={() => updateArrangement({ order: [] })}>
+              Play as written
+            </button>
+          )}
+        </div>
+        {missingLabels.length > 0 && (
+          <p className="hint">Not in the lyrics, so skipped: {[...new Set(missingLabels)].join(', ')}.</p>
+        )}
+      </div>
+
+      <div className="editor-body">
+        <textarea
+          ref={textareaRef}
+          className="input lyrics editor-lyrics"
+          aria-label="Lyrics"
+          placeholder={'[Verse 1]\nFirst line\nSecond line\n\n[Chorus]\n…'}
+          value={form.lyrics}
+          onChange={(e) => update({ lyrics: e.target.value })}
+        />
+        <div className="editor-preview" aria-label="Slide preview">
+          <p className="hint">
+            {slides.length} slide{slides.length === 1 ? '' : 's'}
+          </p>
+          <ol className="editor-preview-list">
+            {slides.map((slide, index) => (
+              <li key={index} className="slide-card">
+                <span className="slide-number">{index + 1}</span>
+                {slide.label && <span className="slide-caption">{slide.label}</span>}
+                <span className="slide-text">{slide.text}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </section>
+  )
+}

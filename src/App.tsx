@@ -3,6 +3,7 @@ import { LivePreview } from './components/LivePreview'
 import { SchedulePanel } from './components/SchedulePanel'
 import { ScripturePanel } from './components/ScripturePanel'
 import { SlideGrid } from './components/SlideGrid'
+import { SongEditor } from './components/SongEditor'
 import { SongList } from './components/SongList'
 import { selectOutputState, useOperatorStore } from './store'
 
@@ -14,12 +15,26 @@ function isTyping(target: EventTarget | null): boolean {
 
 function App() {
   const [libraryTab, setLibraryTab] = useState<'songs' | 'scripture'>('songs')
+  const editingSongId = useOperatorStore((s) => s.editingSongId)
 
   // Mirror the operator state to the output window.
   useEffect(() => {
     const send = () => window.api.output.send(selectOutputState(useOperatorStore.getState()))
     send()
     return useOperatorStore.subscribe(send)
+  }, [])
+
+  // A file dropped outside the import drop zone would otherwise replace the app with the file.
+  useEffect(() => {
+    const block = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) e.preventDefault()
+    }
+    window.addEventListener('dragover', block)
+    window.addEventListener('drop', block)
+    return () => {
+      window.removeEventListener('dragover', block)
+      window.removeEventListener('drop', block)
+    }
   }, [])
 
   useEffect(() => {
@@ -73,7 +88,7 @@ function App() {
           <ScripturePanel />
         </div>
       </div>
-      <SlideGrid />
+      {editingSongId !== null ? <SongEditor key={editingSongId} songId={editingSongId} /> : <SlideGrid />}
       <LivePreview />
       <SchedulePanel />
     </main>

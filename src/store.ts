@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { buildSongSlides } from '../shared/lyrics'
 import type {
   OutputMode,
   OutputState,
@@ -8,12 +9,14 @@ import type {
   ServiceWithItems,
   Song,
 } from '../shared/types'
-import { announcementSlides, splitIntoSlides } from './lib/slides'
+import { announcementSlides } from './lib/slides'
 
 export interface DeckSlide {
   text: string
   /** Small line under the text on the output, such as "John 3:16 KJV". Empty for song slides. */
   caption: string
+  /** Song section shown on the slide card only, such as "Chorus". */
+  label?: string
 }
 
 interface OperatorState {
@@ -30,6 +33,10 @@ interface OperatorState {
   service: ServiceWithItems | null
   /** The schedule item whose slides are in the grid, or null when the grid came from the library. */
   activeItemId: number | null
+  /** The song open in the editor, which takes the slide grid's place. */
+  editingSongId: number | null
+  /** Bumped whenever a song is saved or deleted, so the song list reloads. */
+  songsVersion: number
 
   selectSong(song: Song | null): void
   /** Loads scripture verses into the slide grid in place of a song. */
@@ -50,6 +57,13 @@ interface OperatorState {
   loadItem(item: ServiceItem): Promise<boolean>
   /** Loads the item after the active one and puts its first slide live. */
   nextItem(): Promise<void>
+
+  editSong(id: number | null): void
+  /** Tells the song list to reload, after an import for example. */
+  songsChanged(): void
+  /** Refreshes the grid and schedule after the editor saves a song. */
+  songSaved(song: Song): Promise<void>
+  songDeleted(id: number): Promise<void>
 }
 
 /** Bumped by every grid load, so a slow song fetch for an old item cannot overwrite a newer selection. */
@@ -64,6 +78,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   background: '#000',
   service: null,
   activeItemId: null,
+  editingSongId: null,
+  songsVersion: 0,
 
   selectSong(song) {
     loadToken++
@@ -166,10 +182,45 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     if (!next) return
     if ((await get().loadItem(next)) && get().slides.length > 0) get().showSlide(0)
   },
+
+  editSong(id) {
+    set({ editingSongId: id })
+  },
+
+  songsChanged() {
+    set({ songsVersion: get().songsVersion + 1 })
+  },
+
+  async songSaved(song) {
+    const { selectedSong, liveSlideIndex, service, songsVersion } = get()
+    set({ songsVersion: songsVersion + 1 })
+    if (selectedSong?.id === song.id) {
+      // Keep the live slide where it is if it still exists, so saving mid-service does not blank the screen.
+      const slides = songSlides(song)
+      set({
+        selectedSong: song,
+        deckTitle: song.title,
+        slides,
+        liveSlideIndex: liveSlideIndex !== null && liveSlideIndex < slides.length ? liveSlideIndex : null,
+      })
+    }
+    if (service?.items.some((item) => item.type === 'song' && item.ref_id === song.id)) await refreshService(service.id)
+  },
+
+  async songDeleted(id) {
+    const { selectedSong, service, songsVersion, editingSongId } = get()
+    set({ songsVersion: songsVersion + 1, editingSongId: editingSongId === id ? null : editingSongId })
+    if (selectedSong?.id === id) get().selectSong(null)
+    if (service?.items.some((item) => item.type === 'song' && item.ref_id === id)) await refreshService(service.id)
+  },
 }))
 
 function songSlides(song: Song): DeckSlide[] {
-  return splitIntoSlides(song.lyrics).map((text) => ({ text, caption: '' }))
+  return buildSongSlides(song.lyrics, song.arrangement).map(({ text, label }) => ({
+    text,
+    caption: '',
+    label: label ?? undefined,
+  }))
 }
 
 async function refreshService(id: number): Promise<void> {

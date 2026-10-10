@@ -1,9 +1,6 @@
 import type { AnnouncementPayload } from '../../shared/types'
 
-/**
- * Splits lyrics into slide texts on blank lines, dropping empty chunks.
- * Mirrors splitIntoSlides in electron/db/songs.ts so the renderer shows the same slides the database stores.
- */
+/** Splits text into slide texts on blank lines, dropping empty chunks. Songs use buildSongSlides in shared/lyrics.ts. */
 export function splitIntoSlides(lyrics: string): string[] {
   return lyrics
     .replace(/\r\n?/g, '\n')
