@@ -428,10 +428,18 @@ export interface AiTasks {
    * lines split into slides. The main process rejects any answer that changes the words.
    */
   cleanLyrics: { input: { lyrics: string }; output: { lyrics: string; order: string[] } }
-  /** Suggests Bible passages for a sermon or service theme. */
-  suggestScripture: {
-    input: { theme: string }
-    output: { suggestions: { reference: string; reason: string }[] }
+  /**
+   * Finds passages by meaning ("verses about fear"). References only, such as "John 3:16-18": the app reads the
+   * verse text from its own Bible database. Each one is checked to exist there; at most 8 come back.
+   */
+  suggestScripture: { input: { topic: string }; output: { references: string[] } }
+  /**
+   * Reads a sermon outline: a title, short key points, and every scripture reference it mentions, checked to
+   * exist in the Bible database. No verse text.
+   */
+  sermonToSlides: {
+    input: { outline: string }
+    output: { title: string; points: string[]; references: string[] }
   }
   /** Turns a long message into a title and short slides, one idea each. */
   buildAnnouncement: { input: { message: string }; output: { title: string; slides: string[] } }

@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { BibleVersionCode } from '../../shared/types'
-import { formatReference, parseReference } from '../lib/parseReference'
+import { formatReference, parseReference } from '../../shared/parseReference'
 import { loadScripture } from '../lib/scripture'
 import { MOD } from '../lib/shortcuts'
 import { useOperatorStore } from '../store'

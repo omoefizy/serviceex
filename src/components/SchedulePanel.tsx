@@ -6,6 +6,7 @@ import {
   Music,
   Plus,
   Presentation,
+  ScrollText,
   X,
   type LucideIcon,
 } from 'lucide-react'
@@ -16,6 +17,7 @@ import { MOD } from '../lib/shortcuts'
 import { useOperatorStore } from '../store'
 import { AnnouncementModal } from './AnnouncementModal'
 import { NewServiceModal } from './NewServiceModal'
+import { SermonModal } from './SermonModal'
 
 const TYPE_LABELS: Record<ServiceItemType, string> = {
   song: 'Song',
@@ -46,6 +48,7 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
   const [services, setServices] = useState<Service[]>([])
   const [creating, setCreating] = useState(false)
   const [announcing, setAnnouncing] = useState(false)
+  const [sermonOpen, setSermonOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   /** Progress while a presentation is imported, such as "Rendering page 3 of 12…". */
   const [progress, setProgress] = useState<string | null>(null)
@@ -233,12 +236,16 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
         <button className="button" disabled={!service || progress !== null} onClick={handlePresentation} title="Images or a PDF, one slide per page">
           <Presentation size={15} aria-hidden="true" /> Presentation
         </button>
+        <button className="button" disabled={!service} onClick={() => setSermonOpen(true)} title="Turn a sermon outline into points and scripture">
+          <ScrollText size={15} aria-hidden="true" /> Sermon
+        </button>
         <span className="hint">{MOD}↓ next item</span>
       </footer>
       {progress && <p className="hint">{progress}</p>}
 
       {creating && <NewServiceModal onSave={handleCreate} onCancel={() => setCreating(false)} />}
       {announcing && <AnnouncementModal onSave={handleAnnouncement} onCancel={() => setAnnouncing(false)} />}
+      {sermonOpen && <SermonModal onClose={() => setSermonOpen(false)} />}
     </aside>
   )
 }

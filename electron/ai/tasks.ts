@@ -2,7 +2,9 @@
 // so the renderer cannot steer the model with its own instructions.
 
 import { findSection, parseLyrics } from '../../shared/lyrics'
+import { formatReference, parseReference } from '../../shared/parseReference'
 import type { AiModel, AiResult, AiTask, AiTasks } from '../../shared/types'
+import { getVerse, listBooks } from '../db/bible'
 import { getAppSettings } from '../db/settings'
 import { fail, readyClient, toAiError } from './client'
 
@@ -122,6 +124,38 @@ function inventedFacts(message: string, texts: string[], names: boolean): string
   return [...new Set(invented)]
 }
 
+// ---------- Reference check ----------
+
+/** How the AI is asked to write references, so the app's parser and database can check them. */
+const REFERENCE_FORMAT =
+  'Write each reference as book, chapter and verses, such as "John 3:16-18", "Psalm 46:1" or "Romans 8:28-39", ' +
+  'using English book names. Keep each reference within one chapter. Never quote or paraphrase verse text.'
+
+/**
+ * The references that parse and exist in the Bible database (first and last verse, in the KJV), written the
+ * app's way ("John 3:16-18") without repeats. Anything else is dropped.
+ */
+function existingReferences(references: unknown): string[] {
+  if (listBooks().length === 0) {
+    throw new TaskError('The Bible text is not imported yet. Run "npm run import:bible", then try again.')
+  }
+  const seen = new Set<string>()
+  const kept: string[] = []
+  for (const reference of Array.isArray(references) ? references : []) {
+    const ref = typeof reference === 'string' ? parseReference(reference) : null
+    if (!ref) continue
+    const first = ref.verseStart ?? 1
+    const last = ref.verseEnd ?? first
+    if (!getVerse('KJV', ref.book, ref.chapter, first) || !getVerse('KJV', ref.book, ref.chapter, last)) continue
+    const formatted = formatReference(ref)
+    if (!seen.has(formatted)) {
+      seen.add(formatted)
+      kept.push(formatted)
+    }
+  }
+  return kept
+}
+
 // ---------- Tasks ----------
 
 const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
@@ -173,25 +207,65 @@ const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
   },
 
   suggestScripture: {
-    system:
-      'You help a church team choose Bible readings. Suggest three to six passages that fit the theme, from both ' +
-      'Testaments where it fits. Give each reference in a standard form such as "John 3:16-18" or "Psalm 23" ' +
-      '(book, chapter, and optionally verses) and a one-sentence reason it fits. Do not quote the verse text.',
-    parseInput: (input) => ({ theme: textField(input, 'theme') }),
-    prompt: ({ theme }) => `Theme: ${theme}`,
-    schema: object({
-      suggestions: { type: 'array', items: object({ reference: { type: 'string' }, reason: { type: 'string' } }) },
-    }),
-    maxTokens: 2000,
+    system: [
+      'You help a church team find Bible passages by meaning. Given a topic, choose the ten passages that speak to it',
+      'most directly, from both Testaments where it fits, most relevant first. Prefer short passages of one to six',
+      'verses. Return references only.',
+      '',
+      REFERENCE_FORMAT,
+    ].join('\n'),
+    parseInput: (input) => ({ topic: textField(input, 'topic') }),
+    prompt: ({ topic }) => `Topic: ${topic}`,
+    schema: object({ references: { type: 'array', items: { type: 'string' } } }),
+    maxTokens: 1000,
     effort: 'low',
+    // Ten are asked for so that eight usually survive the database check.
     check: (output) => {
-      const suggestions = (output as { suggestions?: unknown }).suggestions
-      if (!Array.isArray(suggestions)) throw new TaskError('The AI returned no suggestions. Try again.')
-      return {
-        suggestions: suggestions
-          .filter((s): s is { reference: string; reason: string } => typeof s?.reference === 'string' && typeof s?.reason === 'string')
-          .slice(0, 6),
+      const references = existingReferences((output as { references?: unknown }).references).slice(0, 8)
+      if (references.length === 0) throw new TaskError('No passages for that topic were found in the Bible text. Try other words.')
+      return { references }
+    },
+  },
+
+  sermonToSlides: {
+    system: [
+      'You turn a sermon outline into presentation material for a church service.',
+      '',
+      'Write a short title (at most six words) and the key points: three to eight points, each at most twelve words,',
+      'in the order of the outline, written so a congregation can read them on a screen. Keep the preacher\'s',
+      'meaning; do not add points, numbers, dates or names that are not in the outline.',
+      '',
+      'List every Bible reference the outline mentions, in the order it mentions them, including ones written',
+      'loosely such as "John 3 verse 16" or "Ps 23". Only references the outline mentions; do not add others.',
+      '',
+      REFERENCE_FORMAT,
+    ].join('\n'),
+    parseInput: (input) => ({ outline: textField(input, 'outline') }),
+    prompt: ({ outline }) => `Sermon outline:\n\n${outline}`,
+    schema: object({
+      title: { type: 'string' },
+      points: { type: 'array', items: { type: 'string' } },
+      references: { type: 'array', items: { type: 'string' } },
+    }),
+    maxTokens: 3000,
+    effort: 'low',
+    check: (output, input) => {
+      const { title, points, references } = output as { title?: unknown; points?: unknown; references?: unknown }
+      const keptPoints = Array.isArray(points)
+        ? points.filter((p): p is string => typeof p === 'string').map((p) => p.trim()).filter(Boolean)
+        : []
+      if (typeof title !== 'string' || !title.trim() || keptPoints.length === 0) {
+        throw new TaskError('The AI returned no key points. Try again.')
       }
+      // Points may reword the outline but must not bring new numbers, dates or links.
+      const invented = inventedFacts(input.outline, [title, ...keptPoints], false)
+      if (invented.length > 0) {
+        const sample = invented.slice(0, 5).map((w) => `“${w}”`).join(', ')
+        throw new TaskError(`The AI added details that are not in the outline (${sample}), so its points were not used. Try again.`)
+      }
+      // A reference whose chapter or verse numbers are not in the outline was not mentioned there.
+      const mentioned = existingReferences(references).filter((reference) => inventedFacts(input.outline, [reference], false).length === 0)
+      return { title: title.trim(), points: keptPoints, references: mentioned }
     },
   },
 

@@ -1,9 +1,10 @@
 import { ListPlus } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import type { BibleVersionCode, ScripturePayload } from '../../shared/types'
-import { formatReference, parseReference, type ScriptureReference } from '../lib/parseReference'
-import { loadScripture } from '../lib/scripture'
+import type { AiError, BibleVersionCode, ScripturePayload } from '../../shared/types'
+import { formatReference, parseReference, type ScriptureReference } from '../../shared/parseReference'
+import { fetchPassage, loadScripture } from '../lib/scripture'
 import { useOperatorStore } from '../store'
+import { AiButton } from './AiButton'
 
 const VERSIONS: BibleVersionCode[] = ['KJV', 'WEB']
 
@@ -19,6 +20,30 @@ export function ScripturePanel() {
   const service = useOperatorStore((s) => s.service)
   const addToSchedule = useOperatorStore((s) => s.addToSchedule)
   const reference = parseReference(input)
+  /** Topic search: what was typed, the references the AI found, and their text from the local Bible. */
+  const [topic, setTopic] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [topicError, setTopicError] = useState<AiError | null>(null)
+  const [topicRefs, setTopicRefs] = useState<string[] | null>(null)
+  const [topicPassages, setTopicPassages] = useState<Record<string, ScripturePayload | null>>({})
+
+  // The AI only names passages; their wording always comes from the local Bible, in the chosen version.
+  useEffect(() => {
+    if (!topicRefs) return
+    let cancelled = false
+    Promise.all(
+      topicRefs.map(async (text) => {
+        const ref = parseReference(text)
+        return [text, ref ? await fetchPassage(ref, version) : null] as const
+      }),
+    ).then(
+      (entries) => !cancelled && setTopicPassages(Object.fromEntries(entries)),
+      (err) => console.error(err),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [topicRefs, version])
 
   useEffect(() => {
     window.api.bible.listBooks().then(
@@ -62,6 +87,23 @@ export function ScripturePanel() {
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  /** Sends the topic once, from the click; references come back already checked against the Bible database. */
+  async function handleTopicSearch(e: FormEvent) {
+    e.preventDefault()
+    if (!topic.trim() || searching) return
+    setSearching(true)
+    setTopicError(null)
+    try {
+      const answer = await window.api.ai.ask('suggestScripture', { topic })
+      if (answer.ok) setTopicRefs(answer.value.references)
+      else setTopicError(answer.error)
+    } catch (err) {
+      setTopicError({ code: 'unavailable', message: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setSearching(false)
     }
   }
 
@@ -123,6 +165,71 @@ export function ScripturePanel() {
         </div>
       )}
       {error && <p className="error">{error}</p>}
+
+      <form className="topic-search" onSubmit={handleTopicSearch}>
+        <label className="field">
+          <span>
+            Topic search <small>Search by meaning</small>
+          </span>
+          <div className="settings-row">
+            <input
+              className="input"
+              type="search"
+              placeholder="e.g. verses about fear"
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+            />
+            <AiButton
+              type="submit"
+              label="Find"
+              busyLabel="Finding…"
+              busy={searching}
+              disabledReason={hasBible === false ? 'Import the Bible text first' : topic.trim() ? null : 'Type a topic first'}
+              tooltip="Find passages about this topic; their text comes from your local Bible"
+            />
+          </div>
+        </label>
+        {searching && (
+          <p className="hint" role="status">
+            Looking for passages…
+          </p>
+        )}
+        {topicError && (
+          <p className="error" role="alert">
+            {topicError.message}
+          </p>
+        )}
+        {topicRefs && !searching && (
+          <ul className="topic-results">
+            {topicRefs.map((text) => {
+              const passage = topicPassages[text]
+              const ref = parseReference(text)
+              return (
+                <li key={text} className="topic-result">
+                  <button type="button" className="topic-result-main" disabled={!ref || !passage} onClick={() => ref && load(ref, version)}>
+                    <strong>
+                      {text} {version}
+                    </strong>
+                    <span className="topic-result-text">
+                      {passage === undefined ? 'Loading…' : passage ? passage.verses.map((v) => v.text).join(' ') : `Not in the ${version}`}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={`Add ${text} to schedule`}
+                    title={service ? `Add to ${service.name}` : 'Create a service first'}
+                    disabled={!service || !passage}
+                    onClick={() => passage && handleAddToSchedule(passage)}
+                  >
+                    <ListPlus size={15} />
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </form>
     </section>
   )
 }
