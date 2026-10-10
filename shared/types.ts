@@ -257,6 +257,12 @@ export interface AppSettings {
   whisperModel: WhisperModelId
   /** Real time factor measured per model (processing time / audio time; below 1 keeps up). Set by the main process. */
   whisperSpeed: Partial<Record<WhisperModelId, number>>
+  /** Suggests verses from the live transcript: references spoken aloud, and quotes. */
+  scriptureDetection: boolean
+  /** Suggestions less certain than this (0.3 to 0.95) are not shown. */
+  detectionMinConfidence: number
+  /** How a new suggestion gets attention, besides appearing in the tray. */
+  detectionAlert: 'off' | 'sound' | 'flash'
 }
 
 export interface DisplayInfo {
@@ -376,6 +382,21 @@ export interface BibleApi {
   search(params: VerseSearchParams): Promise<VerseSearchResult>
   /** Verses per chapter for a book, from the KJV: [31, 25, …] means chapter 1 has 31 verses. Empty if unknown. */
   bookStructure(book: string): Promise<number[]>
+  /** The verse a piece of transcript quotes, when the words match it strongly; otherwise null. */
+  matchQuote(text: string): Promise<QuoteMatch | null>
+}
+
+/** A verse the speaker seems to have quoted without naming it. */
+export interface QuoteMatch {
+  book: string
+  chapter: number
+  verse: number
+  /** The version whose wording matched best. */
+  version: BibleVersionCode
+  /** Verse words said in order. */
+  matched: number
+  coverage: number
+  confidence: number
 }
 
 export interface ServicesApi {

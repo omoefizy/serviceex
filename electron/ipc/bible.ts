@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { BOOK_NAMES } from '../../shared/parseReference'
 import type { BibleVersionCode, Testament, VerseSearchParams } from '../../shared/types'
-import { bookStructure, getRange, getVerse, listBooks, searchText, searchVerses } from '../db/bible'
+import { bookStructure, getRange, getVerse, listBooks, matchQuote, searchText, searchVerses } from '../db/bible'
 
 // Arguments arrive from the renderer, so check their shape before they reach the database.
 
@@ -52,6 +52,10 @@ export function registerBibleIpc(): void {
   ipcMain.handle('bible:search', (_event, params: unknown) => searchVerses(assertSearchParams(params)))
 
   ipcMain.handle('bible:bookStructure', (_event, book: unknown) => bookStructure(assertBook(book)))
+
+  ipcMain.handle('bible:matchQuote', (_event, text: unknown) =>
+    typeof text === 'string' && text.length <= 2000 ? matchQuote(text) : null,
+  )
 }
 
 const TESTAMENTS: Testament[] = ['all', 'old', 'new']

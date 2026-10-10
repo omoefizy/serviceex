@@ -5,6 +5,7 @@ import { create } from 'zustand'
 import type { SpeechPerformance, SpeechStatus } from '../../shared/types'
 import { useOperatorStore } from '../store'
 import { startMic, type MicCapture } from './mic'
+import { detectScripture } from './scriptureDetection'
 
 export type ListenerStatus = SpeechStatus | 'starting'
 
@@ -100,6 +101,7 @@ window.api?.speech.onEvent((event) => {
       break
     case 'final':
       set((s) => ({ finals: [...s.finals, event.text], partial: '' }))
+      detectScripture(event.text).catch(console.error)
       break
     case 'status':
       set(event.status === 'idle' ? { status: 'idle', partial: '' } : { status: event.status })

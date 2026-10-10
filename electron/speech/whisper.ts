@@ -3,11 +3,13 @@
 // buffers audio and waits on HTTP, so it never blocks. Each transcribed segment is emitted as a final result.
 
 import { app } from 'electron'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
+import { promisify } from 'node:util'
 import type { SpeechPerformance, WhisperModelId } from '../../shared/types'
 import { EngineEvents, speechError, type SpeechEngine } from './engine'
 import { cleanTranscript, removeOverlap, Segmenter, toWav, type AudioSegment } from './segmenter'
@@ -15,6 +17,7 @@ import { smallerModel } from './whisperModels'
 
 /** electron-builder's ${os} names, matching scripts/fetch-whisper.ts. */
 const OS_NAMES: Partial<Record<NodeJS.Platform, string>> = { darwin: 'mac', win32: 'win', linux: 'linux' }
+const execFileAsync = promisify(execFile)
 const LOAD_TIMEOUT_MS = 120_000
 /** Audio measured before the first verdict on speed. */
 const MEASURE_AFTER_MS = 15_000
@@ -24,11 +27,67 @@ const KEEPING_UP_BELOW = 0.8
 const MAX_BACKLOG_MS = 12_000
 const STOP_DRAIN_MS = 20_000
 
-/** Servers still running, killed if the app exits without stopping them. */
+/** Servers still running, stopped however the app ends. */
 const children = new Set<ChildProcess>()
-process.on('exit', () => {
+const killAll = () => {
   for (const child of children) child.kill('SIGKILL')
-})
+  children.clear()
+}
+process.on('exit', killAll)
+app.on('will-quit', killAll)
+// Ended from outside (a terminal, a dev server restart, logging out): stop the servers, then quit as usual.
+for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
+  process.once(signal, () => {
+    killAll()
+    app.quit()
+    setTimeout(() => process.exit(0), 2000).unref()
+  })
+}
+
+/**
+ * Process ids of running servers, kept on disk so that a server left behind when the app was killed outright
+ * (which no handler can catch) is stopped the next time listening starts.
+ */
+const pidFile = () => path.join(app.getPath('userData'), 'whisper-server.pids')
+
+async function recordPids(): Promise<void> {
+  await writeFile(pidFile(), JSON.stringify([...children].map((c) => c.pid).filter(Boolean))).catch(console.error)
+}
+
+/** The name of a running process, or null when there is none with that id. */
+async function processName(pid: number): Promise<string | null> {
+  try {
+    if (process.platform === 'win32') {
+      const { stdout } = await execFileAsync('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], { windowsHide: true })
+      return stdout.split(',')[0]?.replace(/"/g, '').trim() || null
+    }
+    const { stdout } = await execFileAsync('ps', ['-p', String(pid), '-o', 'comm='])
+    return stdout.trim() || null
+  } catch {
+    return null
+  }
+}
+
+/** Stops servers a previous run left behind, checking each id still belongs to whisper-server first. */
+async function stopLeftoverServers(): Promise<void> {
+  let pids: unknown
+  try {
+    pids = JSON.parse(await readFile(pidFile(), 'utf8'))
+  } catch {
+    return
+  }
+  if (!Array.isArray(pids)) return
+  for (const pid of pids) {
+    if (!Number.isInteger(pid) || [...children].some((c) => c.pid === pid)) continue
+    if ((await processName(pid))?.includes('whisper-server')) {
+      try {
+        process.kill(pid, 'SIGKILL')
+      } catch {
+        // Already gone.
+      }
+    }
+  }
+}
 
 /** Where whisper-server is: next to the app's resources when packaged, in vendor/ during development. */
 export function whisperServerPath(): string | null {
@@ -84,6 +143,7 @@ export class WhisperEngine extends EngineEvents implements SpeechEngine {
   async start(): Promise<void> {
     if (this.child) throw speechError('busy', 'Already listening.')
     this.emitStatus('connecting')
+    await stopLeftoverServers()
     const port = await freePort()
     // Half the cores (at least two, at most eight): whisper.cpp gains little from efficiency cores or hyperthreads.
     const threads = Math.min(8, Math.max(2, Math.floor(os.cpus().length / 2)))
@@ -91,6 +151,7 @@ export class WhisperEngine extends EngineEvents implements SpeechEngine {
     const child = spawn(this.binary, args, { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true })
     this.child = child
     children.add(child)
+    void recordPids()
     this.baseUrl = `http://127.0.0.1:${port}`
     child.stderr?.setEncoding('utf8')
     child.stderr?.on('data', (text: string) => {
@@ -100,6 +161,7 @@ export class WhisperEngine extends EngineEvents implements SpeechEngine {
     child.once('exit', (code) => {
       exited = true
       children.delete(child)
+      void recordPids()
       this.child = null
       if (this.running && !this.stopping) {
         this.running = false

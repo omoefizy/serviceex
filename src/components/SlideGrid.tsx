@@ -5,6 +5,7 @@ import { sectionColor } from '../lib/sections'
 import { MOD } from '../lib/shortcuts'
 import { usePersistentState } from '../lib/usePersistentState'
 import { selectBaseThemeId, selectBrowsingLive, selectDeckTheme, slideTheme, useOperatorStore } from '../store'
+import { SuggestionTray } from './SuggestionTray'
 import { ThemedSlide } from './ThemedSlide'
 
 export function SlideGrid() {
@@ -98,6 +99,7 @@ export function SlideGrid() {
           </label>
         </div>
       </header>
+      <SuggestionTray />
       <div className="grid-live-bar">
         {live.deckKey !== null && !browsingLive && (
           <span className="live-chip" title="What the projector is showing">

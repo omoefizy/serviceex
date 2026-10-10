@@ -18,6 +18,9 @@ const DEFAULTS: AppSettings = {
   speechEngine: 'deepgram',
   whisperModel: 'base.en',
   whisperSpeed: {},
+  scriptureDetection: true,
+  detectionMinConfidence: 0.6,
+  detectionAlert: 'off',
 }
 
 export const FADE_LIMITS = { min: 0, max: 1500 }
@@ -42,6 +45,9 @@ const KEYS: Record<keyof AppSettings, string> = {
   speechEngine: 'speech.engine',
   whisperModel: 'speech.whisperModel',
   whisperSpeed: 'speech.whisperSpeed',
+  scriptureDetection: 'detection.enabled',
+  detectionMinConfidence: 'detection.minConfidence',
+  detectionAlert: 'detection.alert',
 }
 
 /** Checks one value, returning undefined for anything unusable so the default applies. */
@@ -62,6 +68,7 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'aiEnabled':
     case 'autoGoLiveOnNext':
     case 'saveTranscripts':
+    case 'scriptureDetection':
       return typeof value === 'boolean' ? v : undefined
     case 'aiModel':
       return value === 'claude-sonnet-5-5' || value === 'claude-haiku-5-5' ? v : undefined
@@ -70,6 +77,12 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
       return value === null || (typeof value === 'string' && value !== '') ? v : undefined
     case 'micDeviceId':
       return value === null || (typeof value === 'string' && value !== '' && value.length <= 512) ? v : undefined
+    case 'detectionMinConfidence':
+      return typeof value === 'number' && Number.isFinite(value)
+        ? ((Math.round(Math.min(0.95, Math.max(0.3, value)) * 100) / 100) as never)
+        : undefined
+    case 'detectionAlert':
+      return value === 'off' || value === 'sound' || value === 'flash' ? v : undefined
     case 'speechEngine':
       return value === 'deepgram' || value === 'whisper' ? v : undefined
     case 'whisperModel':

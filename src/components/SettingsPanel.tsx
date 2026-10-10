@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   Cloud,
   Download,
   FolderOpen,
@@ -493,6 +494,64 @@ function ListenerSection() {
   )
 }
 
+const DETECTION_ALERTS: { value: AppSettings['detectionAlert']; label: string }[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'sound', label: 'Sound' },
+  { value: 'flash', label: 'Flash' },
+]
+
+/** Scripture suggestions from the live transcript: on or off, how sure they must be, and how they announce themselves. */
+function DetectionSection() {
+  const settings = useOperatorStore((s) => s.settings)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const percent = Math.round(settings.detectionMinConfidence * 100)
+  return (
+    <Section icon={<BookOpen size={16} aria-hidden="true" />} title="Scripture detection">
+      <label className="inline-check">
+        <input type="checkbox" checked={settings.scriptureDetection} onChange={(e) => updateSettings({ scriptureDetection: e.target.checked })} />
+        Suggest verses heard in the sermon
+      </label>
+      <p className="hint">
+        References spoken aloud, such as "John chapter three verse sixteen", and verses quoted without a reference appear above the
+        slides. Clicking one puts it in the preview; it only goes live when you send it.
+      </p>
+      <label className="field">
+        <span>Minimum confidence: {percent}%</span>
+        <input
+          type="range"
+          min={30}
+          max={95}
+          step={5}
+          value={percent}
+          disabled={!settings.scriptureDetection}
+          onChange={(e) => updateSettings({ detectionMinConfidence: Number(e.target.value) / 100 })}
+        />
+        <span className="hint">
+          Lower shows more, including possible quotes and bare chapter numbers; higher shows only clearly named verses.
+        </span>
+      </label>
+      <div className="field">
+        <span>On a new suggestion</span>
+        <div className="segmented" role="radiogroup" aria-label="On a new suggestion">
+          {DETECTION_ALERTS.map((a) => (
+            <button
+              key={a.value}
+              type="button"
+              role="radio"
+              aria-checked={settings.detectionAlert === a.value}
+              className={settings.detectionAlert === a.value ? 'active' : ''}
+              disabled={!settings.scriptureDetection}
+              onClick={() => updateSettings({ detectionAlert: a.value })}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </Section>
+  )
+}
+
 export function SettingsPanel() {
   const settings = useOperatorStore((s) => s.settings)
   const updateSettings = useOperatorStore((s) => s.updateSettings)
@@ -621,6 +680,8 @@ export function SettingsPanel() {
       <AiSection />
 
       <ListenerSection />
+
+      <DetectionSection />
 
       <Section icon={<Save size={16} aria-hidden="true" />} title="Autosave and backups">
         <label className="inline-check">
