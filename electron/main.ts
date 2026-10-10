@@ -12,6 +12,7 @@ import { registerMediaIpc } from './ipc/media'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerStageIpc, sendLastStageState } from './ipc/stage'
 import { registerAiIpc } from './ipc/ai'
+import { registerSpeechIpc } from './ipc/speech'
 import { startBackupSchedule } from './backup'
 import { getAppSettings } from './db/settings'
 import { registerMediaProtocol, registerMediaScheme } from './media'
@@ -180,6 +181,7 @@ app.whenReady().then(() => {
   registerStageIpc({ open: openStageWindow, close: () => stageWin?.close(), getWindow: () => stageWin })
   startBackupSchedule()
   registerAiIpc()
+  registerSpeechIpc()
   registerOutputIpc(() => outputWin)
   createWindow()
   createOutputWindow()

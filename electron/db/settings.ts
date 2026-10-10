@@ -13,6 +13,8 @@ const DEFAULTS: AppSettings = {
   aiEnabled: true,
   aiModel: 'claude-sonnet-5-5',
   autoGoLiveOnNext: false,
+  micDeviceId: null,
+  saveTranscripts: false,
 }
 
 export const FADE_LIMITS = { min: 0, max: 1500 }
@@ -30,6 +32,8 @@ const KEYS: Record<keyof AppSettings, string> = {
   aiEnabled: 'ai.enabled',
   aiModel: 'ai.model',
   autoGoLiveOnNext: 'schedule.autoGoLiveOnNext',
+  micDeviceId: 'speech.micDeviceId',
+  saveTranscripts: 'speech.saveTranscripts',
 }
 
 /** Checks one value, returning undefined for anything unusable so the default applies. */
@@ -49,12 +53,15 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'autosaveDrafts':
     case 'aiEnabled':
     case 'autoGoLiveOnNext':
+    case 'saveTranscripts':
       return typeof value === 'boolean' ? v : undefined
     case 'aiModel':
       return value === 'claude-sonnet-5-5' || value === 'claude-haiku-5-5' ? v : undefined
     case 'backupFolder':
     case 'lastBackupAt':
       return value === null || (typeof value === 'string' && value !== '') ? v : undefined
+    case 'micDeviceId':
+      return value === null || (typeof value === 'string' && value !== '' && value.length <= 512) ? v : undefined
     case 'backupIntervalMinutes':
       return [0, 10, 30, 60].includes(value as number) ? v : undefined
     default:

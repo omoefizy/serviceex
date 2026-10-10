@@ -1,51 +1,37 @@
-// The Anthropic client, main process only. The API key is encrypted with Electron's safeStorage (Keychain on
-// macOS, DPAPI on Windows, the keyring on Linux) and kept in <userData>/anthropic-key.enc. It is never sent to
-// the renderer, never read from the environment or a plain file, and never lives in the repository.
+// The Anthropic client, main process only. The API key is stored encrypted by ../secrets (safeStorage) as
+// <userData>/anthropic-key.enc; it is never sent to the renderer, never read from the environment or a plain
+// file, and never lives in the repository.
 
 import Anthropic from '@anthropic-ai/sdk'
-import { app, net, safeStorage } from 'electron'
-import { existsSync } from 'node:fs'
-import { readFile, rm, writeFile } from 'node:fs/promises'
-import path from 'node:path'
+import { net } from 'electron'
 import type { AiError, AiResult } from '../../shared/types'
 import { getAppSettings } from '../db/settings'
+import { clearSecret, encryptionAvailable, hasSecret, readSecret, saveSecret } from '../secrets'
 
-const keyFile = () => path.join(app.getPath('userData'), 'anthropic-key.enc')
+export { encryptionAvailable }
 
 /** Cached so requests do not decrypt the key each time; dropped whenever the key changes. */
 let client: Anthropic | null = null
 
-/** True when the key can be stored encrypted. Linux without a keyring falls back to plain text, which we refuse. */
-export function encryptionAvailable(): boolean {
-  if (!safeStorage.isEncryptionAvailable()) return false
-  return !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')
-}
-
 export function hasApiKey(): boolean {
-  return existsSync(keyFile())
+  return hasSecret('anthropic-key')
 }
 
 export async function saveApiKey(key: string): Promise<void> {
-  if (!encryptionAvailable()) throw new Error('This system cannot encrypt the key')
-  await writeFile(keyFile(), safeStorage.encryptString(key), { mode: 0o600 })
+  await saveSecret('anthropic-key', key)
   client = null
 }
 
 export async function clearApiKey(): Promise<void> {
-  await rm(keyFile(), { force: true })
+  await clearSecret('anthropic-key')
   client = null
 }
 
 /** The client for the saved key, or null when there is none (or it can no longer be decrypted). */
 export async function getClient(): Promise<Anthropic | null> {
   if (client) return client
-  if (!hasApiKey() || !encryptionAvailable()) return null
-  let apiKey: string
-  try {
-    apiKey = safeStorage.decryptString(await readFile(keyFile()))
-  } catch {
-    return null
-  }
+  const apiKey = await readSecret('anthropic-key')
+  if (!apiKey) return null
   // Pass the key explicitly and switch off the environment fallbacks, so only the saved key is ever used.
   client = new Anthropic({ apiKey, authToken: null, maxRetries: 2, timeout: 60_000 })
   return client

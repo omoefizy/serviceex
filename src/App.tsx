@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CommandPalette } from './components/CommandPalette'
 import { LivePreview } from './components/LivePreview'
+import { ListenerPanel } from './components/ListenerPanel'
 import { MediaPanel } from './components/MediaPanel'
 import { SchedulePanel } from './components/SchedulePanel'
 import { ScripturePanel } from './components/ScripturePanel'
@@ -192,7 +193,10 @@ function App() {
           <SlideGrid />
         )}
         <Splitter label="Resize live output" value={sizes.preview} min={LIMITS.preview[0]} max={LIMITS.preview[1]} direction={-1} onChange={resize('preview')} />
-        <LivePreview />
+        <div className="preview-column">
+          <LivePreview />
+          <ListenerPanel />
+        </div>
         {!scheduleCollapsed && (
           <Splitter label="Resize schedule" value={sizes.schedule} min={LIMITS.schedule[0]} max={LIMITS.schedule[1]} direction={-1} onChange={resize('schedule')} />
         )}

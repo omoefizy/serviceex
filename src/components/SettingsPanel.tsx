@@ -3,6 +3,8 @@ import {
   HardDriveDownload,
   Image,
   KeyRound,
+  Mic,
+  MicOff,
   Monitor,
   Moon,
   Palette,
@@ -15,8 +17,9 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import type { AiModel, AiStatus, AppSettings, DisplayInfo, OutputDisplay } from '../../shared/types'
+import type { AiModel, AiStatus, AppSettings, DisplayInfo, OutputDisplay, SpeechKeyStatus } from '../../shared/types'
 import { useOperatorStore } from '../store'
+import { listMicrophones, meterFraction, startMic, type MicCapture } from '../lib/mic'
 import { MOD } from '../lib/shortcuts'
 import { ThemeDefaultsForm } from './ThemeEditor'
 
@@ -154,6 +157,166 @@ function AiSection() {
   )
 }
 
+/**
+ * Microphone, Deepgram key and transcript saving for the sermon listener. The key is typed here once and goes to the
+ * main process; it is never shown again.
+ */
+function ListenerSection() {
+  const settings = useOperatorStore((s) => s.settings)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const [status, setStatus] = useState<SpeechKeyStatus | null>(null)
+  const [mics, setMics] = useState<MediaDeviceInfo[]>([])
+  const [testing, setTesting] = useState(false)
+  const [level, setLevel] = useState(0)
+  const [micError, setMicError] = useState<string | null>(null)
+  const [key, setKey] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
+
+  useEffect(() => {
+    window.api.speech.status().then(setStatus, console.error)
+    const refresh = () => listMicrophones().then(setMics, console.error)
+    refresh()
+    navigator.mediaDevices.addEventListener('devicechange', refresh)
+    return () => navigator.mediaDevices.removeEventListener('devicechange', refresh)
+  }, [])
+
+  // The level meter runs on the chosen microphone while testing, and restarts when the choice changes.
+  useEffect(() => {
+    if (!testing) return
+    let capture: MicCapture | null = null
+    let cancelled = false
+    setMicError(null)
+    startMic({ deviceId: settings.micDeviceId, onLevel: setLevel, onEnded: () => setTesting(false) }).then(
+      (started) => {
+        if (cancelled) return started.stop()
+        capture = started
+        // Names are only listed once the microphone is allowed.
+        listMicrophones().then(setMics, console.error)
+      },
+      (error: unknown) => {
+        if (cancelled) return
+        setMicError(error instanceof Error ? error.message : String(error))
+        setTesting(false)
+      },
+    )
+    return () => {
+      cancelled = true
+      capture?.stop()
+      setLevel(0)
+    }
+  }, [testing, settings.micDeviceId])
+
+  async function handleSave(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setResult(null)
+    const saved = await window.api.speech.setKey(key)
+    // Drop the typed key from the page either way.
+    setKey('')
+    setBusy(false)
+    if (saved.ok) {
+      setStatus(saved.value)
+      setResult({ ok: true, text: 'Key saved and encrypted.' })
+    } else {
+      setResult({ ok: false, text: saved.error.message })
+    }
+  }
+
+  async function handleRemove() {
+    setStatus(await window.api.speech.clearKey())
+    setResult({ ok: true, text: 'Key removed.' })
+  }
+
+  async function handleTest() {
+    setBusy(true)
+    setResult(null)
+    const tested = await window.api.speech.testConnection()
+    setBusy(false)
+    setResult(tested.ok ? { ok: true, text: `Connected. Deepgram ${tested.value.model} is ready.` } : { ok: false, text: tested.error.message })
+  }
+
+  const chosenMissing = settings.micDeviceId !== null && mics.length > 0 && !mics.some((m) => m.deviceId === settings.micDeviceId)
+
+  return (
+    <Section icon={<Mic size={16} aria-hidden="true" />} title="Sermon listener">
+      <label className="field">
+        <span>Microphone</span>
+        <select
+          className="input"
+          value={settings.micDeviceId ?? ''}
+          onChange={(e) => updateSettings({ micDeviceId: e.target.value || null })}
+        >
+          <option value="">System default</option>
+          {mics.map((m, i) => (
+            <option key={m.deviceId} value={m.deviceId}>
+              {m.label || `Microphone ${i + 1}`}
+            </option>
+          ))}
+          {chosenMissing && <option value={settings.micDeviceId ?? ''}>Not connected</option>}
+        </select>
+      </label>
+      <div className="settings-row">
+        <button type="button" className="button" onClick={() => setTesting(!testing)}>
+          {testing ? <MicOff size={15} aria-hidden="true" /> : <Mic size={15} aria-hidden="true" />}
+          {testing ? 'Stop test' : 'Test microphone'}
+        </button>
+        <span className="level-meter" role="meter" aria-label="Microphone level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(meterFraction(level) * 100)}>
+          <span style={{ width: `${(1 - meterFraction(level)) * 100}%` }} />
+        </span>
+      </div>
+      {micError && <p className="error">{micError}</p>}
+
+      {status && !status.encryptionAvailable && (
+        <p className="error">This system cannot encrypt the key (no keychain or keyring), so it cannot be saved.</p>
+      )}
+      <form className="field" onSubmit={handleSave}>
+        <label htmlFor="deepgram-key">Deepgram API key</label>
+        <div className="settings-row">
+          <input
+            id="deepgram-key"
+            className="input settings-key"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={status?.hasKey ? 'A key is saved. Enter a new one to replace it.' : 'Deepgram key'}
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+          />
+          <button type="submit" className="button" disabled={!key.trim() || busy || status?.encryptionAvailable === false}>
+            <KeyRound size={15} aria-hidden="true" /> Save key
+          </button>
+          {status?.hasKey && (
+            <button type="button" className="button" onClick={handleRemove}>
+              <Trash2 size={15} aria-hidden="true" /> Remove
+            </button>
+          )}
+        </div>
+        <span className="hint">Encrypted by your operating system and stored on this computer only. It is never shown again.</span>
+      </form>
+      <div className="settings-row">
+        <button type="button" className="button" onClick={handleTest} disabled={busy || !status?.hasKey}>
+          <PlugZap size={15} aria-hidden="true" /> Test connection
+        </button>
+        {result && (
+          <span className={result.ok ? 'hint' : 'error'} role="status">
+            {result.text}
+          </span>
+        )}
+      </div>
+
+      <label className="inline-check">
+        <input type="checkbox" checked={settings.saveTranscripts} onChange={(e) => updateSettings({ saveTranscripts: e.target.checked })} />
+        Save transcripts
+      </label>
+      <p className="hint">
+        Off: the transcript is kept in memory only and is gone when the app closes. On: each listening session is also written to a
+        text file{status ? ` in ${status.transcriptsFolder}` : ''}.
+      </p>
+    </Section>
+  )
+}
+
 export function SettingsPanel() {
   const settings = useOperatorStore((s) => s.settings)
   const updateSettings = useOperatorStore((s) => s.updateSettings)
@@ -280,6 +443,8 @@ export function SettingsPanel() {
       </Section>
 
       <AiSection />
+
+      <ListenerSection />
 
       <Section icon={<Save size={16} aria-hidden="true" />} title="Autosave and backups">
         <label className="inline-check">

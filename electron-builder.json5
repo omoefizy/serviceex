@@ -15,6 +15,13 @@
     "target": [
       "dmg"
     ],
+    // macOS shows this when asking for the microphone; without it the request fails silently.
+    "extendInfo": {
+      "NSMicrophoneUsageDescription": "WorshipDeck listens to the sermon to show a live transcript."
+    },
+    // Signed builds use the hardened runtime, which also needs the audio-input entitlement.
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.plist",
     "artifactName": "${productName}-Mac-${version}-Installer.${ext}"
   },
   "win": {

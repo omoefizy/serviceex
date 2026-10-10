@@ -908,6 +908,138 @@ button {
   margin-top: var(--space-2);
 }
 
+/* ---------- Sermon listener ---------- */
+
+/* The right column: live and preview on top, the listener below; scrolls as a whole when the window is short. */
+.preview-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--panel);
+}
+
+.preview-column > .preview-panel {
+  flex-shrink: 0;
+}
+
+.listener-panel {
+  flex: 1 0 220px;
+  border-top: 1px solid var(--border);
+}
+
+.listener-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  margin-left: auto;
+  padding: var(--space-0-5) var(--space-2-5);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.listener-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.listener-status.listening {
+  border-color: var(--mode-show);
+  color: var(--mode-show);
+}
+
+.listener-status.listening .listener-dot {
+  animation: listener-pulse 1.4s ease-in-out infinite;
+}
+
+.listener-status.starting,
+.listener-status.connecting,
+.listener-status.stopping {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.listener-status.error {
+  border-color: var(--live);
+  color: var(--live);
+}
+
+@keyframes listener-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .listener-status.listening .listener-dot {
+    animation: none;
+  }
+}
+
+/* Always dark, so settled text reads white and forming words grey in either appearance. */
+.transcript {
+  flex: 1;
+  min-height: 120px;
+  padding: var(--space-3);
+  overflow-y: auto;
+  border-radius: 4px;
+  background: #0b0d10;
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.transcript p {
+  margin: 0;
+}
+
+.transcript-partial {
+  color: #8b92a0;
+}
+
+.transcript-empty {
+  color: #8b92a0;
+  font-size: 13px;
+}
+
+/* Microphone level: green, turning amber then red near the top. */
+.level-meter {
+  position: relative;
+  flex: 1;
+  min-width: 80px;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--mode-show) 0 70%, #f59e0b 70% 90%, var(--live) 90%);
+}
+
+/* Covers the unlit part, from the right, so the colors stay put along the meter. */
+.level-meter > span {
+  position: absolute;
+  inset: 0 0 0 auto;
+  background: var(--panel-raised);
+  transition: width 90ms linear;
+}
+
+.level-meter.small {
+  max-width: 140px;
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .themed-logo-image {
   max-width: 60%;
   max-height: 60%;

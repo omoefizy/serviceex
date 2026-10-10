@@ -247,6 +247,10 @@ export interface AppSettings {
   aiModel: AiModel
   /** Cmd+Down stages the next schedule item in the preview; with this on it also goes live, as it used to. */
   autoGoLiveOnNext: boolean
+  /** The microphone the sermon listener uses (a MediaDeviceInfo deviceId), or null for the system default. */
+  micDeviceId: string | null
+  /** Writes each finished line of the live transcript to a file; off keeps the transcript in memory only. */
+  saveTranscripts: boolean
 }
 
 export interface DisplayInfo {
@@ -440,6 +444,7 @@ export interface WorshipDeckApi {
   settings: SettingsApi
   stage: StageApi
   ai: AiApi
+  speech: SpeechApi
   output: {
     /** Sends the operator's output state to the output window. */
     send(state: OutputState): void
@@ -530,4 +535,50 @@ export interface AiApi {
   /** Checks the saved key can reach the chosen model. Resolves to the model's display name. */
   testConnection(): Promise<AiResult<{ model: string }>>
   ask<T extends AiTask>(task: T, input: AiTasks[T]['input']): Promise<AiResult<AiTasks[T]['output']>>
+}
+
+// ---------- Live sermon listener ----------
+
+/** What the speech engine is doing. The renderer adds 'starting' while it opens the microphone. */
+export type SpeechStatus = 'idle' | 'connecting' | 'listening' | 'stopping' | 'error'
+
+export type SpeechErrorCode = 'no_key' | 'invalid_key' | 'no_encryption' | 'auth' | 'network' | 'busy' | 'engine'
+
+export interface SpeechError {
+  code: SpeechErrorCode
+  /** A sentence to show the operator. */
+  message: string
+}
+
+export type SpeechResult<T> = { ok: true; value: T } | { ok: false; error: SpeechError }
+
+export interface SpeechKeyStatus {
+  hasKey: boolean
+  encryptionAvailable: boolean
+  /** Where saved transcripts go. */
+  transcriptsFolder: string
+}
+
+/** Sent from the main process to the window that started listening. */
+export type SpeechEvent =
+  | { type: 'partial'; text: string }
+  | { type: 'final'; text: string }
+  | { type: 'status'; status: SpeechStatus }
+  | { type: 'error'; error: SpeechError }
+
+/** The Deepgram key goes to the main process once, in setKey, and is never sent back. */
+export interface SpeechApi {
+  status(): Promise<SpeechKeyStatus>
+  setKey(key: string): Promise<SpeechResult<SpeechKeyStatus>>
+  clearKey(): Promise<SpeechKeyStatus>
+  /** Checks the key and opens (then closes) a streaming connection. */
+  testConnection(): Promise<SpeechResult<{ model: string }>>
+  /** Asks the operating system for microphone access where it needs asking (macOS); resolves to whether it is allowed. */
+  micAccess(): Promise<boolean>
+  /** Connects the speech engine; audio sent with pushAudio is transcribed until stop. */
+  start(): Promise<SpeechResult<null>>
+  stop(): Promise<void>
+  /** 100 ms of 16 kHz mono 16-bit little-endian PCM. */
+  pushAudio(chunk: ArrayBuffer): void
+  onEvent(listener: (event: SpeechEvent) => void): () => void
 }

@@ -203,6 +203,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     aiEnabled: true,
     aiModel: 'claude-sonnet-5-5',
     autoGoLiveOnNext: false,
+    micDeviceId: null,
+    saveTranscripts: false,
   },
   themes: [],
   themeDefaults: null,

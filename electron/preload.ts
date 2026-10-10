@@ -5,6 +5,8 @@ import type {
   MediaApi,
   OutputState,
   ServicesApi,
+  SpeechApi,
+  SpeechEvent,
   SettingsApi,
   SongFilesApi,
   SongsApi,
@@ -141,5 +143,22 @@ const ai: AiApi = {
   ask: (task, input) => ipcRenderer.invoke('ai:ask', task, input),
 }
 
-const api: WorshipDeckApi = { songs, bible, services, songFiles, themes, media, settings, stage, ai, output }
+// The Deepgram key goes to the main process once, in setKey, and is never sent back.
+const speech: SpeechApi = {
+  status: () => ipcRenderer.invoke('speech:status'),
+  setKey: (key) => ipcRenderer.invoke('speech:setKey', key),
+  clearKey: () => ipcRenderer.invoke('speech:clearKey'),
+  testConnection: () => ipcRenderer.invoke('speech:test'),
+  micAccess: () => ipcRenderer.invoke('speech:micAccess'),
+  start: () => ipcRenderer.invoke('speech:start'),
+  stop: () => ipcRenderer.invoke('speech:stop'),
+  pushAudio: (chunk) => ipcRenderer.send('speech:audio', new Uint8Array(chunk)),
+  onEvent(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, message: SpeechEvent) => listener(message)
+    ipcRenderer.on('speech:event', handler)
+    return () => ipcRenderer.off('speech:event', handler)
+  },
+}
+
+const api: WorshipDeckApi = { songs, bible, services, songFiles, themes, media, settings, stage, ai, speech, output }
 contextBridge.exposeInMainWorld('api', api)
