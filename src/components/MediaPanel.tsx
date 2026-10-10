@@ -1,3 +1,4 @@
+import { Trash2, Upload } from 'lucide-react'
 import { useState } from 'react'
 import type { MediaItem } from '../../shared/types'
 import { matchesSearch } from '../lib/media'
@@ -60,7 +61,7 @@ function MediaDetails({ item, onClose }: { item: MediaItem; onClose(): void }) {
           </>
         ) : (
           <button className="button" onClick={() => setConfirmingDelete(true)}>
-            Delete…
+            <Trash2 size={15} aria-hidden="true" /> Delete…
           </button>
         )}
         <button
@@ -98,7 +99,7 @@ export function MediaPanel() {
       <header className="panel-header">
         <h2>Media</h2>
         <button className="button primary" onClick={() => importFiles()}>
-          Import…
+          <Upload size={15} aria-hidden="true" /> Import…
         </button>
       </header>
 

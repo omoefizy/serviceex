@@ -206,9 +206,44 @@ function uniqueName(base: string, themes: Theme[]): string {
 /** "wd-media://local/1712345-ab12-sunrise.jpg" → "sunrise.jpg" (older files have no "ab12-" part). */
 const mediaName = (src: string) => decodeURIComponent(src.split('/').pop() ?? '').replace(/^\d+-([a-z0-9]{4}-)?/, '')
 
-export function ThemeEditor() {
+/** The default theme for songs, scripture and announcements; shown in the theme editor and in Settings. */
+export function ThemeDefaultsForm() {
   const themes = useOperatorStore((s) => s.themes)
   const defaults = useOperatorStore((s) => s.themeDefaults)
+  const loadThemes = useOperatorStore((s) => s.loadThemes)
+  const [error, setError] = useState<string | null>(null)
+
+  async function setDefault(type: ThemeContentType, id: number) {
+    try {
+      await window.api.themes.setDefault(type, id)
+      await loadThemes()
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  return (
+    <div className="theme-defaults">
+      {THEME_CONTENT_TYPES.map((type) => (
+        <label key={type} className="field">
+          <span>Default for {CONTENT_LABELS[type].toLowerCase()}</span>
+          <select className="input" value={defaults?.[type] ?? ''} onChange={(e) => setDefault(type, Number(e.target.value))}>
+            {themes.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ))}
+      {error && <p className="error">{error}</p>}
+    </div>
+  )
+}
+
+export function ThemeEditor() {
+  const themes = useOperatorStore((s) => s.themes)
   const initialId = useOperatorStore((s) => s.deckThemeId ?? selectBaseThemeId(s) ?? s.themes[0]?.id ?? null)
   const loadThemes = useOperatorStore((s) => s.loadThemes)
   const openThemeEditor = useOperatorStore((s) => s.openThemeEditor)
@@ -311,12 +346,6 @@ export function ThemeEditor() {
       setSelectedId(null)
     })
 
-  const setDefault = (type: ThemeContentType, id: number) =>
-    run(async () => {
-      await window.api.themes.setDefault(type, id)
-      await loadThemes()
-    })
-
   return (
     <section className="panel theme-editor">
       <header className="panel-header">
@@ -326,20 +355,7 @@ export function ThemeEditor() {
         </button>
       </header>
 
-      <div className="theme-defaults">
-        {THEME_CONTENT_TYPES.map((type) => (
-          <label key={type} className="field">
-            <span>Default for {CONTENT_LABELS[type].toLowerCase()}</span>
-            <select className="input" value={defaults?.[type] ?? ''} onChange={(e) => setDefault(type, Number(e.target.value))}>
-              {themes.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ))}
-      </div>
+      <ThemeDefaultsForm />
 
       <div className="theme-editor-body">
         <ul className="theme-list">

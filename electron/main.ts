@@ -10,6 +10,9 @@ import { registerSongFileIpc } from './ipc/songFiles'
 import { registerThemeIpc } from './ipc/themes'
 import { registerMediaIpc } from './ipc/media'
 import { registerSettingsIpc } from './ipc/settings'
+import { registerStageIpc, sendLastStageState } from './ipc/stage'
+import { startBackupSchedule } from './backup'
+import { getAppSettings } from './db/settings'
 import { registerMediaProtocol, registerMediaScheme } from './media'
 import { registerOutputIpc, sendLastOutputState } from './ipc/output'
 
@@ -38,6 +41,16 @@ registerMediaScheme()
 
 let win: BrowserWindow | null
 let outputWin: BrowserWindow | null = null
+let stageWin: BrowserWindow | null = null
+
+/** Loads the renderer, optionally at a hash route such as /output. */
+function loadRenderer(target: BrowserWindow, route?: string) {
+  if (VITE_DEV_SERVER_URL) {
+    target.loadURL(route ? `${VITE_DEV_SERVER_URL}#${route}` : VITE_DEV_SERVER_URL)
+  } else {
+    target.loadFile(path.join(RENDERER_DIST, 'index.html'), route ? { hash: route } : undefined)
+  }
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -59,19 +72,31 @@ function createWindow() {
     win.loadFile(path.join(RENDERER_DIST, 'index.html'))
   }
 
-  // The output window has no use without the operator window.
+  // The output and stage windows have no use without the operator window.
   win.on('closed', () => {
     win = null
     outputWin?.close()
+    stageWin?.close()
   })
 }
 
-/** Opens the projector output: fullscreen on a secondary display if there is one, otherwise a 16:9 window. */
-function createOutputWindow() {
+/** The display chosen in Settings; 'auto' is the first display that is not the primary one. Null means a window. */
+function outputDisplay(): Electron.Display | null {
+  const choice = getAppSettings().outputDisplay
+  if (choice === 'window') return null
+  const displays = screen.getAllDisplays()
+  // A display that has been unplugged falls back to automatic.
+  const chosen = typeof choice === 'number' ? displays.find((display) => display.id === choice) : undefined
+  if (chosen) return chosen
   const primaryId = screen.getPrimaryDisplay().id
-  const external = screen.getAllDisplays().find((display) => display.id !== primaryId)
+  return displays.find((display) => display.id !== primaryId) ?? null
+}
 
-  outputWin = new BrowserWindow({
+/** Opens the projector output: fullscreen on the chosen display (see outputDisplay), otherwise a 16:9 window. */
+function createOutputWindow() {
+  const external = outputDisplay()
+
+  const output = new BrowserWindow({
     title: 'WorshipDeck Output',
     backgroundColor: '#000',
     ...(external
@@ -82,18 +107,38 @@ function createOutputWindow() {
     },
   })
 
-  outputWin.webContents.on('did-finish-load', () => {
-    if (outputWin) sendLastOutputState(outputWin)
+  outputWin = output
+  output.webContents.on('did-finish-load', () => sendLastOutputState(output))
+  output.on('closed', () => {
+    // A replacement may already be open when the display setting changes.
+    if (outputWin === output) outputWin = null
   })
-  outputWin.on('closed', () => {
-    outputWin = null
-  })
+  loadRenderer(output, '/output')
+}
 
-  if (VITE_DEV_SERVER_URL) {
-    outputWin.loadURL(`${VITE_DEV_SERVER_URL}#/output`)
-  } else {
-    outputWin.loadFile(path.join(RENDERER_DIST, 'index.html'), { hash: '/output' })
+/** The stage display for the worship leader: an ordinary window to drag onto a confidence monitor. */
+function openStageWindow() {
+  if (stageWin) {
+    stageWin.focus()
+    return
   }
+  const stage = new BrowserWindow({
+    title: 'WorshipDeck Stage',
+    width: 1280,
+    height: 720,
+    backgroundColor: '#000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.mjs'),
+    },
+  })
+  stageWin = stage
+  stage.webContents.on('did-finish-load', () => sendLastStageState(stage))
+  stage.on('closed', () => {
+    if (stageWin === stage) stageWin = null
+    win?.webContents.send('stage:open-changed', false)
+  })
+  loadRenderer(stage, '/stage')
+  win?.webContents.send('stage:open-changed', true)
 }
 
 // Quit when all windows are closed, except on macOS. There, it's common
@@ -124,7 +169,15 @@ app.whenReady().then(() => {
   registerSongFileIpc()
   registerThemeIpc()
   registerMediaIpc()
-  registerSettingsIpc()
+  registerSettingsIpc((before, after) => {
+    // Move the output by rebuilding its window; fullscreen and frame cannot change in place.
+    if (before.outputDisplay !== after.outputDisplay) {
+      outputWin?.destroy()
+      createOutputWindow()
+    }
+  })
+  registerStageIpc({ open: openStageWindow, close: () => stageWin?.close(), getWindow: () => stageWin })
+  startBackupSchedule()
   registerOutputIpc(() => outputWin)
   createWindow()
   createOutputWindow()

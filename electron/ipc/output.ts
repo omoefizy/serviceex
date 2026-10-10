@@ -4,7 +4,7 @@ import type { OutputMode, OutputState } from '../../shared/types'
 
 const MODES: OutputMode[] = ['show', 'black', 'clear', 'logo']
 
-let lastState: OutputState = { mode: 'black', text: '', caption: '', theme: DEFAULT_THEME_STYLE, fadeMs: 400 }
+let lastState: OutputState = { mode: 'black', text: '', caption: '', theme: DEFAULT_THEME_STYLE, fadeMs: 400, logoUrl: null }
 
 function assertOutputState(value: unknown): OutputState {
   const state = value as Partial<OutputState> | null
@@ -16,9 +16,10 @@ function assertOutputState(value: unknown): OutputState {
     typeof state.caption !== 'string' ||
     typeof state.theme !== 'object' ||
     typeof state.fadeMs !== 'number' ||
-    !Number.isFinite(state.fadeMs)
+    !Number.isFinite(state.fadeMs) ||
+    (state.logoUrl !== null && !(typeof state.logoUrl === 'string' && state.logoUrl.startsWith('wd-media://')))
   ) {
-    throw new TypeError('Output state needs a mode, text, caption, theme and fade length')
+    throw new TypeError('Output state needs a mode, text, caption, theme, fade length and logo (or null)')
   }
   return {
     mode: state.mode as OutputMode,
@@ -26,6 +27,7 @@ function assertOutputState(value: unknown): OutputState {
     caption: state.caption,
     theme: normalizeTheme(state.theme),
     fadeMs: Math.min(1500, Math.max(0, state.fadeMs)),
+    logoUrl: state.logoUrl,
   }
 }
 

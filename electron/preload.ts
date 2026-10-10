@@ -7,6 +7,8 @@ import type {
   SettingsApi,
   SongFilesApi,
   SongsApi,
+  StageApi,
+  StageState,
   ThemesApi,
   WorshipDeckApi,
 } from '../shared/types'
@@ -95,6 +97,27 @@ const media: MediaApi = {
 const settings: SettingsApi = {
   get: () => ipcRenderer.invoke('settings:get'),
   set: (patch) => ipcRenderer.invoke('settings:set', patch),
+  listDisplays: () => ipcRenderer.invoke('settings:listDisplays'),
+  pickBackupFolder: () => ipcRenderer.invoke('settings:pickBackupFolder'),
+  pickLogo: () => ipcRenderer.invoke('settings:pickLogo'),
+  backupNow: () => ipcRenderer.invoke('settings:backupNow'),
+}
+
+const stage: StageApi = {
+  open: () => ipcRenderer.invoke('stage:open'),
+  close: () => ipcRenderer.invoke('stage:close'),
+  isOpen: () => ipcRenderer.invoke('stage:isOpen'),
+  onOpenChange(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, open: boolean) => listener(open)
+    ipcRenderer.on('stage:open-changed', handler)
+    return () => ipcRenderer.off('stage:open-changed', handler)
+  },
+  send: (state) => ipcRenderer.send('stage:send', state),
+  onState(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, state: StageState) => listener(state)
+    ipcRenderer.on('stage:state', handler)
+    return () => ipcRenderer.off('stage:state', handler)
+  },
 }
 
 const output: WorshipDeckApi['output'] = {
@@ -106,5 +129,5 @@ const output: WorshipDeckApi['output'] = {
   },
 }
 
-const api: WorshipDeckApi = { songs, bible, services, songFiles, themes, media, settings, output }
+const api: WorshipDeckApi = { songs, bible, services, songFiles, themes, media, settings, stage, output }
 contextBridge.exposeInMainWorld('api', api)

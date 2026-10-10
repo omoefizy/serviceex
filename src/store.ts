@@ -11,6 +11,7 @@ import type {
   ServiceItemType,
   ServiceWithItems,
   Song,
+  StageState,
   Theme,
   ThemeBackground,
   ThemeDefaults,
@@ -45,13 +46,17 @@ interface OperatorState {
    * 'item:<id>' for other schedule items, 'scripture:<reference>' for a scripture lookup. Null when empty.
    */
   deckKey: string | null
-  /** Output crossfade length in milliseconds. */
-  fadeMs: number
+  /** App settings from the main process (crossfade, output display, logo, appearance, backups). */
+  settings: AppSettings
   themes: Theme[]
   themeDefaults: ThemeDefaults | null
   /** The theme picked above the slide grid for what is loaded now; null uses the song's theme or the default. */
   deckThemeId: number | null
   themeEditorOpen: boolean
+  settingsOpen: boolean
+  paletteOpen: boolean
+  /** Whether the stage display window is open; kept in step by App from the main process. */
+  stageOpen: boolean
   /** The service open in the schedule panel. */
   service: ServiceWithItems | null
   /** The schedule item whose slides are in the grid, or null when the grid came from the library. */
@@ -88,12 +93,20 @@ interface OperatorState {
   loadThemes(): Promise<void>
   setDeckTheme(id: number | null): void
   loadSettings(): Promise<void>
+  /** Saves settings and keeps what the main process stored (it tidies or rejects bad values). */
+  updateSettings(patch: Partial<AppSettings>): Promise<void>
   setFadeMs(fadeMs: number): Promise<void>
   /** Gives one slide of the loaded deck a library background, or clears it with null. */
   setSlideBackground(index: number, mediaId: number | null): Promise<void>
   /** Reloads the loaded deck's slide backgrounds, after a library item is deleted for example. */
   refreshSlideBackgrounds(): Promise<void>
   openThemeEditor(open: boolean): void
+  openSettings(open: boolean): void
+  setPaletteOpen(open: boolean): void
+  setStageOpen(open: boolean): void
+  toggleStage(): Promise<void>
+  /** Closes the song editor, theme editor and settings so the slide grid shows. */
+  showGrid(): void
   mediaChanged(): void
   /** Tells the song list to reload, after an import for example. */
   songsChanged(): void
@@ -113,11 +126,23 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   outputMode: 'show',
   deckType: null,
   deckKey: null,
-  fadeMs: 400,
+  settings: {
+    fadeMs: 400,
+    outputDisplay: 'auto',
+    logoUrl: null,
+    appearance: 'system',
+    autosaveDrafts: true,
+    backupFolder: null,
+    backupIntervalMinutes: 0,
+    lastBackupAt: null,
+  },
   themes: [],
   themeDefaults: null,
   deckThemeId: null,
   themeEditorOpen: false,
+  settingsOpen: false,
+  paletteOpen: false,
+  stageOpen: false,
   service: null,
   activeItemId: null,
   editingSongId: null,
@@ -256,8 +281,9 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     if ((await get().loadItem(next)) && get().slides.length > 0) get().showSlide(0)
   },
 
+  // The song editor, theme editor and settings share the centre panel, so opening one closes the others.
   editSong(id) {
-    set({ editingSongId: id, themeEditorOpen: id === null ? get().themeEditorOpen : false })
+    set(id === null ? { editingSongId: null } : { editingSongId: id, themeEditorOpen: false, settingsOpen: false })
   },
 
   async loadThemes() {
@@ -272,13 +298,16 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   async loadSettings() {
-    set({ fadeMs: (await window.api.settings.get()).fadeMs })
+    set({ settings: await window.api.settings.get() })
+  },
+
+  async updateSettings(patch) {
+    set({ settings: { ...get().settings, ...patch } })
+    set({ settings: await window.api.settings.set(patch) })
   },
 
   async setFadeMs(fadeMs) {
-    set({ fadeMs })
-    const saved: AppSettings = await window.api.settings.set({ fadeMs })
-    set({ fadeMs: saved.fadeMs })
+    await get().updateSettings({ fadeMs })
   },
 
   async setSlideBackground(index, mediaId) {
@@ -293,7 +322,27 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   openThemeEditor(open) {
-    set({ themeEditorOpen: open, editingSongId: open ? null : get().editingSongId })
+    set(open ? { themeEditorOpen: true, editingSongId: null, settingsOpen: false } : { themeEditorOpen: false })
+  },
+
+  openSettings(open) {
+    set(open ? { settingsOpen: true, editingSongId: null, themeEditorOpen: false } : { settingsOpen: false })
+  },
+
+  setPaletteOpen(open) {
+    set({ paletteOpen: open })
+  },
+
+  setStageOpen(open) {
+    set({ stageOpen: open })
+  },
+
+  async toggleStage() {
+    await (get().stageOpen ? window.api.stage.close() : window.api.stage.open())
+  },
+
+  showGrid() {
+    set({ editingSongId: null, themeEditorOpen: false, settingsOpen: false })
   },
 
   mediaChanged() {
@@ -374,7 +423,29 @@ export function selectOutputState(s: OperatorState): OutputState {
     text: live?.text ?? '',
     caption: live?.caption ?? '',
     theme: slideTheme(selectDeckTheme(s), live),
-    fadeMs: s.fadeMs,
+    fadeMs: s.settings.fadeMs,
+    logoUrl: s.settings.logoUrl,
+  }
+}
+
+/** The slide after the live one, or the first slide when nothing is live. */
+export function selectNextSlide(s: OperatorState): DeckSlide | null {
+  const index = s.liveSlideIndex === null ? 0 : s.liveSlideIndex + 1
+  return s.slides[index] ?? null
+}
+
+/** What the stage display should show the worship leader. */
+export function selectStageState(s: OperatorState): StageState {
+  const live = s.liveSlideIndex === null ? null : s.slides[s.liveSlideIndex]
+  const next = selectNextSlide(s)
+  const items = s.service?.items ?? []
+  const nextItem = items[items.findIndex((item) => item.id === s.activeItemId) + 1]
+  return {
+    current: live ? { text: live.text, caption: live.caption } : null,
+    next: next ? { text: next.text, caption: next.caption } : null,
+    title: s.deckTitle,
+    nextItemTitle: nextItem?.title ?? null,
+    mode: s.outputMode,
   }
 }
 

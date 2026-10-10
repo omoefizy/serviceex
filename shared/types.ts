@@ -102,6 +102,8 @@ export interface OutputState extends SlideContent {
   mode: OutputMode
   /** Crossfade length for slide and background changes, in milliseconds. */
   fadeMs: number
+  /** The church logo for logo mode, or null for the placeholder. */
+  logoUrl: string | null
   /** The resolved theme, sent whole so the output window needs no database access. */
   theme: ThemeStyle
 }
@@ -220,14 +222,68 @@ export interface MediaApi {
   saveImage(png: Uint8Array): Promise<string>
 }
 
+/** Which screen the output window uses: the first non-primary display, a windowed output, or one display. */
+export type OutputDisplay = 'auto' | 'window' | number
+
 export interface AppSettings {
   /** Crossfade between slides and backgrounds on the output, 0 to 1500 ms. */
   fadeMs: number
+  outputDisplay: OutputDisplay
+  /** wd-media:// URL of the logo shown in logo mode, or null for the placeholder. */
+  logoUrl: string | null
+  appearance: 'system' | 'dark' | 'light'
+  /** Whether the song editor keeps unsaved edits as drafts. */
+  autosaveDrafts: boolean
+  /** Folder for automatic database backups, or null for none. */
+  backupFolder: string | null
+  /** Minutes between automatic backups; 0 turns them off. */
+  backupIntervalMinutes: 0 | 10 | 30 | 60
+  /** When the last backup finished (ISO time), set by the main process. */
+  lastBackupAt: string | null
+}
+
+export interface DisplayInfo {
+  id: number
+  label: string
+  width: number
+  height: number
+  primary: boolean
 }
 
 export interface SettingsApi {
   get(): Promise<AppSettings>
+  /** lastBackupAt is ignored; the main process sets it. */
   set(settings: Partial<AppSettings>): Promise<AppSettings>
+  listDisplays(): Promise<DisplayInfo[]>
+  /** Picks a folder for backups and saves it. Resolves to the new settings, or null if cancelled. */
+  pickBackupFolder(): Promise<AppSettings | null>
+  /** Picks a logo image, copies it into the media folder and saves it. Resolves to the new settings, or null if cancelled. */
+  pickLogo(): Promise<AppSettings | null>
+  /** Backs up the database into the backup folder now. Resolves to the file written. */
+  backupNow(): Promise<string>
+}
+
+/** What the stage display shows the worship leader. */
+export interface StageState {
+  /** The live slide, or null when nothing is live. */
+  current: SlideContent | null
+  /** The slide after it in the grid. */
+  next: SlideContent | null
+  /** What is loaded: a song title, a scripture reference. */
+  title: string | null
+  /** The schedule item after the loaded one, for "coming up". */
+  nextItemTitle: string | null
+  mode: OutputMode
+}
+
+export interface StageApi {
+  open(): Promise<void>
+  close(): Promise<void>
+  isOpen(): Promise<boolean>
+  /** Called when the stage window opens or closes, including by its own close button. */
+  onOpenChange(listener: (open: boolean) => void): () => void
+  send(state: StageState): void
+  onState(listener: (state: StageState) => void): () => void
 }
 
 /** The editable fields of a song, used when creating or updating one. */
@@ -342,6 +398,7 @@ export interface WorshipDeckApi {
   themes: ThemesApi
   media: MediaApi
   settings: SettingsApi
+  stage: StageApi
   output: {
     /** Sends the operator's output state to the output window. */
     send(state: OutputState): void

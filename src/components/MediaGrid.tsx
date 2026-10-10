@@ -1,3 +1,4 @@
+import { Film, Upload } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { MediaItem } from '../../shared/types'
 import { matchesSearch, MEDIA_DRAG_TYPE } from '../lib/media'
@@ -30,9 +31,7 @@ export function MediaGrid({ items, selectedId = null, onSelect, draggable = fals
               {item.thumbUrl || item.kind === 'image' ? (
                 <img src={item.thumbUrl ?? item.url} alt="" draggable={false} loading="lazy" />
               ) : (
-                <span className="media-thumb-placeholder" aria-hidden="true">
-                  ▶
-                </span>
+                <Film className="media-thumb-placeholder" size={20} aria-hidden="true" />
               )}
               {item.kind === 'video' && <span className="media-badge">Video</span>}
             </span>
@@ -76,7 +75,7 @@ export function MediaPickerModal({ kind, onPick, onCancel }: PickerProps) {
         <div className="media-toolbar">
           <input className="input" type="search" placeholder="Search name or tag" value={search} onChange={(e) => setSearch(e.target.value)} autoFocus />
           <button className="button" onClick={handleImport}>
-            Import…
+            <Upload size={15} aria-hidden="true" /> Import…
           </button>
         </div>
         {error && <p className="error">{error}</p>}

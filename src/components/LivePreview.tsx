@@ -1,45 +1,27 @@
 import { useMemo } from 'react'
-import type { OutputMode } from '../../shared/types'
-import { selectDeckTheme, slideTheme, useOperatorStore } from '../store'
+import { selectDeckTheme, selectNextSlide, slideTheme, useOperatorStore } from '../store'
 import { ThemedSlide } from './ThemedSlide'
 
-const MODES: { mode: OutputMode; label: string }[] = [
-  { mode: 'show', label: 'Show' },
-  { mode: 'black', label: 'Black' },
-  { mode: 'clear', label: 'Clear' },
-  { mode: 'logo', label: 'Logo' },
-]
-
+/** What the projector shows now, the slide that comes next, and the crossfade length. The mode buttons live in the toolbar. */
 export function LivePreview() {
   const slide = useOperatorStore((s) => (s.liveSlideIndex === null ? null : s.slides[s.liveSlideIndex]))
+  const next = useOperatorStore(selectNextSlide)
   const mode = useOperatorStore((s) => s.outputMode)
   const deckTheme = useOperatorStore(selectDeckTheme)
   const theme = useMemo(() => slideTheme(deckTheme, slide), [deckTheme, slide])
-  const fadeMs = useOperatorStore((s) => s.fadeMs)
+  const nextTheme = useMemo(() => slideTheme(deckTheme, next), [deckTheme, next])
+  const fadeMs = useOperatorStore((s) => s.settings.fadeMs)
+  const logoUrl = useOperatorStore((s) => s.settings.logoUrl)
   const setFadeMs = useOperatorStore((s) => s.setFadeMs)
-  const setOutputMode = useOperatorStore((s) => s.setOutputMode)
-  const onAir = mode === 'show' && slide !== null
 
   return (
     <section className="panel preview-panel">
       <header className="panel-header">
-        <h2>Live</h2>
-        <span className={`live-badge${onAir ? ' on' : ''}`}>
-          {onAir ? 'ON AIR' : mode === 'show' ? 'OFF' : mode.toUpperCase()}
-        </span>
+        <h2>Live output</h2>
       </header>
 
-      <div className="output-modes">
-        {MODES.map(({ mode: m, label }) => (
-          <button
-            key={m}
-            className={`button${mode === m ? ' active' : ''}`}
-            aria-pressed={mode === m}
-            onClick={() => setOutputMode(m)}
-          >
-            {label}
-          </button>
-        ))}
+      <div className={`preview-screen${mode === 'show' && slide ? ' on-air' : ''}`}>
+        <ThemedSlide theme={theme} text={slide?.text ?? ''} caption={slide?.caption} mode={mode} logoUrl={logoUrl} />
       </div>
 
       <label className="fade-control">
@@ -55,8 +37,9 @@ export function LivePreview() {
         <span className="fade-value">{(fadeMs / 1000).toFixed(1)} s</span>
       </label>
 
-      <div className="preview-screen">
-        <ThemedSlide theme={theme} text={slide?.text ?? ''} caption={slide?.caption} mode={mode} />
+      <h2 className="preview-subheading">Next</h2>
+      <div className="preview-screen next">
+        {next ? <ThemedSlide theme={nextTheme} text={next.text} caption={next.caption} still /> : <p className="empty">End of slides</p>}
       </div>
     </section>
   )

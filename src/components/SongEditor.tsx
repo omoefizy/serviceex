@@ -1,3 +1,4 @@
+import { Copy, Download, Merge, Scissors } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { buildSongSlides, findSection, isArrangement, LINES_PER_SLIDE_OPTIONS, parseLyrics } from '../../shared/lyrics'
 import type { ExportFormat, Song, SongArrangement, SongInput } from '../../shared/types'
@@ -118,6 +119,7 @@ export function SongEditor({ songId }: { songId: number }) {
   const editSong = useOperatorStore((s) => s.editSong)
   const songSaved = useOperatorStore((s) => s.songSaved)
   const songDeleted = useOperatorStore((s) => s.songDeleted)
+  const autosaveDrafts = useOperatorStore((s) => s.settings.autosaveDrafts)
   const themes = useOperatorStore((s) => s.themes)
   const songDefaultTheme = useOperatorStore((s) => s.themes.find((t) => t.id === s.themeDefaults?.song))
 
@@ -162,7 +164,7 @@ export function SongEditor({ songId }: { songId: number }) {
     }
   }, [songId])
 
-  // Autosave a draft shortly after typing stops; drop it once the form matches the library again.
+  // Autosave a draft shortly after typing stops (unless turned off in Settings); drop it once the form matches the library again.
   useEffect(() => {
     if (!form || !saved) return
     if (sameForm(form, saved)) {
@@ -170,17 +172,19 @@ export function SongEditor({ songId }: { songId: number }) {
       setDraftSavedAt(null)
       return
     }
+    if (!autosaveDrafts) return
     const timer = setTimeout(() => {
       writeDraft(songId, form)
       setDraftSavedAt(Date.now())
     }, 600)
     return () => clearTimeout(timer)
-  }, [form, saved, songId])
+  }, [form, saved, songId, autosaveDrafts])
 
   // Keep the last keystrokes when the editor closes or the window reloads before the autosave timer fires.
   useEffect(() => {
     const flush = () => {
       const { form, saved } = latestRef.current
+      if (!useOperatorStore.getState().settings.autosaveDrafts) return
       if (!deletedRef.current && form && saved && !sameForm(form, saved)) writeDraft(songId, form)
     }
     window.addEventListener('beforeunload', flush)
@@ -321,7 +325,7 @@ export function SongEditor({ songId }: { songId: number }) {
           )}
           <details className="menu">
             <summary className="button" title={dirty ? 'Exports the last saved version' : undefined}>
-              Export
+              <Download size={15} aria-hidden="true" /> Export
             </summary>
             <div className="menu-items">
               <button className="button" onClick={(e) => handleExport('openlyrics', e.currentTarget)}>
@@ -402,13 +406,13 @@ export function SongEditor({ songId }: { songId: number }) {
 
       <div className="editor-toolbar">
         <button type="button" className="button" onMouseDown={keepFocus} onClick={() => applyTool(splitSlideAt)}>
-          Split slide here
+          <Scissors size={15} aria-hidden="true" /> Split slide here
         </button>
         <button type="button" className="button" onMouseDown={keepFocus} onClick={() => applyTool(mergeWithNext)}>
-          Merge with next
+          <Merge size={15} aria-hidden="true" /> Merge with next
         </button>
         <button type="button" className="button" onMouseDown={keepFocus} onClick={() => applyTool(duplicateSection)}>
-          Duplicate section
+          <Copy size={15} aria-hidden="true" /> Duplicate section
         </button>
         <label className="editor-lines">
           Lines per slide

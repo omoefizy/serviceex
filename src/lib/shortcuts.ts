@@ -1,0 +1,24 @@
+import type { OutputMode } from '../../shared/types'
+
+/** Single-key output shortcuts; they work whenever focus is not in a text field. */
+export const MODE_KEYS: { mode: OutputMode; key: string; label: string }[] = [
+  { mode: 'show', key: 'S', label: 'Show' },
+  { mode: 'black', key: 'B', label: 'Black' },
+  { mode: 'clear', key: 'C', label: 'Clear' },
+  { mode: 'logo', key: 'L', label: 'Logo' },
+]
+
+export const IS_MAC = navigator.platform.toLowerCase().includes('mac')
+
+/** The modifier shown in shortcut hints: ⌘ on macOS, Ctrl elsewhere. */
+export const MOD = IS_MAC ? '⌘' : 'Ctrl+'
+
+/** True when a key press is meant for a text field or a dialog, not for running the show. */
+export function isTyping(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return (
+    target.isContentEditable ||
+    ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) ||
+    !!target.closest('.modal, .palette')
+  )
+}

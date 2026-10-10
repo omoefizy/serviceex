@@ -1,3 +1,4 @@
+import { ListPlus, Pencil, Plus, Upload } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { SongInput, SongSummary } from '../../shared/types'
 import { useOperatorStore } from '../store'
@@ -59,10 +60,10 @@ export function SongList() {
         <h2>Songs</h2>
         <div className="panel-header-actions">
           <button className="button" onClick={() => setImporting(true)} title="Import or export songs">
-            Import
+            <Upload size={15} aria-hidden="true" /> Import
           </button>
           <button className="button primary" onClick={() => setAdding(true)}>
-            + Add song
+            <Plus size={15} aria-hidden="true" /> Add song
           </button>
         </div>
       </header>
@@ -93,7 +94,7 @@ export function SongList() {
               title="Edit song"
               onClick={() => editSong(song.id)}
             >
-              ✎
+              <Pencil size={14} />
             </button>
             <button
               className="icon-button song-action add-to-schedule"
@@ -102,7 +103,7 @@ export function SongList() {
               disabled={!service}
               onClick={() => handleAddToSchedule(song.id)}
             >
-              +
+              <ListPlus size={15} />
             </button>
           </li>
         ))}

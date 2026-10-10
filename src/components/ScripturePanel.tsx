@@ -1,12 +1,11 @@
+import { ListPlus } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { BibleVersionCode, ScripturePayload } from '../../shared/types'
 import { formatReference, parseReference, type ScriptureReference } from '../lib/parseReference'
+import { loadScripture } from '../lib/scripture'
 import { useOperatorStore } from '../store'
 
 const VERSIONS: BibleVersionCode[] = ['KJV', 'WEB']
-
-/** Past the end of the longest chapter (Psalm 119 has 176 verses), so "John 3" loads the whole chapter. */
-const LAST_VERSE = 999
 
 export function ScripturePanel() {
   const [input, setInput] = useState('')
@@ -17,7 +16,6 @@ export function ScripturePanel() {
   const [error, setError] = useState<string | null>(null)
   const [hasBible, setHasBible] = useState<boolean | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const selectScripture = useOperatorStore((s) => s.selectScripture)
   const service = useOperatorStore((s) => s.service)
   const addToSchedule = useOperatorStore((s) => s.addToSchedule)
   const reference = parseReference(input)
@@ -31,24 +29,13 @@ export function ScripturePanel() {
 
   async function load(ref: ScriptureReference, ver: BibleVersionCode): Promise<boolean> {
     try {
-      const verses = await window.api.bible.getRange(
-        ver,
-        ref.book,
-        ref.chapter,
-        ref.verseStart ?? 1,
-        ref.verseEnd ?? LAST_VERSE,
-      )
-      if (verses.length === 0) {
+      const passage = await loadScripture(ref, ver)
+      if (!passage) {
         const books = await window.api.bible.listBooks()
         setHasBible(books.length > 0)
         setError(books.length > 0 ? `${formatReference(ref)} is not in the ${ver}.` : null)
         return false
       }
-      const passage: ScripturePayload = {
-        title: `${formatReference(ref)} ${ver}`,
-        verses: verses.map((v) => ({ text: v.text, caption: `${v.book} ${v.chapter}:${v.verse} ${ver}` })),
-      }
-      selectScripture(passage.title, passage.verses)
       setLoaded(ref)
       setResult(passage)
       setError(null)
@@ -131,7 +118,7 @@ export function ScripturePanel() {
             disabled={!service}
             onClick={() => handleAddToSchedule(result)}
           >
-            + Schedule
+            <ListPlus size={15} aria-hidden="true" /> Schedule
           </button>
         </div>
       )}

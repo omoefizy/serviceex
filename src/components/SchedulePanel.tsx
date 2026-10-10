@@ -1,6 +1,18 @@
+import {
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  Megaphone,
+  Music,
+  Plus,
+  Presentation,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 import { useCallback, useEffect, useState, type DragEvent } from 'react'
 import type { AnnouncementPayload, Service, ServiceItemType } from '../../shared/types'
 import { renderPdfPages } from '../lib/media'
+import { MOD } from '../lib/shortcuts'
 import { useOperatorStore } from '../store'
 import { AnnouncementModal } from './AnnouncementModal'
 import { NewServiceModal } from './NewServiceModal'
@@ -12,40 +24,25 @@ const TYPE_LABELS: Record<ServiceItemType, string> = {
   presentation: 'Presentation',
 }
 
-function ItemIcon({ type }: { type: ServiceItemType }) {
-  return (
-    <svg className="item-icon" viewBox="0 0 24 24" role="img" aria-label={TYPE_LABELS[type]}>
-      {type === 'song' && (
-        <>
-          <path d="M9 18V5l12-2v13" />
-          <circle cx="6" cy="18" r="3" />
-          <circle cx="18" cy="16" r="3" />
-        </>
-      )}
-      {type === 'scripture' && (
-        <>
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z" />
-          <path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" />
-        </>
-      )}
-      {type === 'announcement' && (
-        <>
-          <path d="M3 11v2a1 1 0 0 0 1 1h3l6 4V6L7 10H4a1 1 0 0 0-1 1z" />
-          <path d="M17 8a5 5 0 0 1 0 8" />
-        </>
-      )}
-      {type === 'presentation' && (
-        <>
-          <rect x="3" y="4" width="18" height="12" rx="1" />
-          <path d="M12 16v4M8 20h8" />
-        </>
-      )}
-    </svg>
-  )
+const TYPE_ICONS: Record<ServiceItemType, LucideIcon> = {
+  song: Music,
+  scripture: BookOpen,
+  announcement: Megaphone,
+  presentation: Presentation,
 }
 
-export function SchedulePanel() {
-  const [collapsed, setCollapsed] = useState(false)
+function ItemIcon({ type }: { type: ServiceItemType }) {
+  const Icon = TYPE_ICONS[type]
+  return <Icon className="item-icon" size={16} role="img" aria-label={TYPE_LABELS[type]} />
+}
+
+interface Props {
+  collapsed: boolean
+  onCollapsedChange(collapsed: boolean): void
+}
+
+/** The run list. Its collapsed state belongs to App, which lays out the panel columns. */
+export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
   const [services, setServices] = useState<Service[]>([])
   const [creating, setCreating] = useState(false)
   const [announcing, setAnnouncing] = useState(false)
@@ -138,8 +135,8 @@ export function SchedulePanel() {
   if (collapsed) {
     return (
       <aside className="schedule collapsed">
-        <button className="schedule-toggle" aria-expanded={false} onClick={() => setCollapsed(false)}>
-          <span aria-hidden="true">‹</span>
+        <button className="schedule-toggle" aria-expanded={false} onClick={() => onCollapsedChange(false)}>
+          <ChevronLeft size={16} aria-hidden="true" />
           <span className="schedule-toggle-label">Schedule</span>
         </button>
       </aside>
@@ -154,9 +151,10 @@ export function SchedulePanel() {
           className="icon-button"
           aria-label="Hide schedule"
           aria-expanded={true}
-          onClick={() => setCollapsed(true)}
+          title="Hide schedule"
+          onClick={() => onCollapsedChange(true)}
         >
-          ›
+          <ChevronRight size={16} />
         </button>
       </header>
 
@@ -176,7 +174,7 @@ export function SchedulePanel() {
           ))}
         </select>
         <button className="button" onClick={() => setCreating(true)}>
-          + New service
+          <Plus size={15} aria-hidden="true" /> New service
         </button>
       </div>
 
@@ -215,9 +213,10 @@ export function SchedulePanel() {
             <button
               className="icon-button"
               aria-label={`Remove ${item.title} from schedule`}
+              title="Remove from schedule"
               onClick={() => run(() => removeFromSchedule(item.id))}
             >
-              ×
+              <X size={14} />
             </button>
           </li>
         ))}
@@ -229,12 +228,12 @@ export function SchedulePanel() {
 
       <footer className="schedule-footer">
         <button className="button" disabled={!service} onClick={() => setAnnouncing(true)}>
-          + Announcement
+          <Megaphone size={15} aria-hidden="true" /> Announcement
         </button>
         <button className="button" disabled={!service || progress !== null} onClick={handlePresentation} title="Images or a PDF, one slide per page">
-          + Presentation
+          <Presentation size={15} aria-hidden="true" /> Presentation
         </button>
-        <span className="hint">⌘↓ next item</span>
+        <span className="hint">{MOD}↓ next item</span>
       </footer>
       {progress && <p className="hint">{progress}</p>}
 

@@ -72,13 +72,15 @@ interface Props {
   still?: boolean
   /** The output window draws the background and the text as separate layers so a video background keeps playing across slides. */
   layer?: 'all' | 'background' | 'content'
+  /** The church logo for logo mode; the placeholder shows when null. */
+  logoUrl?: string | null
 }
 
 /**
  * A slide drawn with a theme, filling its parent. Every size is relative to the slide's own height, so the
  * output window, the live preview, thumbnails and the theme editor all lay text out the same way.
  */
-export function ThemedSlide({ theme, text, caption = '', mode = 'show', still = false, layer = 'all' }: Props) {
+export function ThemedSlide({ theme, text, caption = '', mode = 'show', still = false, layer = 'all', logoUrl = null }: Props) {
   const fitRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLParagraphElement>(null)
   const captionRef = useRef<HTMLParagraphElement>(null)
@@ -151,7 +153,7 @@ export function ThemedSlide({ theme, text, caption = '', mode = 'show', still = 
       )}
       {drawContent && mode === 'logo' && (
         <div className="themed-logo">
-          <LogoPlaceholder />
+          {logoUrl ? <img className="themed-logo-image" src={logoUrl} alt="Logo" draggable={false} /> : <LogoPlaceholder />}
         </div>
       )}
       {showText && (

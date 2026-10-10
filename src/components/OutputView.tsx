@@ -76,7 +76,14 @@ export function OutputView() {
       ))}
       {contents.map(({ key, state, leaving, fadeMs }) => (
         <div key={key} className={`output-frame${leaving ? ' leaving' : ''}`} style={{ animationDuration: `${fadeMs}ms` }}>
-          <ThemedSlide theme={state.theme} text={state.text} caption={state.caption} mode={state.mode} layer="content" />
+          <ThemedSlide
+            theme={state.theme}
+            text={state.text}
+            caption={state.caption}
+            mode={state.mode}
+            layer="content"
+            logoUrl={state.logoUrl}
+          />
         </div>
       ))}
     </div>
