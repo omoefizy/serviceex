@@ -82,7 +82,7 @@ export function toAiError(error: unknown): { ok: false; error: AiError } {
     return fail(
       'rate_limited',
       Number.isFinite(retryAfter) && retryAfter > 0
-        ? `Too many AI requests. Try again in ${Math.ceil(retryAfter)} seconds.`
+        ? `Too many AI requests. Try again in ${Math.ceil(retryAfter)} second${Math.ceil(retryAfter) === 1 ? '' : 's'}.`
         : 'Too many AI requests. Wait a moment and try again.',
       Number.isFinite(retryAfter) && retryAfter > 0 ? { retryAfterSeconds: Math.ceil(retryAfter) } : {},
     )

@@ -51,6 +51,8 @@ export interface AnnouncementPayload {
   title: string
   /** Split into slides on blank lines, like song lyrics. */
   body: string
+  /** Starts with a slide showing just the title. Older announcements have no title slide. */
+  titleSlide?: boolean
 }
 
 /** Images or PDF pages, one slide each, stored as image files in the media folder. */
@@ -421,15 +423,18 @@ export type AiModel = 'claude-sonnet-5-5' | 'claude-haiku-5-5'
  * prompts; the renderer only names a task and passes its input.
  */
 export interface AiTasks {
-  /** Tidies pasted lyrics into [Section] labels with a blank line between slides. */
-  formatLyrics: { input: { lyrics: string }; output: { lyrics: string } }
+  /**
+   * Cleans pasted lyrics: [Section] labels, repeated sections written once with a play order, junk removed,
+   * lines split into slides. The main process rejects any answer that changes the words.
+   */
+  cleanLyrics: { input: { lyrics: string }; output: { lyrics: string; order: string[] } }
   /** Suggests Bible passages for a sermon or service theme. */
   suggestScripture: {
     input: { theme: string }
     output: { suggestions: { reference: string; reason: string }[] }
   }
-  /** Turns rough notes into an announcement title and short slide text. */
-  writeAnnouncement: { input: { notes: string }; output: { title: string; body: string } }
+  /** Turns a long message into a title and short slides, one idea each. */
+  buildAnnouncement: { input: { message: string }; output: { title: string; slides: string[] } }
 }
 
 export type AiTask = keyof AiTasks

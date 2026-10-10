@@ -1794,6 +1794,70 @@ button {
   text-align: left;
 }
 
+/* ---------- Lyrics diff ---------- */
+
+.lyrics-diff-modal {
+  width: min(980px, 100%);
+}
+
+.lyrics-diff-modal h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.diff {
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.diff-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.diff-row span {
+  min-height: 1.6em;
+  padding: var(--space-0-5) var(--space-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-row span + span {
+  border-left: 1px solid var(--border);
+}
+
+.diff-head {
+  position: sticky;
+  top: 0;
+  background: var(--panel-raised);
+  font-family: inherit;
+  font-weight: 600;
+}
+
+.diff-head span {
+  font-family: Inter, system-ui, sans-serif;
+}
+
+/* Removed on the left in red, added on the right in green. */
+.diff-row.removed span:first-child,
+.diff-row.changed span:first-child {
+  background: rgba(229, 72, 77, 0.16);
+}
+
+.diff-row.added span:last-child,
+.diff-row.changed span:last-child {
+  background: rgba(34, 197, 94, 0.16);
+}
+
+.diff-empty {
+  background: repeating-linear-gradient(135deg, transparent 0 6px, var(--panel-raised) 6px 7px);
+}
+
 /* ---------- Command palette ---------- */
 
 /* More specific than .modal-backdrop, which centers modals. */

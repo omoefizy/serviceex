@@ -1,9 +1,10 @@
-import { Copy, Download, Merge, Scissors } from 'lucide-react'
+import { Copy, Download, Merge, Scissors, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { buildSongSlides, findSection, isArrangement, LINES_PER_SLIDE_OPTIONS, parseLyrics } from '../../shared/lyrics'
-import type { ExportFormat, Song, SongArrangement, SongInput } from '../../shared/types'
+import type { AiError, AiTasks, ExportFormat, Song, SongArrangement, SongInput } from '../../shared/types'
 import { duplicateSection, mergeWithNext, splitSlideAt, type ToolResult } from '../lib/lyricsTools'
 import { useOperatorStore } from '../store'
+import { LyricsDiffModal } from './LyricsDiffModal'
 
 /** The editor's fields as typed. */
 interface Form {
@@ -120,6 +121,13 @@ export function SongEditor({ songId }: { songId: number }) {
   const songSaved = useOperatorStore((s) => s.songSaved)
   const songDeleted = useOperatorStore((s) => s.songDeleted)
   const autosaveDrafts = useOperatorStore((s) => s.settings.autosaveDrafts)
+  const aiEnabled = useOperatorStore((s) => s.settings.aiEnabled)
+  /** Clean Lyrics while its window is open: the lyrics sent, then the answer or the error. */
+  const [cleaning, setCleaning] = useState<{
+    original: string
+    result: AiTasks['cleanLyrics']['output'] | null
+    error: AiError | null
+  } | null>(null)
   const themes = useOperatorStore((s) => s.themes)
   const songDefaultTheme = useOperatorStore((s) => s.themes.find((t) => t.id === s.themeDefaults?.song))
 
@@ -264,6 +272,31 @@ export function SongEditor({ songId }: { songId: number }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
+  }
+
+  /** Sends the lyrics once, from the click; an answer that arrives after the window closed is dropped. */
+  async function handleClean() {
+    if (!form) return
+    const original = form.lyrics
+    setCleaning({ original, result: null, error: null })
+    let answer: Awaited<ReturnType<typeof window.api.ai.ask<'cleanLyrics'>>>
+    try {
+      answer = await window.api.ai.ask('cleanLyrics', { lyrics: original })
+    } catch (err) {
+      answer = { ok: false, error: { code: 'unavailable', message: err instanceof Error ? err.message : String(err) } }
+    }
+    setCleaning((current) =>
+      current?.original === original && !current.result && !current.error
+        ? { ...current, ...(answer.ok ? { result: answer.value } : { error: answer.error }) }
+        : current,
+    )
+  }
+
+  /** Takes the cleaned lyrics and their play order; lines per slide stays as it was. */
+  function handleAcceptCleaned(cleaned: { lyrics: string; order: string[] }) {
+    setForm((current) => current && { ...current, lyrics: cleaned.lyrics, arrangement: { ...current.arrangement, order: cleaned.order } })
+    setCleaning(null)
+    setToolMessage('Cleaned lyrics applied. Save to keep them.')
   }
 
   function handleDiscardDraft() {
@@ -414,6 +447,26 @@ export function SongEditor({ songId }: { songId: number }) {
         <button type="button" className="button" onMouseDown={keepFocus} onClick={() => applyTool(duplicateSection)}>
           <Copy size={15} aria-hidden="true" /> Duplicate section
         </button>
+        {/* Disabled buttons show no tooltip, so the reason sits on a wrapper. */}
+        <span
+          title={
+            !aiEnabled
+              ? 'AI features are turned off in Settings'
+              : !form.lyrics.trim()
+                ? 'Paste lyrics into the box first'
+                : 'Add section labels, merge repeated choruses and remove chords and junk, without changing the words'
+          }
+        >
+          <button
+            type="button"
+            className="button"
+            disabled={!aiEnabled || !form.lyrics.trim() || cleaning !== null}
+            onClick={handleClean}
+          >
+            <Sparkles size={15} aria-hidden="true" />{' '}
+            {cleaning && !cleaning.result && !cleaning.error ? 'Cleaning…' : 'Clean Lyrics'}
+          </button>
+        </span>
         <label className="editor-lines">
           Lines per slide
           <select
@@ -500,6 +553,16 @@ export function SongEditor({ songId }: { songId: number }) {
           </ol>
         </div>
       </div>
+
+      {cleaning !== null && (
+        <LyricsDiffModal
+          original={cleaning.original}
+          result={cleaning.result}
+          error={cleaning.error}
+          onAccept={handleAcceptCleaned}
+          onClose={() => setCleaning(null)}
+        />
+      )}
     </section>
   )
 }

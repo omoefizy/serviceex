@@ -9,8 +9,11 @@ export function splitIntoSlides(lyrics: string): string[] {
     .filter((chunk) => chunk.length > 0)
 }
 
-/** Each blank-line-separated part of the body becomes a slide captioned with the title; a title alone makes one slide. */
-export function announcementSlides({ title, body }: AnnouncementPayload): { text: string; caption: string }[] {
-  const parts = splitIntoSlides(body)
-  return parts.length > 0 ? parts.map((text) => ({ text, caption: title })) : [{ text: title, caption: '' }]
+/**
+ * Each blank-line-separated part of the body becomes a slide captioned with the title, after a slide of just the
+ * title when `titleSlide` is set. A title alone makes one slide.
+ */
+export function announcementSlides({ title, body, titleSlide }: AnnouncementPayload): { text: string; caption: string }[] {
+  const parts = splitIntoSlides(body).map((text) => ({ text, caption: title }))
+  return parts.length === 0 || titleSlide ? [{ text: title, caption: '' }, ...parts] : parts
 }

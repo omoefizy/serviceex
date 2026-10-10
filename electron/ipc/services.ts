@@ -65,7 +65,10 @@ function assertAnnouncement(value: unknown): AnnouncementPayload {
   if (typeof payload !== 'object' || payload === null || typeof payload.body !== 'string') {
     throw new TypeError('Announcement needs a title and body text')
   }
-  return { title: assertTitle(payload.title), body: payload.body }
+  if (payload.titleSlide !== undefined && typeof payload.titleSlide !== 'boolean') {
+    throw new TypeError('titleSlide must be true or false')
+  }
+  return { title: assertTitle(payload.title), body: payload.body, ...(payload.titleSlide ? { titleSlide: true } : {}) }
 }
 
 function assertPresentation(value: unknown): PresentationPayload {
