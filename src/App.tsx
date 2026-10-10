@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { LivePreview } from './components/LivePreview'
+import { MediaPanel } from './components/MediaPanel'
 import { SchedulePanel } from './components/SchedulePanel'
 import { ScripturePanel } from './components/ScripturePanel'
 import { SlideGrid } from './components/SlideGrid'
@@ -15,12 +16,13 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 function App() {
-  const [libraryTab, setLibraryTab] = useState<'songs' | 'scripture'>('songs')
+  const [libraryTab, setLibraryTab] = useState<'songs' | 'scripture' | 'media'>('songs')
   const editingSongId = useOperatorStore((s) => s.editingSongId)
   const themeEditorOpen = useOperatorStore((s) => s.themeEditorOpen)
 
   useEffect(() => {
     useOperatorStore.getState().loadThemes().catch(console.error)
+    useOperatorStore.getState().loadSettings().catch(console.error)
   }, [])
 
   // Mirror the operator state to the output window.
@@ -85,13 +87,24 @@ function App() {
           >
             Scripture
           </button>
+          <button
+            role="tab"
+            aria-selected={libraryTab === 'media'}
+            className={`library-tab${libraryTab === 'media' ? ' active' : ''}`}
+            onClick={() => setLibraryTab('media')}
+          >
+            Media
+          </button>
         </div>
-        {/* Both stay mounted so each keeps its search text when switching tabs. */}
+        {/* All stay mounted so each keeps its search text when switching tabs. */}
         <div className="library-page" hidden={libraryTab !== 'songs'}>
           <SongList />
         </div>
         <div className="library-page" hidden={libraryTab !== 'scripture'}>
           <ScripturePanel />
+        </div>
+        <div className="library-page" hidden={libraryTab !== 'media'}>
+          <MediaPanel />
         </div>
       </div>
       {editingSongId !== null ? (

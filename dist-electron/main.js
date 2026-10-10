@@ -1,10 +1,10 @@
-import { app as G, ipcMain as m, dialog as R, BrowserWindow as se, protocol as gt, net as Qt, screen as Ye } from "electron";
-import { pathToFileURL as Zt, fileURLToPath as en } from "node:url";
-import E from "node:path";
-import tn from "better-sqlite3";
-import { writeFile as mt, stat as Et, readdir as nn, readFile as rn, mkdir as sn, copyFile as on } from "node:fs/promises";
-import { existsSync as an } from "node:fs";
-function ln(t) {
+import { app as G, ipcMain as m, dialog as v, BrowserWindow as le, protocol as kt, net as bn, screen as st } from "electron";
+import { pathToFileURL as wn, fileURLToPath as Sn } from "node:url";
+import g from "node:path";
+import Nn from "better-sqlite3";
+import { writeFile as Xe, stat as He, readdir as xn, readFile as Ft, mkdir as Pt, copyFile as An, rm as _n } from "node:fs/promises";
+import { existsSync as In } from "node:fs";
+function Cn(t) {
   t.pragma("foreign_keys = ON"), t.exec(`
     CREATE TABLE IF NOT EXISTS songs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,21 +63,41 @@ function ln(t) {
       json TEXT NOT NULL
     );
 
+    -- Background library. file and thumb are names in <userData>/media; tags is a JSON array.
+    CREATE TABLE IF NOT EXISTS media (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      file TEXT NOT NULL,
+      thumb TEXT,
+      tags TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- A library background for one slide of a deck. deck_key is 'song:<id>', 'item:<service item id>'
+    -- or 'scripture:<reference>'; slide_index counts from 0 in play order.
+    CREATE TABLE IF NOT EXISTS slide_backgrounds (
+      deck_key TEXT NOT NULL,
+      slide_index INTEGER NOT NULL,
+      media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+      PRIMARY KEY (deck_key, slide_index)
+    );
+
     -- App-wide choices such as the default theme per content type.
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
-  `), z(t, "service_items", "payload", "TEXT"), z(t, "songs", "copyright", "TEXT"), z(t, "songs", "tags", "TEXT"), z(t, "songs", "arrangement", "TEXT"), z(t, "songs", "theme_id", "INTEGER");
+  `), J(t, "service_items", "payload", "TEXT"), J(t, "songs", "copyright", "TEXT"), J(t, "songs", "tags", "TEXT"), J(t, "songs", "arrangement", "TEXT"), J(t, "songs", "theme_id", "INTEGER");
 }
-function z(t, e, n, r) {
+function J(t, e, n, r) {
   t.prepare(`PRAGMA table_info(${e})`).all().some((s) => s.name === n) || t.exec(`ALTER TABLE ${e} ADD COLUMN ${n} ${r}`);
 }
-const cn = E.join(G.getPath("userData"), "worshipdeck.db"), f = new tn(cn);
-f.pragma("journal_mode = WAL");
-ln(f);
-const dn = "'Helvetica Neue', Inter, 'Segoe UI', Arial, sans-serif", Ge = "Georgia, 'Times New Roman', serif", F = {
-  fontFamily: dn,
+const Ln = g.join(G.getPath("userData"), "worshipdeck.db"), h = new Nn(Ln);
+h.pragma("journal_mode = WAL");
+Cn(h);
+const On = "'Helvetica Neue', Inter, 'Segoe UI', Arial, sans-serif", ot = "Georgia, 'Times New Roman', serif", M = {
+  fontFamily: On,
   fontWeight: 600,
   sizeMode: "auto",
   fontSize: 8,
@@ -93,55 +113,55 @@ const dn = "'Helvetica Neue', Inter, 'Segoe UI', Arial, sans-serif", Ge = "Georg
   background: { kind: "solid", color: "#000000" },
   overlay: 0,
   caption: { fontFamily: "", fontWeight: 500, size: 3.2, color: "#bfc4cc", textCase: "normal", italic: !1 }
-}, D = (t) => ({ ...F, ...t }), un = [
-  { name: "Classic Black", style: F },
+}, K = (t) => ({ ...M, ...t }), Rn = [
+  { name: "Classic Black", style: M },
   {
     name: "Deep Blue Gradient",
-    style: D({
+    style: K({
       fontWeight: 700,
       background: { kind: "gradient", from: "#0b1d4d", to: "#1f5fbf", angle: 160 },
       shadow: { enabled: !0, color: "#020617", blur: 0.18, offset: 0.05 },
-      caption: { ...F.caption, color: "#c7d7f5" }
+      caption: { ...M.caption, color: "#c7d7f5" }
     })
   },
   {
     name: "Warm Sunset",
-    style: D({
+    style: K({
       fontWeight: 700,
       background: { kind: "gradient", from: "#f59e0b", to: "#7c2d12", angle: 135 },
       overlay: 0.15,
       shadow: { enabled: !0, color: "#3b0d02", blur: 0.2, offset: 0.05 },
-      caption: { ...F.caption, color: "#ffe7c2" }
+      caption: { ...M.caption, color: "#ffe7c2" }
     })
   },
   {
     name: "Minimal White",
-    style: D({
+    style: K({
       fontWeight: 500,
       color: "#111111",
-      shadow: { ...F.shadow, enabled: !1 },
+      shadow: { ...M.shadow, enabled: !1 },
       background: { kind: "solid", color: "#ffffff" },
-      caption: { ...F.caption, color: "#666666" }
+      caption: { ...M.caption, color: "#666666" }
     })
   },
   {
     // Chroma green behind an opaque band at the bottom: key the green out in OBS or a video switcher.
     name: "Lower Third",
-    style: D({
+    style: K({
       fontWeight: 600,
       align: "left",
       lineHeight: 1.2,
       margins: { top: 72, right: 0, bottom: 0, left: 0 },
       band: { enabled: !0, color: "#0b0f1a", opacity: 1 },
       background: { kind: "solid", color: "#00b140" },
-      shadow: { ...F.shadow, enabled: !1 },
-      caption: { ...F.caption, size: 2.8 }
+      shadow: { ...M.shadow, enabled: !1 },
+      caption: { ...M.caption, size: 2.8 }
     })
   },
   {
     name: "Scripture Serif",
-    style: D({
-      fontFamily: Ge,
+    style: K({
+      fontFamily: ot,
       fontWeight: 400,
       align: "left",
       lineHeight: 1.45,
@@ -149,15 +169,15 @@ const dn = "'Helvetica Neue', Inter, 'Segoe UI', Arial, sans-serif", Ge = "Georg
       margins: { top: 8, right: 8, bottom: 8, left: 8 },
       background: { kind: "gradient", from: "#1c1712", to: "#0d0b09", angle: 180 },
       shadow: { enabled: !0, color: "#000000", blur: 0.1, offset: 0.03 },
-      caption: { fontFamily: Ge, fontWeight: 400, size: 3.4, color: "#d6b98c", textCase: "normal", italic: !0 }
+      caption: { fontFamily: ot, fontWeight: 400, size: 3.4, color: "#d6b98c", textCase: "normal", italic: !0 }
     })
   }
-], pn = {
+], vn = {
   song: "Classic Black",
   scripture: "Scripture Serif",
   announcement: "Deep Blue Gradient"
-}, xe = ["song", "scripture", "announcement"], U = (t) => typeof t == "object" && t !== null && !Array.isArray(t) ? t : {}, ze = (t, e) => typeof t == "string" ? t : e, P = (t, e) => typeof t == "string" && /^#[0-9a-f]{6}$/i.test(t) ? t.toLowerCase() : e, ae = (t, e) => typeof t == "boolean" ? t : e, w = (t, e, n, r) => typeof t == "number" && Number.isFinite(t) ? Math.min(r, Math.max(n, t)) : e, K = (t, e, n) => e.includes(t) ? t : n, De = ["normal", "upper", "lower"];
-function hn(t, e) {
+}, ve = ["song", "scripture", "announcement"], U = (t) => typeof t == "object" && t !== null && !Array.isArray(t) ? t : {}, at = (t, e) => typeof t == "string" ? t : e, P = (t, e) => typeof t == "string" && /^#[0-9a-f]{6}$/i.test(t) ? t.toLowerCase() : e, de = (t, e) => typeof t == "boolean" ? t : e, w = (t, e, n, r) => typeof t == "number" && Number.isFinite(t) ? Math.min(r, Math.max(n, t)) : e, Q = (t, e, n) => e.includes(t) ? t : n, lt = ["normal", "upper", "lower"];
+function Mn(t, e) {
   const n = U(t);
   switch (n.kind) {
     case "solid":
@@ -165,32 +185,33 @@ function hn(t, e) {
     case "gradient":
       return { kind: "gradient", from: P(n.from, "#000000"), to: P(n.to, "#333333"), angle: w(n.angle, 180, 0, 360) };
     case "image":
+      return typeof n.src != "string" || !n.src ? { kind: "solid", color: "#000000" } : n.fit === "contain" ? { kind: "image", src: n.src, fit: "contain" } : { kind: "image", src: n.src };
     case "video":
-      return typeof n.src == "string" && n.src ? { kind: n.kind, src: n.src } : { kind: "solid", color: "#000000" };
+      return typeof n.src == "string" && n.src ? { kind: "video", src: n.src } : { kind: "solid", color: "#000000" };
     default:
       return e;
   }
 }
 function X(t) {
-  const e = F, n = U(t), r = U(n.shadow), i = U(n.outline), s = U(n.margins), a = U(n.band), o = U(n.caption);
+  const e = M, n = U(t), r = U(n.shadow), i = U(n.outline), s = U(n.margins), a = U(n.band), o = U(n.caption);
   return {
-    fontFamily: ze(n.fontFamily, e.fontFamily).trim() || e.fontFamily,
+    fontFamily: at(n.fontFamily, e.fontFamily).trim() || e.fontFamily,
     fontWeight: Math.round(w(n.fontWeight, e.fontWeight, 100, 900) / 100) * 100,
-    sizeMode: K(n.sizeMode, ["auto", "fixed"], e.sizeMode),
+    sizeMode: Q(n.sizeMode, ["auto", "fixed"], e.sizeMode),
     fontSize: w(n.fontSize, e.fontSize, 1, 30),
     color: P(n.color, e.color),
-    align: K(n.align, ["left", "center", "right"], e.align),
-    verticalAlign: K(n.verticalAlign, ["top", "middle", "bottom"], e.verticalAlign),
+    align: Q(n.align, ["left", "center", "right"], e.align),
+    verticalAlign: Q(n.verticalAlign, ["top", "middle", "bottom"], e.verticalAlign),
     lineHeight: w(n.lineHeight, e.lineHeight, 0.8, 2.5),
-    textCase: K(n.textCase, De, e.textCase),
+    textCase: Q(n.textCase, lt, e.textCase),
     shadow: {
-      enabled: ae(r.enabled, e.shadow.enabled),
+      enabled: de(r.enabled, e.shadow.enabled),
       color: P(r.color, e.shadow.color),
       blur: w(r.blur, e.shadow.blur, 0, 1),
       offset: w(r.offset, e.shadow.offset, 0, 0.5)
     },
     outline: {
-      enabled: ae(i.enabled, e.outline.enabled),
+      enabled: de(i.enabled, e.outline.enabled),
       color: P(i.color, e.outline.color),
       width: w(i.width, e.outline.width, 0, 0.2)
     },
@@ -201,77 +222,77 @@ function X(t) {
       left: w(s.left, e.margins.left, 0, 45)
     },
     band: {
-      enabled: ae(a.enabled, e.band.enabled),
+      enabled: de(a.enabled, e.band.enabled),
       color: P(a.color, e.band.color),
       opacity: w(a.opacity, e.band.opacity, 0, 1)
     },
-    background: hn(n.background, e.background),
+    background: Mn(n.background, e.background),
     overlay: w(n.overlay, e.overlay, 0, 1),
     caption: {
-      fontFamily: ze(o.fontFamily, e.caption.fontFamily).trim(),
+      fontFamily: at(o.fontFamily, e.caption.fontFamily).trim(),
       fontWeight: Math.round(w(o.fontWeight, e.caption.fontWeight, 100, 900) / 100) * 100,
       size: w(o.size, e.caption.size, 1, 15),
       color: P(o.color, e.caption.color),
-      textCase: K(o.textCase, De, e.caption.textCase),
-      italic: ae(o.italic, e.caption.italic)
+      textCase: Q(o.textCase, lt, e.caption.textCase),
+      italic: de(o.italic, e.caption.italic)
     }
   };
 }
-function yt(t) {
+function $t(t) {
   try {
     return X(JSON.parse(t));
   } catch {
     return X(null);
   }
 }
-const fn = (t) => ({ id: t.id, name: t.name, type: t.type, style: yt(t.json) }), gn = f.transaction(() => {
-  const t = f.prepare("SELECT id FROM themes WHERE type = 'builtin' AND name = ?"), e = f.prepare("INSERT INTO themes (name, type, json) VALUES (?, 'builtin', ?)"), n = f.prepare("UPDATE themes SET json = ? WHERE id = ?");
-  for (const { name: r, style: i } of un) {
+const kn = (t) => ({ id: t.id, name: t.name, type: t.type, style: $t(t.json) }), Fn = h.transaction(() => {
+  const t = h.prepare("SELECT id FROM themes WHERE type = 'builtin' AND name = ?"), e = h.prepare("INSERT INTO themes (name, type, json) VALUES (?, 'builtin', ?)"), n = h.prepare("UPDATE themes SET json = ? WHERE id = ?");
+  for (const { name: r, style: i } of Rn) {
     const s = t.get(r);
     s ? n.run(JSON.stringify(i), s.id) : e.run(r, JSON.stringify(i));
   }
 });
-function mn() {
-  return f.prepare("SELECT id, name, type, json FROM themes ORDER BY type = 'custom', id").all().map(
-    fn
+function Pn() {
+  return h.prepare("SELECT id, name, type, json FROM themes ORDER BY type = 'custom', id").all().map(
+    kn
   );
 }
-function En(t, e) {
-  const n = JSON.stringify(X(e)), r = f.prepare("INSERT INTO themes (name, type, json) VALUES (?, 'custom', ?)").run(t, n);
-  return { id: Number(r.lastInsertRowid), name: t, type: "custom", style: yt(n) };
+function $n(t, e) {
+  const n = JSON.stringify(X(e)), r = h.prepare("INSERT INTO themes (name, type, json) VALUES (?, 'custom', ?)").run(t, n);
+  return { id: Number(r.lastInsertRowid), name: t, type: "custom", style: $t(n) };
 }
-function yn(t, e, n) {
-  return f.prepare("UPDATE themes SET name = ?, json = ? WHERE id = ? AND type = 'custom'").run(e, JSON.stringify(X(n)), t).changes > 0;
+function jn(t, e, n) {
+  return h.prepare("UPDATE themes SET name = ?, json = ? WHERE id = ? AND type = 'custom'").run(e, JSON.stringify(X(n)), t).changes > 0;
 }
-const bn = f.transaction((t) => f.prepare("DELETE FROM themes WHERE id = ? AND type = 'custom'").run(t).changes === 0 ? !1 : (f.prepare("UPDATE songs SET theme_id = NULL WHERE theme_id = ?").run(t), f.prepare("DELETE FROM settings WHERE key LIKE 'theme.default.%' AND value = ?").run(String(t)), !0)), bt = (t) => `theme.default.${t}`;
-function Tn() {
+const Un = h.transaction((t) => h.prepare("DELETE FROM themes WHERE id = ? AND type = 'custom'").run(t).changes === 0 ? !1 : (h.prepare("UPDATE songs SET theme_id = NULL WHERE theme_id = ?").run(t), h.prepare("DELETE FROM settings WHERE key LIKE 'theme.default.%' AND value = ?").run(String(t)), !0)), jt = (t) => `theme.default.${t}`;
+function Bn() {
   var i;
-  const t = f.prepare("SELECT 1 FROM themes WHERE id = ?"), e = f.prepare("SELECT id FROM themes WHERE type = 'builtin' AND name = ?"), n = f.prepare("SELECT value FROM settings WHERE key = ?"), r = {};
-  for (const s of xe) {
-    const a = Number((i = n.get(bt(s))) == null ? void 0 : i.value);
-    r[s] = Number.isInteger(a) && t.get(a) ? a : e.get(pn[s]).id;
+  const t = h.prepare("SELECT 1 FROM themes WHERE id = ?"), e = h.prepare("SELECT id FROM themes WHERE type = 'builtin' AND name = ?"), n = h.prepare("SELECT value FROM settings WHERE key = ?"), r = {};
+  for (const s of ve) {
+    const a = Number((i = n.get(jt(s))) == null ? void 0 : i.value);
+    r[s] = Number.isInteger(a) && t.get(a) ? a : e.get(vn[s]).id;
   }
   return r;
 }
-function wn(t, e) {
-  if (!f.prepare("SELECT 1 FROM themes WHERE id = ?").get(e)) throw new Error(`Theme ${e} does not exist`);
-  f.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(
-    bt(t),
+function Vn(t, e) {
+  if (!h.prepare("SELECT 1 FROM themes WHERE id = ?").get(e)) throw new Error(`Theme ${e} does not exist`);
+  h.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(
+    jt(t),
     String(e)
   );
 }
-const he = { order: [], linesPerSlide: null }, Tt = [2, 3, 4], Sn = /^\s*\[([^\]]+)\]\s*$/;
-function wt(t) {
+const ye = { order: [], linesPerSlide: null }, Ut = [2, 3, 4], Wn = /^\s*\[([^\]]+)\]\s*$/;
+function Bt(t) {
   const e = t;
-  return typeof e == "object" && e !== null && Array.isArray(e.order) && e.order.every((n) => typeof n == "string") && (e.linesPerSlide === null || Tt.includes(e.linesPerSlide));
+  return typeof e == "object" && e !== null && Array.isArray(e.order) && e.order.every((n) => typeof n == "string") && (e.linesPerSlide === null || Ut.includes(e.linesPerSlide));
 }
-function St(t) {
+function Vt(t) {
   const e = t.replace(/\r\n?/g, `
 `).split(`
 `), n = [];
   let r = null, i = null;
   for (let s = 0; s < e.length; s++) {
-    const a = e[s], o = Sn.exec(a);
+    const a = e[s], o = Wn.exec(a);
     if ((o || a.trim() === "") && (i && r && (i.endLine = s, r.chunks.push(i)), i = null), o) {
       r && (r.endLine = s), r = { label: o[1].trim(), labelLine: s, startLine: s, endLine: e.length, chunks: [] }, n.push(r);
       continue;
@@ -280,7 +301,7 @@ function St(t) {
   }
   return i && r && (i.endLine = e.length, r.chunks.push(i)), n;
 }
-function Nn(t, e) {
+function Xn(t, e) {
   if (e === null || t.length <= e) return [t];
   const n = Math.ceil(t.length / e), r = [];
   let i = 0;
@@ -290,25 +311,25 @@ function Nn(t, e) {
   }
   return r;
 }
-function Ke(t, e) {
-  return t.chunks.flatMap((n) => Nn(n.lines, e)).map((n) => ({ text: n.join(`
+function ct(t, e) {
+  return t.chunks.flatMap((n) => Xn(n.lines, e)).map((n) => ({ text: n.join(`
 `), label: t.label }));
 }
-function xn(t, e) {
+function Hn(t, e) {
   const n = e.trim().toLowerCase();
   return t.find((r) => {
     var i;
     return ((i = r.label) == null ? void 0 : i.toLowerCase()) === n;
   });
 }
-function An(t, e = he) {
-  const n = St(t);
-  return e.order.length === 0 ? n.flatMap((r) => Ke(r, e.linesPerSlide)) : e.order.flatMap((r) => {
-    const i = xn(n, r);
-    return i ? Ke(i, e.linesPerSlide) : [];
+function Yn(t, e = ye) {
+  const n = Vt(t);
+  return e.order.length === 0 ? n.flatMap((r) => ct(r, e.linesPerSlide)) : e.order.flatMap((r) => {
+    const i = Hn(n, r);
+    return i ? ct(i, e.linesPerSlide) : [];
   });
 }
-function Je(t) {
+function dt(t) {
   if (t === null) return null;
   try {
     return JSON.parse(t);
@@ -316,25 +337,25 @@ function Je(t) {
     return null;
   }
 }
-function _n(t) {
-  const e = Je(t.tags), n = Je(t.arrangement);
+function qn(t) {
+  const e = dt(t.tags), n = dt(t.arrangement);
   return {
     id: t.id,
     title: t.title,
     author: t.author,
     copyright: t.copyright,
     tags: Array.isArray(e) ? e.filter((r) => typeof r == "string") : [],
-    arrangement: wt(n) ? n : he,
+    arrangement: Bt(n) ? n : ye,
     themeId: t.theme_id,
     lyrics: t.lyrics ?? ""
   };
 }
-function Nt(t, e, n) {
-  f.prepare("DELETE FROM slides WHERE song_id = ?").run(t);
-  const r = f.prepare("INSERT INTO slides (song_id, order_index, text) VALUES (?, ?, ?)");
-  An(e, n).forEach((i, s) => r.run(t, s, i.text));
+function Wt(t, e, n) {
+  h.prepare("DELETE FROM slides WHERE song_id = ?").run(t);
+  const r = h.prepare("INSERT INTO slides (song_id, order_index, text) VALUES (?, ?, ?)");
+  Yn(e, n).forEach((i, s) => r.run(t, s, i.text));
 }
-function xt(t) {
+function Xt(t) {
   return {
     title: t.title,
     author: t.author,
@@ -345,12 +366,12 @@ function xt(t) {
     lyrics: t.lyrics
   };
 }
-function Me(t) {
+function Ye(t) {
   const e = t == null ? void 0 : t.trim();
   if (!e)
-    return f.prepare("SELECT id, title, author FROM songs ORDER BY title COLLATE NOCASE").all();
+    return h.prepare("SELECT id, title, author FROM songs ORDER BY title COLLATE NOCASE").all();
   const n = `%${e.replace(/[\\%_]/g, (r) => `\\${r}`)}%`;
-  return f.prepare(
+  return h.prepare(
     `SELECT id, title, author FROM songs
        WHERE title LIKE @pattern ESCAPE '\\'
           OR author LIKE @pattern ESCAPE '\\'
@@ -359,32 +380,32 @@ function Me(t) {
        ORDER BY title COLLATE NOCASE`
   ).all({ pattern: n });
 }
-function At(t) {
-  const e = f.prepare("SELECT id, title, author, copyright, tags, arrangement, theme_id, lyrics FROM songs WHERE id = ?").get(t);
-  return e && _n(e);
+function Ht(t) {
+  const e = h.prepare("SELECT id, title, author, copyright, tags, arrangement, theme_id, lyrics FROM songs WHERE id = ?").get(t);
+  return e && qn(e);
 }
-const _t = f.transaction((t) => {
-  const e = f.prepare(
+const Yt = h.transaction((t) => {
+  const e = h.prepare(
     `INSERT INTO songs (title, author, copyright, tags, arrangement, theme_id, lyrics)
        VALUES (@title, @author, @copyright, @tags, @arrangement, @theme_id, @lyrics)`
-  ).run(xt(t)), n = Number(e.lastInsertRowid);
-  return Nt(n, t.lyrics, t.arrangement), { id: n, ...t };
-}), In = f.transaction((t) => (t.forEach((e) => _t(e)), t.length)), Cn = f.transaction((t, e) => f.prepare(
+  ).run(Xt(t)), n = Number(e.lastInsertRowid);
+  return Wt(n, t.lyrics, t.arrangement), { id: n, ...t };
+}), Dn = h.transaction((t) => (t.forEach((e) => Yt(e)), t.length)), Gn = h.transaction((t, e) => h.prepare(
   `UPDATE songs SET title = @title, author = @author, copyright = @copyright, tags = @tags,
          arrangement = @arrangement, theme_id = @theme_id, lyrics = @lyrics
        WHERE id = @id`
-).run({ ...xt(e), id: t }).changes === 0 ? !1 : (Nt(t, e.lyrics, e.arrangement), !0));
-function vn(t) {
-  return f.prepare("DELETE FROM songs WHERE id = ?").run(t).changes > 0;
+).run({ ...Xt(e), id: t }).changes === 0 ? !1 : (Wt(t, e.lyrics, e.arrangement), !0));
+function zn(t) {
+  return h.prepare("DELETE FROM songs WHERE id = ?").run(t).changes > 0;
 }
-function me(t) {
+function we(t) {
   if (!Number.isInteger(t) || t < 1)
     throw new TypeError("Song id must be a positive integer");
   return t;
 }
-function Ae(t) {
+function Me(t) {
   const e = t;
-  if (typeof e != "object" || e === null || typeof e.title != "string" || e.title.trim() === "" || e.author !== null && typeof e.author != "string" || e.copyright !== null && typeof e.copyright != "string" || !Array.isArray(e.tags) || !e.tags.every((n) => typeof n == "string") || !wt(e.arrangement) || e.themeId !== null && !(Number.isInteger(e.themeId) && e.themeId > 0) || typeof e.lyrics != "string")
+  if (typeof e != "object" || e === null || typeof e.title != "string" || e.title.trim() === "" || e.author !== null && typeof e.author != "string" || e.copyright !== null && typeof e.copyright != "string" || !Array.isArray(e.tags) || !e.tags.every((n) => typeof n == "string") || !Bt(e.arrangement) || e.themeId !== null && !(Number.isInteger(e.themeId) && e.themeId > 0) || typeof e.lyrics != "string")
     throw new TypeError(
       "Song needs a non-empty title, author and copyright (string or null), tags, an arrangement, a theme id (or null) and lyrics"
     );
@@ -398,83 +419,83 @@ function Ae(t) {
     lyrics: e.lyrics
   };
 }
-function Ln() {
+function Jn() {
   m.handle(
     "songs:list",
-    (t, e) => Me(typeof e == "string" ? e : void 0)
-  ), m.handle("songs:get", (t, e) => At(me(e))), m.handle("songs:create", (t, e) => _t(Ae(e))), m.handle(
+    (t, e) => Ye(typeof e == "string" ? e : void 0)
+  ), m.handle("songs:get", (t, e) => Ht(we(e))), m.handle("songs:create", (t, e) => Yt(Me(e))), m.handle(
     "songs:update",
-    (t, e, n) => Cn(me(e), Ae(n))
-  ), m.handle("songs:delete", (t, e) => vn(me(e)));
+    (t, e, n) => Gn(we(e), Me(n))
+  ), m.handle("songs:delete", (t, e) => zn(we(e)));
 }
-const Pe = "v.book, v.chapter, v.verse, v.text", ke = "FROM verses v JOIN bible_versions b ON b.id = v.version_id WHERE b.code = @version";
-function On(t, e, n, r) {
-  return f.prepare(
-    `SELECT ${Pe} ${ke}
+const qe = "v.book, v.chapter, v.verse, v.text", De = "FROM verses v JOIN bible_versions b ON b.id = v.version_id WHERE b.code = @version";
+function Kn(t, e, n, r) {
+  return h.prepare(
+    `SELECT ${qe} ${De}
          AND v.book = @book AND v.chapter = @chapter AND v.verse = @verse`
   ).get({ version: t, book: e, chapter: n, verse: r });
 }
-function Rn(t, e, n, r, i) {
-  return f.prepare(
-    `SELECT ${Pe} ${ke}
+function Qn(t, e, n, r, i) {
+  return h.prepare(
+    `SELECT ${qe} ${De}
          AND v.book = @book AND v.chapter = @chapter AND v.verse BETWEEN @verseStart AND @verseEnd
        ORDER BY v.verse`
   ).all({ version: t, book: e, chapter: n, verseStart: r, verseEnd: i });
 }
-function Fn(t, e) {
+function Zn(t, e) {
   const n = e.trim();
   if (!n) return [];
   const r = `%${n.replace(/[\\%_]/g, (i) => `\\${i}`)}%`;
-  return f.prepare(
-    `SELECT ${Pe} ${ke}
+  return h.prepare(
+    `SELECT ${qe} ${De}
          AND v.text LIKE @pattern ESCAPE '\\'
        ORDER BY v.id
        LIMIT 100`
   ).all({ version: t, pattern: r });
 }
-function $n() {
-  return f.prepare("SELECT book FROM verses GROUP BY book ORDER BY MIN(id)").all().map(
+function er() {
+  return h.prepare("SELECT book FROM verses GROUP BY book ORDER BY MIN(id)").all().map(
     (t) => t.book
   );
 }
-const Qe = ["KJV", "WEB"];
-function Ee(t) {
-  if (!Qe.includes(t))
-    throw new TypeError(`Bible version must be one of ${Qe.join(", ")}`);
+const ut = ["KJV", "WEB"];
+function Se(t) {
+  if (!ut.includes(t))
+    throw new TypeError(`Bible version must be one of ${ut.join(", ")}`);
   return t;
 }
-function Ze(t) {
+function pt(t) {
   if (typeof t != "string" || t.trim() === "") throw new TypeError("Book must be a non-empty string");
   return t;
 }
-function J(t, e) {
+function Z(t, e) {
   if (!Number.isInteger(t) || t < 1)
     throw new TypeError(`${e} must be a positive integer`);
   return t;
 }
-function Mn() {
+function tr() {
   m.handle(
     "bible:getVerse",
-    (t, e, n, r, i) => On(Ee(e), Ze(n), J(r, "Chapter"), J(i, "Verse"))
+    (t, e, n, r, i) => Kn(Se(e), pt(n), Z(r, "Chapter"), Z(i, "Verse"))
   ), m.handle(
     "bible:getRange",
-    (t, e, n, r, i, s) => Rn(
-      Ee(e),
-      Ze(n),
-      J(r, "Chapter"),
-      J(i, "First verse"),
-      J(s, "Last verse")
+    (t, e, n, r, i, s) => Qn(
+      Se(e),
+      pt(n),
+      Z(r, "Chapter"),
+      Z(i, "First verse"),
+      Z(s, "Last verse")
     )
   ), m.handle(
     "bible:searchText",
-    (t, e, n) => Fn(Ee(e), typeof n == "string" ? n : "")
-  ), m.handle("bible:listBooks", () => $n());
+    (t, e, n) => Zn(Se(e), typeof n == "string" ? n : "")
+  ), m.handle("bible:listBooks", () => er());
 }
-const It = `
+const qt = `
   SELECT i.id, i.service_id, i.type, i.ref_id, i.order_index, i.payload, s.title AS song_title
   FROM service_items i
   LEFT JOIN songs s ON i.type = 'song' AND s.id = i.ref_id`;
-function Ct(t) {
+function Dt(t) {
   const e = { id: t.id, service_id: t.service_id, order: t.order_index };
   if (t.type === "song")
     return { ...e, type: "song", ref_id: t.ref_id, payload: null, title: t.song_title ?? "Missing song" };
@@ -482,73 +503,77 @@ function Ct(t) {
     const r = JSON.parse(t.payload ?? "{}");
     return { ...e, type: "scripture", ref_id: null, payload: r, title: r.title };
   }
+  if (t.type === "presentation") {
+    const r = JSON.parse(t.payload ?? "{}");
+    return { ...e, type: "presentation", ref_id: null, payload: r, title: r.title };
+  }
   const n = JSON.parse(t.payload ?? "{}");
   return { ...e, type: "announcement", ref_id: null, payload: n, title: n.title };
 }
-function Pn(t) {
-  const e = f.prepare(`${It} WHERE i.id = ?`).get(t);
-  return e && Ct(e);
+function nr(t) {
+  const e = h.prepare(`${qt} WHERE i.id = ?`).get(t);
+  return e && Dt(e);
 }
-function kn(t, e) {
-  const n = f.prepare("INSERT INTO services (name, date) VALUES (?, ?)").run(t, e);
+function rr(t, e) {
+  const n = h.prepare("INSERT INTO services (name, date) VALUES (?, ?)").run(t, e);
   return { id: Number(n.lastInsertRowid), name: t, date: e };
 }
-function jn() {
-  return f.prepare("SELECT id, name, date FROM services ORDER BY date IS NULL, date DESC, id DESC").all();
+function ir() {
+  return h.prepare("SELECT id, name, date FROM services ORDER BY date IS NULL, date DESC, id DESC").all();
 }
-function Un(t) {
-  const e = f.prepare("SELECT id, name, date FROM services WHERE id = ?").get(t);
+function sr(t) {
+  const e = h.prepare("SELECT id, name, date FROM services WHERE id = ?").get(t);
   if (!e) return;
-  const n = f.prepare(`${It} WHERE i.service_id = ? ORDER BY i.order_index, i.id`).all(t);
-  return { ...e, items: n.map(Ct) };
+  const n = h.prepare(`${qt} WHERE i.service_id = ? ORDER BY i.order_index, i.id`).all(t);
+  return { ...e, items: n.map(Dt) };
 }
-function Bn(t) {
-  return f.prepare("DELETE FROM services WHERE id = ?").run(t).changes > 0;
+function or(t) {
+  return h.prepare("DELETE FROM services WHERE id = ?").run(t).changes > 0;
 }
-const Vn = f.transaction(
+const ar = h.transaction(
   (t, e, n, r) => {
-    if (!f.prepare("SELECT 1 FROM services WHERE id = ?").get(t))
+    if (!h.prepare("SELECT 1 FROM services WHERE id = ?").get(t))
       throw new Error(`Service ${t} does not exist`);
-    if (e === "song" && !f.prepare("SELECT 1 FROM songs WHERE id = ?").get(n))
+    if (e === "song" && !h.prepare("SELECT 1 FROM songs WHERE id = ?").get(n))
       throw new Error(`Song ${n} does not exist`);
-    const { next: i } = f.prepare("SELECT COALESCE(MAX(order_index) + 1, 0) AS next FROM service_items WHERE service_id = ?").get(t), s = f.prepare("INSERT INTO service_items (service_id, type, ref_id, order_index, payload) VALUES (?, ?, ?, ?, ?)").run(t, e, n, i, r === null ? null : JSON.stringify(r));
-    return Pn(Number(s.lastInsertRowid));
+    const { next: i } = h.prepare("SELECT COALESCE(MAX(order_index) + 1, 0) AS next FROM service_items WHERE service_id = ?").get(t), s = h.prepare("INSERT INTO service_items (service_id, type, ref_id, order_index, payload) VALUES (?, ?, ?, ?, ?)").run(t, e, n, i, r === null ? null : JSON.stringify(r));
+    return nr(Number(s.lastInsertRowid));
   }
 );
-function Wn(t) {
-  return f.prepare("DELETE FROM service_items WHERE id = ?").run(t).changes > 0;
+function lr(t) {
+  return h.prepare("DELETE FROM service_items WHERE id = ?").run(t).changes > 0;
 }
-const Xn = f.transaction((t, e) => {
+const cr = h.transaction((t, e) => {
   const n = new Set(
-    f.prepare("SELECT id FROM service_items WHERE service_id = ?").all(t).map(
+    h.prepare("SELECT id FROM service_items WHERE service_id = ?").all(t).map(
       (s) => s.id
     )
   ), r = new Set(e);
   if (r.size !== e.length || r.size !== n.size || e.some((s) => !n.has(s)))
     return !1;
-  const i = f.prepare("UPDATE service_items SET order_index = ? WHERE id = ?");
+  const i = h.prepare("UPDATE service_items SET order_index = ? WHERE id = ?");
   return e.forEach((s, a) => i.run(a, s)), !0;
-}), et = ["song", "scripture", "announcement"];
+}), ht = ["song", "scripture", "announcement", "presentation"], ft = 500;
 function B(t, e = "Id") {
   if (!Number.isInteger(t) || t < 1)
     throw new TypeError(`${e} must be a positive integer`);
   return t;
 }
-function qn(t) {
+function dr(t) {
   if (typeof t != "string" || t.trim() === "") throw new TypeError("Service needs a non-empty name");
   return t.trim();
 }
-function Hn(t) {
+function ur(t) {
   if (t == null || t === "") return null;
   if (typeof t != "string" || !/^\d{4}-\d{2}-\d{2}$/.test(t))
     throw new TypeError("Service date must be YYYY-MM-DD or null");
   return t;
 }
-function vt(t) {
+function Ge(t) {
   if (typeof t != "string" || t.trim() === "") throw new TypeError("Item needs a non-empty title");
   return t.trim();
 }
-function Yn(t) {
+function pr(t) {
   const e = t;
   if (typeof e != "object" || e === null || !Array.isArray(e.verses) || e.verses.length === 0)
     throw new TypeError("Scripture needs a title and at least one verse");
@@ -557,41 +582,47 @@ function Yn(t) {
       throw new TypeError("Each verse needs text and a caption");
     return { text: r.text, caption: r.caption };
   });
-  return { title: vt(e.title), verses: n };
+  return { title: Ge(e.title), verses: n };
 }
-function Gn(t) {
+function hr(t) {
   const e = t;
   if (typeof e != "object" || e === null || typeof e.body != "string")
     throw new TypeError("Announcement needs a title and body text");
-  return { title: vt(e.title), body: e.body };
+  return { title: Ge(e.title), body: e.body };
 }
-function zn(t, e, n) {
-  if (!et.includes(t))
-    throw new TypeError(`Item type must be one of ${et.join(", ")}`);
+function fr(t) {
+  const e = t;
+  if (typeof e != "object" || e === null || !Array.isArray(e.pages) || e.pages.length === 0 || e.pages.length > ft || !e.pages.every((n) => typeof n == "string" && n.startsWith("wd-media://")))
+    throw new TypeError(`A presentation needs a title and 1 to ${ft} page images`);
+  return { title: Ge(e.title), pages: e.pages };
+}
+function gr(t, e, n) {
+  if (!ht.includes(t))
+    throw new TypeError(`Item type must be one of ${ht.join(", ")}`);
   if (t === "song") {
     if (n != null) throw new TypeError("Song items have no payload");
     return { type: t, refId: B(e, "Song id"), payload: null };
   }
   if (e != null) throw new TypeError(`${t} items have no refId`);
-  return t === "scripture" ? { type: t, refId: null, payload: Yn(n) } : { type: "announcement", refId: null, payload: Gn(n) };
+  return t === "scripture" ? { type: t, refId: null, payload: pr(n) } : t === "presentation" ? { type: t, refId: null, payload: fr(n) } : { type: "announcement", refId: null, payload: hr(n) };
 }
-function Dn() {
+function mr() {
   m.handle(
     "services:create",
-    (t, e, n) => kn(qn(e), Hn(n))
-  ), m.handle("services:list", () => jn()), m.handle("services:get", (t, e) => Un(B(e, "Service id"))), m.handle("services:delete", (t, e) => Bn(B(e, "Service id"))), m.handle("services:addItem", (t, e, n, r, i) => {
-    const s = zn(n, r, i);
-    return Vn(B(e, "Service id"), s.type, s.refId, s.payload);
-  }), m.handle("services:removeItem", (t, e) => Wn(B(e, "Item id"))), m.handle("services:reorderItems", (t, e, n) => {
+    (t, e, n) => rr(dr(e), ur(n))
+  ), m.handle("services:list", () => ir()), m.handle("services:get", (t, e) => sr(B(e, "Service id"))), m.handle("services:delete", (t, e) => or(B(e, "Service id"))), m.handle("services:addItem", (t, e, n, r, i) => {
+    const s = gr(n, r, i);
+    return ar(B(e, "Service id"), s.type, s.refId, s.payload);
+  }), m.handle("services:removeItem", (t, e) => lr(B(e, "Item id"))), m.handle("services:reorderItems", (t, e, n) => {
     if (!Array.isArray(n)) throw new TypeError("Item ids must be an array");
-    return Xn(
+    return cr(
       B(e, "Service id"),
       n.map((r) => B(r, "Item id"))
     );
   });
 }
-const Lt = ":A-Za-z_\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u02FF\\u0370-\\u037D\\u037F-\\u1FFF\\u200C-\\u200D\\u2070-\\u218F\\u2C00-\\u2FEF\\u3001-\\uD7FF\\uF900-\\uFDCF\\uFDF0-\\uFFFD", Kn = Lt + "\\-.\\d\\u00B7\\u0300-\\u036F\\u203F-\\u2040", Jn = "[" + Lt + "][" + Kn + "]*", Qn = new RegExp("^" + Jn + "$");
-function Zn(t, e) {
+const Gt = ":A-Za-z_\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u02FF\\u0370-\\u037D\\u037F-\\u1FFF\\u200C-\\u200D\\u2070-\\u218F\\u2C00-\\u2FEF\\u3001-\\uD7FF\\uF900-\\uFDCF\\uFDF0-\\uFFFD", Er = Gt + "\\-.\\d\\u00B7\\u0300-\\u036F\\u203F-\\u2040", yr = "[" + Gt + "][" + Er + "]*", Tr = new RegExp("^" + yr + "$");
+function br(t, e) {
   const n = [];
   let r = e.exec(t);
   for (; r; ) {
@@ -604,14 +635,14 @@ function Zn(t, e) {
   }
   return n;
 }
-const Ot = function(t) {
-  const e = Qn.exec(t);
+const zt = function(t) {
+  const e = Tr.exec(t);
   return !(e === null || typeof e > "u");
 };
-function er(t) {
+function wr(t) {
   return typeof t < "u";
 }
-const je = [
+const ze = [
   // '__proto__',
   // 'constructor',
   // 'prototype',
@@ -622,23 +653,23 @@ const je = [
   "__defineSetter__",
   "__lookupGetter__",
   "__lookupSetter__"
-], Rt = ["__proto__", "constructor", "prototype"], tr = {
+], Jt = ["__proto__", "constructor", "prototype"], Sr = {
   allowBooleanAttributes: !1,
   //A tag can have attributes without any value
   unpairedTags: []
 };
-function nr(t, e) {
-  e = Object.assign({}, tr, e);
+function Nr(t, e) {
+  e = Object.assign({}, Sr, e);
   const n = [];
   let r = !1, i = !1;
   t[0] === "\uFEFF" && (t = t.substr(1));
   for (let s = 0; s < t.length; s++)
     if (t[s] === "<" && t[s + 1] === "?") {
-      if (s += 2, s = tt(t, s), s.err) return s;
+      if (s += 2, s = gt(t, s), s.err) return s;
     } else if (t[s] === "<") {
       let a = s;
       if (s++, t[s] === "!") {
-        s = nt(t, s);
+        s = mt(t, s);
         continue;
       } else {
         let o = !1;
@@ -647,33 +678,33 @@ function nr(t, e) {
         for (; s < t.length && t[s] !== ">" && t[s] !== " " && t[s] !== "	" && t[s] !== `
 ` && t[s] !== "\r"; s++)
           l += t[s];
-        if (l = l.trim(), l[l.length - 1] === "/" && (l = l.substring(0, l.length - 1), s--), !dr(l)) {
+        if (l = l.trim(), l[l.length - 1] === "/" && (l = l.substring(0, l.length - 1), s--), !Rr(l)) {
           let u;
-          return l.trim().length === 0 ? u = "Invalid space after '<'." : u = "Tag '" + l + "' is an invalid name.", b("InvalidTag", u, S(t, s));
+          return l.trim().length === 0 ? u = "Invalid space after '<'." : u = "Tag '" + l + "' is an invalid name.", T("InvalidTag", u, S(t, s));
         }
-        const d = sr(t, s);
+        const d = _r(t, s);
         if (d === !1)
-          return b("InvalidAttr", "Attributes for '" + l + "' have open quote.", S(t, s));
+          return T("InvalidAttr", "Attributes for '" + l + "' have open quote.", S(t, s));
         let c = d.value;
         if (s = d.index, c[c.length - 1] === "/") {
           const u = s - c.length;
           c = c.substring(0, c.length - 1);
-          const p = rt(c, e);
+          const p = Et(c, e);
           if (p === !0)
             r = !0;
           else
-            return b(p.err.code, p.err.msg, S(t, u + p.err.line));
+            return T(p.err.code, p.err.msg, S(t, u + p.err.line));
         } else if (o)
           if (d.tagClosed) {
             if (c.trim().length > 0)
-              return b("InvalidTag", "Closing tag '" + l + "' can't have attributes or invalid starting.", S(t, a));
+              return T("InvalidTag", "Closing tag '" + l + "' can't have attributes or invalid starting.", S(t, a));
             if (n.length === 0)
-              return b("InvalidTag", "Closing tag '" + l + "' has not been opened.", S(t, a));
+              return T("InvalidTag", "Closing tag '" + l + "' has not been opened.", S(t, a));
             {
               const u = n.pop();
               if (l !== u.tagName) {
                 let p = S(t, u.tagStartPos);
-                return b(
+                return T(
                   "InvalidTag",
                   "Expected closing tag '" + u.tagName + "' (opened in line " + p.line + ", col " + p.col + ") instead of closing tag '" + l + "'.",
                   S(t, a)
@@ -681,57 +712,57 @@ function nr(t, e) {
               }
               n.length == 0 && (i = !0);
             }
-          } else return b("InvalidTag", "Closing tag '" + l + "' doesn't have proper closing.", S(t, s));
+          } else return T("InvalidTag", "Closing tag '" + l + "' doesn't have proper closing.", S(t, s));
         else {
-          const u = rt(c, e);
+          const u = Et(c, e);
           if (u !== !0)
-            return b(u.err.code, u.err.msg, S(t, s - c.length + u.err.line));
+            return T(u.err.code, u.err.msg, S(t, s - c.length + u.err.line));
           if (i === !0)
-            return b("InvalidXml", "Multiple possible root nodes found.", S(t, s));
+            return T("InvalidXml", "Multiple possible root nodes found.", S(t, s));
           e.unpairedTags.indexOf(l) !== -1 || n.push({ tagName: l, tagStartPos: a }), r = !0;
         }
         for (s++; s < t.length; s++)
           if (t[s] === "<")
             if (t[s + 1] === "!") {
-              s++, s = nt(t, s);
+              s++, s = mt(t, s);
               continue;
             } else if (t[s + 1] === "?") {
-              if (s = tt(t, ++s), s.err) return s;
+              if (s = gt(t, ++s), s.err) return s;
             } else
               break;
           else if (t[s] === "&") {
-            const u = lr(t, s);
+            const u = Lr(t, s);
             if (u == -1)
-              return b("InvalidChar", "char '&' is not expected.", S(t, s));
+              return T("InvalidChar", "char '&' is not expected.", S(t, s));
             s = u;
-          } else if (i === !0 && !q(t[s]))
-            return b("InvalidXml", "Extra text at the end", S(t, s));
+          } else if (i === !0 && !Y(t[s]))
+            return T("InvalidXml", "Extra text at the end", S(t, s));
         t[s] === "<" && s--;
       }
     } else {
-      if (q(t[s]))
+      if (Y(t[s]))
         continue;
-      return b("InvalidChar", "char '" + t[s] + "' is not expected.", S(t, s));
+      return T("InvalidChar", "char '" + t[s] + "' is not expected.", S(t, s));
     }
   if (r) {
     if (n.length == 1)
-      return b("InvalidTag", "Unclosed tag '" + n[0].tagName + "'.", S(t, n[0].tagStartPos));
+      return T("InvalidTag", "Unclosed tag '" + n[0].tagName + "'.", S(t, n[0].tagStartPos));
     if (n.length > 0)
-      return b("InvalidXml", "Invalid '" + JSON.stringify(n.map((s) => s.tagName), null, 4).replace(/\r?\n/g, "") + "' found.", { line: 1, col: 1 });
-  } else return b("InvalidXml", "Start tag expected.", 1);
+      return T("InvalidXml", "Invalid '" + JSON.stringify(n.map((s) => s.tagName), null, 4).replace(/\r?\n/g, "") + "' found.", { line: 1, col: 1 });
+  } else return T("InvalidXml", "Start tag expected.", 1);
   return !0;
 }
-function q(t) {
+function Y(t) {
   return t === " " || t === "	" || t === `
 ` || t === "\r";
 }
-function tt(t, e) {
+function gt(t, e) {
   const n = e;
   for (; e < t.length; e++)
     if (t[e] == "?" || t[e] == " ") {
       const r = t.substr(n, e - n);
       if (e > 5 && r === "xml")
-        return b("InvalidXml", "XML declaration allowed only at the start of the document.", S(t, e));
+        return T("InvalidXml", "XML declaration allowed only at the start of the document.", S(t, e));
       if (t[e] == "?" && t[e + 1] == ">") {
         e++;
         break;
@@ -740,7 +771,7 @@ function tt(t, e) {
     }
   return e;
 }
-function nt(t, e) {
+function mt(t, e) {
   if (t.length > e + 5 && t[e + 1] === "-" && t[e + 2] === "-") {
     for (e += 3; e < t.length; e++)
       if (t[e] === "-" && t[e + 1] === "-" && t[e + 2] === ">") {
@@ -763,11 +794,11 @@ function nt(t, e) {
   }
   return e;
 }
-const rr = '"', ir = "'";
-function sr(t, e) {
+const xr = '"', Ar = "'";
+function _r(t, e) {
   let n = "", r = "", i = !1;
   for (; e < t.length; e++) {
-    if (t[e] === rr || t[e] === ir)
+    if (t[e] === xr || t[e] === Ar)
       r === "" ? r = t[e] : r !== t[e] || (r = "");
     else if (t[e] === ">" && r === "") {
       i = !0;
@@ -781,54 +812,54 @@ function sr(t, e) {
     tagClosed: i
   };
 }
-function or(t) {
+function Ir(t) {
   const e = [], n = t.length;
   let r = 0;
   for (; r < n; ) {
     const i = r;
-    for (; r < n && q(t[r]); ) r++;
+    for (; r < n && Y(t[r]); ) r++;
     if (r >= n) break;
     if (t[r] === "=") {
       r = i + 1;
       continue;
     }
     const s = t.slice(i, r), a = r;
-    for (; r < n && !q(t[r]) && t[r] !== "="; ) r++;
+    for (; r < n && !Y(t[r]) && t[r] !== "="; ) r++;
     const o = t.slice(a, r);
     let l, d = r;
-    for (; d < n && q(t[d]); ) d++;
+    for (; d < n && Y(t[d]); ) d++;
     d < n && t[d] === "=" && (l = t.slice(r, d + 1), r = d + 1);
     let c, u, p = r;
-    for (; p < n && q(t[p]); ) p++;
+    for (; p < n && Y(t[p]); ) p++;
     if (p < n && (t[p] === '"' || t[p] === "'")) {
-      const y = p + 1, g = t.indexOf(t[p], y);
-      g !== -1 && (c = t[p], u = t.slice(y, g), r = g + 1);
+      const y = p + 1, E = t.indexOf(t[p], y);
+      E !== -1 && (c = t[p], u = t.slice(y, E), r = E + 1);
     }
-    const h = { startIndex: i };
-    h[1] = s, h[2] = o, h[3] = l, h[4] = c !== void 0 ? !0 : void 0, h[5] = c, h[6] = u, e.push(h);
+    const f = { startIndex: i };
+    f[1] = s, f[2] = o, f[3] = l, f[4] = c !== void 0 ? !0 : void 0, f[5] = c, f[6] = u, e.push(f);
   }
   return e;
 }
-function rt(t, e) {
-  const n = or(t), r = {};
+function Et(t, e) {
+  const n = Ir(t), r = {};
   for (let i = 0; i < n.length; i++) {
     if (n[i][1].length === 0)
-      return b("InvalidAttr", "Attribute '" + n[i][2] + "' has no space in starting.", Q(n[i]));
+      return T("InvalidAttr", "Attribute '" + n[i][2] + "' has no space in starting.", ee(n[i]));
     if (n[i][3] !== void 0 && n[i][4] === void 0)
-      return b("InvalidAttr", "Attribute '" + n[i][2] + "' is without value.", Q(n[i]));
+      return T("InvalidAttr", "Attribute '" + n[i][2] + "' is without value.", ee(n[i]));
     if (n[i][3] === void 0 && !e.allowBooleanAttributes)
-      return b("InvalidAttr", "boolean attribute '" + n[i][2] + "' is not allowed.", Q(n[i]));
+      return T("InvalidAttr", "boolean attribute '" + n[i][2] + "' is not allowed.", ee(n[i]));
     const s = n[i][2];
-    if (!cr(s))
-      return b("InvalidAttr", "Attribute '" + s + "' is an invalid name.", Q(n[i]));
+    if (!Or(s))
+      return T("InvalidAttr", "Attribute '" + s + "' is an invalid name.", ee(n[i]));
     if (!Object.prototype.hasOwnProperty.call(r, s))
       r[s] = 1;
     else
-      return b("InvalidAttr", "Attribute '" + s + "' is repeated.", Q(n[i]));
+      return T("InvalidAttr", "Attribute '" + s + "' is repeated.", ee(n[i]));
   }
   return !0;
 }
-function ar(t, e) {
+function Cr(t, e) {
   let n = /\d/;
   for (t[e] === "x" && (e++, n = /[\da-fA-F]/); e < t.length; e++) {
     if (t[e] === ";")
@@ -838,11 +869,11 @@ function ar(t, e) {
   }
   return -1;
 }
-function lr(t, e) {
+function Lr(t, e) {
   if (e++, t[e] === ";")
     return -1;
   if (t[e] === "#")
-    return e++, ar(t, e);
+    return e++, Cr(t, e);
   let n = 0;
   for (; e < t.length; e++, n++)
     if (!(t[e].match(/\w/) && n < 20)) {
@@ -852,7 +883,7 @@ function lr(t, e) {
     }
   return e;
 }
-function b(t, e, n) {
+function T(t, e, n) {
   return {
     err: {
       code: t,
@@ -862,11 +893,11 @@ function b(t, e, n) {
     }
   };
 }
-function cr(t) {
-  return Ot(t);
+function Or(t) {
+  return zt(t);
 }
-function dr(t) {
-  return Ot(t);
+function Rr(t) {
+  return zt(t);
 }
 function S(t, e) {
   const n = t.substring(0, e).split(/\r?\n/);
@@ -876,10 +907,10 @@ function S(t, e) {
     col: n[n.length - 1].length + 1
   };
 }
-function Q(t) {
+function ee(t) {
   return t.startIndex + t[1].length;
 }
-const ur = {
+const vr = {
   cent: "¢",
   pound: "£",
   curren: "¤",
@@ -895,13 +926,13 @@ const ur = {
   won: "₩",
   yuan: "¥",
   cedil: "¸"
-}, Ft = {
+}, Kt = {
   amp: "&",
   apos: "'",
   gt: ">",
   lt: "<",
   quot: '"'
-}, pr = {
+}, Mr = {
   nbsp: " ",
   copy: "©",
   reg: "®",
@@ -922,23 +953,23 @@ const ur = {
   frac12: "½",
   frac14: "¼",
   frac34: "¾"
-}, de = Object.freeze({
+}, fe = Object.freeze({
   /** Resolve and expand the entity normally. */
   ALLOW: "allow",
   /** Silently skip this entity — it will not be registered. */
   BLOCK: "block",
   /** Throw an error, aborting entity registration entirely. */
   THROW: "throw"
-}), hr = new Set("!?\\\\/[]$%{}^&*()<>|+");
-function it(t) {
+}), kr = new Set("!?\\\\/[]$%{}^&*()<>|+");
+function yt(t) {
   if (t[0] === "#")
     throw new Error(`[EntityReplacer] Invalid character '#' in entity name: "${t}"`);
   for (const e of t)
-    if (hr.has(e))
+    if (kr.has(e))
       throw new Error(`[EntityReplacer] Invalid character '${e}' in entity name: "${t}"`);
   return t;
 }
-function Z(...t) {
+function te(...t) {
   const e = /* @__PURE__ */ Object.create(null);
   for (const n of t)
     if (n)
@@ -953,18 +984,18 @@ function Z(...t) {
       }
   return e;
 }
-const W = "external", ue = "base", _e = "all";
-function fr(t) {
-  return !t || t === W ? /* @__PURE__ */ new Set([W]) : t === _e ? /* @__PURE__ */ new Set([_e]) : t === ue ? /* @__PURE__ */ new Set([ue]) : Array.isArray(t) ? new Set(t) : /* @__PURE__ */ new Set([W]);
+const W = "external", ge = "base", ke = "all";
+function Fr(t) {
+  return !t || t === W ? /* @__PURE__ */ new Set([W]) : t === ke ? /* @__PURE__ */ new Set([ke]) : t === ge ? /* @__PURE__ */ new Set([ge]) : Array.isArray(t) ? new Set(t) : /* @__PURE__ */ new Set([W]);
 }
-const A = Object.freeze({ allow: 0, leave: 1, remove: 2, throw: 3 }), gr = /* @__PURE__ */ new Set([9, 10, 13]);
-function mr(t) {
+const A = Object.freeze({ allow: 0, leave: 1, remove: 2, throw: 3 }), Pr = /* @__PURE__ */ new Set([9, 10, 13]);
+function $r(t) {
   if (!t)
     return { xmlVersion: 1, onLevel: A.allow, nullLevel: A.remove };
   const e = t.xmlVersion === 1.1 ? 1.1 : 1, n = A[t.onNCR] ?? A.allow, r = A[t.nullNCR] ?? A.remove, i = Math.max(r, A.remove);
   return { xmlVersion: e, onLevel: n, nullLevel: i };
 }
-class Er {
+class jr {
   /**
    * @param {object} [options]
    * @param {object|null}  [options.namedEntities]        — extra named entities merged into base map
@@ -1001,8 +1032,8 @@ class Er {
    *   `ENTITY_ACTION.THROW` to abort with an error.
    */
   constructor(e = {}) {
-    this._limit = e.limit || {}, this._maxTotalExpansions = this._limit.maxTotalExpansions || 0, this._maxExpandedLength = this._limit.maxExpandedLength || 0, this._postCheck = typeof e.postCheck == "function" ? e.postCheck : (r) => r, this._limitTiers = fr(this._limit.applyLimitsTo ?? W), this._numericAllowed = e.numericAllowed ?? !0, this._baseMap = Z(Ft, e.namedEntities || null), this._externalMap = /* @__PURE__ */ Object.create(null), this._inputMap = /* @__PURE__ */ Object.create(null), this._totalExpansions = 0, this._expandedLength = 0, this._removeSet = new Set(e.remove && Array.isArray(e.remove) ? e.remove : []), this._leaveSet = new Set(e.leave && Array.isArray(e.leave) ? e.leave : []);
-    const n = mr(e.ncr);
+    this._limit = e.limit || {}, this._maxTotalExpansions = this._limit.maxTotalExpansions || 0, this._maxExpandedLength = this._limit.maxExpandedLength || 0, this._postCheck = typeof e.postCheck == "function" ? e.postCheck : (r) => r, this._limitTiers = Fr(this._limit.applyLimitsTo ?? W), this._numericAllowed = e.numericAllowed ?? !0, this._baseMap = te(Kt, e.namedEntities || null), this._externalMap = /* @__PURE__ */ Object.create(null), this._inputMap = /* @__PURE__ */ Object.create(null), this._totalExpansions = 0, this._expandedLength = 0, this._removeSet = new Set(e.remove && Array.isArray(e.remove) ? e.remove : []), this._leaveSet = new Set(e.leave && Array.isArray(e.leave) ? e.leave : []);
+    const n = $r(e.ncr);
     this._ncrXmlVersion = n.xmlVersion, this._ncrOnLevel = n.onLevel, this._ncrNullLevel = n.nullLevel, this._onExternalEntity = typeof e.onExternalEntity == "function" ? e.onExternalEntity : null, this._onInputEntity = typeof e.onInputEntity == "function" ? e.onInputEntity : null;
   }
   // -------------------------------------------------------------------------
@@ -1022,8 +1053,8 @@ class Er {
   _applyRegistrationHook(e, n, r, i) {
     if (!e) return !0;
     const s = e(n, r);
-    if (s === de.BLOCK) return !1;
-    if (s === de.THROW)
+    if (s === fe.BLOCK) return !1;
+    if (s === fe.THROW)
       throw new Error(
         `[EntityDecoder] Registration of ${i} entity "&${n};" was rejected by hook`
       );
@@ -1043,12 +1074,12 @@ class Er {
   setExternalEntities(e) {
     if (e)
       for (const i of Object.keys(e))
-        it(i);
+        yt(i);
     if (!this._onExternalEntity) {
-      this._externalMap = Z(e);
+      this._externalMap = te(e);
       return;
     }
-    const n = Z(e), r = /* @__PURE__ */ Object.create(null);
+    const n = te(e), r = /* @__PURE__ */ Object.create(null);
     for (const [i, s] of Object.entries(n))
       this._applyRegistrationHook(this._onExternalEntity, i, s, "external") && (r[i] = s);
     this._externalMap = r;
@@ -1061,7 +1092,7 @@ class Er {
    * @param {string} value
    */
   addExternalEntity(e, n) {
-    it(e), typeof n == "string" && n.indexOf("&") === -1 && this._applyRegistrationHook(this._onExternalEntity, e, n, "external") && (this._externalMap[e] = n);
+    yt(e), typeof n == "string" && n.indexOf("&") === -1 && this._applyRegistrationHook(this._onExternalEntity, e, n, "external") && (this._externalMap[e] = n);
   }
   // -------------------------------------------------------------------------
   // Input / runtime entity registration (per document)
@@ -1075,10 +1106,10 @@ class Er {
    */
   addInputEntities(e) {
     if (this._totalExpansions = 0, this._expandedLength = 0, !this._onInputEntity) {
-      this._inputMap = Z(e);
+      this._inputMap = te(e);
       return;
     }
-    const n = Z(e), r = /* @__PURE__ */ Object.create(null);
+    const n = te(e), r = /* @__PURE__ */ Object.create(null);
     for (const [i, s] of Object.entries(n))
       this._applyRegistrationHook(this._onInputEntity, i, s, "input") && (r[i] = s);
     this._inputMap = r;
@@ -1135,35 +1166,35 @@ class Er {
         a++;
         continue;
       }
-      let h, y;
+      let f, y;
       if (this._removeSet.has(p))
-        h = "", y === void 0 && (y = W);
+        f = "", y === void 0 && (y = W);
       else if (this._leaveSet.has(p)) {
         a++;
         continue;
       } else if (p.charCodeAt(0) === 35) {
-        const g = this._resolveNCR(p);
-        if (g === void 0) {
+        const E = this._resolveNCR(p);
+        if (E === void 0) {
           a++;
           continue;
         }
-        h = g, y = ue;
+        f = E, y = ge;
       } else {
-        const g = this._resolveName(p);
-        h = g == null ? void 0 : g.value, y = g == null ? void 0 : g.tier;
+        const E = this._resolveName(p);
+        f = E == null ? void 0 : E.value, y = E == null ? void 0 : E.tier;
       }
-      if (h === void 0) {
+      if (f === void 0) {
         a++;
         continue;
       }
-      if (a > s && r.push(e.slice(s, a)), r.push(h), s = u + 1, a = s, d && this._tierCounts(y)) {
+      if (a > s && r.push(e.slice(s, a)), r.push(f), s = u + 1, a = s, d && this._tierCounts(y)) {
         if (o && (this._totalExpansions++, this._totalExpansions > this._maxTotalExpansions))
           throw new Error(
             `[EntityReplacer] Entity expansion count limit exceeded: ${this._totalExpansions} > ${this._maxTotalExpansions}`
           );
         if (l) {
-          const g = h.length - (p.length + 2);
-          if (g > 0 && (this._expandedLength += g, this._expandedLength > this._maxExpandedLength))
+          const E = f.length - (p.length + 2);
+          if (E > 0 && (this._expandedLength += E, this._expandedLength > this._maxExpandedLength))
             throw new Error(
               `[EntityReplacer] Expanded content length limit exceeded: ${this._expandedLength} > ${this._maxExpandedLength}`
             );
@@ -1184,7 +1215,7 @@ class Er {
    * @returns {boolean}
    */
   _tierCounts(e) {
-    return this._limitTiers.has(_e) ? !0 : this._limitTiers.has(e);
+    return this._limitTiers.has(ke) ? !0 : this._limitTiers.has(e);
   }
   // -------------------------------------------------------------------------
   // Private: entity resolution
@@ -1200,7 +1231,7 @@ class Er {
   _resolveName(e) {
     if (e in this._inputMap) return { value: this._inputMap[e], tier: W };
     if (e in this._externalMap) return { value: this._externalMap[e], tier: W };
-    if (e in this._baseMap) return { value: this._baseMap[e], tier: ue };
+    if (e in this._baseMap) return { value: this._baseMap[e], tier: ge };
   }
   /**
    * Classify a codepoint and return the minimum action level that must be applied.
@@ -1216,7 +1247,7 @@ class Er {
    * @returns {number}   — minimum NCR_LEVEL value, or -1 for no restriction
    */
   _classifyNCR(e) {
-    return e === 0 ? this._ncrNullLevel : e >= 55296 && e <= 57343 || this._ncrXmlVersion === 1 && e >= 1 && e <= 31 && !gr.has(e) ? A.remove : -1;
+    return e === 0 ? this._ncrNullLevel : e >= 55296 && e <= 57343 || this._ncrXmlVersion === 1 && e >= 1 && e <= 31 && !Pr.has(e) ? A.remove : -1;
   }
   /**
    * Execute a resolved NCR action.
@@ -1272,7 +1303,7 @@ class Er {
     return this._applyNCRAction(s, e, r);
   }
 }
-const $t = (t) => je.includes(t) ? "__" + t : t, yr = {
+const Qt = (t) => ze.includes(t) ? "__" + t : t, Ur = {
   preserveOrder: !1,
   attributeNamePrefix: "@_",
   attributesGroupName: !1,
@@ -1322,22 +1353,22 @@ const $t = (t) => je.includes(t) ? "__" + t : t, yr = {
   strictReservedNames: !0,
   jPath: !0,
   // if true, pass jPath string to callbacks; if false, pass matcher instance
-  onDangerousProperty: $t
+  onDangerousProperty: Qt
 };
-function br(t, e) {
+function Br(t, e) {
   if (typeof t != "string")
     return;
   const n = t.toLowerCase();
-  if (je.some((r) => n === r.toLowerCase()))
+  if (ze.some((r) => n === r.toLowerCase()))
     throw new Error(
       `[SECURITY] Invalid ${e}: "${t}" is a reserved JavaScript keyword that could cause prototype pollution`
     );
-  if (Rt.some((r) => n === r.toLowerCase()))
+  if (Jt.some((r) => n === r.toLowerCase()))
     throw new Error(
       `[SECURITY] Invalid ${e}: "${t}" is a reserved JavaScript keyword that could cause prototype pollution`
     );
 }
-function Mt(t, e) {
+function Zt(t, e) {
   return typeof t == "boolean" ? {
     enabled: t,
     // true or false
@@ -1359,10 +1390,10 @@ function Mt(t, e) {
     allowedTags: t.allowedTags ?? null,
     tagFilter: t.tagFilter ?? null,
     appliesTo: t.appliesTo ?? "all"
-  } : Mt(!0);
+  } : Zt(!0);
 }
-const Tr = function(t) {
-  const e = Object.assign({}, yr, t), n = [
+const Vr = function(t) {
+  const e = Object.assign({}, Ur, t), n = [
     { value: e.attributeNamePrefix, name: "attributeNamePrefix" },
     { value: e.attributesGroupName, name: "attributesGroupName" },
     { value: e.textNodeName, name: "textNodeName" },
@@ -1370,12 +1401,12 @@ const Tr = function(t) {
     { value: e.commentPropName, name: "commentPropName" }
   ];
   for (const { value: r, name: i } of n)
-    r && br(r, i);
-  return e.onDangerousProperty === null && (e.onDangerousProperty = $t), e.processEntities = Mt(e.processEntities, e.htmlEntities), e.unpairedTagsSet = new Set(e.unpairedTags), e.stopNodes && Array.isArray(e.stopNodes) && (e.stopNodes = e.stopNodes.map((r) => typeof r == "string" && r.startsWith("*.") ? ".." + r.substring(2) : r)), e;
+    r && Br(r, i);
+  return e.onDangerousProperty === null && (e.onDangerousProperty = Qt), e.processEntities = Zt(e.processEntities, e.htmlEntities), e.unpairedTagsSet = new Set(e.unpairedTags), e.stopNodes && Array.isArray(e.stopNodes) && (e.stopNodes = e.stopNodes.map((r) => typeof r == "string" && r.startsWith("*.") ? ".." + r.substring(2) : r)), e;
 };
 let V;
 typeof Symbol != "function" ? V = "@@xmlMetadata" : V = Symbol("XML Node Metadata");
-class M {
+class F {
   constructor(e) {
     this.tagname = e, this.child = [], this[":@"] = /* @__PURE__ */ Object.create(null);
   }
@@ -1397,7 +1428,7 @@ class M {
     return V;
   }
 }
-const Pt = ":A-Za-z_À-ÖØ-öø-˿Ͱ-ͽͿ-҆҈-῿‌-‍⁰-↏Ⰰ-⿯、-퟿豈-﷏ﷰ-�", wr = Pt + "\\-\\.\\d·̀-ͯ‿-⁀", kt = ":A-Za-z_À-˿Ͱ-ͽͿ-҆҈-῿‌-‍⁰-↏Ⰰ-⿯、-퟿豈-﷏ﷰ-�𐀀-󯿿", Sr = kt + "\\-\\.\\d·̀-ͯ҇‿-⁀", Ue = (t, e, n = "") => {
+const en = ":A-Za-z_À-ÖØ-öø-˿Ͱ-ͽͿ-҆҈-῿‌-‍⁰-↏Ⰰ-⿯、-퟿豈-﷏ﷰ-�", Wr = en + "\\-\\.\\d·̀-ͯ‿-⁀", tn = ":A-Za-z_À-˿Ͱ-ͽͿ-҆҈-῿‌-‍⁰-↏Ⰰ-⿯、-퟿豈-﷏ﷰ-�𐀀-󯿿", Xr = tn + "\\-\\.\\d·̀-ͯ҇‿-⁀", Je = (t, e, n = "") => {
   const r = t.replace(":", ""), i = e.replace(":", ""), s = `[${r}][${i}]*`;
   return {
     name: new RegExp(`^[${t}][${e}]*$`, n),
@@ -1406,8 +1437,8 @@ const Pt = ":A-Za-z_À-ÖØ-öø-˿Ͱ-ͽͿ-҆҈-῿‌-‍⁰-↏Ⰰ-⿯、-퟿�
     nmToken: new RegExp(`^[${e}]+$`, n),
     nmTokens: new RegExp(`^[${e}]+(?:\\s+[${e}]+)*$`, n)
   };
-}, Nr = Ue(Pt, wr), xr = Ue(kt, Sr, "u"), jt = ":A-Za-z_", Ar = jt + "\\-\\.\\d", _r = Ue(jt, Ar), Ir = (t = "1.0", e = !1) => e ? _r : t === "1.1" ? xr : Nr, Ut = (t, { xmlVersion: e = "1.0", asciiOnly: n = !1 } = {}) => Ir(e, n).qName.test(t);
-class Cr {
+}, Hr = Je(en, Wr), Yr = Je(tn, Xr, "u"), nn = ":A-Za-z_", qr = nn + "\\-\\.\\d", Dr = Je(nn, qr), Gr = (t = "1.0", e = !1) => e ? Dr : t === "1.1" ? Yr : Hr, rn = (t, { xmlVersion: e = "1.0", asciiOnly: n = !1 } = {}) => Gr(e, n).qName.test(t);
+class zr {
   constructor(e, n) {
     this.suppressValidationErr = !e, this.options = e, this.xmlVersion = n || 1;
   }
@@ -1470,7 +1501,7 @@ class Cr {
     for (; n < e.length && !/\s/.test(e[n]) && e[n] !== '"' && e[n] !== "'"; )
       n++;
     let i = e.substring(r, n);
-    if (ee(i, { xmlVersion: this.xmlVersion }), n = x(e, n), !this.suppressValidationErr) {
+    if (ne(i, { xmlVersion: this.xmlVersion }), n = x(e, n), !this.suppressValidationErr) {
       if (e.substring(n, n + 6).toUpperCase() === "SYSTEM")
         throw new Error("External entities are not supported");
       if (e[n] === "%")
@@ -1489,7 +1520,7 @@ class Cr {
     for (; n < e.length && !/\s/.test(e[n]); )
       n++;
     let i = e.substring(r, n);
-    !this.suppressValidationErr && ee(i, { xmlVersion: this.xmlVersion }), n = x(e, n);
+    !this.suppressValidationErr && ne(i, { xmlVersion: this.xmlVersion }), n = x(e, n);
     const s = e.substring(n, n + 6).toUpperCase();
     if (!this.suppressValidationErr && s !== "SYSTEM" && s !== "PUBLIC")
       throw new Error(`Expected SYSTEM or PUBLIC, found "${s}"`);
@@ -1520,7 +1551,7 @@ class Cr {
     for (; n < e.length && !/\s/.test(e[n]); )
       n++;
     let i = e.substring(r, n);
-    if (!this.suppressValidationErr && !Ut(i, { xmlVersion: this.xmlVersion }))
+    if (!this.suppressValidationErr && !rn(i, { xmlVersion: this.xmlVersion }))
       throw new Error(`Invalid element name: "${i}"`);
     n = x(e, n);
     let s = "";
@@ -1547,10 +1578,10 @@ class Cr {
     for (; n < e.length && !/\s/.test(e[n]); )
       n++;
     let i = e.substring(r, n);
-    for (ee(i, { xmlVersion: this.xmlVersion }), n = x(e, n), r = n; n < e.length && !/\s/.test(e[n]); )
+    for (ne(i, { xmlVersion: this.xmlVersion }), n = x(e, n), r = n; n < e.length && !/\s/.test(e[n]); )
       n++;
     let s = e.substring(r, n);
-    if (!ee(s, { xmlVersion: this.xmlVersion }))
+    if (!ne(s, { xmlVersion: this.xmlVersion }))
       throw new Error(`Invalid attribute name: "${s}"`);
     n = x(e, n);
     let a = "";
@@ -1564,7 +1595,7 @@ class Cr {
         for (; n < e.length && e[n] !== "|" && e[n] !== ")"; )
           n++;
         let c = e.substring(d, n);
-        if (c = c.trim(), !ee(c, { xmlVersion: this.xmlVersion }))
+        if (c = c.trim(), !ne(c, { xmlVersion: this.xmlVersion }))
           throw new Error(`Invalid notation name: "${c}"`);
         l.push(c), e[n] === "|" && (n++, n = x(e, n));
       }
@@ -1601,12 +1632,12 @@ function j(t, e, n) {
     if (e[r] !== t[n + r + 1]) return !1;
   return !0;
 }
-function ee(t, e) {
-  if (Ut(t, { xmlVersion: e }))
+function ne(t, e) {
+  if (rn(t, { xmlVersion: e }))
     return t;
   throw new Error(`Invalid entity name ${t}`);
 }
-const vr = [
+const Jr = [
   // Basic Latin (ASCII) — included for completeness / pass-through
   48,
   // 0-9
@@ -1736,23 +1767,23 @@ const vr = [
   // Adlam 𞥐𞥑𞥒𞥓𞥔𞥕𞥖𞥗𞥘𞥙
   130032
   // Segmented digit symbols 🯰🯱🯲🯳🯴🯵🯶🯷🯸🯹
-], Ie = 255, Ce = /* @__PURE__ */ new Map(), Bt = 65535, Vt = 1632, ne = Vt, Lr = Bt - Vt + 1, ve = new Uint8Array(Lr).fill(Ie);
-for (const t of vr)
+], Fe = 255, Pe = /* @__PURE__ */ new Map(), sn = 65535, on = 1632, ie = on, Kr = sn - on + 1, $e = new Uint8Array(Kr).fill(Fe);
+for (const t of Jr)
   for (let e = 0; e < 10; e++) {
     const n = t + e;
-    n <= Bt ? ve[n - ne] = e : Ce.set(n, e);
+    n <= sn ? $e[n - ie] = e : Pe.set(n, e);
   }
-const st = 48, ot = 57, at = 45, le = /* @__PURE__ */ new Set([8722, 65293, 65123]);
-function Or(t) {
+const Tt = 48, bt = 57, wt = 45, ue = /* @__PURE__ */ new Set([8722, 65293, 65123]);
+function Qr(t) {
   if (typeof t != "string") return t;
   const e = t.length;
   if (e === 0) return t;
   let n = -1;
   for (let i = 0; i < e; i++) {
     const s = t.charCodeAt(i);
-    if (!(s >= st && s <= ot || s === at)) {
-      if (s < ne) {
-        if (le.has(s)) {
+    if (!(s >= Tt && s <= bt || s === wt)) {
+      if (s < ie) {
+        if (ue.has(s)) {
           n = i;
           break;
         }
@@ -1763,7 +1794,7 @@ function Or(t) {
           const a = t.charCodeAt(i + 1);
           if (a >= 56320 && a <= 57343) {
             const o = 65536 + (s - 55296 << 10) + (a - 56320);
-            if (Ce.has(o)) {
+            if (Pe.has(o)) {
               n = i;
               break;
             }
@@ -1771,7 +1802,7 @@ function Or(t) {
         }
         continue;
       }
-      if (ve[s - ne] !== Ie || le.has(s)) {
+      if ($e[s - ie] !== Fe || ue.has(s)) {
         n = i;
         break;
       }
@@ -1782,19 +1813,19 @@ function Or(t) {
   n > 0 && r.push(t.slice(0, n));
   for (let i = n; i < e; i++) {
     const s = t.charCodeAt(i);
-    if (s >= st && s <= ot || s === at) {
+    if (s >= Tt && s <= bt || s === wt) {
       r.push(t[i]);
       continue;
     }
-    if (s < ne) {
-      r.push(le.has(s) ? "-" : t[i]);
+    if (s < ie) {
+      r.push(ue.has(s) ? "-" : t[i]);
       continue;
     }
     if (s >= 55296 && s <= 56319) {
       if (i + 1 < e) {
         const o = t.charCodeAt(i + 1);
         if (o >= 56320 && o <= 57343) {
-          const l = 65536 + (s - 55296 << 10) + (o - 56320), d = Ce.get(l);
+          const l = 65536 + (s - 55296 << 10) + (o - 56320), d = Pe.get(l);
           if (d !== void 0) {
             r.push(String.fromCharCode(d + 48)), i++;
             continue;
@@ -1804,16 +1835,16 @@ function Or(t) {
       r.push(t[i]);
       continue;
     }
-    if (le.has(s)) {
+    if (ue.has(s)) {
       r.push("-");
       continue;
     }
-    const a = ve[s - ne];
-    r.push(a !== Ie ? String.fromCharCode(a + 48) : t[i]);
+    const a = $e[s - ie];
+    r.push(a !== Fe ? String.fromCharCode(a + 48) : t[i]);
   }
   return r.join("");
 }
-const Rr = /^[-+]?0x[a-fA-F0-9]+$/, Fr = /^0b[01]+$/, $r = /^0o[0-7]+$/, Mr = /^([\-\+])?(0*)([0-9]*(\.[0-9]*)?)$/, Pr = {
+const Zr = /^[-+]?0x[a-fA-F0-9]+$/, ei = /^0b[01]+$/, ti = /^0o[0-7]+$/, ni = /^([\-\+])?(0*)([0-9]*(\.[0-9]*)?)$/, ri = {
   hex: !0,
   binary: !1,
   octal: !1,
@@ -1825,27 +1856,27 @@ const Rr = /^[-+]?0x[a-fA-F0-9]+$/, Fr = /^0b[01]+$/, $r = /^0o[0-7]+$/, Mr = /^
   // "null", "infinity" (Infinity type), "string" ("Infinity" (the string literal))
   unicode: !1
 };
-function kr(t, e = {}) {
-  if (e = Object.assign({}, Pr, e), !t || typeof t != "string") return t;
+function ii(t, e = {}) {
+  if (e = Object.assign({}, ri, e), !t || typeof t != "string") return t;
   let n = t.trim();
   if (n.length === 0) return t;
   if (e.skipLike !== void 0 && e.skipLike.test(n)) return t;
-  if (n === "0" || e.unicode && (n = Or(n), n === "0"))
+  if (n === "0" || e.unicode && (n = Qr(n), n === "0"))
     return 0;
-  if (e.hex && Rr.test(n))
-    return ye(n, 16);
-  if (e.binary && Fr.test(n))
-    return ye(n, 2);
-  if (e.octal && $r.test(n))
-    return ye(n, 8);
+  if (e.hex && Zr.test(n))
+    return Ne(n, 16);
+  if (e.binary && ei.test(n))
+    return Ne(n, 2);
+  if (e.octal && ti.test(n))
+    return Ne(n, 8);
   if (isFinite(n)) {
     if (n.includes("e") || n.includes("E"))
-      return Ur(t, n, e);
+      return oi(t, n, e);
     {
-      const r = Mr.exec(n);
+      const r = ni.exec(n);
       if (r) {
         const i = r[1] || "", s = r[2];
-        let a = Br(r[3]);
+        let a = ai(r[3]);
         const o = i ? (
           // 0., -00., 000.
           t[s.length + 1] === "."
@@ -1865,12 +1896,12 @@ function kr(t, e = {}) {
       } else
         return t;
     }
-  } else return Vr(t, Number(n), e);
+  } else return li(t, Number(n), e);
 }
-const jr = /^([-+])?(0*)(\d*(\.\d*)?[eE][-\+]?\d+)$/;
-function Ur(t, e, n) {
+const si = /^([-+])?(0*)(\d*(\.\d*)?[eE][-\+]?\d+)$/;
+function oi(t, e, n) {
   if (!n.eNotation) return t;
-  const r = e.match(jr);
+  const r = e.match(si);
   if (r) {
     let i = r[1] || "";
     const s = r[3].indexOf("e") === -1 ? "E" : "e", a = r[2], o = i ? (
@@ -1881,7 +1912,7 @@ function Ur(t, e, n) {
   } else
     return t;
 }
-function Br(t) {
+function ai(t) {
   if (t && t.indexOf(".") !== -1) {
     let e = t.length;
     for (; e > 0 && t.charCodeAt(e - 1) === 48; ) e--;
@@ -1889,14 +1920,14 @@ function Br(t) {
   }
   return t;
 }
-function ye(t, e) {
+function Ne(t, e) {
   const n = t.trim();
   if ((e === 2 || e === 8) && (t = n.substring(2)), parseInt) return parseInt(t, e);
   if (Number.parseInt) return Number.parseInt(t, e);
   if (window && window.parseInt) return window.parseInt(t, e);
   throw new Error("parseInt, Number.parseInt, window.parseInt are not supported");
 }
-function Vr(t, e, n) {
+function li(t, e, n) {
   const r = e === 1 / 0;
   switch (n.infinity.toLowerCase()) {
     case "null":
@@ -1910,14 +1941,14 @@ function Vr(t, e, n) {
       return t;
   }
 }
-function Wr(t) {
+function ci(t) {
   return typeof t == "function" ? t : Array.isArray(t) ? (e) => {
     for (const n of t)
       if (typeof n == "string" && e === n || n instanceof RegExp && n.test(e))
         return !0;
   } : () => !1;
 }
-class lt {
+class St {
   /**
    * Create a new Expression
    * @param {string} pattern - Pattern string (e.g., "root.users.user", "..user[id]")
@@ -2016,7 +2047,7 @@ class lt {
     return this.pattern;
   }
 }
-class Xr {
+class di {
   constructor() {
     this._byDepthAndTag = /* @__PURE__ */ new Map(), this._wildcardByDepth = /* @__PURE__ */ new Map(), this._deepWildcards = [], this._deepByTerminalTag = /* @__PURE__ */ new Map(), this._patterns = /* @__PURE__ */ new Set(), this._sealed = !1;
   }
@@ -2162,7 +2193,7 @@ class Xr {
     return null;
   }
 }
-class qr {
+class ui {
   /**
    * @param {Matcher} matcher - The parent Matcher instance to read from.
    */
@@ -2296,14 +2327,14 @@ class qr {
     return e.matchesAny(this._matcher);
   }
 }
-class Hr {
+class pi {
   /**
    * Create a new Matcher.
    * @param {Object} [options={}]
    * @param {string} [options.separator='.'] - Default path separator
    */
   constructor(e = {}) {
-    this.separator = e.separator || ".", this.path = [], this.siblingStacks = [], this._pathStringCache = null, this._view = new qr(this), this._keptAttrs = [];
+    this.separator = e.separator || ".", this.path = [], this.siblingStacks = [], this._pathStringCache = null, this._view = new ui(this), this._keptAttrs = [];
   }
   /**
    * Push a new tag onto the path.
@@ -2328,8 +2359,8 @@ class Hr {
     r != null && (c.namespace = r), n != null && (c.values = n), this.path.push(c);
     const u = this.path.length, p = i !== null ? i.keep : null;
     if (p != null && p.length > 0 && n)
-      for (let h = 0; h < p.length; h++) {
-        const y = p[h];
+      for (let f = 0; f < p.length; f++) {
+        const y = p[f];
         n[y] !== void 0 && this._keptAttrs.push({ depth: u, name: y, value: n[y] });
       }
   }
@@ -2595,7 +2626,7 @@ class Hr {
     return this._view;
   }
 }
-const Wt = [
+const an = [
   {
     id: "html-script-open",
     description: "<script opening tag",
@@ -2684,7 +2715,7 @@ const Wt = [
     description: "<form tag — can be used for phishing / credential harvesting injection",
     pattern: /<form[\s>/]/i
   }
-], Xt = [
+], ln = [
   {
     id: "xml-cdata-injection",
     description: "CDATA section injection: <![CDATA[ breaks out of text node context",
@@ -2748,7 +2779,7 @@ const Wt = [
     description: "?> closes an enclosing processing instruction",
     pattern: /\?>/
   }
-], Yr = [
+], hi = [
   {
     id: "svg-script-element",
     description: "<script element inside SVG executes JavaScript",
@@ -2816,7 +2847,7 @@ const Wt = [
     description: "style= attribute containing javascript: (e.g. background:url(javascript:...))",
     pattern: /style\s*=[\s\S]{0,60}javascript\s*:/i
   }
-], qt = [
+], cn = [
   {
     id: "sql-block-comment-open",
     description: "SQL block comment open: /* ... */ — unusual in legitimate user text",
@@ -2894,7 +2925,7 @@ const Wt = [
     description: "INFORMATION_SCHEMA — reconnaissance query for table/column enumeration",
     pattern: /\bINFORMATION_SCHEMA\b/i
   }
-], Gr = [
+], fi = [
   {
     id: "shell-path-traversal-unix",
     description: "Unix path traversal: ../  — climbing the directory tree",
@@ -2988,7 +3019,7 @@ const Wt = [
     // "curl is a tool" won't match; "curl http://..." or "curl -s ..." will
     pattern: /\b(?:curl|wget)\s+(?:https?:\/\/|ftp:\/\/|-)/i
   }
-], zr = [
+], gi = [
   {
     id: "redos-nested-quantifier-plus",
     description: "Nested + quantifier inside a group with outer quantifier: (a+)+, (.+b)*, etc.",
@@ -3033,7 +3064,7 @@ const Wt = [
     // Heuristic: 10+ pipe-separated alternatives in a single group
     pattern: /\([^)]{0,200}(?:\|[^|)]{0,50}){9,}\)/
   }
-], _ = `["'\\s]*:`, Dr = [
+], _ = `["'\\s]*:`, mi = [
   // ─── MongoDB $ operator injection ────────────────────────────────────────
   {
     id: "nosql-where-operator",
@@ -3118,7 +3149,7 @@ const Wt = [
     description: '["__proto__"] — bracket-notation prototype pollution',
     pattern: /\[["']__proto__["']\]/
   }
-], Kr = [
+], Ei = [
   // ─── CRLF / newline injection ─────────────────────────────────────────────
   {
     id: "log-crlf-injection",
@@ -3188,7 +3219,7 @@ const Wt = [
     description: "ANSI escape sequence: ESC[ — can manipulate terminal output when logs are tailed",
     pattern: /\x1b\[/
   }
-], Jr = [
+], yi = [
   {
     id: "sql-line-comment",
     description: "SQL line comment: -- followed by whitespace or end of string",
@@ -3204,23 +3235,23 @@ const Wt = [
     description: "Hex-encoded string injection: 0x41414141 style (MySQL)",
     pattern: /\b0x[0-9a-f]{4,}/i
   }
-], Qr = [...qt, ...Jr];
-Wt.label = "HTML";
-Xt.label = "XML";
-Yr.label = "SVG";
-qt.label = "SQL";
-Qr.label = "SQL-STRICT";
-Gr.label = "SHELL";
-zr.label = "REDOS";
-Dr.label = "NOSQL";
-Kr.label = "LOG";
-function Zr(t) {
+], Ti = [...cn, ...yi];
+an.label = "HTML";
+ln.label = "XML";
+hi.label = "SVG";
+cn.label = "SQL";
+Ti.label = "SQL-STRICT";
+fi.label = "SHELL";
+gi.label = "REDOS";
+mi.label = "NOSQL";
+Ei.label = "LOG";
+function bi(t) {
   if (typeof t != "string")
     throw new TypeError(
       `is-unsafe: first argument must be a string, got ${typeof t}`
     );
 }
-function ei(t) {
+function wi(t) {
   if (!(t instanceof RegExp)) {
     if (Array.isArray(t)) {
       if (t.length === 0)
@@ -3239,25 +3270,25 @@ function ei(t) {
     );
   }
 }
-function ti(t) {
+function Si(t) {
   return t instanceof RegExp ? { lists: null, regex: t } : Array.isArray(t[0]) ? { lists: t, regex: null } : { lists: [t], regex: null };
 }
-function ni(t, e) {
+function Ni(t, e) {
   const n = e.label ?? "CUSTOM";
   for (const r of e)
     if (r.pattern.test(t))
       return { context: n, id: r.id, description: r.description, pattern: r.pattern };
   return null;
 }
-function ri(t, e) {
-  Zr(t), ei(e);
-  const { lists: n, regex: r } = ti(e);
+function xi(t, e) {
+  bi(t), wi(e);
+  const { lists: n, regex: r } = Si(e);
   if (r) return r.test(t);
   for (const i of n)
-    if (ni(t, i) !== null) return !0;
+    if (Ni(t, i) !== null) return !0;
   return !1;
 }
-function ii(t, e) {
+function Ai(t, e) {
   if (!t) return {};
   const n = e.attributesGroupName ? t[e.attributesGroupName] : t;
   if (!n) return {};
@@ -3270,7 +3301,7 @@ function ii(t, e) {
       r[i] = n[i];
   return r;
 }
-function si(t) {
+function _i(t) {
   if (!t || typeof t != "string") return;
   const e = t.indexOf(":");
   if (e !== -1 && e > 0) {
@@ -3279,11 +3310,11 @@ function si(t) {
       return n;
   }
 }
-class oi {
+class Ii {
   constructor(e, n) {
-    this.options = e, this.currentNode = null, this.tagsNodeStack = [], this.parseXml = ui, this.parseTextData = ai, this.resolveNameSpace = li, this.buildAttributesMap = di, this.isItStopNode = gi, this.replaceEntitiesValue = hi, this.readStopNodeData = yi, this.saveTextToParentTag = fi, this.addChild = pi, this.ignoreAttributesFn = Wr(this.options.ignoreAttributes), this.entityExpansionCount = 0, this.currentExpandedLength = 0, this.doctypefound = !1;
-    let r = { ...Ft };
-    this.options.entityDecoder ? this.entityDecoder = this.options.entityDecoder : (typeof this.options.htmlEntities == "object" ? r = this.options.htmlEntities : this.options.htmlEntities === !0 && (r = { ...pr, ...ur }), this.entityDecoder = new Er({
+    this.options = e, this.currentNode = null, this.tagsNodeStack = [], this.parseXml = vi, this.parseTextData = Ci, this.resolveNameSpace = Li, this.buildAttributesMap = Ri, this.isItStopNode = Pi, this.replaceEntitiesValue = ki, this.readStopNodeData = Ui, this.saveTextToParentTag = Fi, this.addChild = Mi, this.ignoreAttributesFn = ci(this.options.ignoreAttributes), this.entityExpansionCount = 0, this.currentExpandedLength = 0, this.doctypefound = !1;
+    let r = { ...Kt };
+    this.options.entityDecoder ? this.entityDecoder = this.options.entityDecoder : (typeof this.options.htmlEntities == "object" ? r = this.options.htmlEntities : this.options.htmlEntities === !0 && (r = { ...Mr, ...vr }), this.entityDecoder = new jr({
       namedEntities: { ...r, ...n },
       numericAllowed: this.options.htmlEntities,
       limit: {
@@ -3294,29 +3325,29 @@ class oi {
       // onExternalEntity: (name, value) => isUnsafe(value) ? 'block' : 'allow',
       onInputEntity: (s, a) => (
         //TODO: VALID_CONTEXTS.HTML should be set only if this.options.htmlEntities
-        ri(a, [Wt, Xt]) ? de.BLOCK : de.ALLOW
+        xi(a, [an, ln]) ? fe.BLOCK : fe.ALLOW
       )
       //postCheck: resolved => resolved
-    })), this.matcher = new Hr(), this.readonlyMatcher = this.matcher.readOnly(), this.isCurrentNodeStopNode = !1, this.stopNodeExpressionsSet = new Xr();
+    })), this.matcher = new pi(), this.readonlyMatcher = this.matcher.readOnly(), this.isCurrentNodeStopNode = !1, this.stopNodeExpressionsSet = new di();
     const i = this.options.stopNodes;
     if (i && i.length > 0) {
       for (let s = 0; s < i.length; s++) {
         const a = i[s];
-        typeof a == "string" ? this.stopNodeExpressionsSet.add(new lt(a)) : a instanceof lt && this.stopNodeExpressionsSet.add(a);
+        typeof a == "string" ? this.stopNodeExpressionsSet.add(new St(a)) : a instanceof St && this.stopNodeExpressionsSet.add(a);
       }
       this.stopNodeExpressionsSet.seal();
     }
   }
 }
-function ai(t, e, n, r, i, s, a) {
+function Ci(t, e, n, r, i, s, a) {
   const o = this.options;
   if (t !== void 0 && (o.trimValues && !r && (t = t.trim()), t.length > 0)) {
     a || (t = this.replaceEntitiesValue(t, e, n));
     const l = o.jPath ? n.toString() : n, d = o.tagValueProcessor(e, t, l, i, s);
-    return d == null ? t : typeof d != typeof t || d !== t ? d : o.trimValues || t.trim() === t ? Oe(t, o.parseTagValue, o.numberParseOptions) : t;
+    return d == null ? t : typeof d != typeof t || d !== t ? d : o.trimValues || t.trim() === t ? Ue(t, o.parseTagValue, o.numberParseOptions) : t;
   }
 }
-function li(t) {
+function Li(t) {
   if (this.options.removeNSPrefix) {
     const e = t.split(":"), n = t.charAt(0) === "/" ? "/" : "";
     if (e[0] === "xmlns")
@@ -3325,65 +3356,65 @@ function li(t) {
   }
   return t;
 }
-const ci = new RegExp(`([^\\s=]+)\\s*(=\\s*(['"])([\\s\\S]*?)\\3)?`, "gm");
-function di(t, e, n, r = !1) {
+const Oi = new RegExp(`([^\\s=]+)\\s*(=\\s*(['"])([\\s\\S]*?)\\3)?`, "gm");
+function Ri(t, e, n, r = !1) {
   const i = this.options;
   if (r === !0 || i.ignoreAttributes !== !0 && typeof t == "string") {
-    const s = Zn(t, ci), a = s.length, o = {}, l = new Array(a);
+    const s = br(t, Oi), a = s.length, o = {}, l = new Array(a);
     let d = !1;
     const c = {};
-    for (let h = 0; h < a; h++) {
-      const y = this.resolveNameSpace(s[h][1]), g = s[h][4];
-      if (y.length && g !== void 0) {
-        let T = g;
-        i.trimValues && (T = T.trim()), T = this.replaceEntitiesValue(T, n, this.readonlyMatcher), l[h] = T, c[y] = T, d = !0;
+    for (let f = 0; f < a; f++) {
+      const y = this.resolveNameSpace(s[f][1]), E = s[f][4];
+      if (y.length && E !== void 0) {
+        let b = E;
+        i.trimValues && (b = b.trim()), b = this.replaceEntitiesValue(b, n, this.readonlyMatcher), l[f] = b, c[y] = b, d = !0;
       }
     }
     d && typeof e == "object" && e.updateCurrent && e.updateCurrent(c);
     const u = i.jPath ? e.toString() : this.readonlyMatcher;
     let p = !1;
-    for (let h = 0; h < a; h++) {
-      const y = this.resolveNameSpace(s[h][1]);
+    for (let f = 0; f < a; f++) {
+      const y = this.resolveNameSpace(s[f][1]);
       if (this.ignoreAttributesFn(y, u)) continue;
-      let g = i.attributeNamePrefix + y;
+      let E = i.attributeNamePrefix + y;
       if (y.length)
-        if (i.transformAttributeName && (g = i.transformAttributeName(g)), g = Ht(g, i), s[h][4] !== void 0) {
-          const T = l[h], I = i.attributeValueProcessor(y, T, u);
-          I == null ? o[g] = T : typeof I != typeof T || I !== T ? o[g] = I : o[g] = Oe(T, i.parseAttributeValue, i.numberParseOptions), p = !0;
-        } else i.allowBooleanAttributes && (o[g] = !0, p = !0);
+        if (i.transformAttributeName && (E = i.transformAttributeName(E)), E = dn(E, i), s[f][4] !== void 0) {
+          const b = l[f], I = i.attributeValueProcessor(y, b, u);
+          I == null ? o[E] = b : typeof I != typeof b || I !== b ? o[E] = I : o[E] = Ue(b, i.parseAttributeValue, i.numberParseOptions), p = !0;
+        } else i.allowBooleanAttributes && (o[E] = !0, p = !0);
     }
     if (!p) return;
     if (i.attributesGroupName && !i.preserveOrder) {
-      const h = {};
-      return h[i.attributesGroupName] = o, h;
+      const f = {};
+      return f[i.attributesGroupName] = o, f;
     }
     return o;
   }
 }
-const ui = function(t) {
+const vi = function(t) {
   t = t.replace(/\r\n?/g, `
 `);
-  const e = new M("!xml");
+  const e = new F("!xml");
   let n = e, r = "";
   this.matcher.reset(), this.entityDecoder.reset(), this.entityExpansionCount = 0, this.currentExpandedLength = 0, this.doctypefound = !1;
-  const i = this.options, s = new Cr(i.processEntities), a = t.length;
+  const i = this.options, s = new zr(i.processEntities), a = t.length;
   for (let o = 0; o < a; o++)
     if (t[o] === "<") {
       const d = t.charCodeAt(o + 1);
       if (d === 47) {
-        const c = Y(t, ">", o, "Closing Tag is not closed.");
+        const c = D(t, ">", o, "Closing Tag is not closed.");
         let u = t.substring(o + 2, c).trim();
         if (i.removeNSPrefix) {
-          const h = u.indexOf(":");
-          h !== -1 && (u = u.substr(h + 1));
+          const f = u.indexOf(":");
+          f !== -1 && (u = u.substr(f + 1));
         }
-        u = be(i.transformTagName, u, "", i).tagName, n && (r = this.saveTextToParentTag(r, n, this.readonlyMatcher));
+        u = xe(i.transformTagName, u, "", i).tagName, n && (r = this.saveTextToParentTag(r, n, this.readonlyMatcher));
         const p = this.matcher.getCurrentTag();
         if (u && i.unpairedTagsSet.has(u))
           throw new Error(`Unpaired tag can not be used as closing tag: </${u}>`);
         p && i.unpairedTagsSet.has(p) && (this.matcher.pop(), this.tagsNodeStack.pop()), this.matcher.pop(), this.isCurrentNodeStopNode = !1, n = this.tagsNodeStack.pop() || e, i.captureMetaData && n && n.addEndIndex(c + 1), r = "", o = c;
       } else if (d === 63) {
-        let c = Le(t, o, !1, "?>");
+        let c = je(t, o, !1, "?>");
         if (!c) throw new Error("Pi Tag is not closed.");
         r = this.saveTextToParentTag(r, n, this.readonlyMatcher);
         const u = this.buildAttributesMap(c.tagExp, this.matcher, c.tagName, !0);
@@ -3392,12 +3423,12 @@ const ui = function(t) {
           this.entityDecoder.setXmlVersion(Number(p) || 1), s.setXmlVersion(Number(p) || 1);
         }
         if (!(i.ignoreDeclaration && c.tagName === "?xml" || i.ignorePiTags)) {
-          const p = new M(c.tagName);
+          const p = new F(c.tagName);
           p.add(i.textNodeName, ""), c.tagName !== c.tagExp && c.attrExpPresent && i.ignoreAttributes !== !0 && (p[":@"] = u), this.addChild(n, p, this.readonlyMatcher, o), i.captureMetaData && n.addEndIndex(c.closeIndex + 2);
         }
         o = c.closeIndex + 1;
       } else if (d === 33 && t.charCodeAt(o + 2) === 45 && t.charCodeAt(o + 3) === 45) {
-        const c = Y(t, "-->", o + 4, "Comment is not closed.");
+        const c = D(t, "-->", o + 4, "Comment is not closed.");
         if (i.commentPropName) {
           const u = t.substring(o + 4, c - 2);
           r = this.saveTextToParentTag(r, n, this.readonlyMatcher), n.add(i.commentPropName, [{ [i.textNodeName]: u }]);
@@ -3409,29 +3440,29 @@ const ui = function(t) {
         const c = s.readDocType(t, o);
         this.entityDecoder.addInputEntities(c.entities), o = c.i;
       } else if (d === 33 && t.charCodeAt(o + 2) === 91) {
-        const c = Y(t, "]]>", o, "CDATA is not closed.") - 2, u = t.substring(o + 9, c);
+        const c = D(t, "]]>", o, "CDATA is not closed.") - 2, u = t.substring(o + 9, c);
         r = this.saveTextToParentTag(r, n, this.readonlyMatcher);
         let p = this.parseTextData(u, n.tagname, this.readonlyMatcher, !0, !1, !0, !0);
         p == null && (p = ""), i.cdataPropName ? n.add(i.cdataPropName, [{ [i.textNodeName]: u }]) : n.add(i.textNodeName, p), o = c + 2;
       } else {
-        let c = Le(t, o, i.removeNSPrefix);
+        let c = je(t, o, i.removeNSPrefix);
         if (!c) {
           const N = t.substring(Math.max(0, o - 50), Math.min(a, o + 50));
           throw new Error(`readTagExp returned undefined at position ${o}. Context: "${N}"`);
         }
         let u = c.tagName;
         const p = c.rawTagName;
-        let h = c.tagExp, y = c.attrExpPresent, g = c.closeIndex;
-        if ({ tagName: u, tagExp: h } = be(i.transformTagName, u, h, i), i.strictReservedNames && (u === i.commentPropName || u === i.cdataPropName || u === i.textNodeName || u === i.attributesGroupName))
+        let f = c.tagExp, y = c.attrExpPresent, E = c.closeIndex;
+        if ({ tagName: u, tagExp: f } = xe(i.transformTagName, u, f, i), i.strictReservedNames && (u === i.commentPropName || u === i.cdataPropName || u === i.textNodeName || u === i.attributesGroupName))
           throw new Error(`Invalid tag name: ${u}`);
         n && r && n.tagname !== "!xml" && (r = this.saveTextToParentTag(r, n, this.readonlyMatcher, !1));
-        const T = n;
-        T && i.unpairedTagsSet.has(T.tagname) && (n = this.tagsNodeStack.pop(), this.matcher.pop());
+        const b = n;
+        b && i.unpairedTagsSet.has(b.tagname) && (n = this.tagsNodeStack.pop(), this.matcher.pop());
         let I = !1;
-        h.length > 0 && h.lastIndexOf("/") === h.length - 1 && (I = !0, u[u.length - 1] === "/" ? (u = u.substr(0, u.length - 1), h = u) : h = h.substr(0, h.length - 1), y = u !== h);
-        let L = null, He;
-        He = si(p), u !== e.tagname && this.matcher.push(u, {}, He), u !== h && y && (L = this.buildAttributesMap(h, this.matcher, u), L && ii(L, i)), u !== e.tagname && (this.isCurrentNodeStopNode = this.isItStopNode());
-        const oe = o;
+        f.length > 0 && f.lastIndexOf("/") === f.length - 1 && (I = !0, u[u.length - 1] === "/" ? (u = u.substr(0, u.length - 1), f = u) : f = f.substr(0, f.length - 1), y = u !== f);
+        let O = null, it;
+        it = _i(p), u !== e.tagname && this.matcher.push(u, {}, it), u !== f && y && (O = this.buildAttributesMap(f, this.matcher, u), O && Ai(O, i)), u !== e.tagname && (this.isCurrentNodeStopNode = this.isItStopNode());
+        const ce = o;
         if (this.isCurrentNodeStopNode) {
           let N = "";
           if (I)
@@ -3439,40 +3470,40 @@ const ui = function(t) {
           else if (i.unpairedTagsSet.has(u))
             o = c.closeIndex;
           else {
-            const ge = this.readStopNodeData(t, p, g + 1);
-            if (!ge) throw new Error(`Unexpected end of ${p}`);
-            o = ge.i, N = ge.tagContent;
+            const be = this.readStopNodeData(t, p, E + 1);
+            if (!be) throw new Error(`Unexpected end of ${p}`);
+            o = be.i, N = be.tagContent;
           }
-          const fe = new M(u);
-          L && (fe[":@"] = L), fe.add(i.textNodeName, N), this.matcher.pop(), this.isCurrentNodeStopNode = !1, this.addChild(n, fe, this.readonlyMatcher, oe), i.captureMetaData && n.addEndIndex(o + 1);
+          const Te = new F(u);
+          O && (Te[":@"] = O), Te.add(i.textNodeName, N), this.matcher.pop(), this.isCurrentNodeStopNode = !1, this.addChild(n, Te, this.readonlyMatcher, ce), i.captureMetaData && n.addEndIndex(o + 1);
         } else {
           if (I) {
-            ({ tagName: u, tagExp: h } = be(i.transformTagName, u, h, i));
-            const N = new M(u);
-            L && (N[":@"] = L), this.addChild(n, N, this.readonlyMatcher, oe), i.captureMetaData && n.addEndIndex(g + 1), this.matcher.pop(), this.isCurrentNodeStopNode = !1;
+            ({ tagName: u, tagExp: f } = xe(i.transformTagName, u, f, i));
+            const N = new F(u);
+            O && (N[":@"] = O), this.addChild(n, N, this.readonlyMatcher, ce), i.captureMetaData && n.addEndIndex(E + 1), this.matcher.pop(), this.isCurrentNodeStopNode = !1;
           } else if (i.unpairedTagsSet.has(u)) {
-            const N = new M(u);
-            L && (N[":@"] = L), this.addChild(n, N, this.readonlyMatcher, oe), i.captureMetaData && n.addEndIndex(c.closeIndex + 1), this.matcher.pop(), this.isCurrentNodeStopNode = !1, o = c.closeIndex;
+            const N = new F(u);
+            O && (N[":@"] = O), this.addChild(n, N, this.readonlyMatcher, ce), i.captureMetaData && n.addEndIndex(c.closeIndex + 1), this.matcher.pop(), this.isCurrentNodeStopNode = !1, o = c.closeIndex;
             continue;
           } else {
-            const N = new M(u);
+            const N = new F(u);
             if (this.tagsNodeStack.length > i.maxNestedTags)
               throw new Error("Maximum nested tags exceeded");
-            this.tagsNodeStack.push(n), L && (N[":@"] = L), this.addChild(n, N, this.readonlyMatcher, oe), n = N;
+            this.tagsNodeStack.push(n), O && (N[":@"] = O), this.addChild(n, N, this.readonlyMatcher, ce), n = N;
           }
-          r = "", o = g;
+          r = "", o = E;
         }
       }
     } else
       r += t[o];
   return e.child;
 };
-function pi(t, e, n, r) {
+function Mi(t, e, n, r) {
   this.options.captureMetaData || (r = void 0);
   const i = this.options.jPath ? n.toString() : n, s = this.options.updateTag(e.tagname, i, e[":@"]);
   s === !1 || (typeof s == "string" && (e.tagname = s), t.addChild(e, r));
 }
-function hi(t, e, n) {
+function ki(t, e, n) {
   const r = this.options.processEntities;
   if (!r || !r.enabled)
     return t;
@@ -3488,7 +3519,7 @@ function hi(t, e, n) {
   }
   return this.entityDecoder.decode(t);
 }
-function fi(t, e, n, r) {
+function Fi(t, e, n, r) {
   return t && (r === void 0 && (r = e.child.length === 0), t = this.parseTextData(
     t,
     e.tagname,
@@ -3498,10 +3529,10 @@ function fi(t, e, n, r) {
     r
   ), t !== void 0 && t !== "" && e.add(this.options.textNodeName, t), t = ""), t;
 }
-function gi() {
+function Pi() {
   return this.stopNodeExpressionsSet.size === 0 ? !1 : this.matcher.matchesAny(this.stopNodeExpressionsSet);
 }
-function mi(t, e, n = ">") {
+function $i(t, e, n = ">") {
   let r = 0;
   const i = t.length, s = n.charCodeAt(0), a = n.length > 1 ? n.charCodeAt(1) : -1;
   let o = "", l = e;
@@ -3520,19 +3551,19 @@ function mi(t, e, n = ">") {
     else c === 9 && !r && (o += t.substring(l, d) + " ", l = d + 1);
   }
 }
-function Y(t, e, n, r) {
+function D(t, e, n, r) {
   const i = t.indexOf(e, n);
   if (i === -1)
     throw new Error(r);
   return i + e.length - 1;
 }
-function Ei(t, e, n, r) {
+function ji(t, e, n, r) {
   const i = t.indexOf(e, n);
   if (i === -1) throw new Error(r);
   return i;
 }
-function Le(t, e, n, r = ">") {
-  const i = mi(t, e + 1, r);
+function je(t, e, n, r = ">") {
+  const i = $i(t, e + 1, r);
   if (!i) return;
   let s = i.data;
   const a = i.index, o = s.search(/\s/);
@@ -3551,7 +3582,7 @@ function Le(t, e, n, r = ">") {
     rawTagName: c
   };
 }
-function yi(t, e, n) {
+function Ui(t, e, n) {
   const r = n;
   let i = 1;
   const s = t.length;
@@ -3559,7 +3590,7 @@ function yi(t, e, n) {
     if (t[n] === "<") {
       const a = t.charCodeAt(n + 1);
       if (a === 47) {
-        const o = Ei(t, ">", n, `${e} is not closed`);
+        const o = ji(t, ">", n, `${e} is not closed`);
         if (t.substring(n + 2, o).trim() === e && (i--, i === 0))
           return {
             tagContent: t.substring(r, n),
@@ -3567,38 +3598,38 @@ function yi(t, e, n) {
           };
         n = o;
       } else if (a === 63)
-        n = Y(t, "?>", n + 1, "StopNode is not closed.");
+        n = D(t, "?>", n + 1, "StopNode is not closed.");
       else if (a === 33 && t.charCodeAt(n + 2) === 45 && t.charCodeAt(n + 3) === 45)
-        n = Y(t, "-->", n + 3, "StopNode is not closed.");
+        n = D(t, "-->", n + 3, "StopNode is not closed.");
       else if (a === 33 && t.charCodeAt(n + 2) === 91)
-        n = Y(t, "]]>", n, "StopNode is not closed.") - 2;
+        n = D(t, "]]>", n, "StopNode is not closed.") - 2;
       else {
-        const o = Le(t, n, !1);
+        const o = je(t, n, !1);
         o && ((o && o.tagName) === e && o.tagExp[o.tagExp.length - 1] !== "/" && i++, n = o.closeIndex);
       }
     }
 }
-function Oe(t, e, n) {
+function Ue(t, e, n) {
   if (e && typeof t == "string") {
     const r = t.trim();
-    return r === "true" ? !0 : r === "false" ? !1 : kr(t, n);
+    return r === "true" ? !0 : r === "false" ? !1 : ii(t, n);
   } else
-    return er(t) ? t : "";
+    return wr(t) ? t : "";
 }
-function be(t, e, n, r) {
+function xe(t, e, n, r) {
   if (t) {
     const i = t(e);
     n === e && (n = i), e = i;
   }
-  return e = Ht(e, r), { tagName: e, tagExp: n };
+  return e = dn(e, r), { tagName: e, tagExp: n };
 }
-function Ht(t, e) {
-  if (Rt.includes(t))
+function dn(t, e) {
+  if (Jt.includes(t))
     throw new Error(`[SECURITY] Invalid name: "${t}" is a reserved JavaScript keyword that could cause prototype pollution`);
-  return je.includes(t) ? e.onDangerousProperty(t) : t;
+  return ze.includes(t) ? e.onDangerousProperty(t) : t;
 }
-const Te = M.getMetaDataSymbol();
-function bi(t, e) {
+const Ae = F.getMetaDataSymbol();
+function Bi(t, e) {
   if (!t || typeof t != "object") return {};
   if (!e) return t;
   const n = {};
@@ -3610,16 +3641,16 @@ function bi(t, e) {
       n[r] = t[r];
   return n;
 }
-function Ti(t, e, n, r) {
-  return Yt(t, e, n, r);
+function Vi(t, e, n, r) {
+  return un(t, e, n, r);
 }
-function Yt(t, e, n, r) {
+function un(t, e, n, r) {
   let i;
   const s = {};
   for (let a = 0; a < t.length; a++) {
-    const o = t[a], l = wi(o);
+    const o = t[a], l = Wi(o);
     if (l !== void 0 && l !== e.textNodeName) {
-      const d = bi(
+      const d = Bi(
         o[":@"] || {},
         e.attributeNamePrefix
       );
@@ -3631,9 +3662,9 @@ function Yt(t, e, n, r) {
       if (l === void 0)
         continue;
       if (o[l]) {
-        let d = Yt(o[l], e, n, r);
-        const c = Ni(d, e);
-        if (Object.keys(d).length === 0 && e.alwaysCreateTextNode && (d[e.textNodeName] = ""), o[":@"] ? Si(d, o[":@"], r, e) : Object.keys(d).length === 1 && d[e.textNodeName] !== void 0 && !e.alwaysCreateTextNode ? d = d[e.textNodeName] : Object.keys(d).length === 0 && (e.alwaysCreateTextNode ? d[e.textNodeName] = "" : d = ""), o[Te] !== void 0 && typeof d == "object" && d !== null && (d[Te] = o[Te]), s[l] !== void 0 && Object.prototype.hasOwnProperty.call(s, l))
+        let d = un(o[l], e, n, r);
+        const c = Hi(d, e);
+        if (Object.keys(d).length === 0 && e.alwaysCreateTextNode && (d[e.textNodeName] = ""), o[":@"] ? Xi(d, o[":@"], r, e) : Object.keys(d).length === 1 && d[e.textNodeName] !== void 0 && !e.alwaysCreateTextNode ? d = d[e.textNodeName] : Object.keys(d).length === 0 && (e.alwaysCreateTextNode ? d[e.textNodeName] = "" : d = ""), o[Ae] !== void 0 && typeof d == "object" && d !== null && (d[Ae] = o[Ae]), s[l] !== void 0 && Object.prototype.hasOwnProperty.call(s, l))
           Array.isArray(s[l]) || (s[l] = [s[l]]), s[l].push(d);
         else {
           const u = e.jPath ? r.toString() : r;
@@ -3645,14 +3676,14 @@ function Yt(t, e, n, r) {
   }
   return typeof i == "string" ? i.length > 0 && (s[e.textNodeName] = i) : i !== void 0 && (s[e.textNodeName] = i), s;
 }
-function wi(t) {
+function Wi(t) {
   const e = Object.keys(t);
   for (let n = 0; n < e.length; n++) {
     const r = e[n];
     if (r !== ":@") return r;
   }
 }
-function Si(t, e, n, r) {
+function Xi(t, e, n, r) {
   if (e) {
     const i = Object.keys(e), s = i.length;
     for (let a = 0; a < s; a++) {
@@ -3661,13 +3692,13 @@ function Si(t, e, n, r) {
     }
   }
 }
-function Ni(t, e) {
+function Hi(t, e) {
   const { textNodeName: n } = e, r = Object.keys(t).length;
   return !!(r === 0 || r === 1 && (t[n] || typeof t[n] == "boolean" || t[n] === 0));
 }
-class xi {
+class Yi {
   constructor(e) {
-    this.externalEntities = {}, this.options = Tr(e);
+    this.externalEntities = {}, this.options = Vr(e);
   }
   /**
    * Parse XML dats to JS object 
@@ -3681,12 +3712,12 @@ class xi {
       throw new Error("XML data is accepted in String or Bytes[] form.");
     if (n) {
       n === !0 && (n = {});
-      const s = nr(e, n);
+      const s = Nr(e, n);
       if (s !== !0)
         throw Error(`${s.err.msg}:${s.err.line}:${s.err.col}`);
     }
-    const r = new oi(this.options, this.externalEntities), i = r.parseXml(e);
-    return this.options.preserveOrder || i === void 0 ? i : Ti(i, this.options, r.matcher, r.readonlyMatcher);
+    const r = new Ii(this.options, this.externalEntities), i = r.parseXml(e);
+    return this.options.preserveOrder || i === void 0 ? i : Vi(i, this.options, r.matcher, r.readonlyMatcher);
   }
   /**
    * Add Entity which is not by default supported by this library
@@ -3713,10 +3744,10 @@ class xi {
    * is true in the options.
    */
   static getMetaDataSymbol() {
-    return M.getMetaDataSymbol();
+    return F.getMetaDataSymbol();
   }
 }
-function Gt(t) {
+function pn(t) {
   return t.map((e) => ({ ...e, slides: e.slides.filter((n) => n.length > 0) })).filter((e) => e.slides.length > 0).map((e) => {
     const n = e.slides.map((r) => r.join(`
 `)).join(`
@@ -3728,27 +3759,27 @@ ${n}` : n;
 
 `);
 }
-function Be(t) {
+function Ke(t) {
   var e, n;
   return {
     title: t.title.trim(),
     author: ((e = t.author) == null ? void 0 : e.trim()) || null,
     copyright: ((n = t.copyright) == null ? void 0 : n.trim()) || null,
     tags: t.tags ?? [],
-    arrangement: t.arrangement ?? he,
+    arrangement: t.arrangement ?? ye,
     themeId: null,
     lyrics: t.lyrics ?? ""
   };
 }
-const ct = /^(author|copyright|tags|order|lines per slide):\s*(.*)$/i;
-function Ai(t, e) {
+const Nt = /^(author|copyright|tags|order|lines per slide):\s*(.*)$/i;
+function qi(t, e) {
   var a;
   const n = t.replace(/^\uFEFF/, "").replace(/\r\n?/g, `
 `).split(`
 `);
   for (; n.length && n[0].trim() === ""; ) n.shift();
-  const r = ((a = n.shift()) == null ? void 0 : a.trim()) || e, i = {}, s = { ...he };
-  for (let o = ct.exec(n[0] ?? ""); o; o = ct.exec(n[0] ?? "")) {
+  const r = ((a = n.shift()) == null ? void 0 : a.trim()) || e, i = {}, s = { ...ye };
+  for (let o = Nt.exec(n[0] ?? ""); o; o = Nt.exec(n[0] ?? "")) {
     n.shift();
     const [, l, d] = o;
     switch (l.toLowerCase()) {
@@ -3766,15 +3797,15 @@ function Ai(t, e) {
         break;
       case "lines per slide": {
         const c = Number(d);
-        Tt.includes(c) && (s.linesPerSlide = c);
+        Ut.includes(c) && (s.linesPerSlide = c);
         break;
       }
     }
   }
-  return Be({ ...i, title: r, arrangement: s, lyrics: n.join(`
+  return Ke({ ...i, title: r, arrangement: s, lyrics: n.join(`
 `).trim() });
 }
-function _i(t) {
+function Di(t) {
   const e = [
     t.author && `Author: ${t.author}`,
     t.copyright && `Copyright: ${t.copyright}`,
@@ -3789,7 +3820,7 @@ ${t.lyrics.replace(/\r\n?/g, `
 `).trim()}
 `;
 }
-const Ii = new xi({
+const Gi = new Yi({
   preserveOrder: !0,
   ignoreAttributes: !1,
   trimValues: !1,
@@ -3800,62 +3831,62 @@ const Ii = new xi({
   processEntities: !0,
   htmlEntities: !0
 });
-function Ve(t) {
+function Qe(t) {
   return Object.keys(t).find((e) => e !== ":@" && e !== "#text");
 }
-function $(t) {
+function k(t) {
   var e;
-  return (e = Ve(t)) == null ? void 0 : e.replace(/^.*:/, "");
+  return (e = Qe(t)) == null ? void 0 : e.replace(/^.*:/, "");
 }
-function re(t) {
-  const e = t && Ve(t);
+function se(t) {
+  const e = t && Qe(t);
   return e ? t[e] : [];
 }
-function dt(t, e) {
+function xt(t, e) {
   var n;
   return (n = t[":@"]) == null ? void 0 : n[`@_${e}`];
 }
 function C(t, e) {
-  return re(t).find((n) => $(n) === e);
+  return se(t).find((n) => k(n) === e);
 }
-function ce(t, e) {
-  return re(t).filter((n) => $(n) === e);
+function pe(t, e) {
+  return se(t).filter((n) => k(n) === e);
 }
-function k(t) {
+function $(t) {
   if (!t) return "";
   if ("#text" in t) return String(t["#text"]);
-  const e = $(t);
+  const e = k(t);
   if (e === "br") return `
 `;
   if (e === "comment" || e === "chord") return "";
-  const n = re(t).map(k).join("");
+  const n = se(t).map($).join("");
   return e === "line" ? `${n}
 ` : n;
 }
-function H(t) {
+function q(t) {
   return t.split(`
 `).map((e) => e.replace(/\s+/g, " ").trim()).filter(Boolean);
 }
-function Ci(t) {
+function zi(t) {
   const e = [], n = (r) => {
     if ("#text" in r) e.push(String(r["#text"]).replace(/\s+/g, " "));
-    else if ($(r) === "br") e.push(`
+    else if (k(r) === "br") e.push(`
 `);
     else {
-      if ($(r) === "comment" || $(r) === "chord") return;
-      re(r).forEach(n), $(r) === "line" && e.push(`
+      if (k(r) === "comment" || k(r) === "chord") return;
+      se(r).forEach(n), k(r) === "line" && e.push(`
 `);
     }
   };
-  return re(t).forEach(n), H(e.join(""));
+  return se(t).forEach(n), q(e.join(""));
 }
-function vi(t) {
-  return Ii.parse(t).find((n) => {
+function Ji(t) {
+  return Gi.parse(t).find((n) => {
     var r;
-    return $(n) !== void 0 && !((r = Ve(n)) != null && r.startsWith("?"));
+    return k(n) !== void 0 && !((r = Qe(n)) != null && r.startsWith("?"));
   });
 }
-const Li = {
+const Ki = {
   v: "Verse",
   c: "Chorus",
   b: "Bridge",
@@ -3864,28 +3895,28 @@ const Li = {
   e: "Ending",
   o: "Other"
 };
-function ut(t) {
-  const e = /^([a-z])(\d*)([a-z]?)$/i.exec(t.trim()), n = e && Li[e[1].toLowerCase()];
+function At(t) {
+  const e = /^([a-z])(\d*)([a-z]?)$/i.exec(t.trim()), n = e && Ki[e[1].toLowerCase()];
   if (!e || !n) return t.trim();
   const r = `${e[2]}${e[3]}`;
   return r ? `${n} ${r}` : n;
 }
-function Oi(t, e) {
-  const n = C(t, "properties"), r = H(k(C(C(n, "titles"), "title"))).join(" "), i = ce(C(n, "authors"), "author").filter((d) => dt(d, "type") !== "translation").map((d) => H(k(d)).join(" ")).filter(Boolean), s = ce(C(n, "themes"), "theme").map((d) => H(k(d)).join(" ")).filter(Boolean), a = k(C(n, "verseOrder")).split(/\s+/).filter(Boolean).map(ut), o = /* @__PURE__ */ new Set(), l = [];
-  for (const d of ce(C(t, "lyrics"), "verse")) {
-    const c = dt(d, "name") ?? `o${l.length + 1}`;
-    o.has(c) || (o.add(c), l.push({ label: ut(c), slides: ce(d, "lines").map(Ci) }));
+function Qi(t, e) {
+  const n = C(t, "properties"), r = q($(C(C(n, "titles"), "title"))).join(" "), i = pe(C(n, "authors"), "author").filter((d) => xt(d, "type") !== "translation").map((d) => q($(d)).join(" ")).filter(Boolean), s = pe(C(n, "themes"), "theme").map((d) => q($(d)).join(" ")).filter(Boolean), a = $(C(n, "verseOrder")).split(/\s+/).filter(Boolean).map(At), o = /* @__PURE__ */ new Set(), l = [];
+  for (const d of pe(C(t, "lyrics"), "verse")) {
+    const c = xt(d, "name") ?? `o${l.length + 1}`;
+    o.has(c) || (o.add(c), l.push({ label: At(c), slides: pe(d, "lines").map(zi) }));
   }
-  return Be({
+  return Ke({
     title: r || e,
     author: i.join(", "),
-    copyright: H(k(C(n, "copyright"))).join(" "),
+    copyright: q($(C(n, "copyright"))).join(" "),
     tags: [...new Set(s)],
     arrangement: { order: a, linesPerSlide: null },
-    lyrics: Gt(l)
+    lyrics: pn(l)
   });
 }
-const Ri = {
+const Zi = {
   verse: "v",
   chorus: "c",
   bridge: "b",
@@ -3896,38 +3927,38 @@ const Ri = {
   outro: "e",
   other: "o"
 };
-function Fi(t, e) {
-  const n = t ? /^([a-z-]+)\s*(\d*)([a-z]?)$/i.exec(t.trim()) : null, r = n ? Ri[n[1].toLowerCase()] : void 0, i = r ?? "o", s = n && r ? `${i}${n[2]}${n[3]}` : "";
+function es(t, e) {
+  const n = t ? /^([a-z-]+)\s*(\d*)([a-z]?)$/i.exec(t.trim()) : null, r = n ? Zi[n[1].toLowerCase()] : void 0, i = r ?? "o", s = n && r ? `${i}${n[2]}${n[3]}` : "";
   if (s && !e.has(s)) return s;
   let a = 1;
   for (; e.has(`${i}${a}`); ) a++;
   return `${i}${a}`;
 }
-const te = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-function $i(t) {
-  const e = /* @__PURE__ */ new Set(), n = /* @__PURE__ */ new Map(), r = St(t.lyrics).map((a) => {
+const re = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function ts(t) {
+  const e = /* @__PURE__ */ new Set(), n = /* @__PURE__ */ new Map(), r = Vt(t.lyrics).map((a) => {
     var c;
-    const o = Fi(a.label, e);
+    const o = es(a.label, e);
     e.add(o);
     const l = (c = a.label) == null ? void 0 : c.toLowerCase();
     l && !n.has(l) && n.set(l, o);
-    const d = a.chunks.map((u) => `      <lines>${u.lines.map(te).join("<br/>")}</lines>`);
+    const d = a.chunks.map((u) => `      <lines>${u.lines.map(re).join("<br/>")}</lines>`);
     return `    <verse name="${o}">
 ${d.join(`
 `)}
     </verse>`;
   }), i = t.arrangement.order.map((a) => n.get(a.trim().toLowerCase())).filter((a) => a !== void 0), s = [
     `    <titles>
-      <title>${te(t.title)}</title>
+      <title>${re(t.title)}</title>
     </titles>`,
     t.author && `    <authors>
-${t.author.split(",").map((a) => a.trim()).filter(Boolean).map((a) => `      <author>${te(a)}</author>`).join(`
+${t.author.split(",").map((a) => a.trim()).filter(Boolean).map((a) => `      <author>${re(a)}</author>`).join(`
 `)}
     </authors>`,
-    t.copyright && `    <copyright>${te(t.copyright)}</copyright>`,
+    t.copyright && `    <copyright>${re(t.copyright)}</copyright>`,
     i.length > 0 && `    <verseOrder>${i.join(" ")}</verseOrder>`,
     t.tags.length > 0 && `    <themes>
-${t.tags.map((a) => `      <theme>${te(a)}</theme>`).join(`
+${t.tags.map((a) => `      <theme>${re(a)}</theme>`).join(`
 `)}
     </themes>`
   ].filter(Boolean);
@@ -3944,7 +3975,7 @@ ${r.join(`
 </song>
 `;
 }
-const Mi = {
+const ns = {
   V: "Verse",
   C: "Chorus",
   B: "Bridge",
@@ -3953,16 +3984,16 @@ const Mi = {
   I: "Intro",
   E: "Ending"
 };
-function zt(t) {
-  const e = /^([A-Za-z])(\d*)$/.exec(t.trim()), n = e && Mi[e[1].toUpperCase()];
+function hn(t) {
+  const e = /^([A-Za-z])(\d*)$/.exec(t.trim()), n = e && ns[e[1].toUpperCase()];
   return !e || !n ? t.trim() : e[2] ? `${n} ${e[2]}` : n;
 }
-function Pi(t) {
+function rs(t) {
   const e = /* @__PURE__ */ new Map(), n = /* @__PURE__ */ new Map();
   let r = "", i = null;
   const s = (o) => {
     let l = e.get(o);
-    return l || (l = { label: o ? zt(o) : null, slides: [[]] }, e.set(o, l), n.set(r, [...n.get(r) ?? [], o])), l;
+    return l || (l = { label: o ? hn(o) : null, slides: [[]] }, e.set(o, l), n.set(r, [...n.get(r) ?? [], o])), l;
   }, a = (o) => {
     const l = o !== null ? e.get(o) : void 0;
     l && l.slides[l.slides.length - 1].length > 0 && l.slides.push([]);
@@ -3982,71 +4013,71 @@ function Pi(t) {
       continue;
     }
     const p = s(c);
-    i = c, u.split("||").forEach((y, g) => {
-      g > 0 && a(c);
-      for (const T of y.split("|")) {
-        const I = T.replace(/\s+/g, " ").trim();
+    i = c, u.split("||").forEach((y, E) => {
+      E > 0 && a(c);
+      for (const b of y.split("|")) {
+        const I = b.replace(/\s+/g, " ").trim();
         I && p.slides[p.slides.length - 1].push(I);
       }
     });
   }
   return { sections: [...e.values()], groups: n };
 }
-function ki(t, e) {
-  const n = (o) => H(k(C(t, o))).join(" "), { sections: r, groups: i } = Pi(k(C(t, "lyrics"))), s = n("presentation").split(/\s+/).filter(Boolean).flatMap((o) => (i.get(o) ?? [o]).map(zt)), a = ["theme", "alttheme"].flatMap((o) => n(o).split(/[;,]/)).map((o) => o.trim()).filter(Boolean);
-  return Be({
+function is(t, e) {
+  const n = (o) => q($(C(t, o))).join(" "), { sections: r, groups: i } = rs($(C(t, "lyrics"))), s = n("presentation").split(/\s+/).filter(Boolean).flatMap((o) => (i.get(o) ?? [o]).map(hn)), a = ["theme", "alttheme"].flatMap((o) => n(o).split(/[;,]/)).map((o) => o.trim()).filter(Boolean);
+  return Ke({
     title: n("title") || e,
     author: n("author"),
     copyright: n("copyright"),
     tags: [...new Set(a)],
     arrangement: { order: s, linesPerSlide: null },
-    lyrics: Gt(r)
+    lyrics: pn(r)
   });
 }
-function ji(t, e) {
+function ss(t, e) {
   let n;
   try {
-    n = vi(t.replace(/^\uFEFF/, ""));
+    n = Ji(t.replace(/^\uFEFF/, ""));
   } catch {
     throw new Error("Not valid XML");
   }
-  if (!n || $(n) !== "song") throw new Error("Not an OpenLyrics or OpenSong song");
-  if (C(n, "properties")) return { format: "openlyrics", song: Oi(n, e) };
-  if (C(n, "lyrics")) return { format: "opensong", song: ki(n, e) };
+  if (!n || k(n) !== "song") throw new Error("Not an OpenLyrics or OpenSong song");
+  if (C(n, "properties")) return { format: "openlyrics", song: Qi(n, e) };
+  if (C(n, "lyrics")) return { format: "opensong", song: is(n, e) };
   throw new Error("Not an OpenLyrics or OpenSong song");
 }
-const pt = 2e3, Ui = 5 * 1024 * 1024, Bi = /* @__PURE__ */ new Set([".txt", ".xml", ""]);
-async function Vi(t, e) {
+const _t = 2e3, os = 5 * 1024 * 1024, as = /* @__PURE__ */ new Set([".txt", ".xml", ""]);
+async function ls(t, e) {
   const n = [];
   for (const r of t)
     try {
-      if ((await Et(r)).isDirectory()) {
-        const i = await nn(r, { withFileTypes: !0 });
+      if ((await He(r)).isDirectory()) {
+        const i = await xn(r, { withFileTypes: !0 });
         for (const s of i.sort((a, o) => a.name.localeCompare(o.name)))
-          !s.isFile() || s.name.startsWith(".") || Bi.has(E.extname(s.name).toLowerCase()) && n.push({ file: E.join(r, s.name), source: `${E.basename(r)}/${s.name}` });
+          !s.isFile() || s.name.startsWith(".") || as.has(g.extname(s.name).toLowerCase()) && n.push({ file: g.join(r, s.name), source: `${g.basename(r)}/${s.name}` });
       } else
-        n.push({ file: r, source: E.basename(r) });
+        n.push({ file: r, source: g.basename(r) });
     } catch (i) {
-      e.push({ source: E.basename(r), error: i instanceof Error ? i.message : String(i) });
+      e.push({ source: g.basename(r), error: i instanceof Error ? i.message : String(i) });
     }
   return n;
 }
-async function Wi(t) {
-  const { size: e } = await Et(t.file);
-  if (e > Ui) throw new Error("File is larger than 5 MB");
-  const n = (await rn(t.file, "utf8")).replace(/^\uFEFF/, ""), r = E.extname(t.file).toLowerCase(), i = E.basename(t.file, r);
-  if (r === ".txt") return { source: t.source, format: "text", song: Ai(n, i) };
+async function cs(t) {
+  const { size: e } = await He(t.file);
+  if (e > os) throw new Error("File is larger than 5 MB");
+  const n = (await Ft(t.file, "utf8")).replace(/^\uFEFF/, ""), r = g.extname(t.file).toLowerCase(), i = g.basename(t.file, r);
+  if (r === ".txt") return { source: t.source, format: "text", song: qi(n, i) };
   if (!n.trimStart().startsWith("<")) throw new Error("Not a text, OpenLyrics or OpenSong song");
-  return { source: t.source, ...ji(n, i) };
+  return { source: t.source, ...ss(n, i) };
 }
-async function we(t) {
-  const e = [], n = await Vi(t, e);
-  if (n.length > pt)
-    return { songs: [], problems: [{ source: `${n.length} files`, error: `Pick at most ${pt} files at a time` }] };
-  const r = (o) => o.trim().toLowerCase(), i = new Set(Me().map((o) => r(o.title))), s = /* @__PURE__ */ new Set(), a = [];
+async function _e(t) {
+  const e = [], n = await ls(t, e);
+  if (n.length > _t)
+    return { songs: [], problems: [{ source: `${n.length} files`, error: `Pick at most ${_t} files at a time` }] };
+  const r = (o) => o.trim().toLowerCase(), i = new Set(Ye().map((o) => r(o.title))), s = /* @__PURE__ */ new Set(), a = [];
   for (const o of n)
     try {
-      const l = await Wi(o);
+      const l = await cs(o);
       if (!l.song.title) throw new Error("No title found");
       const d = r(l.song.title);
       a.push({ ...l, duplicateOf: i.has(d) ? "library" : s.has(d) ? "import" : null }), s.add(d);
@@ -4055,216 +4086,394 @@ async function we(t) {
     }
   return { songs: a, problems: e };
 }
-function Re(t, e, n) {
+function Be(t, e, n) {
   const r = [...t].filter((s) => s.charCodeAt(0) >= 32 && !'<>:"/\\|?*'.includes(s)).join("").replace(/\s+/g, " ").trim().slice(0, 120) || "Untitled";
   let i = `${r}${e}`;
   for (let s = 2; n.has(i.toLowerCase()); s++) i = `${r} (${s})${e}`;
   return n.add(i.toLowerCase()), i;
 }
-function Xi(t) {
-  return (t ?? Me().map((n) => n.id)).map((n) => At(n)).filter((n) => n !== void 0);
+function ds(t) {
+  return (t ?? Ye().map((n) => n.id)).map((n) => Ht(n)).filter((n) => n !== void 0);
 }
-const pe = { openlyrics: ".xml", text: ".txt" };
-function qi(t, e) {
-  return Re(t.title, pe[e], /* @__PURE__ */ new Set());
+const me = { openlyrics: ".xml", text: ".txt" };
+function us(t, e) {
+  return Be(t.title, me[e], /* @__PURE__ */ new Set());
 }
-function Dt(t, e) {
-  return e === "openlyrics" ? $i(t) : _i(t);
+function fn(t, e) {
+  return e === "openlyrics" ? ts(t) : Di(t);
 }
-async function Hi(t, e, n) {
-  await mt(n, Dt(t, e), "utf8");
+async function ps(t, e, n) {
+  await Xe(n, fn(t, e), "utf8");
 }
-async function Yi(t, e, n) {
+async function hs(t, e, n) {
   const r = /* @__PURE__ */ new Set();
   for (const i of t) {
-    let s = Re(i.title, pe[e], r);
-    for (; an(E.join(n, s)); ) s = Re(i.title, pe[e], r);
-    await mt(E.join(n, s), Dt(i, e), "utf8");
+    let s = Be(i.title, me[e], r);
+    for (; In(g.join(n, s)); ) s = Be(i.title, me[e], r);
+    await Xe(g.join(n, s), fn(i, e), "utf8");
   }
   return t.length;
 }
-const ht = ["openlyrics", "text"], Gi = [
+const It = ["openlyrics", "text"], fs = [
   { name: "Songs (text, OpenLyrics, OpenSong)", extensions: ["txt", "xml"] },
   // OpenSong song files usually have no extension.
   { name: "All files", extensions: ["*"] }
 ];
-function Se(t) {
-  return se.fromWebContents(t.sender) ?? void 0;
+function Ie(t) {
+  return le.fromWebContents(t.sender) ?? void 0;
 }
-function zi(t) {
-  if (!Array.isArray(t) || t.length === 0 || !t.every((e) => typeof e == "string" && E.isAbsolute(e)))
+function gs(t) {
+  if (!Array.isArray(t) || t.length === 0 || !t.every((e) => typeof e == "string" && g.isAbsolute(e)))
     throw new TypeError("Paths must be a non-empty list of absolute paths");
   return t;
 }
-function Di(t) {
+function ms(t) {
   if (t === null) return null;
   if (!Array.isArray(t) || !t.every((e) => Number.isInteger(e) && e > 0))
     throw new TypeError("Song ids must be a list of positive integers, or null for every song");
   return t;
 }
-function Ki(t) {
-  if (!ht.includes(t))
-    throw new TypeError(`Export format must be one of ${ht.join(", ")}`);
+function Es(t) {
+  if (!It.includes(t))
+    throw new TypeError(`Export format must be one of ${It.join(", ")}`);
   return t;
 }
-function Ji() {
+function ys() {
   m.handle("songFiles:pickFiles", async (t) => {
     const e = {
       title: "Import songs",
       properties: ["openFile", "multiSelections"],
-      filters: Gi
-    }, n = Se(t), { canceled: r, filePaths: i } = n ? await R.showOpenDialog(n, e) : await R.showOpenDialog(e);
-    return r || i.length === 0 ? null : we(i);
+      filters: fs
+    }, n = Ie(t), { canceled: r, filePaths: i } = n ? await v.showOpenDialog(n, e) : await v.showOpenDialog(e);
+    return r || i.length === 0 ? null : _e(i);
   }), m.handle("songFiles:pickFolder", async (t) => {
-    const e = { title: "Import a folder of songs", properties: ["openDirectory"] }, n = Se(t), { canceled: r, filePaths: i } = n ? await R.showOpenDialog(n, e) : await R.showOpenDialog(e);
-    return r || i.length === 0 ? null : we(i);
-  }), m.handle("songFiles:scan", (t, e) => we(zi(e))), m.handle("songFiles:import", (t, e) => {
+    const e = { title: "Import a folder of songs", properties: ["openDirectory"] }, n = Ie(t), { canceled: r, filePaths: i } = n ? await v.showOpenDialog(n, e) : await v.showOpenDialog(e);
+    return r || i.length === 0 ? null : _e(i);
+  }), m.handle("songFiles:scan", (t, e) => _e(gs(e))), m.handle("songFiles:import", (t, e) => {
     if (!Array.isArray(e)) throw new TypeError("Songs must be a list");
-    return In(e.map(Ae));
+    return Dn(e.map(Me));
   }), m.handle(
     "songFiles:export",
     async (t, e, n) => {
-      const r = Di(e), i = Ki(n), s = Xi(r);
+      const r = ms(e), i = Es(n), s = ds(r);
       if (s.length === 0) throw new Error("There are no songs to export");
-      const a = Se(t);
+      const a = Ie(t);
       if (s.length === 1 && r !== null) {
         const c = {
           title: "Export song",
-          defaultPath: qi(s[0], i),
-          filters: [{ name: i === "openlyrics" ? "OpenLyrics XML" : "Text", extensions: [pe[i].slice(1)] }]
-        }, { canceled: u, filePath: p } = a ? await R.showSaveDialog(a, c) : await R.showSaveDialog(c);
-        return u || !p ? null : (await Hi(s[0], i, p), { written: 1, location: p });
+          defaultPath: us(s[0], i),
+          filters: [{ name: i === "openlyrics" ? "OpenLyrics XML" : "Text", extensions: [me[i].slice(1)] }]
+        }, { canceled: u, filePath: p } = a ? await v.showSaveDialog(a, c) : await v.showSaveDialog(c);
+        return u || !p ? null : (await ps(s[0], i, p), { written: 1, location: p });
       }
       const o = {
         title: `Choose a folder for ${s.length} songs`,
         buttonLabel: "Export here",
         properties: ["openDirectory", "createDirectory"]
-      }, { canceled: l, filePaths: d } = a ? await R.showOpenDialog(a, o) : await R.showOpenDialog(o);
-      return l || d.length === 0 ? null : { written: await Yi(s, i, d[0]), location: d[0] };
+      }, { canceled: l, filePaths: d } = a ? await v.showOpenDialog(a, o) : await v.showOpenDialog(o);
+      return l || d.length === 0 ? null : { written: await hs(s, i, d[0]), location: d[0] };
     }
   );
 }
-const We = "wd-media", Fe = () => E.join(G.getPath("userData"), "media");
-function Qi() {
-  gt.registerSchemesAsPrivileged([
-    { scheme: We, privileges: { standard: !0, secure: !0, supportFetchAPI: !0, stream: !0 } }
-  ]);
-}
-function Zi() {
-  gt.handle(We, (t) => {
-    const e = decodeURIComponent(new URL(t.url).pathname.replace(/^\//, ""));
-    return !e || e !== E.basename(e) || e.startsWith(".") ? new Response("Not found", { status: 404 }) : Qt.fetch(Zt(E.join(Fe(), e)).toString(), { headers: t.headers });
-  });
-}
-async function es(t) {
-  await sn(Fe(), { recursive: !0 });
-  const e = E.extname(t).toLowerCase(), n = E.basename(t, E.extname(t)).replace(/[^\w.-]+/g, "-").slice(0, 60), r = `${Date.now()}-${n || "media"}${e}`;
-  return await on(t, E.join(Fe(), r)), `${We}://local/${encodeURIComponent(r)}`;
-}
-const ts = {
-  image: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp", "gif"] }],
-  video: [{ name: "Videos", extensions: ["mp4", "webm", "mov", "m4v"] }]
-};
-function Ne(t) {
+function Ce(t) {
   if (!Number.isInteger(t) || t < 1) throw new TypeError("Theme id must be a positive integer");
   return t;
 }
-function ft(t) {
+function Ct(t) {
   if (typeof t != "string" || t.trim() === "") throw new TypeError("Theme needs a non-empty name");
   return t.trim();
 }
-function ns(t) {
-  if (!xe.includes(t))
-    throw new TypeError(`Content type must be one of ${xe.join(", ")}`);
+function Ts(t) {
+  if (!ve.includes(t))
+    throw new TypeError(`Content type must be one of ${ve.join(", ")}`);
   return t;
 }
-function rs() {
-  m.handle("themes:list", () => mn()), m.handle(
+function bs() {
+  m.handle("themes:list", () => Pn()), m.handle(
     "themes:create",
-    (t, e, n) => En(ft(e), X(n))
+    (t, e, n) => $n(Ct(e), X(n))
   ), m.handle(
     "themes:update",
-    (t, e, n, r) => yn(Ne(e), ft(n), X(r))
-  ), m.handle("themes:delete", (t, e) => bn(Ne(e))), m.handle("themes:getDefaults", () => Tn()), m.handle(
+    (t, e, n, r) => jn(Ce(e), Ct(n), X(r))
+  ), m.handle("themes:delete", (t, e) => Un(Ce(e))), m.handle("themes:getDefaults", () => Bn()), m.handle(
     "themes:setDefault",
-    (t, e, n) => wn(ns(e), Ne(n))
-  ), m.handle("themes:pickMedia", async (t, e) => {
-    if (e !== "image" && e !== "video") throw new TypeError("Media kind must be image or video");
-    const n = {
-      title: e === "image" ? "Choose a background image" : "Choose a background video",
-      properties: ["openFile"],
-      filters: ts[e]
-    }, r = se.fromWebContents(t.sender), { canceled: i, filePaths: s } = r ? await R.showOpenDialog(r, n) : await R.showOpenDialog(n);
-    return i || s.length === 0 ? null : es(s[0]);
+    (t, e, n) => Vn(Ts(e), Ce(n))
+  );
+}
+const Ze = "wd-media", z = () => g.join(G.getPath("userData"), "media");
+function ws() {
+  kt.registerSchemesAsPrivileged([
+    { scheme: Ze, privileges: { standard: !0, secure: !0, supportFetchAPI: !0, stream: !0, corsEnabled: !0 } }
+  ]);
+}
+function Ss() {
+  kt.handle(Ze, async (t) => {
+    const e = decodeURIComponent(new URL(t.url).pathname.replace(/^\//, ""));
+    if (!e || e !== g.basename(e) || e.startsWith(".")) return new Response("Not found", { status: 404 });
+    const n = await bn.fetch(wn(g.join(z(), e)).toString(), { headers: t.headers }), r = new Headers(n.headers);
+    return r.set("Access-Control-Allow-Origin", "*"), new Response(n.body, { status: n.status, statusText: n.statusText, headers: r });
   });
 }
-const is = ["show", "black", "clear", "logo"];
-let $e = { mode: "black", text: "", caption: "", theme: F };
-function ss(t) {
-  const e = t;
-  if (typeof e != "object" || e === null || !is.includes(e.mode) || typeof e.text != "string" || typeof e.caption != "string" || typeof e.theme != "object")
-    throw new TypeError("Output state needs a mode, text, caption and theme");
-  return { mode: e.mode, text: e.text, caption: e.caption, theme: X(e.theme) };
+const oe = (t) => `${Ze}://local/${encodeURIComponent(t)}`;
+function gn(t, e) {
+  const n = t.replace(/[^\w.-]+/g, "-").slice(0, 60) || "media";
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${n}${e}`;
 }
-function os(t) {
+async function Lt(t) {
+  await Pt(z(), { recursive: !0 });
+  const e = g.extname(t).toLowerCase(), n = gn(g.basename(t, g.extname(t)), e);
+  return await An(t, g.join(z(), n)), n;
+}
+async function Ot(t, e, n) {
+  await Pt(z(), { recursive: !0 });
+  const r = gn(e, n);
+  return await Xe(g.join(z(), r), t), r;
+}
+async function Le(t) {
+  t && t === g.basename(t) && await _n(g.join(z(), t), { force: !0 });
+}
+function et(t) {
+  let e = [];
+  try {
+    e = JSON.parse(t.tags);
+  } catch {
+  }
+  return {
+    id: t.id,
+    name: t.name,
+    kind: t.kind,
+    url: oe(t.file),
+    thumbUrl: t.thumb ? oe(t.thumb) : null,
+    tags: Array.isArray(e) ? e.filter((n) => typeof n == "string") : []
+  };
+}
+const mn = "SELECT id, name, kind, file, thumb, tags FROM media";
+function Ns() {
+  return h.prepare(`${mn} ORDER BY id DESC`).all().map(et);
+}
+function tt(t) {
+  return h.prepare(`${mn} WHERE id = ?`).get(t);
+}
+function Ve(t) {
+  const e = tt(t);
+  return e && et(e);
+}
+function xs(t, e, n) {
+  const r = h.prepare("INSERT INTO media (name, kind, file) VALUES (?, ?, ?)").run(t, e, n);
+  return Ve(Number(r.lastInsertRowid));
+}
+function As(t, e, n) {
+  return h.prepare("UPDATE media SET name = ?, tags = ? WHERE id = ?").run(e, JSON.stringify(n), t).changes > 0;
+}
+function _s(t, e) {
+  const n = tt(t);
+  if (n)
+    return h.prepare("UPDATE media SET thumb = ? WHERE id = ?").run(e, t), n.thumb;
+}
+const Is = h.transaction((t) => {
+  var s;
+  const e = tt(t);
+  if (!e) return;
+  const n = oe(e.file), r = h.prepare("SELECT id, json FROM themes WHERE type = 'custom'").all(), i = h.prepare("UPDATE themes SET json = ? WHERE id = ?");
+  for (const a of r)
+    try {
+      const o = JSON.parse(a.json);
+      ((s = o == null ? void 0 : o.background) == null ? void 0 : s.src) === n && i.run(JSON.stringify({ ...o, background: { kind: "solid", color: "#000000" } }), a.id);
+    } catch {
+    }
+  return h.prepare("DELETE FROM media WHERE id = ?").run(t), e;
+});
+function Cs(t) {
+  const e = h.prepare(
+    `SELECT b.slide_index, m.id, m.name, m.kind, m.file, m.thumb, m.tags
+       FROM slide_backgrounds b JOIN media m ON m.id = b.media_id
+       WHERE b.deck_key = ?`
+  ).all(t);
+  return Object.fromEntries(e.map((n) => [n.slide_index, et(n)]));
+}
+function Ls(t, e, n) {
+  if (n === null) {
+    h.prepare("DELETE FROM slide_backgrounds WHERE deck_key = ? AND slide_index = ?").run(t, e);
+    return;
+  }
+  h.prepare(
+    `INSERT INTO slide_backgrounds (deck_key, slide_index, media_id) VALUES (?, ?, ?)
+     ON CONFLICT (deck_key, slide_index) DO UPDATE SET media_id = excluded.media_id`
+  ).run(t, e, n);
+}
+const H = ["jpg", "jpeg", "png", "webp", "gif"], Oe = ["mp4", "webm"], Os = 200 * 1024 * 1024, Rs = 20 * 1024 * 1024;
+async function Rt(t, e) {
+  const n = le.fromWebContents(t.sender), { canceled: r, filePaths: i } = n ? await v.showOpenDialog(n, e) : await v.showOpenDialog(e);
+  return r ? [] : i;
+}
+const Re = (t) => g.extname(t).slice(1).toLowerCase();
+function he(t, e = "Media id") {
+  if (!Number.isInteger(t) || t < 1) throw new TypeError(`${e} must be a positive integer`);
+  return t;
+}
+function vt(t) {
+  if (typeof t != "string" || !/^(song|item|scripture):.+/.test(t) || t.length > 300)
+    throw new TypeError("Deck key must look like song:<id>, item:<id> or scripture:<reference>");
+  return t;
+}
+function Mt(t) {
+  if (!(t instanceof Uint8Array) || t.length === 0 || t.length > Rs)
+    throw new TypeError("Expected image bytes up to 20 MB");
+  return t;
+}
+function vs() {
+  m.handle("media:list", () => Ns()), m.handle("media:import", async (t) => {
+    const e = await Rt(t, {
+      title: "Import backgrounds",
+      properties: ["openFile", "multiSelections"],
+      filters: [
+        { name: "Images and videos", extensions: [...H, ...Oe] },
+        { name: "Images", extensions: H },
+        { name: "Videos (MP4, WebM)", extensions: Oe }
+      ]
+    }), n = [];
+    for (const r of e) {
+      const i = Re(r), s = Oe.includes(i) ? "video" : H.includes(i) ? "image" : null;
+      s && n.push(xs(g.basename(r, g.extname(r)), s, await Lt(r)));
+    }
+    return n;
+  }), m.handle("media:update", (t, e, n, r) => {
+    if (typeof n != "string" || !n.trim()) throw new TypeError("Media needs a name");
+    if (!Array.isArray(r) || !r.every((s) => typeof s == "string")) throw new TypeError("Tags must be strings");
+    const i = [...new Set(r.map((s) => s.trim()).filter(Boolean))];
+    return As(he(e), n.trim(), i);
+  }), m.handle("media:delete", async (t, e) => {
+    const n = Is(he(e));
+    return n ? (await Le(n.file), await Le(n.thumb), !0) : !1;
+  }), m.handle("media:saveThumbnail", async (t, e, n) => {
+    const r = he(e);
+    if (!Ve(r)) return;
+    const i = await Ot(Mt(n), `thumb-${r}`, ".jpg");
+    return await Le(_s(r, i) ?? null), Ve(r);
+  }), m.handle("media:getSlideBackgrounds", (t, e) => Cs(vt(e))), m.handle("media:setSlideBackground", (t, e, n, r) => {
+    if (!Number.isInteger(n) || n < 0) throw new TypeError("Slide index must be 0 or more");
+    Ls(vt(e), n, r === null ? null : he(r));
+  }), m.handle("media:pickPresentation", async (t) => {
+    const e = await Rt(t, {
+      title: "Choose images or a PDF",
+      properties: ["openFile", "multiSelections"],
+      filters: [
+        { name: "Images or PDF", extensions: [...H, "pdf"] },
+        { name: "PDF", extensions: ["pdf"] },
+        { name: "Images", extensions: H }
+      ]
+    });
+    if (e.length === 0) return null;
+    const n = e.find((a) => Re(a) === "pdf");
+    if (n) {
+      if (e.length > 1) throw new Error("Choose one PDF, or images only");
+      if ((await He(n)).size > Os) throw new Error("The PDF is larger than 200 MB");
+      return { kind: "pdf", title: g.basename(n, g.extname(n)), data: new Uint8Array(await Ft(n)) };
+    }
+    const r = e.filter((a) => H.includes(Re(a))).sort((a, o) => a.localeCompare(o, void 0, { numeric: !0 }));
+    if (r.length === 0) throw new Error("Choose images or a PDF");
+    const i = [];
+    for (const a of r) i.push(oe(await Lt(a)));
+    return { kind: "images", title: r.length === 1 ? g.basename(r[0], g.extname(r[0])) : g.basename(g.dirname(r[0])), pages: i };
+  }), m.handle("media:saveImage", async (t, e) => oe(await Ot(Mt(e), "page", ".png")));
+}
+const Ms = { fadeMs: 400 }, Ee = { min: 0, max: 1500 };
+function En() {
+  const t = h.prepare("SELECT value FROM settings WHERE key = 'output.fadeMs'").get(), e = Number(t == null ? void 0 : t.value);
+  return {
+    fadeMs: Number.isFinite(e) ? Math.min(Ee.max, Math.max(Ee.min, e)) : Ms.fadeMs
+  };
+}
+function ks(t) {
+  if (t.fadeMs !== void 0) {
+    const e = Math.round(Math.min(Ee.max, Math.max(Ee.min, t.fadeMs)));
+    h.prepare(
+      "INSERT INTO settings (key, value) VALUES ('output.fadeMs', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value"
+    ).run(String(e));
+  }
+  return En();
+}
+function Fs() {
+  m.handle("settings:get", () => En()), m.handle("settings:set", (t, e) => {
+    const n = e == null ? void 0 : e.fadeMs;
+    if (n !== void 0 && (typeof n != "number" || !Number.isFinite(n)))
+      throw new TypeError("fadeMs must be a number of milliseconds");
+    return ks({ fadeMs: n });
+  });
+}
+const Ps = ["show", "black", "clear", "logo"];
+let We = { mode: "black", text: "", caption: "", theme: M, fadeMs: 400 };
+function $s(t) {
+  const e = t;
+  if (typeof e != "object" || e === null || !Ps.includes(e.mode) || typeof e.text != "string" || typeof e.caption != "string" || typeof e.theme != "object" || typeof e.fadeMs != "number" || !Number.isFinite(e.fadeMs))
+    throw new TypeError("Output state needs a mode, text, caption, theme and fade length");
+  return {
+    mode: e.mode,
+    text: e.text,
+    caption: e.caption,
+    theme: X(e.theme),
+    fadeMs: Math.min(1500, Math.max(0, e.fadeMs))
+  };
+}
+function js(t) {
   m.on("output:send", (e, n) => {
     var r;
     try {
-      $e = ss(n);
+      We = $s(n);
     } catch (i) {
       console.error(i);
       return;
     }
-    (r = t()) == null || r.webContents.send("output:state", $e);
+    (r = t()) == null || r.webContents.send("output:state", We);
   });
 }
-function as(t) {
-  t.webContents.send("output:state", $e);
+function Us(t) {
+  t.webContents.send("output:state", We);
 }
-const Xe = E.dirname(en(import.meta.url));
-process.env.APP_ROOT = E.join(Xe, "..");
-const ie = process.env.VITE_DEV_SERVER_URL, fs = E.join(process.env.APP_ROOT, "dist-electron"), qe = E.join(process.env.APP_ROOT, "dist");
-process.env.VITE_PUBLIC = ie ? E.join(process.env.APP_ROOT, "public") : qe;
-Qi();
-let O, v = null;
-function Kt() {
-  O = new se({
-    icon: E.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
+const nt = g.dirname(Sn(import.meta.url));
+process.env.APP_ROOT = g.join(nt, "..");
+const ae = process.env.VITE_DEV_SERVER_URL, qs = g.join(process.env.APP_ROOT, "dist-electron"), rt = g.join(process.env.APP_ROOT, "dist");
+process.env.VITE_PUBLIC = ae ? g.join(process.env.APP_ROOT, "public") : rt;
+ws();
+let R, L = null;
+function yn() {
+  R = new le({
+    icon: g.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
     webPreferences: {
-      preload: E.join(Xe, "preload.mjs")
+      preload: g.join(nt, "preload.mjs")
     }
-  }), O.webContents.on("did-finish-load", () => {
-    O == null || O.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
-  }), ie ? O.loadURL(ie) : O.loadFile(E.join(qe, "index.html")), O.on("closed", () => {
-    O = null, v == null || v.close();
+  }), R.webContents.on("did-finish-load", () => {
+    R == null || R.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
+  }), ae ? R.loadURL(ae) : R.loadFile(g.join(rt, "index.html")), R.on("closed", () => {
+    R = null, L == null || L.close();
   });
 }
-function Jt() {
-  const t = Ye.getPrimaryDisplay().id, e = Ye.getAllDisplays().find((n) => n.id !== t);
-  v = new se({
+function Tn() {
+  const t = st.getPrimaryDisplay().id, e = st.getAllDisplays().find((n) => n.id !== t);
+  L = new le({
     title: "WorshipDeck Output",
     backgroundColor: "#000",
     ...e ? { ...e.bounds, fullscreen: !0, frame: !1 } : { width: 960, height: 540, resizable: !0 },
     webPreferences: {
-      preload: E.join(Xe, "preload.mjs")
+      preload: g.join(nt, "preload.mjs")
     }
-  }), v.webContents.on("did-finish-load", () => {
-    v && as(v);
-  }), v.on("closed", () => {
-    v = null;
-  }), ie ? v.loadURL(`${ie}#/output`) : v.loadFile(E.join(qe, "index.html"), { hash: "/output" });
+  }), L.webContents.on("did-finish-load", () => {
+    L && Us(L);
+  }), L.on("closed", () => {
+    L = null;
+  }), ae ? L.loadURL(`${ae}#/output`) : L.loadFile(g.join(rt, "index.html"), { hash: "/output" });
 }
 G.on("window-all-closed", () => {
-  process.platform !== "darwin" && (G.quit(), O = null);
+  process.platform !== "darwin" && (G.quit(), R = null);
 });
 G.on("activate", () => {
-  se.getAllWindows().length === 0 && (Kt(), Jt());
+  le.getAllWindows().length === 0 && (yn(), Tn());
 });
 G.whenReady().then(() => {
-  gn(), Zi(), Ln(), Mn(), Dn(), Ji(), rs(), os(() => v), Kt(), Jt();
+  Fn(), Ss(), Jn(), tr(), mr(), ys(), bs(), vs(), Fs(), js(() => L), yn(), Tn();
 });
 export {
-  fs as MAIN_DIST,
-  qe as RENDERER_DIST,
-  ie as VITE_DEV_SERVER_URL
+  qs as MAIN_DIST,
+  rt as RENDERER_DIST,
+  ae as VITE_DEV_SERVER_URL
 };

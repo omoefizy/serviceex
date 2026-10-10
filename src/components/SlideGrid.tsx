@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react'
-import { selectBaseThemeId, selectDeckTheme, useOperatorStore } from '../store'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { MEDIA_DRAG_TYPE } from '../lib/media'
+import { selectBaseThemeId, selectDeckTheme, slideTheme, useOperatorStore } from '../store'
 import { ThemedSlide } from './ThemedSlide'
 
 export function SlideGrid() {
@@ -15,7 +16,23 @@ export function SlideGrid() {
   const openThemeEditor = useOperatorStore((s) => s.openThemeEditor)
   const baseTheme = useOperatorStore((s) => s.themes.find((t) => t.id === selectBaseThemeId(s)))
   const usesSongTheme = useOperatorStore((s) => s.deckType === 'song' && !!s.selectedSong?.themeId)
+  const deckKey = useOperatorStore((s) => s.deckKey)
+  const setSlideBackground = useOperatorStore((s) => s.setSlideBackground)
   const gridRef = useRef<HTMLDivElement>(null)
+  /** The slide a library item is being dragged over. */
+  const [dropIndex, setDropIndex] = useState<number | null>(null)
+  const slideThemes = useMemo(() => slides.map((slide) => slideTheme(theme, slide)), [slides, theme])
+
+  // Presentation pages are their own picture, so they take no background.
+  const canDrop = (e: DragEvent, index: number) =>
+    deckKey !== null && !slides[index]?.page && e.dataTransfer.types.includes(MEDIA_DRAG_TYPE)
+
+  function handleDrop(e: DragEvent, index: number) {
+    e.preventDefault()
+    setDropIndex(null)
+    const mediaId = Number(e.dataTransfer.getData(MEDIA_DRAG_TYPE))
+    if (mediaId > 0) setSlideBackground(index, mediaId).catch(console.error)
+  }
 
   // Keep the live slide visible when the arrow keys move past the edge of the panel.
   useEffect(() => {
@@ -59,17 +76,38 @@ export function SlideGrid() {
       {song && slides.length === 0 && <p className="empty">This song has no lyrics.</p>}
 
       <div className="slide-grid" ref={gridRef}>
-        {slides.map(({ text, caption, label }, index) => (
-          <button
+        {slides.map(({ text, caption, label, background, page }, index) => (
+          <div
             key={index}
-            data-index={index}
-            className={`slide-card themed${index === liveSlideIndex ? ' live' : ''}`}
-            onClick={() => showSlide(index)}
+            className={`slide-cell${dropIndex === index ? ' drop' : ''}`}
+            onDragOver={(e) => {
+              if (!canDrop(e, index)) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'copy'
+              setDropIndex(index)
+            }}
+            onDragLeave={() => setDropIndex((current) => (current === index ? null : current))}
+            onDrop={(e) => handleDrop(e, index)}
           >
-            <ThemedSlide theme={theme} text={text} caption={caption} still />
-            <span className="slide-number">{index + 1}</span>
-            {label && <span className="slide-caption">{label}</span>}
-          </button>
+            <button
+              data-index={index}
+              className={`slide-card themed${index === liveSlideIndex ? ' live' : ''}`}
+              onClick={() => showSlide(index)}
+            >
+              <ThemedSlide theme={slideThemes[index]} text={text} caption={caption} still />
+              <span className="slide-number">{index + 1}</span>
+              {label && <span className="slide-caption">{label}</span>}
+            </button>
+            {background && !page && (
+              <button
+                className="slide-bg-clear"
+                title="Use the theme background for this slide"
+                onClick={() => setSlideBackground(index, null).catch(console.error)}
+              >
+                Background ×
+              </button>
+            )}
+          </div>
         ))}
       </div>
     </section>

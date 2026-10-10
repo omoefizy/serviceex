@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type DragEvent } from 'react'
 import type { AnnouncementPayload, Service, ServiceItemType } from '../../shared/types'
+import { renderPdfPages } from '../lib/media'
 import { useOperatorStore } from '../store'
 import { AnnouncementModal } from './AnnouncementModal'
 import { NewServiceModal } from './NewServiceModal'
@@ -8,6 +9,7 @@ const TYPE_LABELS: Record<ServiceItemType, string> = {
   song: 'Song',
   scripture: 'Scripture',
   announcement: 'Announcement',
+  presentation: 'Presentation',
 }
 
 function ItemIcon({ type }: { type: ServiceItemType }) {
@@ -32,6 +34,12 @@ function ItemIcon({ type }: { type: ServiceItemType }) {
           <path d="M17 8a5 5 0 0 1 0 8" />
         </>
       )}
+      {type === 'presentation' && (
+        <>
+          <rect x="3" y="4" width="18" height="12" rx="1" />
+          <path d="M12 16v4M8 20h8" />
+        </>
+      )}
     </svg>
   )
 }
@@ -42,6 +50,8 @@ export function SchedulePanel() {
   const [creating, setCreating] = useState(false)
   const [announcing, setAnnouncing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** Progress while a presentation is imported, such as "Rendering page 3 of 12…". */
+  const [progress, setProgress] = useState<string | null>(null)
   const [dragId, setDragId] = useState<number | null>(null)
   /** Where the dragged item would land, as an index into the items before the move. */
   const [dropIndex, setDropIndex] = useState<number | null>(null)
@@ -83,6 +93,25 @@ export function SchedulePanel() {
   async function handleAnnouncement(payload: AnnouncementPayload) {
     await addToSchedule('announcement', null, payload)
     setAnnouncing(false)
+  }
+
+  /** Images become pages as they are; a PDF is drawn page by page here, then saved. */
+  function handlePresentation() {
+    run(async () => {
+      try {
+        setProgress('Choosing files…')
+        const source = await window.api.media.pickPresentation()
+        if (!source) return
+        const pages =
+          source.kind === 'images'
+            ? source.pages
+            : await renderPdfPages(source.data, (page, total) => setProgress(`Rendering page ${page} of ${total}…`))
+        setProgress('Adding to the schedule…')
+        await addToSchedule('presentation', null, { title: source.title, pages })
+      } finally {
+        setProgress(null)
+      }
+    })
   }
 
   function handleDragOver(e: DragEvent<HTMLLIElement>, index: number) {
@@ -202,8 +231,12 @@ export function SchedulePanel() {
         <button className="button" disabled={!service} onClick={() => setAnnouncing(true)}>
           + Announcement
         </button>
+        <button className="button" disabled={!service || progress !== null} onClick={handlePresentation} title="Images or a PDF, one slide per page">
+          + Presentation
+        </button>
         <span className="hint">⌘↓ next item</span>
       </footer>
+      {progress && <p className="hint">{progress}</p>}
 
       {creating && <NewServiceModal onSave={handleCreate} onCancel={() => setCreating(false)} />}
       {announcing && <AnnouncementModal onSave={handleAnnouncement} onCancel={() => setAnnouncing(false)} />}

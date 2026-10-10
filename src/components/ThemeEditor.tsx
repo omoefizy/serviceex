@@ -3,6 +3,7 @@ import { THEME_CONTENT_TYPES } from '../../shared/themes'
 import type { TextCase, Theme, ThemeBackground, ThemeContentType, ThemeStyle } from '../../shared/types'
 import { selectBaseThemeId, useOperatorStore } from '../store'
 import { cssFontFamily } from '../lib/fonts'
+import { MediaPickerModal } from './MediaGrid'
 import { ThemedSlide } from './ThemedSlide'
 
 const SAMPLES = {
@@ -202,8 +203,8 @@ function uniqueName(base: string, themes: Theme[]): string {
   return name
 }
 
-/** "wd-media://local/1712345-sunrise.jpg" → "sunrise.jpg". */
-const mediaName = (src: string) => decodeURIComponent(src.split('/').pop() ?? '').replace(/^\d+-/, '')
+/** "wd-media://local/1712345-ab12-sunrise.jpg" → "sunrise.jpg" (older files have no "ab12-" part). */
+const mediaName = (src: string) => decodeURIComponent(src.split('/').pop() ?? '').replace(/^\d+-([a-z0-9]{4}-)?/, '')
 
 export function ThemeEditor() {
   const themes = useOperatorStore((s) => s.themes)
@@ -219,6 +220,8 @@ export function ThemeEditor() {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** Which kind of background the library picker is open for. */
+  const [picking, setPicking] = useState<'image' | 'video' | null>(null)
 
   const selected = themes.find((t) => t.id === selectedId) ?? null
   const dirty = selected !== null && style !== null && (name !== selected.name || JSON.stringify(style) !== JSON.stringify(selected.style))
@@ -266,12 +269,7 @@ export function ThemeEditor() {
     const color = current.kind === 'solid' ? current.color : current.kind === 'gradient' ? current.from : '#000000'
     if (kind === 'solid') update({ background: { kind, color } })
     else if (kind === 'gradient') update({ background: { kind, from: color, to: '#333333', angle: 160 } })
-    else run(() => chooseMedia(kind))
-  }
-
-  async function chooseMedia(kind: 'image' | 'video') {
-    const src = await window.api.themes.pickMedia(kind)
-    if (src) update({ background: { kind, src } })
+    else setPicking(kind)
   }
 
   const save = () =>
@@ -538,8 +536,8 @@ export function ThemeEditor() {
                   return (
                     <Row label={kind === 'image' ? 'Image' : 'Video'}>
                       <small className="media-name">{mediaName(style.background.src)}</small>
-                      <button type="button" className="button" onClick={() => run(() => chooseMedia(kind))}>
-                        Choose…
+                      <button type="button" className="button" onClick={() => setPicking(kind)}>
+                        Choose from library…
                       </button>
                     </Row>
                   )
@@ -588,6 +586,17 @@ export function ThemeEditor() {
           </div>
         )}
       </div>
+
+      {picking && (
+        <MediaPickerModal
+          kind={picking}
+          onPick={(item) => {
+            update({ background: item.kind === 'video' ? { kind: 'video', src: item.url } : { kind: 'image', src: item.url } })
+            setPicking(null)
+          }}
+          onCancel={() => setPicking(null)}
+        />
+      )}
     </section>
   )
 }

@@ -1,8 +1,10 @@
 import { ipcRenderer, contextBridge, webUtils } from 'electron'
 import type {
   BibleApi,
+  MediaApi,
   OutputState,
   ServicesApi,
+  SettingsApi,
   SongFilesApi,
   SongsApi,
   ThemesApi,
@@ -75,7 +77,24 @@ const themes: ThemesApi = {
   delete: (id) => ipcRenderer.invoke('themes:delete', id),
   getDefaults: () => ipcRenderer.invoke('themes:getDefaults'),
   setDefault: (type, themeId) => ipcRenderer.invoke('themes:setDefault', type, themeId),
-  pickMedia: (kind) => ipcRenderer.invoke('themes:pickMedia', kind),
+}
+
+const media: MediaApi = {
+  list: () => ipcRenderer.invoke('media:list'),
+  import: () => ipcRenderer.invoke('media:import'),
+  update: (id, name, tags) => ipcRenderer.invoke('media:update', id, name, tags),
+  delete: (id) => ipcRenderer.invoke('media:delete', id),
+  saveThumbnail: (id, jpeg) => ipcRenderer.invoke('media:saveThumbnail', id, jpeg),
+  getSlideBackgrounds: (deckKey) => ipcRenderer.invoke('media:getSlideBackgrounds', deckKey),
+  setSlideBackground: (deckKey, slideIndex, mediaId) =>
+    ipcRenderer.invoke('media:setSlideBackground', deckKey, slideIndex, mediaId),
+  pickPresentation: () => ipcRenderer.invoke('media:pickPresentation'),
+  saveImage: (png) => ipcRenderer.invoke('media:saveImage', png),
+}
+
+const settings: SettingsApi = {
+  get: () => ipcRenderer.invoke('settings:get'),
+  set: (patch) => ipcRenderer.invoke('settings:set', patch),
 }
 
 const output: WorshipDeckApi['output'] = {
@@ -87,5 +106,5 @@ const output: WorshipDeckApi['output'] = {
   },
 }
 
-const api: WorshipDeckApi = { songs, bible, services, songFiles, themes, output }
+const api: WorshipDeckApi = { songs, bible, services, songFiles, themes, media, settings, output }
 contextBridge.exposeInMainWorld('api', api)

@@ -2,13 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import type { OutputState } from '../../shared/types'
 import { ThemedSlide } from './ThemedSlide'
 
-/** Keep in sync with the `output-fade` animation duration in index.css. */
-const FADE_MS = 400
-
 interface Frame {
   key: number
   state: OutputState
   leaving: boolean
+  /** How long this frame's fade in, or fade out once leaving, lasts: the fade of the state that replaced it. */
+  fadeMs: number
 }
 
 /** What the background layer shows: unchanged backgrounds (a playing video, say) are not redrawn between slides. */
@@ -48,15 +47,18 @@ function useFrames(state: OutputState | null, identity: (state: OutputState) => 
     }
     currentRef.current = id
     const key = ++lastKeyRef.current
-    setFrames((frames) => [...frames.map((f) => ({ ...f, leaving: fadeOut })), { key, state, leaving: false }])
-    timersRef.current.push(window.setTimeout(() => setFrames((frames) => frames.filter((f) => f.key >= key)), FADE_MS))
+    setFrames((frames) => [
+      ...frames.map((f) => ({ ...f, leaving: fadeOut, fadeMs: state.fadeMs })),
+      { key, state, leaving: false, fadeMs: state.fadeMs },
+    ])
+    timersRef.current.push(window.setTimeout(() => setFrames((frames) => frames.filter((f) => f.key >= key)), state.fadeMs))
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per new output state
   }, [state])
 
   return frames
 }
 
-/** The projector screen: a background layer and a text layer, each crossfading on its own. */
+/** The projector screen: a background layer and a text layer, each crossfading on its own over the chosen fade length. */
 export function OutputView() {
   const [state, setState] = useState<OutputState | null>(null)
 
@@ -67,13 +69,13 @@ export function OutputView() {
 
   return (
     <div className="output">
-      {backgrounds.map(({ key, state }) => (
-        <div key={key} className="output-frame">
+      {backgrounds.map(({ key, state, fadeMs }) => (
+        <div key={key} className="output-frame" style={{ animationDuration: `${fadeMs}ms` }}>
           <ThemedSlide theme={state.theme} text="" mode={state.mode} layer="background" />
         </div>
       ))}
-      {contents.map(({ key, state, leaving }) => (
-        <div key={key} className={`output-frame${leaving ? ' leaving' : ''}`}>
+      {contents.map(({ key, state, leaving, fadeMs }) => (
+        <div key={key} className={`output-frame${leaving ? ' leaving' : ''}`} style={{ animationDuration: `${fadeMs}ms` }}>
           <ThemedSlide theme={state.theme} text={state.text} caption={state.caption} mode={state.mode} layer="content" />
         </div>
       ))}

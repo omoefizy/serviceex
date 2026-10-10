@@ -1,0 +1,96 @@
+import { useEffect, useState } from 'react'
+import type { MediaItem } from '../../shared/types'
+import { matchesSearch, MEDIA_DRAG_TYPE } from '../lib/media'
+import { useMediaLibrary } from '../lib/useMediaLibrary'
+
+interface GridProps {
+  items: MediaItem[]
+  selectedId?: number | null
+  onSelect(item: MediaItem): void
+  /** Lets items be dragged onto slides. */
+  draggable?: boolean
+}
+
+export function MediaGrid({ items, selectedId = null, onSelect, draggable = false }: GridProps) {
+  return (
+    <ul className="media-grid">
+      {items.map((item) => (
+        <li key={item.id}>
+          <button
+            className={`media-tile${item.id === selectedId ? ' selected' : ''}`}
+            title={item.name}
+            draggable={draggable}
+            onDragStart={(e) => {
+              e.dataTransfer.setData(MEDIA_DRAG_TYPE, String(item.id))
+              e.dataTransfer.effectAllowed = 'copy'
+            }}
+            onClick={() => onSelect(item)}
+          >
+            <span className="media-thumb">
+              {item.thumbUrl || item.kind === 'image' ? (
+                <img src={item.thumbUrl ?? item.url} alt="" draggable={false} loading="lazy" />
+              ) : (
+                <span className="media-thumb-placeholder" aria-hidden="true">
+                  ▶
+                </span>
+              )}
+              {item.kind === 'video' && <span className="media-badge">Video</span>}
+            </span>
+            <span className="media-tile-name">{item.name}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+interface PickerProps {
+  kind: 'image' | 'video'
+  onPick(item: MediaItem): void
+  onCancel(): void
+}
+
+/** Chooses a library image or video, for a theme background. */
+export function MediaPickerModal({ kind, onPick, onCancel }: PickerProps) {
+  const { items, error, importFiles } = useMediaLibrary()
+  const [search, setSearch] = useState('')
+  const shown = items.filter((item) => item.kind === kind && matchesSearch(item, search))
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onCancel])
+
+  async function handleImport() {
+    const added = (await importFiles()).filter((item) => item.kind === kind)
+    if (added.length === 1) onPick(added[0])
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={onCancel}>
+      <div className="modal media-picker" role="dialog" aria-label={`Choose a background ${kind}`} onMouseDown={(e) => e.stopPropagation()}>
+        <h2>Choose a background {kind}</h2>
+        <div className="media-toolbar">
+          <input className="input" type="search" placeholder="Search name or tag" value={search} onChange={(e) => setSearch(e.target.value)} autoFocus />
+          <button className="button" onClick={handleImport}>
+            Import…
+          </button>
+        </div>
+        {error && <p className="error">{error}</p>}
+        {shown.length > 0 ? (
+          <MediaGrid items={shown} onSelect={onPick} />
+        ) : (
+          <p className="empty">{items.some((i) => i.kind === kind) ? `No ${kind}s match.` : `No ${kind}s in the library yet. Import one.`}</p>
+        )}
+        <footer className="modal-actions">
+          <button className="button" onClick={onCancel}>
+            Cancel
+          </button>
+        </footer>
+      </div>
+    </div>
+  )
+}

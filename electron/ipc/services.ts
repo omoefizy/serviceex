@@ -1,5 +1,11 @@
 import { ipcMain } from 'electron'
-import type { AnnouncementPayload, ScripturePayload, ServiceItemPayload, ServiceItemType } from '../../shared/types'
+import type {
+  AnnouncementPayload,
+  PresentationPayload,
+  ScripturePayload,
+  ServiceItemPayload,
+  ServiceItemType,
+} from '../../shared/types'
 import {
   addItem,
   createService,
@@ -12,7 +18,8 @@ import {
 
 // Arguments arrive from the renderer, so check their shape before they reach the database.
 
-const ITEM_TYPES: ServiceItemType[] = ['song', 'scripture', 'announcement']
+const ITEM_TYPES: ServiceItemType[] = ['song', 'scripture', 'announcement', 'presentation']
+const MAX_PRESENTATION_PAGES = 500
 
 function assertId(value: unknown, name = 'Id'): number {
   if (!Number.isInteger(value) || (value as number) < 1) {
@@ -61,6 +68,21 @@ function assertAnnouncement(value: unknown): AnnouncementPayload {
   return { title: assertTitle(payload.title), body: payload.body }
 }
 
+function assertPresentation(value: unknown): PresentationPayload {
+  const payload = value as Partial<PresentationPayload> | null
+  if (
+    typeof payload !== 'object' ||
+    payload === null ||
+    !Array.isArray(payload.pages) ||
+    payload.pages.length === 0 ||
+    payload.pages.length > MAX_PRESENTATION_PAGES ||
+    !payload.pages.every((page) => typeof page === 'string' && page.startsWith('wd-media://'))
+  ) {
+    throw new TypeError(`A presentation needs a title and 1 to ${MAX_PRESENTATION_PAGES} page images`)
+  }
+  return { title: assertTitle(payload.title), pages: payload.pages }
+}
+
 /** Songs take a song id and no payload; scripture and announcements take a payload and no id. */
 function assertItem(
   type: unknown,
@@ -75,9 +97,9 @@ function assertItem(
     return { type, refId: assertId(refId, 'Song id'), payload: null }
   }
   if (refId !== null && refId !== undefined) throw new TypeError(`${type} items have no refId`)
-  return type === 'scripture'
-    ? { type, refId: null, payload: assertScripture(payload) }
-    : { type: 'announcement', refId: null, payload: assertAnnouncement(payload) }
+  if (type === 'scripture') return { type, refId: null, payload: assertScripture(payload) }
+  if (type === 'presentation') return { type, refId: null, payload: assertPresentation(payload) }
+  return { type: 'announcement', refId: null, payload: assertAnnouncement(payload) }
 }
 
 export function registerServiceIpc(): void {

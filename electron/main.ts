@@ -8,6 +8,8 @@ import { registerBibleIpc } from './ipc/bible'
 import { registerServiceIpc } from './ipc/services'
 import { registerSongFileIpc } from './ipc/songFiles'
 import { registerThemeIpc } from './ipc/themes'
+import { registerMediaIpc } from './ipc/media'
+import { registerSettingsIpc } from './ipc/settings'
 import { registerMediaProtocol, registerMediaScheme } from './media'
 import { registerOutputIpc, sendLastOutputState } from './ipc/output'
 
@@ -121,6 +123,8 @@ app.whenReady().then(() => {
   registerServiceIpc()
   registerSongFileIpc()
   registerThemeIpc()
+  registerMediaIpc()
+  registerSettingsIpc()
   registerOutputIpc(() => outputWin)
   createWindow()
   createOutputWindow()

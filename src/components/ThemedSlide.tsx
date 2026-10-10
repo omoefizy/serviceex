@@ -42,7 +42,15 @@ function Background({ background, still }: { background: ThemeBackground; still:
         />
       )
     case 'image':
-      return <img className="themed-bg themed-media" src={background.src} alt="" draggable={false} />
+      return (
+        <img
+          className="themed-bg themed-media"
+          style={{ objectFit: background.fit ?? 'cover' }}
+          src={background.src}
+          alt=""
+          draggable={false}
+        />
+      )
     case 'video':
       // Thumbnails show a frame instead of playing many videos at once.
       return still ? (

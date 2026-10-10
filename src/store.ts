@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { buildSongSlides } from '../shared/lyrics'
 import { DEFAULT_THEME_STYLE } from '../shared/themes'
 import type {
+  AppSettings,
+  MediaItem,
   OutputMode,
   OutputState,
   ServiceItemPayload,
@@ -10,7 +12,7 @@ import type {
   ServiceWithItems,
   Song,
   Theme,
-  ThemeContentType,
+  ThemeBackground,
   ThemeDefaults,
   ThemeStyle,
 } from '../shared/types'
@@ -22,6 +24,10 @@ export interface DeckSlide {
   caption: string
   /** Song section shown on the slide card only, such as "Chorus". */
   label?: string
+  /** Replaces the theme's background for this slide: a library item dropped on it, or a presentation page. */
+  background?: ThemeBackground
+  /** A presentation page: the image is the whole slide, so the theme's darkening is not applied. */
+  page?: boolean
 }
 
 interface OperatorState {
@@ -33,7 +39,14 @@ interface OperatorState {
   liveSlideIndex: number | null
   outputMode: OutputMode
   /** What the grid holds, which picks the default theme. Null when it is empty. */
-  deckType: ThemeContentType | null
+  deckType: ServiceItemType | null
+  /**
+   * Names the deck for per-slide background overrides: 'song:<id>' (wherever the song is loaded from),
+   * 'item:<id>' for other schedule items, 'scripture:<reference>' for a scripture lookup. Null when empty.
+   */
+  deckKey: string | null
+  /** Output crossfade length in milliseconds. */
+  fadeMs: number
   themes: Theme[]
   themeDefaults: ThemeDefaults | null
   /** The theme picked above the slide grid for what is loaded now; null uses the song's theme or the default. */
@@ -47,6 +60,8 @@ interface OperatorState {
   editingSongId: number | null
   /** Bumped whenever a song is saved or deleted, so the song list reloads. */
   songsVersion: number
+  /** Bumped when the media library changes, so every view of it reloads. */
+  mediaVersion: number
 
   selectSong(song: Song | null): void
   /** Loads scripture verses into the slide grid in place of a song. */
@@ -72,7 +87,14 @@ interface OperatorState {
   /** Loads the themes and defaults; call again after the theme editor changes them. */
   loadThemes(): Promise<void>
   setDeckTheme(id: number | null): void
+  loadSettings(): Promise<void>
+  setFadeMs(fadeMs: number): Promise<void>
+  /** Gives one slide of the loaded deck a library background, or clears it with null. */
+  setSlideBackground(index: number, mediaId: number | null): Promise<void>
+  /** Reloads the loaded deck's slide backgrounds, after a library item is deleted for example. */
+  refreshSlideBackgrounds(): Promise<void>
   openThemeEditor(open: boolean): void
+  mediaChanged(): void
   /** Tells the song list to reload, after an import for example. */
   songsChanged(): void
   /** Refreshes the grid and schedule after the editor saves a song. */
@@ -90,6 +112,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   liveSlideIndex: null,
   outputMode: 'show',
   deckType: null,
+  deckKey: null,
+  fadeMs: 400,
   themes: [],
   themeDefaults: null,
   deckThemeId: null,
@@ -98,31 +122,38 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   activeItemId: null,
   editingSongId: null,
   songsVersion: 0,
+  mediaVersion: 0,
 
   selectSong(song) {
-    loadToken++
+    const token = ++loadToken
+    const deckKey = song ? `song:${song.id}` : null
     set({
       activeItemId: null,
       selectedSong: song,
       deckType: song ? 'song' : null,
+      deckKey,
       deckThemeId: null,
       deckTitle: song?.title ?? null,
       slides: song ? songSlides(song) : [],
       liveSlideIndex: null,
     })
+    applySlideBackgrounds(token, deckKey)
   },
 
   selectScripture(title, slides) {
-    loadToken++
+    const token = ++loadToken
+    const deckKey = `scripture:${title}`
     set({
       selectedSong: null,
       deckType: 'scripture',
+      deckKey,
       deckThemeId: null,
       deckTitle: title,
       slides,
       liveSlideIndex: null,
       activeItemId: null,
     })
+    applySlideBackgrounds(token, deckKey)
   },
 
   goLive(index) {
@@ -193,20 +224,26 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
       slides = song ? songSlides(song) : []
     } else if (item.type === 'scripture') {
       slides = item.payload.verses
+    } else if (item.type === 'presentation') {
+      slides = item.payload.pages.map((src) => ({ text: '', caption: '', background: { kind: 'image', src, fit: 'contain' }, page: true }))
     } else {
       slides = announcementSlides(item.payload)
     }
 
     if (token !== loadToken) return false
+    // A song keeps its slide backgrounds wherever it is loaded from; other items keep their own.
+    const deckKey = item.type === 'song' ? `song:${item.ref_id}` : `item:${item.id}`
     set({
       selectedSong: song,
       deckType: item.type,
+      deckKey,
       deckThemeId: null,
       deckTitle: item.title,
       slides,
       liveSlideIndex: null,
       activeItemId: item.id,
     })
+    await applySlideBackgrounds(token, deckKey)
     return true
   },
 
@@ -234,8 +271,33 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     set({ deckThemeId: id })
   },
 
+  async loadSettings() {
+    set({ fadeMs: (await window.api.settings.get()).fadeMs })
+  },
+
+  async setFadeMs(fadeMs) {
+    set({ fadeMs })
+    const saved: AppSettings = await window.api.settings.set({ fadeMs })
+    set({ fadeMs: saved.fadeMs })
+  },
+
+  async setSlideBackground(index, mediaId) {
+    const { deckKey } = get()
+    if (!deckKey) return
+    await window.api.media.setSlideBackground(deckKey, index, mediaId)
+    await applySlideBackgrounds(loadToken, deckKey)
+  },
+
+  async refreshSlideBackgrounds() {
+    await applySlideBackgrounds(loadToken, get().deckKey)
+  },
+
   openThemeEditor(open) {
     set({ themeEditorOpen: open, editingSongId: open ? null : get().editingSongId })
+  },
+
+  mediaChanged() {
+    set({ mediaVersion: get().mediaVersion + 1 })
   },
 
   songsChanged() {
@@ -254,6 +316,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
         slides,
         liveSlideIndex: liveSlideIndex !== null && liveSlideIndex < slides.length ? liveSlideIndex : null,
       })
+      await applySlideBackgrounds(loadToken, get().deckKey)
     }
     if (service?.items.some((item) => item.type === 'song' && item.ref_id === song.id)) await refreshService(service.id)
   },
@@ -275,6 +338,28 @@ function songSlides(song: Song): DeckSlide[] {
   }))
 }
 
+const mediaBackground = (item: MediaItem): ThemeBackground =>
+  item.kind === 'video' ? { kind: 'video', src: item.url } : { kind: 'image', src: item.url }
+
+/** Merges a deck's stored slide backgrounds into its slides, unless another deck was loaded meanwhile. */
+async function applySlideBackgrounds(token: number, deckKey: string | null): Promise<void> {
+  if (!deckKey) return
+  try {
+    const overrides = await window.api.media.getSlideBackgrounds(deckKey)
+    if (token !== loadToken) return
+    useOperatorStore.setState((s) => ({
+      slides: s.slides.map((slide, index) => {
+        if (slide.page) return slide
+        const override = overrides[index]
+        if (override) return { ...slide, background: mediaBackground(override) }
+        return slide.background ? { ...slide, background: undefined } : slide
+      }),
+    }))
+  } catch (err) {
+    console.error(err)
+  }
+}
+
 async function refreshService(id: number): Promise<void> {
   const service = (await window.api.services.get(id)) ?? null
   // Ignore the result if the operator switched services meanwhile.
@@ -288,8 +373,15 @@ export function selectOutputState(s: OperatorState): OutputState {
     mode: s.outputMode,
     text: live?.text ?? '',
     caption: live?.caption ?? '',
-    theme: selectDeckTheme(s),
+    theme: slideTheme(selectDeckTheme(s), live),
+    fadeMs: s.fadeMs,
   }
+}
+
+/** A slide's own background, if it has one, in place of the theme's. */
+export function slideTheme(theme: ThemeStyle, slide: DeckSlide | null | undefined): ThemeStyle {
+  if (!slide?.background) return theme
+  return { ...theme, background: slide.background, overlay: slide.page ? 0 : theme.overlay }
 }
 
 /** The theme the default for what is loaded would use, ignoring the picker: the song's own theme, else the content type's default. */
@@ -297,7 +389,9 @@ export function selectBaseThemeId(s: OperatorState): number | null {
   if (s.deckType === 'song' && s.selectedSong?.themeId && s.themes.some((t) => t.id === s.selectedSong?.themeId)) {
     return s.selectedSong.themeId
   }
-  return s.themeDefaults?.[s.deckType ?? 'song'] ?? null
+  // Presentations draw their own pages, so any theme does; use the song default.
+  const type = s.deckType === null || s.deckType === 'presentation' ? 'song' : s.deckType
+  return s.themeDefaults?.[type] ?? null
 }
 
 /** The style the grid, live preview and output use for what is loaded. */

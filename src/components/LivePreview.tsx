@@ -1,5 +1,6 @@
+import { useMemo } from 'react'
 import type { OutputMode } from '../../shared/types'
-import { selectDeckTheme, useOperatorStore } from '../store'
+import { selectDeckTheme, slideTheme, useOperatorStore } from '../store'
 import { ThemedSlide } from './ThemedSlide'
 
 const MODES: { mode: OutputMode; label: string }[] = [
@@ -12,7 +13,10 @@ const MODES: { mode: OutputMode; label: string }[] = [
 export function LivePreview() {
   const slide = useOperatorStore((s) => (s.liveSlideIndex === null ? null : s.slides[s.liveSlideIndex]))
   const mode = useOperatorStore((s) => s.outputMode)
-  const theme = useOperatorStore(selectDeckTheme)
+  const deckTheme = useOperatorStore(selectDeckTheme)
+  const theme = useMemo(() => slideTheme(deckTheme, slide), [deckTheme, slide])
+  const fadeMs = useOperatorStore((s) => s.fadeMs)
+  const setFadeMs = useOperatorStore((s) => s.setFadeMs)
   const setOutputMode = useOperatorStore((s) => s.setOutputMode)
   const onAir = mode === 'show' && slide !== null
 
@@ -37,6 +41,19 @@ export function LivePreview() {
           </button>
         ))}
       </div>
+
+      <label className="fade-control">
+        <span>Crossfade</span>
+        <input
+          type="range"
+          min={0}
+          max={1500}
+          step={100}
+          value={fadeMs}
+          onChange={(e) => setFadeMs(Number(e.target.value)).catch(console.error)}
+        />
+        <span className="fade-value">{(fadeMs / 1000).toFixed(1)} s</span>
+      </label>
 
       <div className="preview-screen">
         <ThemedSlide theme={theme} text={slide?.text ?? ''} caption={slide?.caption} mode={mode} />

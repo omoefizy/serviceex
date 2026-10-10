@@ -38,7 +38,7 @@ export interface Service {
   date: string | null
 }
 
-export type ServiceItemType = 'song' | 'scripture' | 'announcement'
+export type ServiceItemType = 'song' | 'scripture' | 'announcement' | 'presentation'
 
 /** A scripture passage saved in a service, verses included so it shows without another lookup. */
 export interface ScripturePayload {
@@ -53,7 +53,14 @@ export interface AnnouncementPayload {
   body: string
 }
 
-export type ServiceItemPayload = ScripturePayload | AnnouncementPayload
+/** Images or PDF pages, one slide each, stored as image files in the media folder. */
+export interface PresentationPayload {
+  title: string
+  /** wd-media:// URLs, in order. */
+  pages: string[]
+}
+
+export type ServiceItemPayload = ScripturePayload | AnnouncementPayload | PresentationPayload
 
 interface ServiceItemFields {
   id: number
@@ -63,11 +70,12 @@ interface ServiceItemFields {
   title: string
 }
 
-/** Songs point at the songs table through `ref_id`; scripture and announcements carry their content in `payload`. */
+/** Songs point at the songs table through `ref_id`; the other types carry their content in `payload`. */
 export type ServiceItem =
   | (ServiceItemFields & { type: 'song'; ref_id: number; payload: null })
   | (ServiceItemFields & { type: 'scripture'; ref_id: null; payload: ScripturePayload })
   | (ServiceItemFields & { type: 'announcement'; ref_id: null; payload: AnnouncementPayload })
+  | (ServiceItemFields & { type: 'presentation'; ref_id: null; payload: PresentationPayload })
 
 export interface ServiceWithItems extends Service {
   /** In run order. */
@@ -92,6 +100,8 @@ export type OutputMode = 'show' | 'black' | 'clear' | 'logo'
 /** What the operator sends to the output window. `text` is empty when no slide is live. */
 export interface OutputState extends SlideContent {
   mode: OutputMode
+  /** Crossfade length for slide and background changes, in milliseconds. */
+  fadeMs: number
   /** The resolved theme, sent whole so the output window needs no database access. */
   theme: ThemeStyle
 }
@@ -102,11 +112,12 @@ export type ThemeContentType = 'song' | 'scripture' | 'announcement'
 
 export type TextCase = 'normal' | 'upper' | 'lower'
 
-/** Image and video sources are wd-media:// URLs for files copied into the app's media folder. */
+/** Image and video sources are wd-media:// URLs for files in the app's media folder, usually library items. */
 export type ThemeBackground =
   | { kind: 'solid'; color: string }
   | { kind: 'gradient'; from: string; to: string; angle: number }
-  | { kind: 'image'; src: string }
+  /** `contain` shows the whole image (presentation pages); the default `cover` fills the screen. */
+  | { kind: 'image'; src: string; fit?: 'cover' | 'contain' }
   | { kind: 'video'; src: string }
 
 /** Style of the small line under the text: a scripture reference or a song's copyright. */
@@ -171,8 +182,52 @@ export interface ThemesApi {
   delete(id: number): Promise<boolean>
   getDefaults(): Promise<ThemeDefaults>
   setDefault(type: ThemeContentType, themeId: number): Promise<void>
-  /** Picks an image or video, copies it into the app's media folder and resolves to its URL, or null if cancelled. */
-  pickMedia(kind: 'image' | 'video'): Promise<string | null>
+}
+
+// ---------- Media library ----------
+
+export interface MediaItem {
+  id: number
+  name: string
+  kind: 'image' | 'video'
+  /** wd-media:// URL of the file. */
+  url: string
+  /** wd-media:// URL of a small JPEG (a poster frame for videos); null until the renderer has made one. */
+  thumbUrl: string | null
+  tags: string[]
+}
+
+/** What the presentation picker found: images already copied in, or a PDF for the renderer to draw page by page. */
+export type PresentationSource =
+  | { kind: 'images'; title: string; pages: string[] }
+  | { kind: 'pdf'; title: string; data: Uint8Array }
+
+export interface MediaApi {
+  list(): Promise<MediaItem[]>
+  /** Shows a file picker and copies the chosen images and videos into the library. Resolves to the new items. */
+  import(): Promise<MediaItem[]>
+  update(id: number, name: string, tags: string[]): Promise<boolean>
+  /** Deletes the item and its files. Slides and custom themes using it go back to their theme's background. */
+  delete(id: number): Promise<boolean>
+  /** Stores a JPEG thumbnail the renderer drew for an item. */
+  saveThumbnail(id: number, jpeg: Uint8Array): Promise<MediaItem | undefined>
+  /** Per-slide background overrides for a deck (see deckKey in the store), by slide index. */
+  getSlideBackgrounds(deckKey: string): Promise<Record<number, MediaItem>>
+  setSlideBackground(deckKey: string, slideIndex: number, mediaId: number | null): Promise<void>
+  /** Picks images or one PDF for a presentation. Resolves to null if cancelled. */
+  pickPresentation(): Promise<PresentationSource | null>
+  /** Stores a PNG the renderer drew (a PDF page) and resolves to its URL. */
+  saveImage(png: Uint8Array): Promise<string>
+}
+
+export interface AppSettings {
+  /** Crossfade between slides and backgrounds on the output, 0 to 1500 ms. */
+  fadeMs: number
+}
+
+export interface SettingsApi {
+  get(): Promise<AppSettings>
+  set(settings: Partial<AppSettings>): Promise<AppSettings>
 }
 
 /** The editable fields of a song, used when creating or updating one. */
@@ -285,6 +340,8 @@ export interface WorshipDeckApi {
   services: ServicesApi
   songFiles: SongFilesApi
   themes: ThemesApi
+  media: MediaApi
+  settings: SettingsApi
   output: {
     /** Sends the operator's output state to the output window. */
     send(state: OutputState): void

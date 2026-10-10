@@ -126,8 +126,10 @@ function normalizeBackground(value: unknown, fallback: ThemeBackground): ThemeBa
     case 'gradient':
       return { kind: 'gradient', from: hex(v.from, '#000000'), to: hex(v.to, '#333333'), angle: number(v.angle, 180, 0, 360) }
     case 'image':
+      if (typeof v.src !== 'string' || !v.src) return { kind: 'solid', color: '#000000' }
+      return v.fit === 'contain' ? { kind: 'image', src: v.src, fit: 'contain' } : { kind: 'image', src: v.src }
     case 'video':
-      return typeof v.src === 'string' && v.src ? { kind: v.kind, src: v.src } : { kind: 'solid', color: '#000000' }
+      return typeof v.src === 'string' && v.src ? { kind: 'video', src: v.src } : { kind: 'solid', color: '#000000' }
     default:
       return fallback
   }

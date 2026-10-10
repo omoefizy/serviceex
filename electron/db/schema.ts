@@ -61,6 +61,26 @@ export function initSchema(db: Database.Database): void {
       json TEXT NOT NULL
     );
 
+    -- Background library. file and thumb are names in <userData>/media; tags is a JSON array.
+    CREATE TABLE IF NOT EXISTS media (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      file TEXT NOT NULL,
+      thumb TEXT,
+      tags TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- A library background for one slide of a deck. deck_key is 'song:<id>', 'item:<service item id>'
+    -- or 'scripture:<reference>'; slide_index counts from 0 in play order.
+    CREATE TABLE IF NOT EXISTS slide_backgrounds (
+      deck_key TEXT NOT NULL,
+      slide_index INTEGER NOT NULL,
+      media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+      PRIMARY KEY (deck_key, slide_index)
+    );
+
     -- App-wide choices such as the default theme per content type.
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,

@@ -1,5 +1,6 @@
 import type {
   AnnouncementPayload,
+  PresentationPayload,
   ScripturePayload,
   Service,
   ServiceItem,
@@ -33,6 +34,10 @@ function toItem(row: ItemRow): ServiceItem {
   if (row.type === 'scripture') {
     const payload = JSON.parse(row.payload ?? '{}') as ScripturePayload
     return { ...fields, type: 'scripture', ref_id: null, payload, title: payload.title }
+  }
+  if (row.type === 'presentation') {
+    const payload = JSON.parse(row.payload ?? '{}') as PresentationPayload
+    return { ...fields, type: 'presentation', ref_id: null, payload, title: payload.title }
   }
   const payload = JSON.parse(row.payload ?? '{}') as AnnouncementPayload
   return { ...fields, type: 'announcement', ref_id: null, payload, title: payload.title }
