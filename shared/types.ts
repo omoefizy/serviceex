@@ -601,6 +601,9 @@ export type SpeechEvent =
   | { type: 'performance'; performance: SpeechPerformance }
   /** Which engine is in use and why; `warning` is something to show prominently, null clears it. */
   | { type: 'mode'; mode: SpeechMode; reason: string; warning: string | null }
+  /** The watchdog is restarting the engine (and, when restartCapture, the microphone); sent again for each failed try. */
+  | { type: 'restarting'; reason: string; restartCapture: boolean }
+  | { type: 'restarted'; reason: string }
 
 /** The Deepgram key goes to the main process once, in setKey, and is never sent back. */
 export interface SpeechApi {

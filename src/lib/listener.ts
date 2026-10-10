@@ -9,6 +9,14 @@ import { detectScripture } from './scriptureDetection'
 
 export type ListenerStatus = SpeechStatus | 'starting'
 
+export interface ListenerLogEntry {
+  at: number
+  text: string
+}
+
+/** Events kept for the panel's debugging log, in memory only. */
+const LOG_SIZE = 50
+
 interface ListenerState {
   status: ListenerStatus
   error: string | null
@@ -24,12 +32,36 @@ interface ListenerState {
   modeReason: string
   /** Something to show prominently, such as transcription being paused; null when all is well. */
   warning: string | null
+  /** The watchdog is restarting the engine and microphone; why, for the chip's tooltip. */
+  restarting: string | null
+  /** "Restarted" after the watchdog stepped in, until dismissed. */
+  notice: string | null
+  /** The last 50 events, oldest first. */
+  log: ListenerLogEntry[]
   start(): Promise<void>
   stop(): Promise<void>
   clear(): void
+  dismissNotice(): void
 }
 
 let mic: MicCapture | null = null
+
+function addLog(text: string) {
+  useListener.setState((s) => {
+    // The same message again (such as a repeated reason) is not worth a new line.
+    if (s.log.at(-1)?.text === text) return {}
+    return { log: [...s.log, { at: Date.now(), text }].slice(-LOG_SIZE) }
+  })
+}
+
+const STATUS_LOG: Partial<Record<SpeechStatus, string>> = {
+  connecting: 'Connecting to the speech engine.',
+  listening: 'Listening.',
+  stopping: 'Stopping.',
+  idle: 'Stopped.',
+  error: 'Stopped with an error.',
+}
+const MODE_LOG: Record<SpeechMode, string> = { cloud: 'Cloud', offline: 'Offline', reconnecting: 'Reconnecting' }
 
 function releaseMic() {
   mic?.stop()
@@ -47,10 +79,14 @@ export const useListener = create<ListenerState>((set, get) => ({
   mode: null,
   modeReason: '',
   warning: null,
+  restarting: null,
+  notice: null,
+  log: [],
 
   async start() {
     if (get().status !== 'idle' && get().status !== 'error') return
-    set({ status: 'starting', error: null, performance: null, mode: null, modeReason: '', warning: null })
+    set({ status: 'starting', error: null, performance: null, mode: null, modeReason: '', warning: null, restarting: null, notice: null })
+    addLog('Start pressed; opening the microphone.')
     // Audio captured before the engine is connected waits here, so the first words are not lost.
     let connected = false
     const waiting: ArrayBuffer[] = []
@@ -62,13 +98,12 @@ export const useListener = create<ListenerState>((set, get) => ({
           else if (waiting.length < 50) waiting.push(pcm)
         },
         onLevel: (level) => set({ level }),
-        onEnded() {
-          set({ error: 'The microphone stopped. Check it is still connected.' })
-          get().stop().catch(console.error)
-        },
+        // The capture recovers by itself; the log says what happened.
+        onNotice: (text) => addLog(`Microphone: ${text}`),
       })
     } catch (error) {
       set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
+      addLog(`Error: ${get().error}`)
       return
     }
     // Stop was pressed while the microphone opened.
@@ -77,6 +112,7 @@ export const useListener = create<ListenerState>((set, get) => ({
     if (!started.ok) {
       releaseMic()
       set({ status: 'error', error: started.error.message })
+      addLog(`Error: ${started.error.message}`)
       return
     }
     if (!mic) {
@@ -99,6 +135,10 @@ export const useListener = create<ListenerState>((set, get) => ({
   clear() {
     set({ finals: [], partial: '' })
   },
+
+  dismissNotice() {
+    set({ notice: null })
+  },
 }))
 
 window.api?.speech.onEvent((event) => {
@@ -112,18 +152,36 @@ window.api?.speech.onEvent((event) => {
       detectScripture(event.text).catch(console.error)
       break
     case 'status':
-      set(event.status === 'idle' ? { status: 'idle', partial: '', mode: null, warning: null } : { status: event.status })
+      if (useListener.getState().status !== event.status && STATUS_LOG[event.status]) addLog(STATUS_LOG[event.status]!)
+      set(event.status === 'idle' || event.status === 'error' ? { status: event.status, partial: '', mode: null, warning: null, restarting: null } : { status: event.status })
       // The engine stopped on its own (an error or a dropped connection): let go of the microphone too.
       if (event.status === 'idle' || event.status === 'error') releaseMic()
       break
     case 'error':
       set({ error: event.error.message })
+      addLog(`Error: ${event.error.message}`)
       break
     case 'mode':
       // A switch between engines: words still forming are spoken again by the engine taking over.
       set({ mode: event.mode, modeReason: event.reason, warning: event.warning, partial: '' })
+      addLog(`${MODE_LOG[event.mode]}: ${event.reason}`)
+      if (event.warning) addLog(`Warning: ${event.warning}`)
       break
+    case 'restarting':
+      set({ restarting: event.reason, partial: '' })
+      addLog(`Restarting: ${event.reason}`)
+      if (event.restartCapture) mic?.restart('Restarted by the watchdog.').catch(console.error)
+      break
+    case 'restarted': {
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      set({ restarting: null, notice: `Restarted at ${time}. ${event.reason}` })
+      addLog(`Restarted. ${event.reason}`)
+      break
+    }
     case 'performance':
+      if (useListener.getState().performance?.keepingUp !== event.performance.keepingUp) {
+        addLog(event.performance.keepingUp ? 'Offline engine is keeping up.' : 'Offline engine is falling behind.')
+      }
       set({ performance: event.performance })
       // The main process saved the measurement in settings; pick it up for the Settings page.
       useOperatorStore.getState().loadSettings().catch(console.error)

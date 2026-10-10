@@ -10,6 +10,8 @@ export interface SpeechEngine {
   start(): Promise<void>
   /** Flushes what was heard so far (its last onFinal), then disconnects. */
   stop(): Promise<void>
+  /** Ends at once without the last lines, for an engine that has stalled. */
+  abort?(): void
   /** 100 ms of 16 kHz mono 16-bit little-endian PCM. */
   pushAudio(chunk: Uint8Array): void
   /** Text that may still change, replacing the previous partial. Each returns an unsubscribe function. */

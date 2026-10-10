@@ -59,6 +59,8 @@ function createWindow() {
     icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
+      // The sermon listener captures audio and keeps time here; it must not slow down when the window is hidden.
+      backgroundThrottling: false,
     },
   })
 

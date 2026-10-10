@@ -353,7 +353,7 @@ function ListenerSection() {
     let capture: MicCapture | null = null
     let cancelled = false
     setMicError(null)
-    startMic({ deviceId: settings.micDeviceId, onLevel: setLevel, onEnded: () => setTesting(false) }).then(
+    startMic({ deviceId: settings.micDeviceId, onLevel: setLevel }).then(
       (started) => {
         if (cancelled) return started.stop()
         capture = started

@@ -1,11 +1,11 @@
-import { app, ipcMain, net, systemPreferences, type WebContents } from 'electron'
+import { app, ipcMain, net, powerSaveBlocker, systemPreferences, type WebContents } from 'electron'
 import { appendFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
-import type { SpeechEvent, SpeechKeyStatus, SpeechPerformance, SpeechResult, WhisperProgress, WhisperStatus } from '../../shared/types'
+import type { SpeechEvent, SpeechKeyStatus, SpeechMode, SpeechPerformance, SpeechResult, WhisperProgress, WhisperStatus } from '../../shared/types'
 import { getAppSettings, setAppSettings } from '../db/settings'
 import { clearSecret, encryptionAvailable, hasSecret, readSecret, saveSecret } from '../secrets'
 import { checkDeepgramKey, DEEPGRAM_MODEL, DeepgramEngine } from '../speech/deepgram'
-import { AutoEngine } from '../speech/auto'
+import { AutoEngine, reconnectDelay } from '../speech/auto'
 import { isSpeechError, speechError, type SpeechEngine } from '../speech/engine'
 import { WhisperEngine, whisperServerPath } from '../speech/whisper'
 import {
@@ -21,9 +21,55 @@ import {
   WHISPER_MODELS,
 } from '../speech/whisperModels'
 
-/** The engine that is listening, and the window it reports to. One at a time. */
-let engine: SpeechEngine | null = null
-let owner: WebContents | null = null
+/** No audio from the window for this long means capture has stopped. Doubled after each restart that brings none. */
+const NO_AUDIO_MS = 5000
+const NO_AUDIO_MAX_MS = 60_000
+/** No transcript for this long while there is sound means the engine has stalled. Doubled after each restart that does not help. */
+const NO_TEXT_MS = 30_000
+const NO_TEXT_MAX_MS = 5 * 60_000
+/** Seconds of sound (not silence) since the last transcript before the engine counts as stalled. */
+const SOUND_NEEDED_SECONDS = 15
+/** 100 ms of audio with an RMS level above -40 dBFS counts as sound rather than a quiet room. */
+const SOUND_RMS = 0.01 * 32_768
+/** Audio held while the engine restarts: two minutes of 100 ms chunks. */
+const HELD_MAX_CHUNKS = 1200
+/** Audio since the last line, given again to an engine that replaces a stalled one: up to a minute. */
+const RECENT_MAX_CHUNKS = 600
+/** How long a stalled engine gets to finish its last lines before it is replaced anyway. */
+const RETIRE_TIMEOUT_MS = 6000
+
+/** One listening session, from Start to Stop. It outlives its engine, which the watchdog may replace. */
+interface Session {
+  sender: WebContents
+  send(message: SpeechEvent): void
+  /** A new engine for this session, and the mode to report once it is listening (for single-engine modes). */
+  build(session: Session): { engine: SpeechEngine; mode: Extract<SpeechEvent, { type: 'mode' }> | null }
+  save: ((line: string) => void) | null
+  engine: SpeechEngine | null
+  /** The engine being replaced, which may still send its last lines. */
+  retiring: SpeechEngine | null
+  /** Audio that arrived while the engine restarts, for the new one; null otherwise. */
+  held: Uint8Array[] | null
+  /** Audio since the last line, which a stalled engine never wrote. */
+  recent: Uint8Array[]
+  restarting: boolean
+  lastAudioAt: number
+  lastTextAt: number
+  /** Seconds of sound since the last transcript. */
+  soundSeconds: number
+  /** Restarts in a row that brought back no audio, and no transcript, which lengthen the wait before the next. */
+  audioRestarts: number
+  textRestarts: number
+  mode: SpeechMode | null
+  /** The offline engine reports it is falling behind, so slow text is expected. */
+  behind: boolean
+  watchdog: ReturnType<typeof setInterval> | null
+  /** Keeps the computer from suspending the app while listening. */
+  blocker: number
+}
+
+/** The session listening, if any. One at a time. */
+let session: Session | null = null
 
 const transcriptsFolder = () => path.join(app.getPath('userData'), 'transcripts')
 
@@ -87,11 +133,148 @@ async function transcriptWriter(): Promise<(line: string) => void> {
   }
 }
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** The RMS level of 16-bit PCM. */
+function rms(pcm: Uint8Array): number {
+  const view = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength)
+  const samples = pcm.byteLength >> 1
+  let sum = 0
+  for (let i = 0; i < samples; i++) {
+    const value = view.getInt16(i * 2, true)
+    sum += value * value
+  }
+  return samples ? Math.sqrt(sum / samples) : 0
+}
+
+/** Lets go of the session (its engine is stopped by the caller, or has stopped itself). */
+function endSession(s: Session) {
+  if (session !== s) return
+  session = null
+  if (s.watchdog) clearInterval(s.watchdog)
+  if (powerSaveBlocker.isStarted(s.blocker)) powerSaveBlocker.stop(s.blocker)
+}
+
 async function stopEngine(): Promise<void> {
-  const current = engine
-  engine = null
-  owner = null
-  await current?.stop().catch(console.error)
+  const current = session
+  if (!current) return
+  endSession(current)
+  await current.engine?.stop().catch(console.error)
+}
+
+/** Forwards an engine's events while it is the session's engine (lines also while it finishes, being replaced). */
+function wire(s: Session, engine: SpeechEngine) {
+  const current = () => s.engine === engine
+  const heard = () => {
+    s.lastTextAt = Date.now()
+    s.soundSeconds = 0
+    s.textRestarts = 0
+  }
+  engine.onPartial((text) => {
+    if (!current() && s.retiring !== engine) return
+    // Words, not a placeholder such as the offline engine's "…".
+    if (/[\p{L}\p{N}]/u.test(text)) heard()
+    s.send({ type: 'partial', text })
+  })
+  engine.onFinal((text) => {
+    if (!current() && s.retiring !== engine) return
+    heard()
+    s.recent = []
+    s.send({ type: 'final', text })
+    s.save?.(text)
+  })
+  engine.onStatus((status) => {
+    // While restarting, the chip shows Restarting; the new engine's own steps are not passed on.
+    if (!current() || s.restarting) return
+    s.send({ type: 'status', status })
+    if (status === 'idle' || status === 'error') endSession(s)
+  })
+  engine.onError((error) => current() && !s.restarting && s.send({ type: 'error', error }))
+}
+
+/** Builds the session's engine and starts it; rejects with a SpeechError. */
+async function launch(s: Session): Promise<void> {
+  const { engine, mode } = s.build(s)
+  wire(s, engine)
+  s.engine = engine
+  await engine.start()
+  if (mode) {
+    s.mode = mode.mode
+    s.send(mode)
+  }
+}
+
+/**
+ * Replaces the engine; audio meanwhile is held for the new one. When audio stopped, the old engine first finishes what
+ * it heard. When the old engine stalled, it is dropped unheard and the new one is given the audio since the last line.
+ */
+async function restart(s: Session, why: string, stalled: boolean): Promise<void> {
+  s.restarting = true
+  s.send({ type: 'restarting', reason: why, restartCapture: true })
+  const old = s.engine
+  s.engine = null
+  s.mode = null
+  if (stalled) {
+    s.held = [...s.recent]
+    if (old?.abort) old.abort()
+    else void old?.stop().catch(() => undefined)
+  } else {
+    s.held = []
+    s.retiring = old
+    if (old) await Promise.race([old.stop().catch(() => undefined), delay(RETIRE_TIMEOUT_MS)])
+    s.retiring = null
+  }
+  for (let attempt = 0; session === s; attempt++) {
+    try {
+      await launch(s)
+      break
+    } catch (error) {
+      s.engine = null
+      const problem = isSpeechError(error) ? error : speechError('engine', error instanceof Error ? error.message : String(error))
+      if (problem.code === 'auth' || problem.code === 'no_key') {
+        // Trying again cannot help.
+        endSession(s)
+        s.send({ type: 'error', error: problem })
+        s.send({ type: 'status', status: 'error' })
+        return
+      }
+      const wait = reconnectDelay(attempt)
+      s.send({
+        type: 'restarting',
+        reason: `${why} Restart attempt ${attempt + 1} failed (${problem.message.replace(/\.$/, '')}); trying again in ${wait / 1000} s.`,
+        restartCapture: false,
+      })
+      await delay(wait)
+    }
+  }
+  // Stopped meanwhile: stopEngine has stopped the engine. (launch set s.engine, which TypeScript cannot see.)
+  const engine = s.engine as SpeechEngine | null
+  if (session !== s || !engine) return
+  for (const chunk of s.held ?? []) engine.pushAudio(chunk)
+  s.held = null
+  s.restarting = false
+  s.lastAudioAt = s.lastTextAt = Date.now()
+  s.soundSeconds = 0
+  s.send({ type: 'status', status: 'listening' })
+  s.send({ type: 'restarted', reason: why })
+}
+
+/** Once a second: restart when the audio has stopped, or when there is sound but no transcript. */
+function check(s: Session) {
+  if (session !== s || s.restarting || !s.engine) return
+  const now = Date.now()
+  const audioWait = Math.min(NO_AUDIO_MS * 2 ** s.audioRestarts, NO_AUDIO_MAX_MS)
+  if (now - s.lastAudioAt > audioWait) {
+    s.audioRestarts++
+    void restart(s, `No audio arrived from the microphone for ${audioWait / 1000} seconds.`, false)
+    return
+  }
+  // No text is expected while nothing can transcribe (the cloud reconnecting), or while the offline engine catches up.
+  const textWait = Math.min(NO_TEXT_MS * 2 ** s.textRestarts, NO_TEXT_MAX_MS)
+  if (s.mode !== 'reconnecting' && !s.behind && now - s.lastTextAt > textWait && s.soundSeconds >= SOUND_NEEDED_SECONDS) {
+    s.textRestarts++
+    void restart(s, `No transcript for ${textWait / 1000} seconds while there was sound.`, true)
+  }
 }
 
 /** Every handler returns plain data; nothing here ever sends the key back to the renderer. */
@@ -141,8 +324,8 @@ export function registerSpeechIpc(): void {
 
   ipcMain.handle('speech:start', async (event): Promise<SpeechResult<null>> => {
     // The same window asking again means it reloaded and lost track of the old session; replace it.
-    if (engine && owner === event.sender) await stopEngine()
-    if (engine) return { ok: false, error: speechError('busy', 'The listener is already running.') }
+    if (session && session.sender === event.sender) await stopEngine()
+    if (session) return { ok: false, error: speechError('busy', 'The listener is already running.') }
     const sender = event.sender
     const send = (message: SpeechEvent) => {
       if (!sender.isDestroyed()) sender.send('speech:event', message)
@@ -152,7 +335,9 @@ export function registerSpeechIpc(): void {
     const problem = notReadyReason()
     if (problem) return { ok: false, error: speechError(speechEngine === 'deepgram' ? 'no_key' : 'engine', problem) }
     const key = await readSecret('deepgram-key')
-    const reportSpeed = (performance: SpeechPerformance) => {
+    if (speechEngine === 'deepgram' && !key) return { ok: false, error: speechError('no_key', 'Add a Deepgram API key in Settings first.') }
+    const reportSpeed = (s: Session, performance: SpeechPerformance) => {
+      s.behind = !performance.keepingUp
       send({ type: 'performance', performance })
       // Remembered per model, so Settings can show how each one ran on this computer.
       const speeds = getAppSettings().whisperSpeed
@@ -163,63 +348,71 @@ export function registerSpeechIpc(): void {
       return binary && !offlineProblem() ? new WhisperEngine(binary, modelPath(whisperModel), whisperModel) : null
     }
 
-    let next: SpeechEngine
-    /** The status chip's mode once listening, for the engines that use only one. */
-    let fixedMode: SpeechEvent | null = null
-    if (speechEngine === 'whisper') {
-      const whisper = createLocal()
-      if (!whisper) return { ok: false, error: speechError('engine', offlineProblem() ?? 'The offline engine is missing.') }
-      whisper.onPerformance(reportSpeed)
-      next = whisper
-      fixedMode = { type: 'mode', mode: 'offline', reason: 'Offline only (whisper.cpp on this computer), as set in Settings.', warning: null }
-    } else if (speechEngine === 'deepgram') {
-      if (!key) return { ok: false, error: speechError('no_key', 'Add a Deepgram API key in Settings first.') }
-      next = new DeepgramEngine(key)
-      fixedMode = { type: 'mode', mode: 'cloud', reason: 'Cloud only (Deepgram), as set in Settings.', warning: null }
-    } else {
+    const build: Session['build'] = (s) => {
+      if (speechEngine === 'whisper') {
+        const whisper = createLocal()
+        if (!whisper) throw speechError('engine', offlineProblem() ?? 'The offline engine is missing.')
+        whisper.onPerformance((p) => s.engine === whisper && reportSpeed(s, p))
+        const reason = 'Offline only (whisper.cpp on this computer), as set in Settings.'
+        return { engine: whisper, mode: { type: 'mode', mode: 'offline', reason, warning: null } }
+      }
+      // Auto, or Cloud only: the same supervisor, which reconnects Deepgram (and in Auto falls back to offline).
+      const cloudOnly = speechEngine === 'deepgram'
       const auto = new AutoEngine({
         hasCloudKey: () => key !== null,
         createCloud: () => (key ? new DeepgramEngine(key) : null),
-        createLocal,
+        createLocal: cloudOnly ? () => null : createLocal,
         localUnavailable: (offlineProblem() ?? '').toLowerCase().includes('download')
           ? 'no offline model is downloaded'
           : 'the offline engine is not available',
         isOnline: () => net.isOnline(),
+        cloudOnly,
       })
-      auto.onPerformance(reportSpeed)
-      auto.onMode((change) => send({ type: 'mode', ...change }))
-      next = auto
+      auto.onPerformance((p) => s.engine === auto && reportSpeed(s, p))
+      auto.onMode((change) => {
+        if (s.engine !== auto) return
+        s.mode = change.mode
+        send({ type: 'mode', ...change })
+      })
+      return { engine: auto, mode: null }
     }
-    const save = getAppSettings().saveTranscripts ? await transcriptWriter() : null
-    next.onPartial((text) => send({ type: 'partial', text }))
-    next.onFinal((text) => {
-      send({ type: 'final', text })
-      save?.(text)
-    })
-    next.onStatus((status) => {
-      send({ type: 'status', status })
-      if (status === 'listening' && fixedMode) send(fixedMode)
-      if ((status === 'idle' || status === 'error') && engine === next) {
-        engine = null
-        owner = null
-      }
-    })
-    next.onError((error) => send({ type: 'error', error }))
-    engine = next
-    owner = sender
+
+    const s: Session = {
+      sender,
+      send,
+      build,
+      save: getAppSettings().saveTranscripts ? await transcriptWriter() : null,
+      engine: null,
+      retiring: null,
+      held: null,
+      recent: [],
+      restarting: false,
+      lastAudioAt: Date.now(),
+      lastTextAt: Date.now(),
+      soundSeconds: 0,
+      audioRestarts: 0,
+      textRestarts: 0,
+      mode: null,
+      behind: false,
+      watchdog: null,
+      blocker: powerSaveBlocker.start('prevent-app-suspension'),
+    }
+    session = s
     // Stop listening if the window that started it closes or crashes.
-    sender.once('destroyed', () => engine === next && void stopEngine())
-    sender.once('render-process-gone', () => engine === next && void stopEngine())
+    sender.once('destroyed', () => session === s && void stopEngine())
+    sender.once('render-process-gone', () => session === s && void stopEngine())
     try {
-      await next.start()
-      return { ok: true, value: null }
+      await launch(s)
     } catch (error) {
-      if (engine === next) {
-        engine = null
-        owner = null
-      }
+      s.engine = null
+      endSession(s)
       return failed(error)
     }
+    if (session === s) {
+      s.lastAudioAt = s.lastTextAt = Date.now()
+      s.watchdog = setInterval(() => check(s), 1000)
+    }
+    return { ok: true, value: null }
   })
 
   ipcMain.handle('speech:stop', () => stopEngine())
@@ -246,7 +439,7 @@ export function registerSpeechIpc(): void {
   ipcMain.handle('whisper:delete', async (_event, id: unknown): Promise<SpeechResult<null>> => {
     if (!isWhisperModelId(id)) return { ok: false, error: speechError('engine', 'Unknown model.') }
     const { speechEngine, whisperModel } = getAppSettings()
-    if (engine && speechEngine !== 'deepgram' && whisperModel === id) {
+    if (session && speechEngine !== 'deepgram' && whisperModel === id) {
       return { ok: false, error: speechError('busy', 'Stop listening before deleting the model in use.') }
     }
     await deleteModel(id)
@@ -255,8 +448,18 @@ export function registerSpeechIpc(): void {
 
   // Fire and forget, ten times a second. Only the window that started listening may send audio.
   ipcMain.on('speech:audio', (event, chunk: unknown) => {
-    if (!engine || event.sender !== owner) return
-    if (chunk instanceof Uint8Array && chunk.byteLength > 0 && chunk.byteLength <= 64_000) engine.pushAudio(chunk)
-    else if (chunk instanceof ArrayBuffer && chunk.byteLength > 0 && chunk.byteLength <= 64_000) engine.pushAudio(new Uint8Array(chunk))
+    const s = session
+    if (!s || event.sender !== s.sender) return
+    const data = chunk instanceof Uint8Array ? chunk : chunk instanceof ArrayBuffer ? new Uint8Array(chunk) : null
+    if (!data || data.byteLength === 0 || data.byteLength > 64_000) return
+    s.lastAudioAt = Date.now()
+    s.audioRestarts = 0
+    if (rms(data) >= SOUND_RMS) s.soundSeconds += data.byteLength / 32_000
+    s.recent.push(data)
+    if (s.recent.length > RECENT_MAX_CHUNKS) s.recent.shift()
+    if (s.held) {
+      s.held.push(data)
+      if (s.held.length > HELD_MAX_CHUNKS) s.held.shift()
+    } else s.engine?.pushAudio(data)
   })
 }

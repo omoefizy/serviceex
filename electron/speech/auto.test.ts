@@ -1,7 +1,7 @@
 // The Auto engine's switching, with fake cloud and offline engines on a fake clock. The sermon lines are invented.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SpeechPerformance } from '../../shared/types'
-import { AutoEngine, RETRY_MS, STABLE_MS, type ModeChange } from './auto'
+import { AutoEngine, reconnectDelay, RETRY_MS, STABLE_MS, type AutoOptions, type ModeChange } from './auto'
 import type { DeepgramResult } from './deepgram'
 import { EngineEvents, speechError } from './engine'
 
@@ -96,7 +96,7 @@ let lines: string[]
 let modes: ModeChange[]
 let engine: AutoEngine
 
-function make() {
+function make(extra: Partial<AutoOptions> = {}) {
   engine = new AutoEngine({
     hasCloudKey: () => true,
     createCloud: () => {
@@ -112,6 +112,7 @@ function make() {
     },
     localUnavailable: 'no offline model is downloaded',
     isOnline: () => online,
+    ...extra,
   })
   engine.onFinal((text) => lines.push(text))
   engine.onMode((change) => modes.push(change))
@@ -242,8 +243,9 @@ describe('AutoEngine', () => {
     expect(modes.at(-1)!.reason).toMatch(/20 seconds of stable connection/)
   })
 
-  it('warns clearly when the cloud drops and no offline model is downloaded, and resumes from the buffer', async () => {
+  it('warns clearly when the cloud drops and no offline model is downloaded, and reconnects with backoff without losing words', async () => {
     localAvailable = false
+    cloudQueue = [new FakeCloud(), new FakeCloud('network'), new FakeCloud('network')]
     await engine.start()
     await speak(4, () => clouds[0].send({}))
     clouds[0].final('Our text today is Psalm twenty three.', 0.5, 3.5)
@@ -251,28 +253,81 @@ describe('AutoEngine', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(modeNames()).toEqual(['cloud', 'reconnecting', 'reconnecting'])
     expect(modes.at(-1)!.warning).toMatch(/no offline model is downloaded, so transcription is paused/)
-    expect(modes.at(-1)!.reason).toBe('Lost the connection, and no offline model is downloaded. Retrying the cloud every 15 seconds.')
+    expect(modes.at(-1)!.reason).toBe(
+      'Lost the connection, and no offline model is downloaded. Reconnecting in 1 s; the audio meanwhile is kept, so no words are lost.',
+    )
 
-    // Back after 15 seconds: only the last 10 seconds can be sent again, so the warning says words were missed.
-    await speak(RETRY_MS / 1000)
-    expect(modeNames().at(-1)).toBe('cloud')
-    expect(clouds[1].heard).toBeCloseTo(10, 0)
-    expect(modes.at(-1)!.warning).toMatch(/Some words were missed/)
+    // Attempts after 1 s and 2 s more fail; the one 4 s after that connects.
+    await speak(1)
+    expect(clouds).toHaveLength(2)
+    expect(modes.at(-1)!.reason).toMatch(/attempt 1 failed \(unreachable\); trying again in 2 s/)
+    await speak(2)
+    expect(clouds).toHaveLength(3)
+    expect(modes.at(-1)!.reason).toMatch(/trying again in 4 s/)
+    await speak(4)
+    expect(modes.at(-1)).toMatchObject({ mode: 'cloud', warning: null })
+    // It was sent everything from the end of the last line: 0.5 s before the drop and the 7 s since.
+    expect(clouds[3].heard).toBeCloseTo(7.5, 0)
   })
 
-  it('resumes the cloud from the end of the last line when the gap is short', async () => {
+  it('keeps everything since the last line through a long gap', async () => {
     localAvailable = false
-    cloudQueue = [new FakeCloud()]
+    online = true
     await engine.start()
     await speak(4, () => clouds[0].send({}))
     clouds[0].final('Let us read together.', 1, 3.5)
     clouds[0].drop()
+    online = false
+    await speak(40)
+    online = true
+    await speak(10)
+    const resumed = clouds.at(-1)!
+    expect(clouds).toHaveLength(2)
+    expect(resumed.heard).toBeGreaterThan(40)
+    expect(modes.at(-1)!.warning).toBeNull()
+  })
+
+  it('backs off 1, 2, 4, 8, then every 10 seconds', () => {
+    expect([0, 1, 2, 3, 4, 5, 9].map(reconnectDelay)).toEqual([1000, 2000, 4000, 8000, 10_000, 10_000, 10_000])
+  })
+
+  it('in Cloud only, reconnects instead of going offline and continues without repeating words', async () => {
+    make({ cloudOnly: true })
+    cloudQueue = [new FakeCloud(), new FakeCloud('network')]
+    await engine.start()
+    expect(modes[0]).toMatchObject({ mode: 'cloud', reason: expect.stringMatching(/Cloud only/) })
+    await speak(3, () => clouds[0].send({}))
+    clouds[0].final('Welcome to the evening service.', 0.3, 2.5)
+    clouds[0].drop()
     await vi.advanceTimersByTimeAsync(0)
-    // Back online within the 10 second buffer (the retry fires at 15 s, but only 6.5 s are needed here).
-    await speak(RETRY_MS / 1000)
-    const resumed = clouds[1]
-    // Everything from 3.5 s on would be 15.5 s; the buffer holds 10 s (in whole 100 ms chunks).
-    expect(resumed.heard).toBeLessThanOrEqual(10.1 + 0.001)
+    expect(locals).toHaveLength(0)
+    expect(modes.at(-1)).toMatchObject({ mode: 'reconnecting', warning: null })
+    await speak(1)
+    await speak(2)
+    expect(modes.at(-1)).toMatchObject({ mode: 'cloud', reason: 'Reconnected to Deepgram.' })
+    // From 2.5 s: half a second before the drop and the 3 s since.
+    expect(clouds[2].heard).toBeCloseTo(3.5, 0)
+    clouds[2].final('the evening service. Please stand.', 0, 2)
+    expect(lines).toEqual(['Welcome to the evening service.', 'Please stand.'])
+  })
+
+  it('in Cloud only, fails to start when Deepgram cannot be reached', async () => {
+    make({ cloudOnly: true })
+    cloudQueue = [new FakeCloud('network')]
+    await expect(engine.start()).rejects.toMatchObject({ code: 'network', message: 'unreachable' })
+  })
+
+  it('in Cloud only, stops with an error when Deepgram rejects the key on reconnecting', async () => {
+    make({ cloudOnly: true })
+    const statuses: string[] = []
+    engine.onStatus((status) => statuses.push(status))
+    cloudQueue = [new FakeCloud(), new FakeCloud('auth')]
+    await engine.start()
+    await speak(1, () => clouds[0].send({}))
+    clouds[0].drop()
+    await speak(2)
+    expect(statuses.at(-1)).toBe('error')
+    expect(clouds).toHaveLength(2)
   })
 
   it('goes offline and stops retrying when Deepgram rejects the key', async () => {

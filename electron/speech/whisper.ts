@@ -228,6 +228,15 @@ export class WhisperEngine extends EngineEvents implements SpeechEngine {
     this.emitStatus('idle')
   }
 
+  abort(): void {
+    if (this.stopping) return
+    this.stopping = true
+    this.running = false
+    this.queue = []
+    this.kill()
+    this.emitStatus('idle')
+  }
+
   private kill() {
     // SIGKILL rather than SIGTERM: on SIGTERM whisper-server exits through ggml's Metal teardown, which aborts and
     // leaves a crash report. The server keeps nothing worth flushing.

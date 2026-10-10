@@ -1,4 +1,4 @@
-import { Eraser, Mic, Square } from 'lucide-react'
+import { Eraser, Mic, Square, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SpeechEngineId, SpeechMode } from '../../shared/types'
 import { useListener, type ListenerStatus } from '../lib/listener'
@@ -7,12 +7,25 @@ import { useOperatorStore } from '../store'
 
 const MODE_LABELS: Record<SpeechMode, string> = { cloud: 'Cloud', offline: 'Offline', reconnecting: 'Reconnecting' }
 
-/** The status chip: Cloud, Offline or Reconnecting while listening; Stopped or Error otherwise; with why as its tooltip. */
-function chipOf(status: ListenerStatus, mode: SpeechMode | null, reason: string, error: string | null): { label: string; tone: string; why: string } {
+interface Chip {
+  label: string
+  /** Which engine, beside Listening. */
+  detail?: string
+  tone: string
+  why: string
+}
+
+/**
+ * The status chip: Listening (Cloud or Offline), Reconnecting or Restarting while running; Stopped or Error otherwise;
+ * with why as its tooltip.
+ */
+function chipOf(status: ListenerStatus, mode: SpeechMode | null, reason: string, error: string | null, restarting: string | null): Chip {
+  if (restarting && (status === 'listening' || status === 'connecting')) return { label: 'Restarting', tone: 'busy', why: restarting }
   switch (status) {
     case 'listening':
+      if (mode === 'reconnecting') return { label: 'Reconnecting', tone: 'reconnecting', why: reason }
       return mode
-        ? { label: MODE_LABELS[mode], tone: mode, why: reason }
+        ? { label: 'Listening', detail: MODE_LABELS[mode], tone: mode, why: reason }
         : { label: 'Listening', tone: 'cloud', why: 'Listening.' }
     case 'starting':
     case 'connecting':
@@ -28,9 +41,12 @@ function chipOf(status: ListenerStatus, mode: SpeechMode | null, reason: string,
 
 const ENGINE_LABELS: Record<SpeechEngineId, string> = { auto: 'Auto', deepgram: 'Cloud only', whisper: 'Offline only' }
 
+const clockTime = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+
 /** Start and stop the sermon listener, and watch the live transcript: settled text in white, words still forming in grey. */
 export function ListenerPanel() {
-  const { status, error, finals, partial, level, performance, mode, modeReason, warning, start, stop, clear } = useListener()
+  const { status, error, finals, partial, level, performance, mode, modeReason, warning, restarting, notice, log, start, stop, clear, dismissNotice } =
+    useListener()
   const openSettings = useOperatorStore((s) => s.openSettings)
   const saving = useOperatorStore((s) => s.settings.saveTranscripts)
   const speechEngine = useOperatorStore((s) => s.settings.speechEngine)
@@ -51,7 +67,7 @@ export function ListenerPanel() {
   }, [finals, partial])
 
   const running = status === 'starting' || status === 'connecting' || status === 'listening'
-  const chip = chipOf(status, mode, modeReason, error)
+  const chip = chipOf(status, mode, modeReason, error, restarting)
 
   return (
     <section className="panel listener-panel" aria-label="Sermon listener">
@@ -64,6 +80,7 @@ export function ListenerPanel() {
         <span className={`listener-status ${chip.tone}`} role="status" title={chip.why} aria-label={`${chip.label}: ${chip.why}`}>
           <span className="listener-dot" aria-hidden="true" />
           {chip.label}
+          {chip.detail && <span className="listener-status-detail">· {chip.detail}</span>}
         </span>
       </header>
 
@@ -108,6 +125,14 @@ export function ListenerPanel() {
           {warning}
         </p>
       )}
+      {notice && (
+        <p className="listener-notice" role="status">
+          <span>{notice}</span>
+          <button type="button" className="icon-button" aria-label="Dismiss" title="Dismiss" onClick={dismissNotice}>
+            <X size={14} />
+          </button>
+        </p>
+      )}
       {error && <p className="error">{error}</p>}
 
       <div
@@ -134,6 +159,21 @@ export function ListenerPanel() {
           </p>
         )}
       </div>
+
+      <details className="listener-log">
+        <summary>Event log ({log.length})</summary>
+        {log.length === 0 ? (
+          <p className="hint">Nothing yet. Connections, restarts and microphone problems appear here (kept in memory only).</p>
+        ) : (
+          <ol>
+            {log.map((entry, i) => (
+              <li key={i}>
+                <time>{clockTime(entry.at)}</time> {entry.text}
+              </li>
+            ))}
+          </ol>
+        )}
+      </details>
     </section>
   )
 }

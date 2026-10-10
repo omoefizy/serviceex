@@ -970,6 +970,53 @@ button {
   color: #f59e0b;
 }
 
+/* "Cloud" or "Offline" beside Listening. */
+.listener-status-detail {
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+/* "Restarted at ..." after the watchdog stepped in. */
+.listener-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2-5);
+  border: 1px solid var(--next);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.listener-notice > span {
+  flex: 1;
+}
+
+/* The last 50 listener events, for debugging. */
+.listener-log {
+  font-size: 12px;
+}
+
+.listener-log summary {
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.listener-log ol {
+  max-height: 160px;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  line-height: 1.5;
+}
+
+.listener-log time {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Something the operator must know, such as transcription being paused. */
 .listener-warning {
   margin: 0;

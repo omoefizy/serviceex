@@ -9,7 +9,7 @@ export const DEEPGRAM_MODEL = 'nova-3'
 
 const LISTEN_URL = 'wss://api.deepgram.com/v1/listen'
 const TOKEN_URL = 'https://api.deepgram.com/v1/auth/token'
-/** Deepgram closes a stream that gets no audio for about 10 seconds; KeepAlive holds it open through gaps. */
+/** Deepgram closes a stream that gets no audio for about 10 seconds; a KeepAlive every 5 seconds holds it open. */
 const KEEP_ALIVE_MS = 5000
 /** Audio held while the socket opens: 50 chunks of 100 ms. */
 const MAX_QUEUED = 50
@@ -52,7 +52,6 @@ export class DeepgramEngine extends EngineEvents implements SpeechEngine {
   private socket: WebSocket | null = null
   private queue: Uint8Array[] = []
   private keepAlive: ReturnType<typeof setInterval> | null = null
-  private lastSentAt = 0
   /** When Deepgram last sent anything; a stream that goes quiet while audio flows has failed. */
   lastMessageAt = 0
   private resultListeners = new Set<(result: DeepgramResult) => void>()
@@ -128,9 +127,7 @@ export class DeepgramEngine extends EngineEvents implements SpeechEngine {
         this.lastMessageAt = Date.now()
         for (const chunk of this.queue) this.send(chunk)
         this.queue = []
-        this.keepAlive = setInterval(() => {
-          if (Date.now() - this.lastSentAt >= KEEP_ALIVE_MS) this.sendJson({ type: 'KeepAlive' })
-        }, KEEP_ALIVE_MS)
+        this.keepAlive = setInterval(() => this.sendJson({ type: 'KeepAlive' }), KEEP_ALIVE_MS)
         this.emitStatus('listening')
         resolve()
       })
@@ -172,7 +169,6 @@ export class DeepgramEngine extends EngineEvents implements SpeechEngine {
 
   private send(chunk: Uint8Array) {
     this.socket?.send(chunk)
-    this.lastSentAt = Date.now()
   }
 
   private sendJson(message: object) {
