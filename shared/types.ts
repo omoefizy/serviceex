@@ -245,6 +245,8 @@ export interface AppSettings {
   /** Turns every AI feature off; when false the main process makes no AI requests at all. */
   aiEnabled: boolean
   aiModel: AiModel
+  /** Cmd+Down stages the next schedule item in the preview; with this on it also goes live, as it used to. */
+  autoGoLiveOnNext: boolean
 }
 
 export interface DisplayInfo {

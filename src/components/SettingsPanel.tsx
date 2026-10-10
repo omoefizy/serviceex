@@ -17,6 +17,7 @@ import {
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import type { AiModel, AiStatus, AppSettings, DisplayInfo, OutputDisplay } from '../../shared/types'
 import { useOperatorStore } from '../store'
+import { MOD } from '../lib/shortcuts'
 import { ThemeDefaultsForm } from './ThemeEditor'
 
 function Section({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
@@ -224,6 +225,17 @@ export function SettingsPanel() {
           </select>
         </label>
         <p className="hint">Changing this reopens the output window on the chosen display, fullscreen.</p>
+        <label className="inline-check">
+          <input
+            type="checkbox"
+            checked={settings.autoGoLiveOnNext}
+            onChange={(e) => run(() => updateSettings({ autoGoLiveOnNext: e.target.checked }))}
+          />
+          Auto go live on schedule next
+        </label>
+        <p className="hint">
+          Off: {MOD}↓ puts the next schedule item in the preview, and Enter or Go Live sends it. On: it goes live straight away.
+        </p>
         <label className="fade-control">
           <span>Crossfade</span>
           <input

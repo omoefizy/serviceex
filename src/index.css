@@ -651,8 +651,65 @@ button {
   background: var(--live-soft);
 }
 
-.slide-card.next {
+.slide-card.preview {
   border-color: var(--next);
+}
+
+/* Live wins when the live slide is also the one in preview. */
+.slide-card.live.preview {
+  border-color: var(--live);
+  box-shadow: 0 0 0 2px var(--next);
+}
+
+/* Above the grid: what is live when the grid shows something else, Resend, and Go Live. */
+.grid-live-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.live-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: 0;
+  margin-right: auto;
+  padding: var(--space-0-5) var(--space-0-5) var(--space-0-5) var(--space-2-5);
+  border: 1px solid var(--live);
+  border-radius: 999px;
+  background: var(--live-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.live-chip .live-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--live);
+}
+
+.live-chip-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-0-5) var(--space-2);
+  border: 0;
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.live-chip-jump:hover {
+  background: var(--panel-raised);
+}
+
+/* Red like everything else that means live; more specific than .button.primary. */
+.button.primary.go-live-button {
+  border-color: var(--live);
+  background: var(--live);
 }
 
 .slide-number {
@@ -801,18 +858,50 @@ button {
   overflow: hidden;
 }
 
-.preview-screen.on-air {
+.preview-screen.live {
   border: 2px solid var(--live);
 }
 
-.preview-screen.next {
-  width: 70%;
-  border-color: var(--next);
+.preview-screen.preview {
+  border: 2px solid var(--next);
 }
 
-.preview-screen.next .empty {
+.preview-screen.preview .empty {
   padding: var(--space-3);
   color: #9ca3af;
+}
+
+/* The item title and slide number under each screen. */
+.screen-label {
+  margin: calc(-1 * var(--space-1-5)) 0 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screen-mode {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.stale-chip {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-2-5);
+  border: 1px solid #f59e0b;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.14);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stale-chip:hover {
+  background: rgba(245, 158, 11, 0.24);
 }
 
 .preview-subheading {
@@ -1592,6 +1681,16 @@ button {
 
 .schedule-item.active {
   background: var(--accent-soft);
+}
+
+/* The item on the projector gets a red dot at its start. */
+.schedule-item.on-air .schedule-item-main::before {
+  content: '';
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--live);
 }
 
 .schedule-item-main {

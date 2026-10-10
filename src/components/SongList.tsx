@@ -33,9 +33,11 @@ export function SongList() {
     return () => clearTimeout(timer)
   }, [search, refresh, songsVersion])
 
-  async function handleSelect(id: number) {
+  /** A click shows the song in the grid and preview; a double click also sends its first slide live. */
+  async function handleSelect(id: number, goLive = false) {
     const song = await window.api.songs.get(id)
     selectSong(song ?? null)
+    if (goLive && song) useOperatorStore.getState().goLive(0)
   }
 
   async function handleAddToSchedule(id: number) {
@@ -84,6 +86,8 @@ export function SongList() {
             <button
               className={`song${song.id === selectedId ? ' selected' : ''}`}
               onClick={() => handleSelect(song.id)}
+              onDoubleClick={() => handleSelect(song.id, true)}
+              title="Click to preview, double-click to go live"
             >
               <span className="song-title">{song.title}</span>
               {song.author && <span className="song-author">{song.author}</span>}

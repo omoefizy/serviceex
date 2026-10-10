@@ -58,6 +58,7 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
 
   const service = useOperatorStore((s) => s.service)
   const activeItemId = useOperatorStore((s) => s.activeItemId)
+  const liveItemId = useOperatorStore((s) => s.live.scheduleItemId)
   const openService = useOperatorStore((s) => s.openService)
   const loadItem = useOperatorStore((s) => s.loadItem)
   const addToSchedule = useOperatorStore((s) => s.addToSchedule)
@@ -191,6 +192,7 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
             className={[
               'schedule-item',
               item.id === activeItemId && 'active',
+              item.id === liveItemId && 'on-air',
               item.id === dragId && 'dragging',
               dropIndex === index && 'drop-before',
               dropIndex === items.length && index === items.length - 1 && 'drop-after',
@@ -209,7 +211,16 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
               setDropIndex(null)
             }}
           >
-            <button className="schedule-item-main" onClick={() => run(() => loadItem(item))}>
+            <button
+              className="schedule-item-main"
+              title="Click to preview, double-click to go live"
+              onClick={() => run(() => loadItem(item))}
+              onDoubleClick={() =>
+                run(async () => {
+                  if (await loadItem(item)) useOperatorStore.getState().goLive(0)
+                })
+              }
+            >
               <ItemIcon type={item.type} />
               <span className="schedule-item-title">{item.title}</span>
             </button>

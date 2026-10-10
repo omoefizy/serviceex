@@ -117,11 +117,26 @@ function App() {
         e.preventDefault()
         st.setOutputMode(modeKey.mode)
       } else if (e.key === 'ArrowRight') {
+        // Left and Right step through the live item, whatever the grid shows.
         e.preventDefault()
         st.nextSlide()
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault()
         st.previousSlide()
+      } else if (e.key === 'ArrowDown') {
+        // Up and Down move the preview highlight in the grid's item.
+        e.preventDefault()
+        st.moveHighlight(1)
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        st.moveHighlight(-1)
+      } else if (e.key === 'Enter') {
+        // Enter on another button (a schedule item, a dialog) keeps its own meaning; on a slide card or the page
+        // it sends the highlighted preview slide live.
+        const target = e.target as HTMLElement | null
+        if (target?.closest('button, a, [role="button"]') && !target.closest('.slide-card')) return
+        e.preventDefault()
+        st.goLiveHighlighted()
       }
     }
     window.addEventListener('keydown', onKeyDown)

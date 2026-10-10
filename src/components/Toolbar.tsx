@@ -8,9 +8,10 @@ const MODE_ICONS: Record<OutputMode, LucideIcon> = { show: Monitor, black: Squar
 /** Top bar: the service, what the audience sees right now, the output mode buttons and app-wide actions. */
 export function Toolbar() {
   const service = useOperatorStore((s) => s.service)
-  const mode = useOperatorStore((s) => s.outputMode)
-  const onAir = useOperatorStore((s) => s.outputMode === 'show' && s.liveSlideIndex !== null)
-  const deckTitle = useOperatorStore((s) => s.deckTitle)
+  // Everything here is about the projector, so it reads the live snapshot, not the grid.
+  const mode = useOperatorStore((s) => s.live.mode)
+  const onAir = useOperatorStore((s) => s.live.mode === 'show' && s.live.slideIndex !== null)
+  const liveTitle = useOperatorStore((s) => s.live.title)
   const setOutputMode = useOperatorStore((s) => s.setOutputMode)
   const setPaletteOpen = useOperatorStore((s) => s.setPaletteOpen)
   const themeEditorOpen = useOperatorStore((s) => s.themeEditorOpen)
@@ -32,7 +33,7 @@ export function Toolbar() {
       <div className={`live-indicator ${status}`} role="status" aria-live="polite">
         <span className="live-dot" aria-hidden="true" />
         <span className="live-label">{status.toUpperCase()}</span>
-        {deckTitle && <span className="live-title">{deckTitle}</span>}
+        {liveTitle && <span className="live-title">{liveTitle}</span>}
       </div>
 
       <div className="mode-buttons" role="group" aria-label="Output">

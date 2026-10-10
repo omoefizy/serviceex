@@ -1,18 +1,25 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
-import { ImageOff, ZoomIn } from 'lucide-react'
+import { CornerUpLeft, ImageOff, MonitorUp, RefreshCw, ZoomIn } from 'lucide-react'
 import { MEDIA_DRAG_TYPE } from '../lib/media'
 import { sectionColor } from '../lib/sections'
 import { MOD } from '../lib/shortcuts'
 import { usePersistentState } from '../lib/usePersistentState'
-import { selectBaseThemeId, selectDeckTheme, selectNextSlide, slideTheme, useOperatorStore } from '../store'
+import { selectBaseThemeId, selectBrowsingLive, selectDeckTheme, slideTheme, useOperatorStore } from '../store'
 import { ThemedSlide } from './ThemedSlide'
 
 export function SlideGrid() {
   const song = useOperatorStore((s) => s.selectedSong)
   const title = useOperatorStore((s) => s.deckTitle)
   const slides = useOperatorStore((s) => s.slides)
-  const liveSlideIndex = useOperatorStore((s) => s.liveSlideIndex)
-  const showSlide = useOperatorStore((s) => s.showSlide)
+  const highlightIndex = useOperatorStore((s) => s.highlightIndex)
+  const live = useOperatorStore((s) => s.live)
+  const browsingLive = useOperatorStore(selectBrowsingLive)
+  /** The live slide's index in this grid, only when the grid shows the live item. */
+  const liveIndexHere = browsingLive ? live.slideIndex : null
+  const goLive = useOperatorStore((s) => s.goLive)
+  const goLiveHighlighted = useOperatorStore((s) => s.goLiveHighlighted)
+  const jumpToLive = useOperatorStore((s) => s.jumpToLive)
+  const resendLive = useOperatorStore((s) => s.resendLive)
   const theme = useOperatorStore(selectDeckTheme)
   const themes = useOperatorStore((s) => s.themes)
   const deckThemeId = useOperatorStore((s) => s.deckThemeId)
@@ -21,10 +28,6 @@ export function SlideGrid() {
   const usesSongTheme = useOperatorStore((s) => s.deckType === 'song' && !!s.selectedSong?.themeId)
   const deckKey = useOperatorStore((s) => s.deckKey)
   const setSlideBackground = useOperatorStore((s) => s.setSlideBackground)
-  const nextSlideIndex = useOperatorStore((s) => {
-    const next = selectNextSlide(s)
-    return next ? s.slides.indexOf(next) : null
-  })
   /** Thumbnail width in pixels, from the zoom slider. */
   const [thumbWidth, setThumbWidth] = usePersistentState(
     'worshipdeck.thumbWidth',
@@ -47,20 +50,23 @@ export function SlideGrid() {
     if (mediaId > 0) setSlideBackground(index, mediaId).catch(console.error)
   }
 
-  // Keep the live slide visible when the arrow keys move past the edge of the panel.
+  // Keep the preview highlight, and the live slide when this is the live item, in view as the keys move them.
   useEffect(() => {
-    if (liveSlideIndex === null) return
-    gridRef.current
-      ?.querySelector<HTMLElement>(`[data-index="${liveSlideIndex}"]`)
-      ?.scrollIntoView({ block: 'nearest' })
-  }, [liveSlideIndex])
+    for (const index of [highlightIndex, liveIndexHere]) {
+      if (index === null) continue
+      gridRef.current?.querySelector<HTMLElement>(`[data-index="${index}"]`)?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [highlightIndex, liveIndexHere])
+
+  /** The grid shows the live item, but its theme or content changed since it went live. */
+  const liveDiffers = browsingLive && (live.stale || JSON.stringify(theme) !== JSON.stringify(live.theme))
 
   return (
     <section className="panel slide-panel">
       <header className="panel-header">
         <h2>{title ?? 'Slides'}</h2>
         <div className="panel-header-actions">
-          {/* Changes the theme of what is loaded right now, live; loading something else goes back to its default. */}
+          {/* Changes the theme of the item in the grid and preview only; Resend takes it to live. */}
           <select
             className="input theme-picker"
             aria-label="Theme"
@@ -92,7 +98,35 @@ export function SlideGrid() {
           </label>
         </div>
       </header>
-      {title !== null && <p className="hint slide-hint">← → move between slides · {MOD}↓ next schedule item</p>}
+      <div className="grid-live-bar">
+        {live.deckKey !== null && !browsingLive && (
+          <span className="live-chip" title="What the projector is showing">
+            <span className="live-dot" aria-hidden="true" /> Live: {live.title}
+            <button type="button" className="live-chip-jump" onClick={jumpToLive} title="Show the live item in the grid">
+              <CornerUpLeft size={13} aria-hidden="true" /> Show
+            </button>
+          </span>
+        )}
+        {liveDiffers && (
+          <button type="button" className="button resend-button" onClick={() => resendLive().catch(console.error)}>
+            <RefreshCw size={14} aria-hidden="true" /> Resend to live
+          </button>
+        )}
+        <button
+          type="button"
+          className="button primary go-live-button"
+          disabled={slides.length === 0}
+          title="Send the highlighted slide live (Enter)"
+          onClick={goLiveHighlighted}
+        >
+          <MonitorUp size={15} aria-hidden="true" /> Go Live
+        </button>
+      </div>
+      {title !== null && (
+        <p className="hint slide-hint">
+          Click a slide or press Enter to go live · ↑ ↓ preview · ← → live slide · {MOD}↓ next schedule item
+        </p>
+      )}
 
       {title === null && <p className="empty">Select a song or look up scripture to see its slides.</p>}
       {song && slides.length === 0 && <p className="empty">This song has no lyrics.</p>}
@@ -113,10 +147,11 @@ export function SlideGrid() {
           >
             <button
               data-index={index}
-              className={`slide-card themed${index === liveSlideIndex ? ' live' : index === nextSlideIndex ? ' next' : ''}`}
+              className={`slide-card themed${index === liveIndexHere ? ' live' : ''}${index === highlightIndex ? ' preview' : ''}`}
               style={label ? ({ '--section-color': sectionColor(label) } as CSSProperties) : undefined}
-              aria-label={`Slide ${index + 1}${label ? `, ${label}` : ''}${index === liveSlideIndex ? ', live' : index === nextSlideIndex ? ', next' : ''}`}
-              onClick={() => showSlide(index)}
+              aria-label={`Slide ${index + 1}${label ? `, ${label}` : ''}${index === liveIndexHere ? ', live' : ''}${index === highlightIndex ? ', in preview' : ''}`}
+              title="Go live with this slide"
+              onClick={() => goLive(index)}
             >
               <ThemedSlide theme={slideThemes[index]} text={text} caption={caption} still />
               <span className="slide-number">{index + 1}</span>

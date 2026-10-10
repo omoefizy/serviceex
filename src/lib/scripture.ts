@@ -46,11 +46,9 @@ export async function passageOf(items: ResultItem[], mode: 'sequence' | 'range')
   }
 }
 
-/** Loads a passage into the slide grid and puts its first slide live, as clicking a scripture slide does. */
-export function sendLive(passage: ScripturePayload): void {
-  const st = useOperatorStore.getState()
-  st.selectScripture(passage.title, passage.verses)
-  st.showSlide(0)
+/** Shows a passage in the slide grid and preview. Going live is a separate step (click a slide, Enter, Go Live). */
+export function previewPassage(passage: ScripturePayload): void {
+  useOperatorStore.getState().selectScripture(passage.title, passage.verses)
 }
 
 /** Past the end of the longest chapter (Psalm 119 has 176 verses), so "John 3" loads the whole chapter. */
