@@ -1794,6 +1794,60 @@ button {
   text-align: left;
 }
 
+/* ---------- Announcement builder ---------- */
+
+.announcement-modal {
+  width: min(720px, 100%);
+}
+
+.announcement-builder {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+.announcement-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.announcement-card {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-raised);
+}
+
+.announcement-card-label {
+  padding-top: var(--space-1-5);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.announcement-card textarea {
+  resize: vertical;
+}
+
+.announcement-card.title-card p {
+  grid-column: 2 / 4;
+  margin: 0;
+  padding-top: var(--space-1);
+  font-weight: 700;
+}
+
 /* ---------- Lyrics diff ---------- */
 
 .lyrics-diff-modal {

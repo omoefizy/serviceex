@@ -70,6 +70,58 @@ function addedWords(original: string, cleaned: string): string[] {
   return added
 }
 
+// ---------- Fact guard ----------
+
+/**
+ * Month and weekday names, plus abbreviations that are not also everyday words ("sat", "sun", "wed", "mar" and
+ * "may" are left out for that reason; dates with them still carry numbers, which are checked).
+ */
+const DATE_WORDS: Record<string, string> = {}
+const MONTH_NAMES = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']
+const DAY_NAMES = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+for (const name of [...MONTH_NAMES.filter((m) => m !== 'may'), ...DAY_NAMES]) DATE_WORDS[name] = name
+for (const [abbreviation, name] of Object.entries({
+  jan: 'january', feb: 'february', apr: 'april', jun: 'june', jul: 'july', aug: 'august', sep: 'september',
+  sept: 'september', oct: 'october', nov: 'november', dec: 'december', mon: 'monday', tue: 'tuesday',
+  tues: 'tuesday', thu: 'thursday', thur: 'thursday', thurs: 'thursday', fri: 'friday',
+})) DATE_WORDS[abbreviation] = name
+
+/** "Saturday" and "Sat." name the same day, so date words compare by their full name. */
+const dateWordsIn = (text: string) => words(text).flatMap((word) => (DATE_WORDS[word] ? [DATE_WORDS[word]] : []))
+
+/**
+ * Details in the slides that the pasted message does not contain: numbers (dates, times, prices, phone
+ * numbers), month and weekday names, email addresses and links, and (when `names` is set) capitalised words
+ * after the start of a sentence, which are usually names and places. Rewording is allowed; new facts are not.
+ */
+function inventedFacts(message: string, texts: string[], names: boolean): string[] {
+  const lower = message.toLowerCase()
+  const numbers = new Set(message.match(/\d+/g) ?? [])
+  const dates = new Set(dateWordsIn(message))
+  const messageWords = new Set(words(message))
+  const invented: string[] = []
+
+  for (const text of texts) {
+    for (const number of text.match(/\d+/g) ?? []) if (!numbers.has(number)) invented.push(number)
+    for (const date of dateWordsIn(text)) if (!dates.has(date)) invented.push(date)
+    for (const contact of text.match(/[\w.+-]+@[\w-]+\.[\w.-]+|(?:https?:\/\/|www\.)\S+/gi) ?? []) {
+      if (!lower.includes(contact.toLowerCase().replace(/[.,;:!?)]+$/, ''))) invented.push(contact)
+    }
+    if (!names) continue
+    // Capitalised words after the start of a sentence: "Ask Pastor Sam" flags "Pastor" and "Sam" unless the
+    // message mentions them. "I" is always fine.
+    for (const sentence of text.split(/(?<=[.!?:])\s+|\n+/)) {
+      for (const word of sentence.split(/\s+/).slice(1)) {
+        const [key] = words(word)
+        if (key && key !== 'i' && /^[^\p{L}]*\p{Lu}/u.test(word) && !messageWords.has(key) && !DATE_WORDS[key]) {
+          invented.push(word.replace(/^[^\p{L}]+|[^\p{L}\p{N}]+$/gu, ''))
+        }
+      }
+    }
+  }
+  return [...new Set(invented)]
+}
+
 // ---------- Tasks ----------
 
 const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
@@ -159,13 +211,19 @@ const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
     schema: object({ title: { type: 'string' }, slides: { type: 'array', items: { type: 'string' } } }),
     maxTokens: 3000,
     effort: 'low',
-    check: (output) => {
+    check: (output, input) => {
       const { title, slides } = output as { title?: unknown; slides?: unknown }
       const kept = Array.isArray(slides)
         ? slides.filter((s): s is string => typeof s === 'string').map((s) => s.trim()).filter(Boolean)
         : []
       if (typeof title !== 'string' || !title.trim() || kept.length === 0) {
         throw new TaskError('The AI returned no slides. Try again.')
+      }
+      // Titles are usually in Title Case, so only the slides get the name check.
+      const invented = [...inventedFacts(input.message, [title], false), ...inventedFacts(input.message, kept, true)]
+      if (invented.length > 0) {
+        const sample = [...new Set(invented)].slice(0, 5).map((w) => `“${w}”`).join(', ')
+        throw new TaskError(`The AI added details that are not in your message (${sample}), so its slides were not used. Try again.`)
       }
       return { title: title.trim(), slides: kept }
     },
