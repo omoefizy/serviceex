@@ -15,7 +15,7 @@ vi.stubGlobal('window', { api: { bible: { getRange, matchQuote } } })
 const { useOperatorStore } = await import('../store')
 const { detectScripture, useSuggestions, DUPLICATE_MS, EXPIRE_MS } = await import('./scriptureDetection')
 
-const labels = () => useSuggestions.getState().suggestions.map((s) => s.label)
+const labels = () => useSuggestions.getState().suggestions.map((s) => (s.type === 'scripture' ? s.label : s.text))
 const T0 = 1_000_000
 
 beforeEach(async () => {

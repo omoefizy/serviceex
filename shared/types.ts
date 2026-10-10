@@ -53,6 +53,11 @@ export interface AnnouncementPayload {
   body: string
   /** Starts with a slide showing just the title. Older announcements have no title slide. */
   titleSlide?: boolean
+  /**
+   * A saved quote (a statement from the sermon): the body is one slide in quote marks, with the speaker's name
+   * on the line under it, and it uses the Quote theme default.
+   */
+  quote?: { speaker: string }
 }
 
 /** Images or PDF pages, one slide each, stored as image files in the media folder. */
@@ -112,7 +117,8 @@ export interface OutputState extends SlideContent {
 
 // ---------- Themes ----------
 
-export type ThemeContentType = 'song' | 'scripture' | 'announcement'
+/** 'quote' is a sermon statement shown as a slide (see AnnouncementPayload.quote). */
+export type ThemeContentType = 'song' | 'scripture' | 'announcement' | 'quote'
 
 export type TextCase = 'normal' | 'upper' | 'lower'
 
@@ -263,6 +269,10 @@ export interface AppSettings {
   detectionMinConfidence: number
   /** How a new suggestion gets attention, besides appearing in the tray. */
   detectionAlert: 'off' | 'sound' | 'flash'
+  /** The name under a quote slide unless changed, such as "Pastor Sam"; empty for none. */
+  quoteSpeakerName: string
+  /** Asks the AI every 30 seconds for quotable statements in the new transcript text. Off by default; needs AI on. */
+  statementPicking: boolean
 }
 
 export interface DisplayInfo {
@@ -510,6 +520,12 @@ export interface AiTasks {
   }
   /** Turns a long message into a title and short slides, one idea each. */
   buildAnnouncement: { input: { message: string }; output: { title: string; slides: string[] } }
+  /**
+   * Picks up to 2 short statements (under 20 words) from new sermon transcript text that stand alone as quotable
+   * lines. Always uses Claude Haiku. The main process drops any statement that is not in the transcript word for
+   * word (case and punctuation aside) and returns the transcript's own wording.
+   */
+  pickStatements: { input: { transcript: string }; output: { statements: string[] } }
 }
 
 export type AiTask = keyof AiTasks

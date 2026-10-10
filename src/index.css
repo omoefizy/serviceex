@@ -1062,6 +1062,56 @@ button {
   margin: 0;
 }
 
+/* Floats over selected transcript text; positioned from the selection, inside the scrolling transcript. */
+.transcript {
+  position: relative;
+}
+
+.send-as-slide {
+  position: absolute;
+  z-index: 2;
+  padding: var(--space-1) var(--space-2-5);
+  font-size: 12px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* The quote editor's sample of the slide, in the Quote theme's colours. */
+.quote-modal {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.quote-sample {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: 4px;
+  background: linear-gradient(160deg, #1e1b2e, #0b0a12);
+  color: #fdfaf3;
+  text-align: center;
+}
+
+.quote-sample p {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.quote-sample small {
+  color: #d6b98c;
+  font-weight: 600;
+}
+
+/* The transcript is always dark, so a selection needs a highlight that shows on it. */
+.transcript ::selection {
+  background: rgba(59, 130, 246, 0.6);
+  color: #ffffff;
+}
+
 .transcript-partial {
   color: #8b92a0;
 }
@@ -1306,6 +1356,37 @@ button {
   line-height: 1.4;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+/* A statement from the sermon: its text, and Preview / Edit / Add to Schedule under it. */
+.suggestion.statement {
+  flex-basis: 320px;
+  border-left: 3px solid #d6b98c;
+}
+
+.suggestion.statement .suggestion-main {
+  cursor: default;
+}
+
+.suggestion.statement .suggestion-main:hover {
+  background: none;
+}
+
+.suggestion.statement .suggestion-text {
+  color: var(--text);
+  -webkit-line-clamp: 3;
+}
+
+.suggestion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: 0 var(--space-2) var(--space-2) var(--space-2-5);
+}
+
+.suggestion-actions .button {
+  padding: var(--space-0-5) var(--space-2);
+  font-size: 12px;
 }
 
 .suggestion-dismiss {

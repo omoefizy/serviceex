@@ -6,6 +6,7 @@ import type { SpeechMode, SpeechPerformance, SpeechStatus } from '../../shared/t
 import { useOperatorStore } from '../store'
 import { startMic, type MicCapture } from './mic'
 import { detectScripture } from './scriptureDetection'
+import { collectStatementText } from './statements'
 
 export type ListenerStatus = SpeechStatus | 'starting'
 
@@ -150,6 +151,7 @@ window.api?.speech.onEvent((event) => {
     case 'final':
       set((s) => ({ finals: [...s.finals, event.text], partial: '' }))
       detectScripture(event.text).catch(console.error)
+      collectStatementText(event.text, Date.now(), (message) => addLog(`Statement suggestions: ${message}`))
       break
     case 'status':
       if (useListener.getState().status !== event.status && STATUS_LOG[event.status]) addLog(STATUS_LOG[event.status]!)

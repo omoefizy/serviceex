@@ -1,9 +1,10 @@
-import { Eraser, Mic, Square, X } from 'lucide-react'
+import { Eraser, Mic, Quote, Square, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SpeechEngineId, SpeechMode } from '../../shared/types'
 import { useListener, type ListenerStatus } from '../lib/listener'
 import { meterFraction } from '../lib/mic'
 import { useOperatorStore } from '../store'
+import { QuoteModal } from './QuoteModal'
 
 const MODE_LABELS: Record<SpeechMode, string> = { cloud: 'Cloud', offline: 'Offline', reconnecting: 'Reconnecting' }
 
@@ -56,6 +57,32 @@ export function ListenerPanel() {
   const scroller = useRef<HTMLDivElement>(null)
   /** Follow new text only while the operator has not scrolled up to read. */
   const following = useRef(true)
+  /** Text selected in the transcript, and where its Send as Slide button sits (inside the scrolling transcript). */
+  const [selection, setSelection] = useState<{ text: string; top: number; left: number } | null>(null)
+  /** The words open in the quote editor. */
+  const [quoting, setQuoting] = useState<string | null>(null)
+
+  // Shows the floating button for a selection inside the transcript, and hides it when the selection goes.
+  useEffect(() => {
+    const onChange = () => {
+      const el = scroller.current
+      const picked = window.getSelection()
+      const range = picked && !picked.isCollapsed && picked.rangeCount > 0 ? picked.getRangeAt(0) : null
+      const text = picked?.toString().replace(/\s+/g, ' ').trim() ?? ''
+      if (!el || !range || !text || !el.contains(range.commonAncestorContainer)) return setSelection(null)
+      const box = range.getBoundingClientRect()
+      const frame = el.getBoundingClientRect()
+      const above = box.top - frame.top + el.scrollTop
+      setSelection({
+        text,
+        // Above the selection, or below it when that would be off the top.
+        top: above - 36 < el.scrollTop ? box.bottom - frame.top + el.scrollTop + 4 : above - 36,
+        left: Math.min(Math.max(box.left - frame.left + box.width / 2, 70), el.clientWidth - 70),
+      })
+    }
+    document.addEventListener('selectionchange', onChange)
+    return () => document.removeEventListener('selectionchange', onChange)
+  }, [])
 
   useEffect(() => {
     window.api.speech.status().then((s) => setNotReady(s.readyHint), console.error)
@@ -63,8 +90,9 @@ export function ListenerPanel() {
 
   useLayoutEffect(() => {
     const el = scroller.current
-    if (el && following.current) el.scrollTop = el.scrollHeight
-  }, [finals, partial])
+    // Hold still while text is selected, so the selection does not scroll away.
+    if (el && following.current && !selection) el.scrollTop = el.scrollHeight
+  }, [finals, partial, selection])
 
   const running = status === 'starting' || status === 'connecting' || status === 'listening'
   const chip = chipOf(status, mode, modeReason, error, restarting)
@@ -158,7 +186,24 @@ export function ListenerPanel() {
             {partial && <span className="transcript-partial">{partial}</span>}
           </p>
         )}
+        {selection && (
+          <button
+            type="button"
+            className="button primary send-as-slide"
+            style={{ top: selection.top, left: selection.left }}
+            title="Edit the selected words, then show them as a quote slide in the preview"
+            // Keep the selection while the button is pressed.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setQuoting(selection.text)
+              window.getSelection()?.removeAllRanges()
+            }}
+          >
+            <Quote size={13} aria-hidden="true" /> Send as Slide
+          </button>
+        )}
       </div>
+      {quoting !== null && <QuoteModal text={quoting} onCancel={() => setQuoting(null)} onDone={() => setQuoting(null)} />}
 
       <details className="listener-log">
         <summary>Event log ({log.length})</summary>

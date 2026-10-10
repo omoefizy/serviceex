@@ -88,6 +88,22 @@ export const BUILTIN_THEMES: { name: string; style: ThemeStyle }[] = [
       caption: { fontFamily: SERIF, fontWeight: 400, size: 3.4, color: '#d6b98c', textCase: 'normal', italic: true },
     }),
   },
+  {
+    // A sermon statement: large serif text (the slide adds the quote marks) and the speaker's name as the caption.
+    name: 'Quote',
+    style: style({
+      fontFamily: SERIF,
+      fontWeight: 500,
+      sizeMode: 'fixed',
+      fontSize: 9,
+      lineHeight: 1.3,
+      color: '#fdfaf3',
+      margins: { top: 10, right: 10, bottom: 10, left: 10 },
+      background: { kind: 'gradient', from: '#1e1b2e', to: '#0b0a12', angle: 160 },
+      shadow: { enabled: true, color: '#000000', blur: 0.1, offset: 0.03 },
+      caption: { fontFamily: SANS, fontWeight: 600, size: 3.6, color: '#d6b98c', textCase: 'normal', italic: false },
+    }),
+  },
 ]
 
 /** Built-in themes used until someone picks other defaults. */
@@ -95,9 +111,10 @@ export const BUILTIN_DEFAULTS: Record<ThemeContentType, string> = {
   song: 'Classic Black',
   scripture: 'Scripture Serif',
   announcement: 'Deep Blue Gradient',
+  quote: 'Quote',
 }
 
-export const THEME_CONTENT_TYPES: ThemeContentType[] = ['song', 'scripture', 'announcement']
+export const THEME_CONTENT_TYPES: ThemeContentType[] = ['song', 'scripture', 'announcement', 'quote']
 
 // ---------- Validation ----------
 // Themes come from the database, the renderer and old versions of this file, so every field is checked

@@ -68,7 +68,16 @@ function assertAnnouncement(value: unknown): AnnouncementPayload {
   if (payload.titleSlide !== undefined && typeof payload.titleSlide !== 'boolean') {
     throw new TypeError('titleSlide must be true or false')
   }
-  return { title: assertTitle(payload.title), body: payload.body, ...(payload.titleSlide ? { titleSlide: true } : {}) }
+  const quote = payload.quote as unknown
+  if (quote !== undefined && (typeof quote !== 'object' || quote === null || typeof (quote as { speaker?: unknown }).speaker !== 'string')) {
+    throw new TypeError('A quote needs a speaker name (which may be empty)')
+  }
+  return {
+    title: assertTitle(payload.title),
+    body: payload.body,
+    ...(payload.titleSlide ? { titleSlide: true } : {}),
+    ...(payload.quote ? { quote: { speaker: payload.quote.speaker.trim().slice(0, 100) } } : {}),
+  }
 }
 
 function assertPresentation(value: unknown): PresentationPayload {

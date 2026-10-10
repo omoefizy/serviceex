@@ -3,6 +3,7 @@
 
 import { findSection, parseLyrics } from '../../shared/lyrics'
 import { formatReference, parseReference } from '../../shared/parseReference'
+import { MAX_STATEMENT_WORDS, verbatimStatements } from '../../shared/statements'
 import type { AiModel, AiResult, AiTask, AiTasks } from '../../shared/types'
 import { getVerse, listBooks } from '../db/bible'
 import { getAppSettings } from '../db/settings'
@@ -23,6 +24,8 @@ interface TaskDefinition<T extends AiTask> {
   schema: Record<string, unknown>
   maxTokens: number
   effort: 'low' | 'medium'
+  /** A fixed model for this task; otherwise the one chosen in Settings. */
+  model?: AiModel
   /** Checks the parsed reply against the input. Throws TaskError with a message for the operator. */
   check(output: unknown, input: AiTasks[T]['input']): AiTasks[T]['output']
 }
@@ -302,6 +305,33 @@ const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
       return { title: title.trim(), slides: kept }
     },
   },
+
+  pickStatements: {
+    system: [
+      'You pick quotable lines from a live sermon transcript for a church presentation app. The transcript comes from',
+      'speech recognition, a few sentences at a time.',
+      '',
+      `Choose at most two short statements, each under ${MAX_STATEMENT_WORDS} words, that stand on their own as a memorable line`,
+      'a congregation could read on a screen without the sentences around them. Skip greetings, instructions such as',
+      '"turn to" or "please stand", and lines that only make sense in context. When nothing qualifies, return an empty list.',
+      '',
+      'Copy each statement exactly as it appears in the transcript: one continuous run of words from one place, in the',
+      'same order. Never add, remove, reword, correct or merge words, and never join parts from different places. Any',
+      'statement that is not in the transcript word for word is thrown away.',
+    ].join('\n'),
+    parseInput: (input) => {
+      if (!getAppSettings().statementPicking) throw new Error('Statement suggestions are turned off in Settings.')
+      return { transcript: textField(input, 'transcript') }
+    },
+    prompt: ({ transcript }) => `Transcript:\n\n${transcript}`,
+    schema: object({ statements: { type: 'array', items: { type: 'string' } } }),
+    // Room for Haiku's thinking as well as the short answer.
+    maxTokens: 2000,
+    effort: 'low',
+    model: 'claude-haiku-5-5',
+    // Only words the speaker said, in their wording; nothing found is a normal answer.
+    check: (output, input) => ({ statements: verbatimStatements((output as { statements?: unknown }).statements, input.transcript) }),
+  },
 }
 
 export const isAiTask = (value: unknown): value is AiTask => typeof value === 'string' && value in TASKS
@@ -324,7 +354,7 @@ export async function runTask<T extends AiTask>(task: T, input: unknown): Promis
 
   const ready = await readyClient()
   if (!ready.ok) return ready
-  const model = getAppSettings().aiModel
+  const model = definition.model ?? getAppSettings().aiModel
 
   let response
   try {

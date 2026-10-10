@@ -21,6 +21,8 @@ const DEFAULTS: AppSettings = {
   scriptureDetection: true,
   detectionMinConfidence: 0.6,
   detectionAlert: 'off',
+  quoteSpeakerName: '',
+  statementPicking: false,
 }
 
 export const FADE_LIMITS = { min: 0, max: 1500 }
@@ -48,6 +50,8 @@ const KEYS: Record<keyof AppSettings, string> = {
   scriptureDetection: 'detection.enabled',
   detectionMinConfidence: 'detection.minConfidence',
   detectionAlert: 'detection.alert',
+  quoteSpeakerName: 'quote.speakerName',
+  statementPicking: 'detection.statements',
 }
 
 /** Checks one value, returning undefined for anything unusable so the default applies. */
@@ -69,7 +73,10 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'autoGoLiveOnNext':
     case 'saveTranscripts':
     case 'scriptureDetection':
+    case 'statementPicking':
       return typeof value === 'boolean' ? v : undefined
+    case 'quoteSpeakerName':
+      return typeof value === 'string' && value.length <= 100 ? (value.trim() as never) : undefined
     case 'aiModel':
       return value === 'claude-sonnet-5-5' || value === 'claude-haiku-5-5' ? v : undefined
     case 'backupFolder':

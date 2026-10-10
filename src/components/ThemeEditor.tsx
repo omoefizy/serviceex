@@ -24,7 +24,7 @@ const SAMPLES = {
   },
 }
 
-const CONTENT_LABELS: Record<ThemeContentType, string> = { song: 'Songs', scripture: 'Scripture', announcement: 'Announcements' }
+const CONTENT_LABELS: Record<ThemeContentType, string> = { song: 'Songs', scripture: 'Scripture', announcement: 'Announcements', quote: 'Quotes' }
 const WEIGHTS = [300, 400, 500, 600, 700, 800, 900]
 const CASES: { value: TextCase; label: string }[] = [
   { value: 'normal', label: 'As typed' },

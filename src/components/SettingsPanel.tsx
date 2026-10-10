@@ -13,6 +13,7 @@ import {
   Moon,
   Palette,
   PlugZap,
+  Quote,
   RefreshCw,
   Save,
   Sparkles,
@@ -569,6 +570,48 @@ function DetectionSection() {
   )
 }
 
+/** Quote slides from the sermon: the default speaker line, and AI statement suggestions (off by default). */
+function QuotesSection() {
+  const settings = useOperatorStore((s) => s.settings)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const [speaker, setSpeaker] = useState(settings.quoteSpeakerName)
+
+  useEffect(() => setSpeaker(settings.quoteSpeakerName), [settings.quoteSpeakerName])
+
+  return (
+    <Section icon={<Quote size={16} aria-hidden="true" />} title="Sermon quotes">
+      <label className="field">
+        <span>
+          Default speaker name <small>Shown under quote slides; empty for none. Each quote can change it.</small>
+        </span>
+        <input
+          className="input"
+          value={speaker}
+          maxLength={100}
+          placeholder="Pastor's name"
+          onChange={(e) => setSpeaker(e.target.value)}
+          onBlur={() => speaker.trim() !== settings.quoteSpeakerName && updateSettings({ quoteSpeakerName: speaker.trim() })}
+        />
+      </label>
+      <p className="hint">Select words in the live transcript and press Send as Slide to show them as a quote in the preview.</p>
+      <label className="inline-check" title={settings.aiEnabled ? undefined : 'AI features are turned off above'}>
+        <input
+          type="checkbox"
+          checked={settings.aiEnabled && settings.statementPicking}
+          disabled={!settings.aiEnabled}
+          onChange={(e) => updateSettings({ statementPicking: e.target.checked })}
+        />
+        Suggest quotable statements with AI
+      </label>
+      <p className="hint">
+        {settings.aiEnabled
+          ? 'Every 30 seconds while listening, the new transcript text is sent to Claude Haiku, which picks up to two short lines that stand on their own. Only lines found word for word in the transcript appear, as cards above the slides. Nothing is saved unless you add it to the schedule.'
+          : 'Turn on AI features above to use this.'}
+      </p>
+    </Section>
+  )
+}
+
 export function SettingsPanel() {
   const settings = useOperatorStore((s) => s.settings)
   const updateSettings = useOperatorStore((s) => s.updateSettings)
@@ -699,6 +742,7 @@ export function SettingsPanel() {
       <ListenerSection />
 
       <DetectionSection />
+      <QuotesSection />
 
       <Section icon={<Save size={16} aria-hidden="true" />} title="Autosave and backups">
         <label className="inline-check">

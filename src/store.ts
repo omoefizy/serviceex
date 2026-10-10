@@ -17,7 +17,7 @@ import type {
   ThemeDefaults,
   ThemeStyle,
 } from '../shared/types'
-import { announcementSlides } from './lib/slides'
+import { announcementSlides, quoteSlide } from './lib/slides'
 
 export interface DeckSlide {
   text: string
@@ -31,6 +31,9 @@ export interface DeckSlide {
   page?: boolean
 }
 
+/** What the grid holds: a schedule item type, or a quote (a sermon statement, with the Quote theme default). */
+export type DeckType = ServiceItemType | 'quote'
+
 /** The browse fields that describe what the grid shows; kept with a live snapshot so the grid can jump back to it. */
 type BrowseSnapshot = Pick<
   OperatorState,
@@ -42,7 +45,7 @@ type BrowseSnapshot = Pick<
  * or deleting things never changes it; only going live, the arrow keys and the output mode buttons do.
  */
 export interface LiveState {
-  itemType: ServiceItemType | null
+  itemType: DeckType | null
   /** The song id for songs, the schedule item id for other schedule items; null for scripture lookups. */
   itemId: number | null
   /** The deck key of the live item (see `deckKey`), to tell whether the grid is showing it. */
@@ -85,7 +88,7 @@ interface OperatorState {
   /** The slide shown in the preview, moved with Up and Down; Enter sends it live. Null when the grid is empty. */
   highlightIndex: number | null
   /** What the grid holds, which picks the default theme. Null when it is empty. */
-  deckType: ServiceItemType | null
+  deckType: DeckType | null
   /**
    * Names the deck for per-slide background overrides: 'song:<id>' (wherever the song is loaded from),
    * 'item:<id>' for other schedule items, 'scripture:<reference>' for a scripture lookup. Null when empty.
@@ -121,6 +124,8 @@ interface OperatorState {
   selectSong(song: Song | null): void
   /** Shows scripture verses in the grid and preview, in place of a song. Never touches what is live. */
   selectScripture(title: string, slides: DeckSlide[]): void
+  /** Shows a sermon statement as a quote slide in the grid and preview. Never touches what is live. */
+  selectQuote(text: string, speaker: string): void
   /** Copies the grid's item into the live snapshot with this slide on screen, and shows it. */
   goLive(index: number): void
   /** Sends the highlighted preview slide live (Enter, the Go Live button). */
@@ -211,6 +216,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     scriptureDetection: true,
     detectionMinConfidence: 0.6,
     detectionAlert: 'off',
+    quoteSpeakerName: '',
+    statementPicking: false,
   },
   themes: [],
   themeDefaults: null,
@@ -251,6 +258,23 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
       deckTitle: title,
       slides,
       highlightIndex: slides.length > 0 ? 0 : null,
+      activeItemId: null,
+    })
+    applySlideBackgrounds(token, deckKey)
+  },
+
+  selectQuote(text, speaker) {
+    const token = ++loadToken
+    const slides = [quoteSlide(text, speaker)]
+    const deckKey = `quote:${slides[0].text}`
+    set({
+      selectedSong: null,
+      deckType: 'quote',
+      deckKey,
+      deckThemeId: null,
+      deckTitle: speaker.trim() ? `Quote · ${speaker.trim()}` : 'Quote',
+      slides,
+      highlightIndex: 0,
       activeItemId: null,
     })
     applySlideBackgrounds(token, deckKey)
@@ -380,7 +404,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     const deckKey = item.type === 'song' ? `song:${item.ref_id}` : `item:${item.id}`
     set({
       selectedSong: song,
-      deckType: item.type,
+      // A saved quote is an announcement item that uses the Quote theme default.
+      deckType: item.type === 'announcement' && item.payload.quote ? 'quote' : item.type,
       deckKey,
       deckThemeId: null,
       deckTitle: item.title,
