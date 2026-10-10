@@ -8,7 +8,8 @@
     "build": "tsc && vite build && electron-builder",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
-    "import:bible": "node scripts/import-bible.ts"
+    "import:bible": "node scripts/import-bible.ts",
+    "fetch:whisper": "node scripts/fetch-whisper.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

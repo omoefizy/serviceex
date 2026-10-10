@@ -15,17 +15,21 @@ const STATUS_LABELS: Record<ListenerStatus, string> = {
 
 /** Start and stop the sermon listener, and watch the live transcript: settled text in white, words still forming in grey. */
 export function ListenerPanel() {
-  const { status, error, finals, partial, level, start, stop, clear } = useListener()
+  const { status, error, finals, partial, level, performance, start, stop, clear } = useListener()
   const openSettings = useOperatorStore((s) => s.openSettings)
   const saving = useOperatorStore((s) => s.settings.saveTranscripts)
-  const [hasKey, setHasKey] = useState<boolean | null>(null)
+  const offline = useOperatorStore((s) => s.settings.speechEngine === 'whisper')
+  const speechEngine = useOperatorStore((s) => s.settings.speechEngine)
+  const whisperModel = useOperatorStore((s) => s.settings.whisperModel)
+  /** What is missing before listening can start, or null when ready. */
+  const [notReady, setNotReady] = useState<string | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
   /** Follow new text only while the operator has not scrolled up to read. */
   const following = useRef(true)
 
   useEffect(() => {
-    window.api.speech.status().then((s) => setHasKey(s.hasKey), console.error)
-  }, [status])
+    window.api.speech.status().then((s) => setNotReady(s.readyHint), console.error)
+  }, [status, speechEngine, whisperModel])
 
   useLayoutEffect(() => {
     const el = scroller.current
@@ -38,9 +42,10 @@ export function ListenerPanel() {
     <section className="panel listener-panel" aria-label="Sermon listener">
       <header className="panel-header">
         <h2>Listener</h2>
+        <span className="listener-engine">{offline ? `Offline · ${whisperModel}` : 'Deepgram'}</span>
         <span className={`listener-status ${status}`} role="status">
           <span className="listener-dot" aria-hidden="true" />
-          {STATUS_LABELS[status]}
+          {offline && status === 'connecting' ? 'Loading model' : STATUS_LABELS[status]}
         </span>
       </header>
 
@@ -50,7 +55,7 @@ export function ListenerPanel() {
             <Square size={14} aria-hidden="true" /> Stop
           </button>
         ) : (
-          <button type="button" className="button primary" disabled={status === 'stopping' || hasKey === false} onClick={() => start()}>
+          <button type="button" className="button primary" disabled={status === 'stopping' || notReady !== null} onClick={() => start()}>
             <Mic size={15} aria-hidden="true" /> Start Listening
           </button>
         )}
@@ -65,13 +70,19 @@ export function ListenerPanel() {
           </button>
         )}
       </div>
-      {hasKey === false && (
+      {notReady && !running && (
         <p className="hint">
-          Add a Deepgram API key in{' '}
+          {notReady}{' '}
           <button type="button" className="link-button" onClick={() => openSettings(true)}>
-            Settings
-          </button>{' '}
-          to transcribe the sermon.
+            Open Settings
+          </button>
+        </p>
+      )}
+      {performance && (
+        <p className={`speed-chip ${performance.keepingUp ? 'ok' : 'behind'}`} role="status">
+          {performance.keepingUp ? 'Keeping up' : 'Falling behind'} · {performance.realTimeFactor.toFixed(2)}× real time
+          {performance.backlogSeconds > 0 && ` · ${performance.backlogSeconds} s waiting`}
+          {performance.suggestion && ` · try ${performance.suggestion} in Settings`}
         </p>
       )}
       {error && <p className="error">{error}</p>}

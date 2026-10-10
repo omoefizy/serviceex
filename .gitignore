@@ -15,6 +15,8 @@ anthropic-key.enc
 deepgram-key.enc
 # Bible text downloaded by `npm run import:bible`
 data/bible
+# whisper.cpp binaries from `npm run fetch:whisper`
+vendor/whisper
 dist
 dist-ssr
 *.local

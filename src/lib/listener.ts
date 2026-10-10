@@ -2,7 +2,7 @@
 // the main process writes it to a file just when "Save transcripts" is on.
 
 import { create } from 'zustand'
-import type { SpeechStatus } from '../../shared/types'
+import type { SpeechPerformance, SpeechStatus } from '../../shared/types'
 import { useOperatorStore } from '../store'
 import { startMic, type MicCapture } from './mic'
 
@@ -16,6 +16,8 @@ interface ListenerState {
   /** The words still being recognised; replaced as they firm up. */
   partial: string
   level: number
+  /** How the offline engine is keeping up in this session; null until measured (and for Deepgram). */
+  performance: SpeechPerformance | null
   start(): Promise<void>
   stop(): Promise<void>
   clear(): void
@@ -35,10 +37,11 @@ export const useListener = create<ListenerState>((set, get) => ({
   finals: [],
   partial: '',
   level: 0,
+  performance: null,
 
   async start() {
     if (get().status !== 'idle' && get().status !== 'error') return
-    set({ status: 'starting', error: null })
+    set({ status: 'starting', error: null, performance: null })
     // Audio captured before the engine is connected waits here, so the first words are not lost.
     let connected = false
     const waiting: ArrayBuffer[] = []
@@ -105,6 +108,11 @@ window.api?.speech.onEvent((event) => {
       break
     case 'error':
       set({ error: event.error.message })
+      break
+    case 'performance':
+      set({ performance: event.performance })
+      // The main process saved the measurement in settings; pick it up for the Settings page.
+      useOperatorStore.getState().loadSettings().catch(console.error)
       break
   }
 })

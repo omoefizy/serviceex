@@ -1,4 +1,4 @@
-import type { AppSettings } from '../../shared/types'
+import type { AppSettings, WhisperModelId } from '../../shared/types'
 import { db } from './index'
 
 const DEFAULTS: AppSettings = {
@@ -15,9 +15,14 @@ const DEFAULTS: AppSettings = {
   autoGoLiveOnNext: false,
   micDeviceId: null,
   saveTranscripts: false,
+  speechEngine: 'deepgram',
+  whisperModel: 'base.en',
+  whisperSpeed: {},
 }
 
 export const FADE_LIMITS = { min: 0, max: 1500 }
+
+const WHISPER_MODEL_IDS: WhisperModelId[] = ['tiny.en', 'base.en', 'small.en', 'small']
 
 /** Settings rows: each value is JSON under its own key. fadeMs keeps the key it was first saved under. */
 const KEYS: Record<keyof AppSettings, string> = {
@@ -34,6 +39,9 @@ const KEYS: Record<keyof AppSettings, string> = {
   autoGoLiveOnNext: 'schedule.autoGoLiveOnNext',
   micDeviceId: 'speech.micDeviceId',
   saveTranscripts: 'speech.saveTranscripts',
+  speechEngine: 'speech.engine',
+  whisperModel: 'speech.whisperModel',
+  whisperSpeed: 'speech.whisperSpeed',
 }
 
 /** Checks one value, returning undefined for anything unusable so the default applies. */
@@ -62,6 +70,17 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
       return value === null || (typeof value === 'string' && value !== '') ? v : undefined
     case 'micDeviceId':
       return value === null || (typeof value === 'string' && value !== '' && value.length <= 512) ? v : undefined
+    case 'speechEngine':
+      return value === 'deepgram' || value === 'whisper' ? v : undefined
+    case 'whisperModel':
+      return WHISPER_MODEL_IDS.includes(value as WhisperModelId) ? v : undefined
+    case 'whisperSpeed': {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+      const speeds = Object.entries(value).filter(
+        ([id, rtf]) => WHISPER_MODEL_IDS.includes(id as WhisperModelId) && typeof rtf === 'number' && rtf > 0 && rtf < 100,
+      )
+      return Object.fromEntries(speeds) as never
+    }
     case 'backupIntervalMinutes':
       return [0, 10, 30, 60].includes(value as number) ? v : undefined
     default:

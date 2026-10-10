@@ -251,6 +251,12 @@ export interface AppSettings {
   micDeviceId: string | null
   /** Writes each finished line of the live transcript to a file; off keeps the transcript in memory only. */
   saveTranscripts: boolean
+  /** Deepgram in the cloud, or whisper.cpp offline on this computer. */
+  speechEngine: SpeechEngineId
+  /** The whisper.cpp model the offline engine uses. */
+  whisperModel: WhisperModelId
+  /** Real time factor measured per model (processing time / audio time; below 1 keeps up). Set by the main process. */
+  whisperSpeed: Partial<Record<WhisperModelId, number>>
 }
 
 export interface DisplayInfo {
@@ -553,6 +559,9 @@ export interface SpeechError {
 export type SpeechResult<T> = { ok: true; value: T } | { ok: false; error: SpeechError }
 
 export interface SpeechKeyStatus {
+  /** Whether the chosen engine can start; when false, readyHint says what is missing. */
+  ready: boolean
+  readyHint: string | null
   hasKey: boolean
   encryptionAvailable: boolean
   /** Where saved transcripts go. */
@@ -565,6 +574,7 @@ export type SpeechEvent =
   | { type: 'final'; text: string }
   | { type: 'status'; status: SpeechStatus }
   | { type: 'error'; error: SpeechError }
+  | { type: 'performance'; performance: SpeechPerformance }
 
 /** The Deepgram key goes to the main process once, in setKey, and is never sent back. */
 export interface SpeechApi {
@@ -581,4 +591,60 @@ export interface SpeechApi {
   /** 100 ms of 16 kHz mono 16-bit little-endian PCM. */
   pushAudio(chunk: ArrayBuffer): void
   onEvent(listener: (event: SpeechEvent) => void): () => void
+  whisper: WhisperApi
+}
+
+export type SpeechEngineId = 'deepgram' | 'whisper'
+
+export type WhisperModelId = 'tiny.en' | 'base.en' | 'small.en' | 'small'
+
+/** How the offline engine is coping, measured while it listens. */
+export interface SpeechPerformance {
+  model: WhisperModelId
+  /** Processing time divided by audio time; below 1 means it transcribes faster than people speak. */
+  realTimeFactor: number
+  keepingUp: boolean
+  /** Seconds of speech waiting to be transcribed. */
+  backlogSeconds: number
+  /** A smaller model to try when falling behind, or null. */
+  suggestion: WhisperModelId | null
+}
+
+export interface WhisperModelInfo {
+  id: WhisperModelId
+  label: string
+  description: string
+  sizeBytes: number
+  downloaded: boolean
+  /** Bytes received while downloading, or null when not downloading. */
+  receivedBytes: number | null
+}
+
+export interface WhisperStatus {
+  /** Whether this build includes the whisper.cpp server. */
+  engineInstalled: boolean
+  models: WhisperModelInfo[]
+  recommended: WhisperModelId
+  /** Why that model is recommended for this computer. */
+  recommendedReason: string
+  /** "Apple M1, 8 cores, 8 GB memory" */
+  systemSummary: string
+  folder: string
+}
+
+export interface WhisperProgress {
+  id: WhisperModelId
+  receivedBytes: number
+  totalBytes: number
+  /** Set once, when the download ends: done, cancelled, or the error message. */
+  finished?: { ok: true } | { ok: false; message: string; cancelled: boolean }
+}
+
+export interface WhisperApi {
+  status(): Promise<WhisperStatus>
+  /** Starts a download; progress arrives through onProgress. Resolves when it ends. */
+  download(id: WhisperModelId): Promise<SpeechResult<null>>
+  cancelDownload(id: WhisperModelId): Promise<void>
+  deleteModel(id: WhisperModelId): Promise<SpeechResult<null>>
+  onProgress(listener: (progress: WhisperProgress) => void): () => void
 }

@@ -1030,6 +1030,101 @@ button {
   max-width: 140px;
 }
 
+/* Which engine the listener uses, beside its heading. */
+.listener-engine {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* The offline engine's speed: green when keeping up, amber when falling behind. */
+.speed-chip {
+  margin: 0;
+  padding: var(--space-1) var(--space-2-5);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.speed-chip.ok {
+  background: rgba(22, 163, 74, 0.14);
+  color: var(--mode-show);
+}
+
+.speed-chip.behind {
+  background: rgba(245, 158, 11, 0.16);
+  color: #f59e0b;
+}
+
+/* ---------- Whisper model manager (Settings) ---------- */
+
+.whisper-models {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.whisper-model {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.whisper-model.in-use {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.whisper-model p {
+  margin: 0;
+}
+
+.whisper-model-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+
+.whisper-model-name {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1-5);
+  flex: 1;
+}
+
+.whisper-model-id,
+.whisper-model-size {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.badge {
+  padding: 1px var(--space-2);
+  border-radius: 999px;
+  background: var(--mode-show);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.speed-ok {
+  color: var(--mode-show);
+}
+
+.download-progress {
+  flex: 1;
+  height: 8px;
+  accent-color: var(--accent);
+}
+
 .link-button {
   padding: 0;
   border: 0;

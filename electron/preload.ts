@@ -7,6 +7,7 @@ import type {
   ServicesApi,
   SpeechApi,
   SpeechEvent,
+  WhisperProgress,
   SettingsApi,
   SongFilesApi,
   SongsApi,
@@ -157,6 +158,17 @@ const speech: SpeechApi = {
     const handler = (_event: Electron.IpcRendererEvent, message: SpeechEvent) => listener(message)
     ipcRenderer.on('speech:event', handler)
     return () => ipcRenderer.off('speech:event', handler)
+  },
+  whisper: {
+    status: () => ipcRenderer.invoke('whisper:status'),
+    download: (id) => ipcRenderer.invoke('whisper:download', id),
+    cancelDownload: (id) => ipcRenderer.invoke('whisper:cancel', id),
+    deleteModel: (id) => ipcRenderer.invoke('whisper:delete', id),
+    onProgress(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, progress: WhisperProgress) => listener(progress)
+      ipcRenderer.on('whisper:progress', handler)
+      return () => ipcRenderer.off('whisper:progress', handler)
+    },
   },
 }
 

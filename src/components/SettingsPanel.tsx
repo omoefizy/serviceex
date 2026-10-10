@@ -1,5 +1,8 @@
 import {
+  Cloud,
+  Download,
   FolderOpen,
+  HardDrive,
   HardDriveDownload,
   Image,
   KeyRound,
@@ -17,7 +20,17 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import type { AiModel, AiStatus, AppSettings, DisplayInfo, OutputDisplay, SpeechKeyStatus } from '../../shared/types'
+import type {
+  AiModel,
+  AiStatus,
+  AppSettings,
+  DisplayInfo,
+  OutputDisplay,
+  SpeechEngineId,
+  SpeechKeyStatus,
+  WhisperModelId,
+  WhisperStatus,
+} from '../../shared/types'
 import { useOperatorStore } from '../store'
 import { listMicrophones, meterFraction, startMic, type MicCapture } from '../lib/mic'
 import { MOD } from '../lib/shortcuts'
@@ -157,6 +170,139 @@ function AiSection() {
   )
 }
 
+const SPEECH_ENGINES: { value: SpeechEngineId; label: string; icon: ReactNode }[] = [
+  { value: 'deepgram', label: 'Deepgram (cloud)', icon: <Cloud size={15} aria-hidden="true" /> },
+  { value: 'whisper', label: 'Whisper (offline)', icon: <HardDrive size={15} aria-hidden="true" /> },
+]
+
+const megabytes = (bytes: number) => `${Math.round(bytes / 1_000_000)} MB`
+
+/** The verdict for a measured real time factor, matching the listener's own (below 0.8 keeps up). */
+function speedText(rtf: number | undefined, id: WhisperModelId): { text: string; ok: boolean } | null {
+  if (rtf === undefined) return null
+  if (rtf < 0.8) return { text: `Measured ${rtf.toFixed(2)}× real time on this computer: keeping up.`, ok: true }
+  const smaller = id === 'base.en' ? 'tiny.en' : id === 'tiny.en' ? null : 'base.en'
+  return { text: `Measured ${rtf.toFixed(2)}× real time: falling behind.${smaller ? ` Try ${smaller}.` : ''}`, ok: false }
+}
+
+/** Download, choose and delete whisper.cpp models, with a recommendation for this computer. */
+function WhisperModels() {
+  const settings = useOperatorStore((s) => s.settings)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const [status, setStatus] = useState<WhisperStatus | null>(null)
+  const [received, setReceived] = useState<Partial<Record<WhisperModelId, number>>>({})
+  const [errors, setErrors] = useState<Partial<Record<WhisperModelId, string>>>({})
+
+  useEffect(() => {
+    const refresh = () =>
+      window.api.speech.whisper.status().then((next) => {
+        setStatus(next)
+        // Downloads that were already running when Settings opened.
+        setReceived(Object.fromEntries(next.models.filter((m) => m.receivedBytes !== null).map((m) => [m.id, m.receivedBytes])))
+      }, console.error)
+    refresh()
+    return window.api.speech.whisper.onProgress((progress) => {
+      if (!progress.finished) {
+        setReceived((r) => ({ ...r, [progress.id]: progress.receivedBytes }))
+        return
+      }
+      setReceived((r) => {
+        const next = { ...r }
+        delete next[progress.id]
+        return next
+      })
+      if (!progress.finished.ok && !progress.finished.cancelled) setErrors((e) => ({ ...e, [progress.id]: (progress.finished as { message: string }).message }))
+      refresh()
+    })
+  }, [])
+
+  async function download(id: WhisperModelId) {
+    setErrors((e) => ({ ...e, [id]: undefined }))
+    setReceived((r) => ({ ...r, [id]: 0 }))
+    const result = await window.api.speech.whisper.download(id)
+    // With nothing downloaded yet, the first model to arrive becomes the one in use.
+    if (result.ok && !status?.models.some((m) => m.downloaded && m.id === settings.whisperModel)) {
+      await updateSettings({ whisperModel: id })
+    }
+  }
+
+  async function remove(id: WhisperModelId) {
+    const result = await window.api.speech.whisper.deleteModel(id)
+    if (!result.ok) setErrors((e) => ({ ...e, [id]: result.error.message }))
+    setStatus(await window.api.speech.whisper.status())
+  }
+
+  if (!status) return null
+  if (!status.engineInstalled) {
+    return <p className="error">The offline engine is not included in this build. Developers: run npm run fetch:whisper.</p>
+  }
+
+  return (
+    <div className="field">
+      <span>Model</span>
+      <p className="hint">
+        This computer: {status.systemSummary}. Recommended: <strong>{status.recommended}</strong>. {status.recommendedReason}
+      </p>
+      <ul className="whisper-models">
+        {status.models.map((model) => {
+          const downloading = received[model.id] !== undefined
+          const fraction = downloading ? (received[model.id] ?? 0) / model.sizeBytes : 0
+          const speed = speedText(settings.whisperSpeed[model.id], model.id)
+          const inUse = settings.whisperModel === model.id
+          return (
+            <li key={model.id} className={`whisper-model${inUse ? ' in-use' : ''}`}>
+              <label className="whisper-model-choice">
+                <input
+                  type="radio"
+                  name="whisper-model"
+                  checked={inUse}
+                  disabled={!model.downloaded}
+                  onChange={() => updateSettings({ whisperModel: model.id })}
+                />
+                <span className="whisper-model-name">
+                  {model.label} <span className="whisper-model-id">{model.id}</span>
+                  {model.id === status.recommended && <span className="badge">Recommended</span>}
+                </span>
+                <span className="whisper-model-size">{megabytes(model.sizeBytes)}</span>
+              </label>
+              <p className="hint">{model.description}</p>
+              {speed ? (
+                <p className={speed.ok ? 'hint speed-ok' : 'error'}>{speed.text}</p>
+              ) : (
+                model.downloaded && <p className="hint">Its speed is measured the first time you listen with it.</p>
+              )}
+              {downloading && (
+                <div className="settings-row">
+                  <progress className="download-progress" max={1} value={fraction} aria-label={`Downloading ${model.label}`} />
+                  <span className="hint">{Math.floor(fraction * 100)}%</span>
+                  <button type="button" className="button" onClick={() => window.api.speech.whisper.cancelDownload(model.id)}>
+                    <X size={15} aria-hidden="true" /> Cancel
+                  </button>
+                </div>
+              )}
+              {!downloading && (
+                <div className="settings-row">
+                  {model.downloaded ? (
+                    <button type="button" className="button" onClick={() => remove(model.id)}>
+                      <Trash2 size={15} aria-hidden="true" /> Delete
+                    </button>
+                  ) : (
+                    <button type="button" className="button" onClick={() => download(model.id).catch(console.error)}>
+                      <Download size={15} aria-hidden="true" /> Download
+                    </button>
+                  )}
+                </div>
+              )}
+              {errors[model.id] && <p className="error">{errors[model.id]}</p>}
+            </li>
+          )
+        })}
+      </ul>
+      <span className="hint">Models are saved in {status.folder}, and each download is checked against its published size and checksum.</span>
+    </div>
+  )
+}
+
 /**
  * Microphone, Deepgram key and transcript saving for the sermon listener. The key is typed here once and goes to the
  * main process; it is never shown again.
@@ -267,43 +413,73 @@ function ListenerSection() {
       </div>
       {micError && <p className="error">{micError}</p>}
 
-      {status && !status.encryptionAvailable && (
+      <div className="field">
+        <span>Speech engine</span>
+        <div className="segmented" role="radiogroup" aria-label="Speech engine">
+          {SPEECH_ENGINES.map((engine) => (
+            <button
+              key={engine.value}
+              type="button"
+              role="radio"
+              aria-checked={settings.speechEngine === engine.value}
+              className={settings.speechEngine === engine.value ? 'active' : ''}
+              onClick={() => updateSettings({ speechEngine: engine.value })}
+            >
+              {engine.icon}
+              {engine.label}
+            </button>
+          ))}
+        </div>
+        <span className="hint">
+          {settings.speechEngine === 'deepgram'
+            ? 'Deepgram transcribes in the cloud: very accurate, needs the internet and an API key.'
+            : 'whisper.cpp transcribes on this computer: nothing leaves it, and no internet is needed once a model is downloaded.'}
+        </span>
+      </div>
+
+      {settings.speechEngine === 'whisper' && <WhisperModels />}
+
+      {settings.speechEngine === 'deepgram' && status && !status.encryptionAvailable && (
         <p className="error">This system cannot encrypt the key (no keychain or keyring), so it cannot be saved.</p>
       )}
-      <form className="field" onSubmit={handleSave}>
-        <label htmlFor="deepgram-key">Deepgram API key</label>
-        <div className="settings-row">
-          <input
-            id="deepgram-key"
-            className="input settings-key"
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={status?.hasKey ? 'A key is saved. Enter a new one to replace it.' : 'Deepgram key'}
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-          />
-          <button type="submit" className="button" disabled={!key.trim() || busy || status?.encryptionAvailable === false}>
-            <KeyRound size={15} aria-hidden="true" /> Save key
-          </button>
-          {status?.hasKey && (
-            <button type="button" className="button" onClick={handleRemove}>
-              <Trash2 size={15} aria-hidden="true" /> Remove
+      {settings.speechEngine === 'deepgram' && (
+        <>
+          <form className="field" onSubmit={handleSave}>
+            <label htmlFor="deepgram-key">Deepgram API key</label>
+            <div className="settings-row">
+              <input
+                id="deepgram-key"
+                className="input settings-key"
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={status?.hasKey ? 'A key is saved. Enter a new one to replace it.' : 'Deepgram key'}
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+              />
+              <button type="submit" className="button" disabled={!key.trim() || busy || status?.encryptionAvailable === false}>
+                <KeyRound size={15} aria-hidden="true" /> Save key
+              </button>
+              {status?.hasKey && (
+                <button type="button" className="button" onClick={handleRemove}>
+                  <Trash2 size={15} aria-hidden="true" /> Remove
+                </button>
+              )}
+            </div>
+            <span className="hint">Encrypted by your operating system and stored on this computer only. It is never shown again.</span>
+          </form>
+          <div className="settings-row">
+            <button type="button" className="button" onClick={handleTest} disabled={busy || !status?.hasKey}>
+              <PlugZap size={15} aria-hidden="true" /> Test connection
             </button>
-          )}
-        </div>
-        <span className="hint">Encrypted by your operating system and stored on this computer only. It is never shown again.</span>
-      </form>
-      <div className="settings-row">
-        <button type="button" className="button" onClick={handleTest} disabled={busy || !status?.hasKey}>
-          <PlugZap size={15} aria-hidden="true" /> Test connection
-        </button>
-        {result && (
-          <span className={result.ok ? 'hint' : 'error'} role="status">
-            {result.text}
-          </span>
-        )}
-      </div>
+            {result && (
+              <span className={result.ok ? 'hint' : 'error'} role="status">
+                {result.text}
+              </span>
+            )}
+          </div>
+        </>
+      )}
 
       <label className="inline-check">
         <input type="checkbox" checked={settings.saveTranscripts} onChange={(e) => updateSettings({ saveTranscripts: e.target.checked })} />

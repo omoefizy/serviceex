@@ -11,6 +11,13 @@
     "dist",
     "dist-electron"
   ],
+  // whisper.cpp's server for the offline sermon listener, from `npm run fetch:whisper`.
+  "extraResources": [
+    {
+      "from": "vendor/whisper/${os}-${arch}",
+      "to": "whisper"
+    }
+  ],
   "mac": {
     "target": [
       "dmg"
