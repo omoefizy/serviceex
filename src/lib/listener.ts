@@ -2,7 +2,7 @@
 // the main process writes it to a file just when "Save transcripts" is on.
 
 import { create } from 'zustand'
-import type { SpeechPerformance, SpeechStatus } from '../../shared/types'
+import type { SpeechMode, SpeechPerformance, SpeechStatus } from '../../shared/types'
 import { useOperatorStore } from '../store'
 import { startMic, type MicCapture } from './mic'
 import { detectScripture } from './scriptureDetection'
@@ -19,6 +19,11 @@ interface ListenerState {
   level: number
   /** How the offline engine is keeping up in this session; null until measured (and for Deepgram). */
   performance: SpeechPerformance | null
+  /** Which engine is transcribing while listening, and why (for the status chip's tooltip). */
+  mode: SpeechMode | null
+  modeReason: string
+  /** Something to show prominently, such as transcription being paused; null when all is well. */
+  warning: string | null
   start(): Promise<void>
   stop(): Promise<void>
   clear(): void
@@ -39,10 +44,13 @@ export const useListener = create<ListenerState>((set, get) => ({
   partial: '',
   level: 0,
   performance: null,
+  mode: null,
+  modeReason: '',
+  warning: null,
 
   async start() {
     if (get().status !== 'idle' && get().status !== 'error') return
-    set({ status: 'starting', error: null, performance: null })
+    set({ status: 'starting', error: null, performance: null, mode: null, modeReason: '', warning: null })
     // Audio captured before the engine is connected waits here, so the first words are not lost.
     let connected = false
     const waiting: ArrayBuffer[] = []
@@ -104,12 +112,16 @@ window.api?.speech.onEvent((event) => {
       detectScripture(event.text).catch(console.error)
       break
     case 'status':
-      set(event.status === 'idle' ? { status: 'idle', partial: '' } : { status: event.status })
+      set(event.status === 'idle' ? { status: 'idle', partial: '', mode: null, warning: null } : { status: event.status })
       // The engine stopped on its own (an error or a dropped connection): let go of the microphone too.
       if (event.status === 'idle' || event.status === 'error') releaseMic()
       break
     case 'error':
       set({ error: event.error.message })
+      break
+    case 'mode':
+      // A switch between engines: words still forming are spoken again by the engine taking over.
+      set({ mode: event.mode, modeReason: event.reason, warning: event.warning, partial: '' })
       break
     case 'performance':
       set({ performance: event.performance })

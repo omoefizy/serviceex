@@ -251,7 +251,7 @@ export interface AppSettings {
   micDeviceId: string | null
   /** Writes each finished line of the live transcript to a file; off keeps the transcript in memory only. */
   saveTranscripts: boolean
-  /** Deepgram in the cloud, or whisper.cpp offline on this computer. */
+  /** Auto (cloud, falling back to offline), cloud only (Deepgram), or offline only (whisper.cpp). */
   speechEngine: SpeechEngineId
   /** The whisper.cpp model the offline engine uses. */
   whisperModel: WhisperModelId
@@ -566,6 +566,9 @@ export interface AiApi {
 
 // ---------- Live sermon listener ----------
 
+/** Which engine is transcribing while listening: Deepgram, whisper.cpp, or neither while the cloud is retried. */
+export type SpeechMode = 'cloud' | 'offline' | 'reconnecting'
+
 /** What the speech engine is doing. The renderer adds 'starting' while it opens the microphone. */
 export type SpeechStatus = 'idle' | 'connecting' | 'listening' | 'stopping' | 'error'
 
@@ -596,6 +599,8 @@ export type SpeechEvent =
   | { type: 'status'; status: SpeechStatus }
   | { type: 'error'; error: SpeechError }
   | { type: 'performance'; performance: SpeechPerformance }
+  /** Which engine is in use and why; `warning` is something to show prominently, null clears it. */
+  | { type: 'mode'; mode: SpeechMode; reason: string; warning: string | null }
 
 /** The Deepgram key goes to the main process once, in setKey, and is never sent back. */
 export interface SpeechApi {
@@ -615,7 +620,8 @@ export interface SpeechApi {
   whisper: WhisperApi
 }
 
-export type SpeechEngineId = 'deepgram' | 'whisper'
+/** Auto uses Deepgram and falls back to whisper.cpp; the others use only one. */
+export type SpeechEngineId = 'auto' | 'deepgram' | 'whisper'
 
 export type WhisperModelId = 'tiny.en' | 'base.en' | 'small.en' | 'small'
 

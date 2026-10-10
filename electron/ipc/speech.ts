@@ -1,10 +1,11 @@
-import { app, ipcMain, systemPreferences, type WebContents } from 'electron'
+import { app, ipcMain, net, systemPreferences, type WebContents } from 'electron'
 import { appendFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
-import type { SpeechEvent, SpeechKeyStatus, SpeechResult, WhisperProgress, WhisperStatus } from '../../shared/types'
+import type { SpeechEvent, SpeechKeyStatus, SpeechPerformance, SpeechResult, WhisperProgress, WhisperStatus } from '../../shared/types'
 import { getAppSettings, setAppSettings } from '../db/settings'
 import { clearSecret, encryptionAvailable, hasSecret, readSecret, saveSecret } from '../secrets'
 import { checkDeepgramKey, DEEPGRAM_MODEL, DeepgramEngine } from '../speech/deepgram'
+import { AutoEngine } from '../speech/auto'
 import { isSpeechError, speechError, type SpeechEngine } from '../speech/engine'
 import { WhisperEngine, whisperServerPath } from '../speech/whisper'
 import {
@@ -27,12 +28,21 @@ let owner: WebContents | null = null
 const transcriptsFolder = () => path.join(app.getPath('userData'), 'transcripts')
 
 /** What stops the chosen engine from starting, or null when it is ready. */
-function notReadyReason(): string | null {
-  const { speechEngine, whisperModel } = getAppSettings()
-  if (speechEngine === 'deepgram') return hasSecret('deepgram-key') ? null : 'Add a Deepgram API key in Settings first.'
+/** Why the offline engine cannot run, or null when it can. */
+function offlineProblem(): string | null {
+  const { whisperModel } = getAppSettings()
   if (!whisperServerPath()) return 'The offline engine is not included in this build.'
   const label = WHISPER_MODELS.find((m) => m.id === whisperModel)?.label ?? whisperModel
   return isDownloaded(whisperModel) ? null : `Download the ${label} model in Settings first.`
+}
+
+function notReadyReason(): string | null {
+  const { speechEngine } = getAppSettings()
+  const hasKey = hasSecret('deepgram-key')
+  if (speechEngine === 'deepgram') return hasKey ? null : 'Add a Deepgram API key in Settings first.'
+  if (speechEngine === 'whisper') return offlineProblem()
+  // Auto needs at least one of the two.
+  return hasKey || !offlineProblem() ? null : 'Add a Deepgram API key or download an offline model in Settings first.'
 }
 
 function status(): SpeechKeyStatus {
@@ -139,23 +149,46 @@ export function registerSpeechIpc(): void {
     }
 
     const { speechEngine, whisperModel } = getAppSettings()
-    let next: SpeechEngine
-    if (speechEngine === 'whisper') {
+    const problem = notReadyReason()
+    if (problem) return { ok: false, error: speechError(speechEngine === 'deepgram' ? 'no_key' : 'engine', problem) }
+    const key = await readSecret('deepgram-key')
+    const reportSpeed = (performance: SpeechPerformance) => {
+      send({ type: 'performance', performance })
+      // Remembered per model, so Settings can show how each one ran on this computer.
+      const speeds = getAppSettings().whisperSpeed
+      setAppSettings({ whisperSpeed: { ...speeds, [performance.model]: performance.realTimeFactor } })
+    }
+    const createLocal = () => {
       const binary = whisperServerPath()
-      const problem = notReadyReason()
-      if (!binary || problem) return { ok: false, error: speechError('engine', problem ?? 'The offline engine is missing.') }
-      const whisper = new WhisperEngine(binary, modelPath(whisperModel), whisperModel)
-      whisper.onPerformance((performance) => {
-        send({ type: 'performance', performance })
-        // Remembered per model, so Settings can show how each one ran on this computer.
-        const speeds = getAppSettings().whisperSpeed
-        setAppSettings({ whisperSpeed: { ...speeds, [performance.model]: performance.realTimeFactor } })
-      })
+      return binary && !offlineProblem() ? new WhisperEngine(binary, modelPath(whisperModel), whisperModel) : null
+    }
+
+    let next: SpeechEngine
+    /** The status chip's mode once listening, for the engines that use only one. */
+    let fixedMode: SpeechEvent | null = null
+    if (speechEngine === 'whisper') {
+      const whisper = createLocal()
+      if (!whisper) return { ok: false, error: speechError('engine', offlineProblem() ?? 'The offline engine is missing.') }
+      whisper.onPerformance(reportSpeed)
       next = whisper
-    } else {
-      const key = await readSecret('deepgram-key')
+      fixedMode = { type: 'mode', mode: 'offline', reason: 'Offline only (whisper.cpp on this computer), as set in Settings.', warning: null }
+    } else if (speechEngine === 'deepgram') {
       if (!key) return { ok: false, error: speechError('no_key', 'Add a Deepgram API key in Settings first.') }
       next = new DeepgramEngine(key)
+      fixedMode = { type: 'mode', mode: 'cloud', reason: 'Cloud only (Deepgram), as set in Settings.', warning: null }
+    } else {
+      const auto = new AutoEngine({
+        hasCloudKey: () => key !== null,
+        createCloud: () => (key ? new DeepgramEngine(key) : null),
+        createLocal,
+        localUnavailable: (offlineProblem() ?? '').toLowerCase().includes('download')
+          ? 'no offline model is downloaded'
+          : 'the offline engine is not available',
+        isOnline: () => net.isOnline(),
+      })
+      auto.onPerformance(reportSpeed)
+      auto.onMode((change) => send({ type: 'mode', ...change }))
+      next = auto
     }
     const save = getAppSettings().saveTranscripts ? await transcriptWriter() : null
     next.onPartial((text) => send({ type: 'partial', text }))
@@ -165,6 +198,7 @@ export function registerSpeechIpc(): void {
     })
     next.onStatus((status) => {
       send({ type: 'status', status })
+      if (status === 'listening' && fixedMode) send(fixedMode)
       if ((status === 'idle' || status === 'error') && engine === next) {
         engine = null
         owner = null
@@ -212,7 +246,7 @@ export function registerSpeechIpc(): void {
   ipcMain.handle('whisper:delete', async (_event, id: unknown): Promise<SpeechResult<null>> => {
     if (!isWhisperModelId(id)) return { ok: false, error: speechError('engine', 'Unknown model.') }
     const { speechEngine, whisperModel } = getAppSettings()
-    if (engine && speechEngine === 'whisper' && whisperModel === id) {
+    if (engine && speechEngine !== 'deepgram' && whisperModel === id) {
       return { ok: false, error: speechError('busy', 'Stop listening before deleting the model in use.') }
     }
     await deleteModel(id)

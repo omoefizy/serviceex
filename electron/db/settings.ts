@@ -15,7 +15,7 @@ const DEFAULTS: AppSettings = {
   autoGoLiveOnNext: false,
   micDeviceId: null,
   saveTranscripts: false,
-  speechEngine: 'deepgram',
+  speechEngine: 'auto',
   whisperModel: 'base.en',
   whisperSpeed: {},
   scriptureDetection: true,
@@ -84,7 +84,7 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'detectionAlert':
       return value === 'off' || value === 'sound' || value === 'flash' ? v : undefined
     case 'speechEngine':
-      return value === 'deepgram' || value === 'whisper' ? v : undefined
+      return value === 'auto' || value === 'deepgram' || value === 'whisper' ? v : undefined
     case 'whisperModel':
       return WHISPER_MODEL_IDS.includes(value as WhisperModelId) ? v : undefined
     case 'whisperSpeed': {

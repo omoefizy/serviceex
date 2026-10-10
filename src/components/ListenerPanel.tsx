@@ -1,24 +1,38 @@
 import { Eraser, Mic, Square } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { SpeechEngineId, SpeechMode } from '../../shared/types'
 import { useListener, type ListenerStatus } from '../lib/listener'
 import { meterFraction } from '../lib/mic'
 import { useOperatorStore } from '../store'
 
-const STATUS_LABELS: Record<ListenerStatus, string> = {
-  idle: 'Not listening',
-  starting: 'Opening microphone',
-  connecting: 'Connecting',
-  listening: 'Listening',
-  stopping: 'Stopping',
-  error: 'Stopped with an error',
+const MODE_LABELS: Record<SpeechMode, string> = { cloud: 'Cloud', offline: 'Offline', reconnecting: 'Reconnecting' }
+
+/** The status chip: Cloud, Offline or Reconnecting while listening; Stopped or Error otherwise; with why as its tooltip. */
+function chipOf(status: ListenerStatus, mode: SpeechMode | null, reason: string, error: string | null): { label: string; tone: string; why: string } {
+  switch (status) {
+    case 'listening':
+      return mode
+        ? { label: MODE_LABELS[mode], tone: mode, why: reason }
+        : { label: 'Listening', tone: 'cloud', why: 'Listening.' }
+    case 'starting':
+    case 'connecting':
+      return { label: 'Starting', tone: 'busy', why: status === 'starting' ? 'Opening the microphone.' : 'Connecting to the speech engine.' }
+    case 'stopping':
+      return { label: 'Stopping', tone: 'busy', why: 'Finishing the last words before stopping.' }
+    case 'error':
+      return { label: 'Error', tone: 'error', why: error ?? 'The listener stopped with an error.' }
+    default:
+      return { label: 'Stopped', tone: 'stopped', why: 'Not listening. Press Start Listening to begin.' }
+  }
 }
+
+const ENGINE_LABELS: Record<SpeechEngineId, string> = { auto: 'Auto', deepgram: 'Cloud only', whisper: 'Offline only' }
 
 /** Start and stop the sermon listener, and watch the live transcript: settled text in white, words still forming in grey. */
 export function ListenerPanel() {
-  const { status, error, finals, partial, level, performance, start, stop, clear } = useListener()
+  const { status, error, finals, partial, level, performance, mode, modeReason, warning, start, stop, clear } = useListener()
   const openSettings = useOperatorStore((s) => s.openSettings)
   const saving = useOperatorStore((s) => s.settings.saveTranscripts)
-  const offline = useOperatorStore((s) => s.settings.speechEngine === 'whisper')
   const speechEngine = useOperatorStore((s) => s.settings.speechEngine)
   const whisperModel = useOperatorStore((s) => s.settings.whisperModel)
   /** What is missing before listening can start, or null when ready. */
@@ -37,15 +51,19 @@ export function ListenerPanel() {
   }, [finals, partial])
 
   const running = status === 'starting' || status === 'connecting' || status === 'listening'
+  const chip = chipOf(status, mode, modeReason, error)
 
   return (
     <section className="panel listener-panel" aria-label="Sermon listener">
       <header className="panel-header">
         <h2>Listener</h2>
-        <span className="listener-engine">{offline ? `Offline · ${whisperModel}` : 'Deepgram'}</span>
-        <span className={`listener-status ${status}`} role="status">
+        <span className="listener-engine">
+          {ENGINE_LABELS[speechEngine]}
+          {speechEngine !== 'deepgram' && ` · ${whisperModel}`}
+        </span>
+        <span className={`listener-status ${chip.tone}`} role="status" title={chip.why} aria-label={`${chip.label}: ${chip.why}`}>
           <span className="listener-dot" aria-hidden="true" />
-          {offline && status === 'connecting' ? 'Loading model' : STATUS_LABELS[status]}
+          {chip.label}
         </span>
       </header>
 
@@ -83,6 +101,11 @@ export function ListenerPanel() {
           {performance.keepingUp ? 'Keeping up' : 'Falling behind'} · {performance.realTimeFactor.toFixed(2)}× real time
           {performance.backlogSeconds > 0 && ` · ${performance.backlogSeconds} s waiting`}
           {performance.suggestion && ` · try ${performance.suggestion} in Settings`}
+        </p>
+      )}
+      {warning && running && (
+        <p className="listener-warning" role="alert">
+          {warning}
         </p>
       )}
       {error && <p className="error">{error}</p>}

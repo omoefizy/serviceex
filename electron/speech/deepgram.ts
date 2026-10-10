@@ -18,7 +18,21 @@ const CLOSE_TIMEOUT_MS = 5000
 interface ResultsMessage {
   type: 'Results'
   is_final?: boolean
-  channel?: { alternatives?: { transcript?: string }[] }
+  speech_final?: boolean
+  start?: number
+  duration?: number
+  channel?: { alternatives?: { transcript?: string; words?: { word: string; punctuated_word?: string; start: number; end: number }[] }[] }
+}
+
+/** One Results message with its timing, in seconds from the start of the audio sent on this connection. */
+export interface DeepgramResult {
+  isFinal: boolean
+  /** Deepgram heard the end of an utterance: a pause. */
+  speechFinal: boolean
+  start: number
+  end: number
+  transcript: string
+  words: { text: string; start: number; end: number }[]
 }
 
 /** Asks Deepgram about the key itself, to tell a rejected key from a network problem. */
@@ -39,12 +53,27 @@ export class DeepgramEngine extends EngineEvents implements SpeechEngine {
   private queue: Uint8Array[] = []
   private keepAlive: ReturnType<typeof setInterval> | null = null
   private lastSentAt = 0
+  /** When Deepgram last sent anything; a stream that goes quiet while audio flows has failed. */
+  lastMessageAt = 0
+  private resultListeners = new Set<(result: DeepgramResult) => void>()
   private stopping = false
   /** Resolves stop() once the session has ended. */
   private closed: (() => void) | null = null
 
   constructor(private readonly apiKey: string) {
     super()
+  }
+
+  /** Every Results message with timings and words, for the Auto engine's hand-overs. */
+  onResult(listener: (result: DeepgramResult) => void) {
+    this.resultListeners.add(listener)
+    return () => void this.resultListeners.delete(listener)
+  }
+
+  /** Drops the connection at once, without waiting for the last results (they are no longer wanted). */
+  abort(): void {
+    this.stopping = true
+    this.socket?.close()
   }
 
   start(): Promise<void> {
@@ -96,6 +125,7 @@ export class DeepgramEngine extends EngineEvents implements SpeechEngine {
       }
       socket.addEventListener('open', () => {
         opened = true
+        this.lastMessageAt = Date.now()
         for (const chunk of this.queue) this.send(chunk)
         this.queue = []
         this.keepAlive = setInterval(() => {
@@ -156,13 +186,27 @@ export class DeepgramEngine extends EngineEvents implements SpeechEngine {
     } catch {
       return
     }
+    this.lastMessageAt = Date.now()
     if (message.type === 'Error') {
       this.emitError(speechError('engine', message.description ?? 'Deepgram reported an error.'))
       return
     }
     if (message.type !== 'Results') return
     const results = message as ResultsMessage
-    const text = results.channel?.alternatives?.[0]?.transcript?.trim() ?? ''
+    const best = results.channel?.alternatives?.[0]
+    const text = best?.transcript?.trim() ?? ''
+    if (this.resultListeners.size > 0) {
+      const start = results.start ?? 0
+      const result: DeepgramResult = {
+        isFinal: !!results.is_final,
+        speechFinal: !!results.speech_final,
+        start,
+        end: start + (results.duration ?? 0),
+        transcript: text,
+        words: (best?.words ?? []).map((w) => ({ text: w.punctuated_word ?? w.word, start: w.start, end: w.end })),
+      }
+      for (const listener of this.resultListeners) listener(result)
+    }
     if (results.is_final) {
       if (text) this.emitFinal(text)
       else this.emitPartial('')

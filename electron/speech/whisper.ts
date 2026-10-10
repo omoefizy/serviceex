@@ -134,6 +134,11 @@ export class WhisperEngine extends EngineEvents implements SpeechEngine {
     super()
   }
 
+  /** Carries on from text another engine wrote, for the prompt and for trimming repeated words. */
+  continueFrom(text: string) {
+    this.lastText = text
+  }
+
   /** How fast it transcribes compared with speech: first after 15 seconds of audio, then every 30 seconds. */
   onPerformance(listener: (performance: SpeechPerformance) => void) {
     this.performanceListeners.add(listener)

@@ -205,7 +205,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     autoGoLiveOnNext: false,
     micDeviceId: null,
     saveTranscripts: false,
-    speechEngine: 'deepgram',
+    speechEngine: 'auto',
     whisperModel: 'base.en',
     whisperSpeed: {},
     scriptureDetection: true,

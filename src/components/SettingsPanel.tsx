@@ -13,6 +13,7 @@ import {
   Moon,
   Palette,
   PlugZap,
+  RefreshCw,
   Save,
   Sparkles,
   Sun,
@@ -171,9 +172,27 @@ function AiSection() {
   )
 }
 
-const SPEECH_ENGINES: { value: SpeechEngineId; label: string; icon: ReactNode }[] = [
-  { value: 'deepgram', label: 'Deepgram (cloud)', icon: <Cloud size={15} aria-hidden="true" /> },
-  { value: 'whisper', label: 'Whisper (offline)', icon: <HardDrive size={15} aria-hidden="true" /> },
+const SPEECH_ENGINES: { value: SpeechEngineId; label: string; icon: ReactNode; hint: string }[] = [
+  {
+    value: 'auto',
+    label: 'Auto',
+    icon: <RefreshCw size={15} aria-hidden="true" />,
+    hint:
+      'Uses Deepgram in the cloud, and switches to whisper.cpp on this computer if the connection drops, without losing words. ' +
+      'It goes back to the cloud once the connection has been stable for 20 seconds. Set up both below.',
+  },
+  {
+    value: 'deepgram',
+    label: 'Cloud only',
+    icon: <Cloud size={15} aria-hidden="true" />,
+    hint: 'Deepgram transcribes in the cloud: very accurate, needs the internet and an API key.',
+  },
+  {
+    value: 'whisper',
+    label: 'Offline only',
+    icon: <HardDrive size={15} aria-hidden="true" />,
+    hint: 'whisper.cpp transcribes on this computer: nothing leaves it, and no internet is needed once a model is downloaded.',
+  },
 ]
 
 const megabytes = (bytes: number) => `${Math.round(bytes / 1_000_000)} MB`
@@ -432,18 +451,16 @@ function ListenerSection() {
           ))}
         </div>
         <span className="hint">
-          {settings.speechEngine === 'deepgram'
-            ? 'Deepgram transcribes in the cloud: very accurate, needs the internet and an API key.'
-            : 'whisper.cpp transcribes on this computer: nothing leaves it, and no internet is needed once a model is downloaded.'}
+          {SPEECH_ENGINES.find((e) => e.value === settings.speechEngine)?.hint}
         </span>
       </div>
 
-      {settings.speechEngine === 'whisper' && <WhisperModels />}
+      {settings.speechEngine !== 'deepgram' && <WhisperModels />}
 
-      {settings.speechEngine === 'deepgram' && status && !status.encryptionAvailable && (
+      {settings.speechEngine !== 'whisper' && status && !status.encryptionAvailable && (
         <p className="error">This system cannot encrypt the key (no keychain or keyring), so it cannot be saved.</p>
       )}
-      {settings.speechEngine === 'deepgram' && (
+      {settings.speechEngine !== 'whisper' && (
         <>
           <form className="field" onSubmit={handleSave}>
             <label htmlFor="deepgram-key">Deepgram API key</label>

@@ -948,20 +948,37 @@ button {
   background: currentColor;
 }
 
-.listener-status.listening {
+/* Cloud green, Offline blue, Reconnecting and in-between states amber, Error red, Stopped grey. */
+.listener-status.cloud {
   border-color: var(--mode-show);
   color: var(--mode-show);
 }
 
-.listener-status.listening .listener-dot {
+.listener-status.offline {
+  border-color: var(--next);
+  color: var(--next);
+}
+
+.listener-status.cloud .listener-dot,
+.listener-status.offline .listener-dot {
   animation: listener-pulse 1.4s ease-in-out infinite;
 }
 
-.listener-status.starting,
-.listener-status.connecting,
-.listener-status.stopping {
+.listener-status.reconnecting,
+.listener-status.busy {
   border-color: #f59e0b;
   color: #f59e0b;
+}
+
+/* Something the operator must know, such as transcription being paused. */
+.listener-warning {
+  margin: 0;
+  padding: var(--space-2) var(--space-2-5);
+  border: 1px solid #f59e0b;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.12);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .listener-status.error {
@@ -976,7 +993,7 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .listener-status.listening .listener-dot {
+  .listener-status .listener-dot {
     animation: none;
   }
 }
