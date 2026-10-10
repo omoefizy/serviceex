@@ -17,8 +17,16 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import type { BibleVersionCode } from '../../shared/types'
 import { formatReference, parseReference } from '../../shared/parseReference'
+import {
+  bookNeeded,
+  isKeywordQuery,
+  loadBookStructure,
+  referenceVersion,
+  savedVersionFilter,
+  searchVersions,
+  suggestReferences,
+} from '../lib/referenceSuggestions'
 import { loadScripture } from '../lib/scripture'
 import { MOD } from '../lib/shortcuts'
 import { useOperatorStore } from '../store'
@@ -31,9 +39,10 @@ interface Command {
   shortcut?: string
   icon: LucideIcon
   run(): void | Promise<unknown>
+  /** Choosing it fills the box with this instead of running (a book or chapter while typing a reference). */
+  complete?: string
 }
 
-const VERSIONS: BibleVersionCode[] = ['KJV', 'WEB']
 const MAX_RESULTS = 8
 
 /** The fixed actions; reads the store when run, so it never holds stale state. */
@@ -74,6 +83,9 @@ export function CommandPalette() {
   const [query, setQuery] = useState('')
   /** Songs and verses, with the query they answer, so results for older text are never shown or run. */
   const [found, setFound] = useState<{ query: string; commands: Command[] }>({ query: '', commands: [] })
+  /** The input the user chose to search as words, as the Scripture tab's "Search verses for" does. */
+  const [forceText, setForceText] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLUListElement>(null)
   const close = () => setPaletteOpen(false)
@@ -108,33 +120,70 @@ export function CommandPalette() {
           })
         }
 
-        const reference = parseReference(q)
-        if (reference) {
-          for (const version of VERSIONS) {
+        // The same search as the Scripture tab: reference suggestions, else the full-text index.
+        const filter = savedVersionFilter()
+        const asText = forceText === query
+        // The box as typed: a trailing space after a book name moves on to its chapters.
+        if (!asText && !isKeywordQuery(query)) {
+          const book = bookNeeded(query)
+          const structures = book ? { [book]: await loadBookStructure(book) } : {}
+          const suggestions = suggestReferences(query, structures, MAX_RESULTS)
+          // A complete reference such as "ps 23" opens straight away, as Enter does in the Scripture tab.
+          const parsed = parseReference(query)
+          if (parsed && suggestions[0]?.kind === 'chapter') {
+            const version = referenceVersion(filter)
             results.push({
-              id: `ref-${version}`,
+              id: 'ref-open',
               group: 'Scripture',
-              label: `${formatReference(reference)} ${version}`,
+              label: `${formatReference(parsed)} ${version}`,
+              detail: parsed.verseStart === null ? 'whole chapter' : undefined,
               icon: BookOpen,
               run: async () => {
-                if (!(await loadScripture(reference, version))) throw new Error(`${formatReference(reference)} is not in the ${version}`)
+                if (!(await loadScripture(parsed, version))) throw new Error(`${formatReference(parsed)} is not in the ${version}`)
                 st().showGrid()
               },
             })
           }
-        } else if (q.length >= 4) {
-          // Not a reference, so look for the words in the KJV.
-          const verses = await window.api.bible.searchText('KJV', q)
-          for (const v of verses.slice(0, MAX_RESULTS)) {
-            const ref = { book: v.book, chapter: v.chapter, verseStart: v.verse, verseEnd: v.verse }
+          for (const suggestion of suggestions.slice(0, MAX_RESULTS - results.filter((r) => r.group === 'Scripture').length)) {
+            const base = { id: `ref-${suggestion.kind}-${suggestion.label}`, group: 'Scripture' as const, icon: BookOpen }
+            if (suggestion.kind === 'book') results.push({ ...base, label: suggestion.label, complete: `${suggestion.book} `, run: () => {} })
+            else if (suggestion.kind === 'chapter') {
+              results.push({ ...base, label: suggestion.label, complete: `${suggestion.book} ${suggestion.chapter}:`, run: () => {} })
+            } else if (suggestion.kind === 'text') {
+              results.push({ ...base, label: suggestion.label, complete: query, run: () => setForceText(query) })
+            } else {
+              const version = referenceVersion(filter)
+              results.push({
+                ...base,
+                label: `${suggestion.label.replace(' (whole chapter)', '')} ${version}`,
+                detail: suggestion.kind === 'wholeChapter' ? 'whole chapter' : undefined,
+                run: async () => {
+                  if (!(await loadScripture(suggestion.ref, version))) throw new Error(`${suggestion.label} is not in the ${version}`)
+                  st().showGrid()
+                },
+              })
+            }
+          }
+        } else if (q.length >= 2) {
+          const { hits } = await window.api.bible.search({
+            // As typed: a trailing space marks the last word finished, so it is not matched as a prefix.
+            query,
+            versions: searchVersions(filter),
+            testament: 'all',
+            book: null,
+            offset: 0,
+            limit: MAX_RESULTS,
+          })
+          for (const hit of hits) {
+            const ref = { book: hit.book, chapter: hit.chapter, verseStart: hit.verse, verseEnd: hit.verse }
             results.push({
-              id: `verse-${v.book}-${v.chapter}-${v.verse}`,
+              id: `verse-${hit.id}`,
               group: 'Scripture',
-              label: `${v.book} ${v.chapter}:${v.verse}`,
-              detail: v.text,
+              label: `${hit.book} ${hit.chapter}:${hit.verse} ${hit.version}`,
+              detail: hit.text,
               icon: BookOpen,
               run: async () => {
-                await loadScripture(ref, 'KJV')
+                await loadScripture(ref, hit.version)
                 st().showGrid()
               },
             })
@@ -149,7 +198,7 @@ export function CommandPalette() {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [query])
+  }, [query, forceText])
 
   // Songs and verses first when searching; actions first when the box is empty.
   const current = found.query === query.trim() ? found.commands : []
@@ -163,6 +212,13 @@ export function CommandPalette() {
 
   async function run(command: Command | undefined) {
     if (!command) return
+    // A book or chapter fills the box and keeps the palette open, like the Scripture tab's suggestions.
+    if (command.complete !== undefined) {
+      command.run()
+      setQuery(command.complete)
+      inputRef.current?.focus()
+      return
+    }
     close()
     try {
       await command.run()
@@ -181,6 +237,9 @@ export function CommandPalette() {
     } else if (e.key === 'Enter') {
       e.preventDefault()
       run(commands[activeIndex])
+    } else if (e.key === 'Tab' && commands[activeIndex]?.complete !== undefined) {
+      e.preventDefault()
+      run(commands[activeIndex])
     } else if (e.key === 'Escape') {
       e.preventDefault()
       close()
@@ -195,6 +254,7 @@ export function CommandPalette() {
         <div className="palette-input">
           <Search size={18} aria-hidden="true" />
           <input
+            ref={inputRef}
             autoFocus
             placeholder="Search songs, verses (jn 3:16) or actions"
             value={query}

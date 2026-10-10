@@ -6,35 +6,36 @@ import {
   NEW_TESTAMENT_BOOKS,
   OLD_TESTAMENT_BOOKS,
   parseReference,
-  readReferenceInput,
   type ScriptureReference,
 } from '../../shared/parseReference'
 import type { AiError, BibleVersionCode, ScripturePayload, Testament } from '../../shared/types'
 import { loadScripture, type ResultItem } from '../lib/scripture'
+import {
+  bookNeeded,
+  isKeywordQuery,
+  isVersionFilter,
+  loadBookStructure,
+  referenceVersion as referenceVersionOf,
+  SCRIPTURE_VERSION_KEY,
+  searchVersions,
+  suggestReferences,
+  type BookStructures,
+  type ReferenceSuggestion,
+  type VersionFilter,
+} from '../lib/referenceSuggestions'
 import { usePersistentState } from '../lib/usePersistentState'
 import { useVerseSearch } from '../lib/useVerseSearch'
 import { useOperatorStore } from '../store'
 import { AiButton } from './AiButton'
 import { VerseResults } from './VerseResults'
 
-type VersionFilter = BibleVersionCode | 'both'
-
 const DEBOUNCE_MS = 120
 const MAX_RECENT = 8
-const MAX_SUGGESTIONS = 40
 /** Past the end of the longest chapter, so a chapter-only reference reads the whole chapter. */
 const LAST_VERSE = 999
 
-type Suggestion =
-  | { kind: 'book'; label: string; book: string }
-  | { kind: 'chapter'; label: string; book: string; chapter: number }
-  | { kind: 'wholeChapter'; label: string; ref: ScriptureReference }
-  | { kind: 'verse'; label: string; ref: ScriptureReference }
-  | { kind: 'reference'; label: string; ref: ScriptureReference }
-  /** Searches the words instead, for inputs that are also book names, such as "job" or "mark". */
-  | { kind: 'text'; label: string }
+type Suggestion = ReferenceSuggestion
 
-const isVersionFilter = (v: unknown): v is VersionFilter => v === 'KJV' || v === 'WEB' || v === 'both'
 const isStringList = (v: unknown): v is string[] => Array.isArray(v) && v.every((s) => typeof s === 'string')
 
 /** One search box, all local: references with book, chapter and verse suggestions, or full-text search. */
@@ -45,12 +46,12 @@ export function ScripturePanel() {
   const [forceText, setForceText] = useState<string | null>(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [active, setActive] = useState(-1)
-  const [version, setVersion] = usePersistentState<VersionFilter>('worshipdeck.scripture.version', 'KJV', isVersionFilter)
+  const [version, setVersion] = usePersistentState<VersionFilter>(SCRIPTURE_VERSION_KEY, 'KJV', isVersionFilter)
   const [testament, setTestament] = useState<Testament>('all')
   const [bookFilter, setBookFilter] = useState<string | null>(null)
   const [recent, setRecent] = usePersistentState<string[]>('worshipdeck.scripture.recent', [], isStringList)
   /** Verses per chapter, by book, from the database. */
-  const [structure, setStructure] = useState<Record<string, number[]>>({})
+  const [structure, setStructure] = useState<BookStructures>({})
   const [loaded, setLoaded] = useState<ScriptureReference | null>(null)
   /** The passage last loaded into the grid, ready to add to the schedule. */
   const [result, setResult] = useState<ScripturePayload | null>(null)
@@ -64,9 +65,8 @@ export function ScripturePanel() {
   const service = useOperatorStore((s) => s.service)
   const addToSchedule = useOperatorStore((s) => s.addToSchedule)
 
-  const versions: BibleVersionCode[] = version === 'both' ? ['KJV', 'WEB'] : [version]
-  /** References open in one version; with "Both" that is the KJV. */
-  const referenceVersion: BibleVersionCode = version === 'both' ? 'KJV' : version
+  const versions = searchVersions(version)
+  const referenceVersion = referenceVersionOf(version)
 
   useEffect(() => {
     window.api.bible.listBooks().then(
@@ -81,55 +81,20 @@ export function ScripturePanel() {
     return () => clearTimeout(timer)
   }, [input])
 
-  const reading = forceText === query ? null : readReferenceInput(query)
-  const parsed = forceText === query ? null : parseReference(query)
-  const textMode = query.trim().length >= 2 && !reading && !parsed
-  const readingBook = reading && reading.stage !== 'book' ? reading.book : null
+  const asText = forceText === query
+  const textMode = asText ? query.trim().length >= 2 : isKeywordQuery(query)
+  const readingBook = asText ? null : bookNeeded(query)
 
   // Chapter and verse counts for the book being typed.
   useEffect(() => {
     if (!readingBook || structure[readingBook]) return
-    window.api.bible.bookStructure(readingBook).then(
+    loadBookStructure(readingBook).then(
       (counts) => setStructure((current) => ({ ...current, [readingBook]: counts })),
       console.error,
     )
   }, [readingBook, structure])
 
-  const suggestions = useMemo((): Suggestion[] => {
-    if (query.trim().length < 2) return []
-    if (reading?.stage === 'book') {
-      const books: Suggestion[] = reading.books.slice(0, 12).map((book) => ({ kind: 'book', label: book, book }))
-      return [...books, { kind: 'text', label: `Search verses for “${query.trim()}”` }]
-    }
-    if (reading?.stage === 'chapter') {
-      const counts = structure[reading.book] ?? []
-      return counts
-        .map((_, i) => i + 1)
-        .filter((chapter) => String(chapter).startsWith(reading.chapterPrefix))
-        .slice(0, MAX_SUGGESTIONS)
-        .map((chapter) => ({ kind: 'chapter', label: `${reading.book} ${chapter}`, book: reading.book, chapter }))
-    }
-    if (reading?.stage === 'verse') {
-      const count = structure[reading.book]?.[reading.chapter - 1] ?? 0
-      const verses: Suggestion[] = Array.from({ length: count }, (_, i) => i + 1)
-        .filter((verse) => String(verse).startsWith(reading.versePrefix))
-        .slice(0, MAX_SUGGESTIONS)
-        .map((verse) => ({
-          kind: 'verse',
-          label: `${reading.book} ${reading.chapter}:${verse}`,
-          ref: { book: reading.book, chapter: reading.chapter, verseStart: verse, verseEnd: verse },
-        }))
-      if (count === 0 || reading.versePrefix) return verses
-      const whole: Suggestion = {
-        kind: 'wholeChapter',
-        label: `${reading.book} ${reading.chapter} (whole chapter)`,
-        ref: { book: reading.book, chapter: reading.chapter, verseStart: null, verseEnd: null },
-      }
-      return [whole, ...verses]
-    }
-    if (parsed) return [{ kind: 'reference', label: formatReference(parsed), ref: parsed }]
-    return []
-  }, [query, reading, parsed, structure])
+  const suggestions = useMemo(() => (asText ? [] : suggestReferences(query, structure)), [asText, query, structure])
 
   const showDropdown = dropdownOpen && suggestions.length > 0 && input === query
   const search = useVerseSearch(textMode ? query : null, { versions, testament, book: bookFilter })
