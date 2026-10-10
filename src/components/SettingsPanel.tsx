@@ -1,6 +1,21 @@
-import { FolderOpen, HardDriveDownload, Image, Monitor, Moon, Palette, Save, Sun, SunMoon, Trash2, X } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
-import type { AppSettings, DisplayInfo, OutputDisplay } from '../../shared/types'
+import {
+  FolderOpen,
+  HardDriveDownload,
+  Image,
+  KeyRound,
+  Monitor,
+  Moon,
+  Palette,
+  PlugZap,
+  Save,
+  Sparkles,
+  Sun,
+  SunMoon,
+  Trash2,
+  X,
+} from 'lucide-react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import type { AiModel, AiStatus, AppSettings, DisplayInfo, OutputDisplay } from '../../shared/types'
 import { useOperatorStore } from '../store'
 import { ThemeDefaultsForm } from './ThemeEditor'
 
@@ -28,6 +43,115 @@ const INTERVALS: { value: AppSettings['backupIntervalMinutes']; label: string }[
   { value: 30, label: 'Every 30 minutes' },
   { value: 60, label: 'Every hour' },
 ]
+
+const AI_MODELS: { value: AiModel; label: string }[] = [
+  { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (recommended)' },
+  { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 (faster and cheaper)' },
+]
+
+/** API key, model and an off switch. The key is typed here once and goes to the main process; it is never shown again. */
+function AiSection() {
+  const settings = useOperatorStore((s) => s.settings)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const [status, setStatus] = useState<AiStatus | null>(null)
+  const [key, setKey] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
+
+  useEffect(() => {
+    window.api.ai.status().then(setStatus, console.error)
+  }, [settings.aiEnabled, settings.aiModel])
+
+  async function handleSave(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setResult(null)
+    const saved = await window.api.ai.setKey(key)
+    // Drop the typed key from the page either way.
+    setKey('')
+    setBusy(false)
+    if (saved.ok) {
+      setStatus(saved.value)
+      setResult({ ok: true, text: 'Key saved and encrypted.' })
+    } else {
+      setResult({ ok: false, text: saved.error.message })
+    }
+  }
+
+  async function handleRemove() {
+    setStatus(await window.api.ai.clearKey())
+    setResult({ ok: true, text: 'Key removed.' })
+  }
+
+  async function handleTest() {
+    setBusy(true)
+    setResult(null)
+    const tested = await window.api.ai.testConnection()
+    setBusy(false)
+    setResult(tested.ok ? { ok: true, text: `Connected. ${tested.value.model} is ready.` } : { ok: false, text: tested.error.message })
+  }
+
+  return (
+    <Section icon={<Sparkles size={16} aria-hidden="true" />} title="AI">
+      <label className="inline-check">
+        <input type="checkbox" checked={settings.aiEnabled} onChange={(e) => updateSettings({ aiEnabled: e.target.checked })} />
+        Use AI features
+      </label>
+      <p className="hint">When this is off, WorshipDeck sends nothing to Anthropic.</p>
+
+      {status && !status.encryptionAvailable && (
+        <p className="error">This system cannot encrypt the key (no keychain or keyring), so it cannot be saved.</p>
+      )}
+
+      <form className="field" onSubmit={handleSave}>
+        <label htmlFor="ai-key">Anthropic API key</label>
+        <div className="settings-row">
+          <input
+            id="ai-key"
+            className="input settings-key"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={status?.hasKey ? 'A key is saved. Enter a new one to replace it.' : 'sk-ant-…'}
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+          />
+          <button type="submit" className="button" disabled={!key.trim() || busy || status?.encryptionAvailable === false}>
+            <KeyRound size={15} aria-hidden="true" /> Save key
+          </button>
+          {status?.hasKey && (
+            <button type="button" className="button" onClick={handleRemove}>
+              <Trash2 size={15} aria-hidden="true" /> Remove
+            </button>
+          )}
+        </div>
+        <span className="hint">Encrypted by your operating system and stored on this computer only. It is never shown again.</span>
+      </form>
+
+      <label className="field">
+        <span>Model</span>
+        <select className="input" value={settings.aiModel} onChange={(e) => updateSettings({ aiModel: e.target.value as AiModel })}>
+          {AI_MODELS.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="settings-row">
+        <button className="button" onClick={handleTest} disabled={busy || !status?.hasKey || !settings.aiEnabled}>
+          <PlugZap size={15} aria-hidden="true" /> Test connection
+        </button>
+        {result && (
+          <span className={result.ok ? 'hint' : 'error'} role="status">
+            {result.text}
+          </span>
+        )}
+      </div>
+    </Section>
+  )
+}
 
 export function SettingsPanel() {
   const settings = useOperatorStore((s) => s.settings)
@@ -142,6 +266,8 @@ export function SettingsPanel() {
       <Section icon={<Palette size={16} aria-hidden="true" />} title="Default themes">
         <ThemeDefaultsForm />
       </Section>
+
+      <AiSection />
 
       <Section icon={<Save size={16} aria-hidden="true" />} title="Autosave and backups">
         <label className="inline-check">

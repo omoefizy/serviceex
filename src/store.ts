@@ -135,6 +135,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     backupFolder: null,
     backupIntervalMinutes: 0,
     lastBackupAt: null,
+    aiEnabled: true,
+    aiModel: 'claude-sonnet-5-5',
   },
   themes: [],
   themeDefaults: null,

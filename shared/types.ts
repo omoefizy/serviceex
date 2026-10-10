@@ -240,6 +240,9 @@ export interface AppSettings {
   backupIntervalMinutes: 0 | 10 | 30 | 60
   /** When the last backup finished (ISO time), set by the main process. */
   lastBackupAt: string | null
+  /** Turns every AI feature off; when false the main process makes no AI requests at all. */
+  aiEnabled: boolean
+  aiModel: AiModel
 }
 
 export interface DisplayInfo {
@@ -399,10 +402,84 @@ export interface WorshipDeckApi {
   media: MediaApi
   settings: SettingsApi
   stage: StageApi
+  ai: AiApi
   output: {
     /** Sends the operator's output state to the output window. */
     send(state: OutputState): void
     /** Subscribe to output state changes. Returns an unsubscribe function. */
     onState(listener: (state: OutputState) => void): () => void
   }
+}
+
+// ---------- AI ----------
+
+/** Sonnet 5.5 by default; Haiku 5.5 is faster and cheaper. */
+export type AiModel = 'claude-sonnet-5-5' | 'claude-haiku-5-5'
+
+/**
+ * Every AI task, with the input the renderer sends and the output it gets back. The main process holds the
+ * prompts; the renderer only names a task and passes its input.
+ */
+export interface AiTasks {
+  /** Tidies pasted lyrics into [Section] labels with a blank line between slides. */
+  formatLyrics: { input: { lyrics: string }; output: { lyrics: string } }
+  /** Suggests Bible passages for a sermon or service theme. */
+  suggestScripture: {
+    input: { theme: string }
+    output: { suggestions: { reference: string; reason: string }[] }
+  }
+  /** Turns rough notes into an announcement title and short slide text. */
+  writeAnnouncement: { input: { notes: string }; output: { title: string; body: string } }
+}
+
+export type AiTask = keyof AiTasks
+
+export type AiErrorCode =
+  /** AI is switched off in Settings. */
+  | 'disabled'
+  /** No API key has been saved. */
+  | 'no_key'
+  /** The key was rejected or lacks access. */
+  | 'invalid_key'
+  /** No internet connection, or Anthropic could not be reached. */
+  | 'offline'
+  | 'rate_limited'
+  /** Anthropic is overloaded or had a server error; try again shortly. */
+  | 'unavailable'
+  /** The account has a billing problem. */
+  | 'billing'
+  /** The model declined the request. */
+  | 'refused'
+  /** The input was too long, malformed, or the answer could not be used. */
+  | 'bad_request'
+  /** This system cannot encrypt the key, so it is not stored. */
+  | 'no_encryption'
+
+export interface AiError {
+  code: AiErrorCode
+  /** A sentence to show the operator. */
+  message: string
+  /** For rate limits: how long Anthropic asked to wait. */
+  retryAfterSeconds?: number
+}
+
+export type AiResult<T> = { ok: true; value: T } | { ok: false; error: AiError }
+
+export interface AiStatus {
+  enabled: boolean
+  model: AiModel
+  /** Whether an encrypted key is saved; the key itself never leaves the main process. */
+  hasKey: boolean
+  /** Whether the OS can encrypt the key (Keychain, DPAPI, or a Linux keyring). */
+  encryptionAvailable: boolean
+}
+
+export interface AiApi {
+  status(): Promise<AiStatus>
+  /** Encrypts and stores the key. The renderer sends it once, here, and can never read it back. */
+  setKey(key: string): Promise<AiResult<AiStatus>>
+  clearKey(): Promise<AiStatus>
+  /** Checks the saved key can reach the chosen model. Resolves to the model's display name. */
+  testConnection(): Promise<AiResult<{ model: string }>>
+  ask<T extends AiTask>(task: T, input: AiTasks[T]['input']): Promise<AiResult<AiTasks[T]['output']>>
 }

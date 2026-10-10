@@ -1,5 +1,6 @@
 import { ipcRenderer, contextBridge, webUtils } from 'electron'
 import type {
+  AiApi,
   BibleApi,
   MediaApi,
   OutputState,
@@ -129,5 +130,14 @@ const output: WorshipDeckApi['output'] = {
   },
 }
 
-const api: WorshipDeckApi = { songs, bible, services, songFiles, themes, media, settings, stage, output }
+// The API key goes to the main process once, in setKey, and is never sent back.
+const ai: AiApi = {
+  status: () => ipcRenderer.invoke('ai:status'),
+  setKey: (key) => ipcRenderer.invoke('ai:setKey', key),
+  clearKey: () => ipcRenderer.invoke('ai:clearKey'),
+  testConnection: () => ipcRenderer.invoke('ai:test'),
+  ask: (task, input) => ipcRenderer.invoke('ai:ask', task, input),
+}
+
+const api: WorshipDeckApi = { songs, bible, services, songFiles, themes, media, settings, stage, ai, output }
 contextBridge.exposeInMainWorld('api', api)

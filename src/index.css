@@ -1931,6 +1931,11 @@ button {
   white-space: nowrap;
 }
 
+.settings-key {
+  flex: 1;
+  min-width: 200px;
+}
+
 .settings-logo {
   display: flex;
   flex-wrap: wrap;

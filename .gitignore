@@ -8,6 +8,10 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+# Secrets: environment files, and the encrypted Anthropic key (it lives in the app's data folder, never here)
+.env
+.env.*
+anthropic-key.enc
 # Bible text downloaded by `npm run import:bible`
 data/bible
 dist

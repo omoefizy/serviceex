@@ -10,6 +10,8 @@ const DEFAULTS: AppSettings = {
   backupFolder: null,
   backupIntervalMinutes: 0,
   lastBackupAt: null,
+  aiEnabled: true,
+  aiModel: 'claude-sonnet-5-5',
 }
 
 export const FADE_LIMITS = { min: 0, max: 1500 }
@@ -24,6 +26,8 @@ const KEYS: Record<keyof AppSettings, string> = {
   backupFolder: 'backup.folder',
   backupIntervalMinutes: 'backup.intervalMinutes',
   lastBackupAt: 'backup.lastAt',
+  aiEnabled: 'ai.enabled',
+  aiModel: 'ai.model',
 }
 
 /** Checks one value, returning undefined for anything unusable so the default applies. */
@@ -41,7 +45,10 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'appearance':
       return ['system', 'dark', 'light'].includes(value as string) ? v : undefined
     case 'autosaveDrafts':
+    case 'aiEnabled':
       return typeof value === 'boolean' ? v : undefined
+    case 'aiModel':
+      return value === 'claude-sonnet-5-5' || value === 'claude-haiku-5-5' ? v : undefined
     case 'backupFolder':
     case 'lastBackupAt':
       return value === null || (typeof value === 'string' && value !== '') ? v : undefined
