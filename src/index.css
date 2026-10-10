@@ -390,6 +390,46 @@ button {
   font-weight: 600;
 }
 
+/* Grid thumbnails draw the slide with its theme; the number and section sit on top as badges. */
+.slide-card.themed {
+  padding: 0;
+  background: #000;
+}
+
+.slide-card.themed .slide-number,
+.slide-card.themed .slide-caption {
+  z-index: 1;
+  top: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #e6e8ec;
+  font-size: 10px;
+}
+
+.slide-card.themed .slide-number {
+  left: 4px;
+}
+
+.slide-card.themed .slide-caption {
+  right: 4px;
+}
+
+.slide-card.themed.live .slide-number {
+  background: var(--live);
+  color: #fff;
+}
+
+.theme-picker {
+  width: auto;
+  max-width: 220px;
+  padding: 4px 8px;
+}
+
+.slide-hint {
+  margin: -6px 0 0;
+}
+
 /* ---------- Live preview ---------- */
 
 .live-badge {
@@ -408,41 +448,13 @@ button {
 }
 
 .preview-screen {
-  container-type: inline-size;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
-  padding: 5%;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: #000;
   overflow: hidden;
-}
-
-.preview-slide {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2cqw;
-}
-
-.preview-caption {
-  margin: 0;
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 2.6cqw;
-  font-weight: 500;
-}
-
-.preview-text {
-  margin: 0;
-  color: #fff;
-  font-size: 5cqw;
-  font-weight: 600;
-  line-height: 1.3;
-  text-align: center;
-  white-space: pre-line;
 }
 
 .output-modes {
@@ -477,7 +489,6 @@ button {
 /* ---------- Output window ---------- */
 
 .output {
-  container-type: size;
   position: relative;
   height: 100%;
   background: #000;
@@ -488,10 +499,11 @@ button {
 .output-frame {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   animation: output-fade 400ms ease forwards;
+}
+
+.output-frame.leaving {
+  animation: output-fade-out 400ms ease forwards;
 }
 
 @keyframes output-fade {
@@ -503,35 +515,75 @@ button {
   }
 }
 
-.output-text-box {
+@keyframes output-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* ---------- Themed slide ---------- */
+
+/* Fills its parent. Sizes inside use cqh and cqw, so a slide lays out the same at any size. */
+.themed-slide {
+  container-type: size;
   position: absolute;
-  inset: 6% 5%;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+.themed-slide.transparent {
+  background: none;
+}
+
+.themed-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.themed-media {
+  object-fit: cover;
+}
+
+.themed-logo {
+  position: absolute;
+  inset: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
 
-.output-text {
-  max-width: 100%;
-  margin: 0;
-  color: #fff;
-  font-weight: 600;
-  line-height: 1.25;
-  text-align: center;
-  white-space: pre-line;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+.themed-safe {
+  position: absolute;
+  display: flex;
 }
 
-.output-caption {
+.themed-fit {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.themed-text {
+  max-width: 100%;
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: normal;
+}
+
+.themed-caption {
   flex-shrink: 0;
-  margin: 2.5cqh 0 0;
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 3.2cqh;
-  font-weight: 500;
+  max-width: 100%;
+  margin: 0.6em 0 0;
+  line-height: 1.2;
   letter-spacing: 0.02em;
-  text-align: center;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
 /* ---------- Song editor ---------- */
@@ -696,6 +748,274 @@ button {
 
 .editor-preview-list .slide-card:hover {
   border-color: var(--border);
+}
+
+/* ---------- Theme editor ---------- */
+
+.theme-editor {
+  overflow-y: auto;
+}
+
+.theme-defaults {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.theme-editor-body {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.theme-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.theme-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 4px;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.theme-list-item:hover {
+  background: var(--panel-raised);
+}
+
+.theme-list-item.selected {
+  border-color: var(--accent);
+}
+
+.theme-list-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.theme-swatch {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.theme-list-name {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.theme-list-name small {
+  color: var(--text-muted);
+}
+
+.theme-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.theme-preview {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.theme-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.theme-actions .input {
+  flex: 1;
+  min-width: 140px;
+}
+
+.theme-form fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.theme-form legend {
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.theme-row {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.theme-row-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.theme-row-controls > .input {
+  width: auto;
+  padding: 4px 8px;
+}
+
+.theme-row-controls small {
+  color: var(--text-muted);
+}
+
+.number-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.number-input .input {
+  width: 70px;
+  padding: 4px 6px;
+}
+
+.margin-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.range-value {
+  min-width: 36px;
+}
+
+.color-input {
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segmented button {
+  padding: 4px 10px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: var(--panel-raised);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.segmented button:last-child {
+  border-right: 0;
+}
+
+.segmented button.active {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.segmented button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.media-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.font-picker {
+  position: relative;
+}
+
+.font-picker-value {
+  width: 200px;
+  padding: 4px 8px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.font-picker-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 280px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.font-picker-menu ul {
+  max-height: 280px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.font-picker-menu li button {
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.font-picker-menu li button:hover,
+.font-picker-menu li button:focus-visible {
+  background: var(--panel-raised);
+  outline: none;
 }
 
 /* ---------- Schedule ---------- */

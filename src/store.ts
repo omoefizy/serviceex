@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { buildSongSlides } from '../shared/lyrics'
+import { DEFAULT_THEME_STYLE } from '../shared/themes'
 import type {
   OutputMode,
   OutputState,
@@ -8,12 +9,16 @@ import type {
   ServiceItemType,
   ServiceWithItems,
   Song,
+  Theme,
+  ThemeContentType,
+  ThemeDefaults,
+  ThemeStyle,
 } from '../shared/types'
 import { announcementSlides } from './lib/slides'
 
 export interface DeckSlide {
   text: string
-  /** Small line under the text on the output, such as "John 3:16 KJV". Empty for song slides. */
+  /** Small line under the text on the output: a scripture reference, or a song's copyright on its first slide. */
   caption: string
   /** Song section shown on the slide card only, such as "Chorus". */
   label?: string
@@ -27,8 +32,13 @@ interface OperatorState {
   /** Index into `slides` of the slide on screen, or null when nothing is live. */
   liveSlideIndex: number | null
   outputMode: OutputMode
-  /** CSS background of the output screen. */
-  background: string
+  /** What the grid holds, which picks the default theme. Null when it is empty. */
+  deckType: ThemeContentType | null
+  themes: Theme[]
+  themeDefaults: ThemeDefaults | null
+  /** The theme picked above the slide grid for what is loaded now; null uses the song's theme or the default. */
+  deckThemeId: number | null
+  themeEditorOpen: boolean
   /** The service open in the schedule panel. */
   service: ServiceWithItems | null
   /** The schedule item whose slides are in the grid, or null when the grid came from the library. */
@@ -59,6 +69,10 @@ interface OperatorState {
   nextItem(): Promise<void>
 
   editSong(id: number | null): void
+  /** Loads the themes and defaults; call again after the theme editor changes them. */
+  loadThemes(): Promise<void>
+  setDeckTheme(id: number | null): void
+  openThemeEditor(open: boolean): void
   /** Tells the song list to reload, after an import for example. */
   songsChanged(): void
   /** Refreshes the grid and schedule after the editor saves a song. */
@@ -75,7 +89,11 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   slides: [],
   liveSlideIndex: null,
   outputMode: 'show',
-  background: '#000',
+  deckType: null,
+  themes: [],
+  themeDefaults: null,
+  deckThemeId: null,
+  themeEditorOpen: false,
   service: null,
   activeItemId: null,
   editingSongId: null,
@@ -86,6 +104,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     set({
       activeItemId: null,
       selectedSong: song,
+      deckType: song ? 'song' : null,
+      deckThemeId: null,
       deckTitle: song?.title ?? null,
       slides: song ? songSlides(song) : [],
       liveSlideIndex: null,
@@ -94,7 +114,15 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
 
   selectScripture(title, slides) {
     loadToken++
-    set({ selectedSong: null, deckTitle: title, slides, liveSlideIndex: null, activeItemId: null })
+    set({
+      selectedSong: null,
+      deckType: 'scripture',
+      deckThemeId: null,
+      deckTitle: title,
+      slides,
+      liveSlideIndex: null,
+      activeItemId: null,
+    })
   },
 
   goLive(index) {
@@ -170,7 +198,15 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     }
 
     if (token !== loadToken) return false
-    set({ selectedSong: song, deckTitle: item.title, slides, liveSlideIndex: null, activeItemId: item.id })
+    set({
+      selectedSong: song,
+      deckType: item.type,
+      deckThemeId: null,
+      deckTitle: item.title,
+      slides,
+      liveSlideIndex: null,
+      activeItemId: item.id,
+    })
     return true
   },
 
@@ -184,7 +220,22 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   editSong(id) {
-    set({ editingSongId: id })
+    set({ editingSongId: id, themeEditorOpen: id === null ? get().themeEditorOpen : false })
+  },
+
+  async loadThemes() {
+    const [themes, themeDefaults] = await Promise.all([window.api.themes.list(), window.api.themes.getDefaults()])
+    // A deleted theme can no longer be picked for the deck.
+    const { deckThemeId } = get()
+    set({ themes, themeDefaults, deckThemeId: themes.some((t) => t.id === deckThemeId) ? deckThemeId : null })
+  },
+
+  setDeckTheme(id) {
+    set({ deckThemeId: id })
+  },
+
+  openThemeEditor(open) {
+    set({ themeEditorOpen: open, editingSongId: open ? null : get().editingSongId })
   },
 
   songsChanged() {
@@ -215,10 +266,11 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 }))
 
+/** The copyright line shows under the first slide, styled by the theme's caption settings. */
 function songSlides(song: Song): DeckSlide[] {
-  return buildSongSlides(song.lyrics, song.arrangement).map(({ text, label }) => ({
+  return buildSongSlides(song.lyrics, song.arrangement).map(({ text, label }, index) => ({
     text,
-    caption: '',
+    caption: index === 0 ? (song.copyright ?? '') : '',
     label: label ?? undefined,
   }))
 }
@@ -236,6 +288,20 @@ export function selectOutputState(s: OperatorState): OutputState {
     mode: s.outputMode,
     text: live?.text ?? '',
     caption: live?.caption ?? '',
-    background: s.background,
+    theme: selectDeckTheme(s),
   }
+}
+
+/** The theme the default for what is loaded would use, ignoring the picker: the song's own theme, else the content type's default. */
+export function selectBaseThemeId(s: OperatorState): number | null {
+  if (s.deckType === 'song' && s.selectedSong?.themeId && s.themes.some((t) => t.id === s.selectedSong?.themeId)) {
+    return s.selectedSong.themeId
+  }
+  return s.themeDefaults?.[s.deckType ?? 'song'] ?? null
+}
+
+/** The style the grid, live preview and output use for what is loaded. */
+export function selectDeckTheme(s: OperatorState): ThemeStyle {
+  const id = s.deckThemeId ?? selectBaseThemeId(s)
+  return s.themes.find((t) => t.id === id)?.style ?? s.themes[0]?.style ?? DEFAULT_THEME_STYLE
 }

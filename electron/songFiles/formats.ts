@@ -30,6 +30,7 @@ function songInput(fields: Partial<SongInput> & { title: string }): SongInput {
     copyright: fields.copyright?.trim() || null,
     tags: fields.tags ?? [],
     arrangement: fields.arrangement ?? DEFAULT_ARRANGEMENT,
+    themeId: null,
     lyrics: fields.lyrics ?? '',
   }
 }

@@ -24,10 +24,11 @@ export function assertSongInput(value: unknown): SongInput {
     !Array.isArray(input.tags) ||
     !input.tags.every((tag) => typeof tag === 'string') ||
     !isArrangement(input.arrangement) ||
+    (input.themeId !== null && !(Number.isInteger(input.themeId) && (input.themeId as number) > 0)) ||
     typeof input.lyrics !== 'string'
   ) {
     throw new TypeError(
-      'Song needs a non-empty title, author and copyright (string or null), tags, an arrangement and lyrics',
+      'Song needs a non-empty title, author and copyright (string or null), tags, an arrangement, a theme id (or null) and lyrics',
     )
   }
   return {
@@ -36,6 +37,7 @@ export function assertSongInput(value: unknown): SongInput {
     copyright: input.copyright,
     tags: input.tags,
     arrangement: { order: input.arrangement.order, linesPerSlide: input.arrangement.linesPerSlide },
+    themeId: input.themeId as number | null,
     lyrics: input.lyrics,
   }
 }

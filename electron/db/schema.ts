@@ -11,7 +11,8 @@ export function initSchema(db: Database.Database): void {
       lyrics TEXT,
       copyright TEXT,
       tags TEXT,
-      arrangement TEXT
+      arrangement TEXT,
+      theme_id INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS slides (
@@ -51,6 +52,20 @@ export function initSchema(db: Database.Database): void {
       text TEXT NOT NULL,
       UNIQUE (version_id, book, chapter, verse)
     );
+
+    -- type is 'builtin' (shipped with the app, read-only) or 'custom'; json is a ThemeStyle.
+    CREATE TABLE IF NOT EXISTS themes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      json TEXT NOT NULL
+    );
+
+    -- App-wide choices such as the default theme per content type.
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `)
 
   // Columns added after the first release. Older databases get them here; CREATE TABLE above covers new ones.
@@ -58,6 +73,7 @@ export function initSchema(db: Database.Database): void {
   addColumnIfMissing(db, 'songs', 'copyright', 'TEXT')
   addColumnIfMissing(db, 'songs', 'tags', 'TEXT') // JSON array of strings
   addColumnIfMissing(db, 'songs', 'arrangement', 'TEXT') // JSON SongArrangement
+  addColumnIfMissing(db, 'songs', 'theme_id', 'INTEGER') // themes.id; null uses the default song theme
 }
 
 function addColumnIfMissing(db: Database.Database, table: string, column: string, type: string): void {

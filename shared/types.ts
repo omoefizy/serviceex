@@ -17,6 +17,8 @@ export interface Song {
   copyright: string | null
   tags: string[]
   arrangement: SongArrangement
+  /** The song's own theme; null uses the default theme for songs. */
+  themeId: number | null
   /** Plain text. A line like [Verse 1] starts a section; a blank line or a section label starts a new slide. */
   lyrics: string
 }
@@ -72,12 +74,11 @@ export interface ServiceWithItems extends Service {
   items: ServiceItem[]
 }
 
-/** What the output window renders for a slide. `background` is any CSS background value. */
+/** What the output window renders for a slide. */
 export interface SlideContent {
   text: string
-  /** Small line under the text, such as "John 3:16 KJV". Empty for none. */
+  /** Small line under the text, such as "John 3:16 KJV" or a song's copyright. Empty for none. */
   caption: string
-  background: string
 }
 
 /**
@@ -91,6 +92,87 @@ export type OutputMode = 'show' | 'black' | 'clear' | 'logo'
 /** What the operator sends to the output window. `text` is empty when no slide is live. */
 export interface OutputState extends SlideContent {
   mode: OutputMode
+  /** The resolved theme, sent whole so the output window needs no database access. */
+  theme: ThemeStyle
+}
+
+// ---------- Themes ----------
+
+export type ThemeContentType = 'song' | 'scripture' | 'announcement'
+
+export type TextCase = 'normal' | 'upper' | 'lower'
+
+/** Image and video sources are wd-media:// URLs for files copied into the app's media folder. */
+export type ThemeBackground =
+  | { kind: 'solid'; color: string }
+  | { kind: 'gradient'; from: string; to: string; angle: number }
+  | { kind: 'image'; src: string }
+  | { kind: 'video'; src: string }
+
+/** Style of the small line under the text: a scripture reference or a song's copyright. */
+export interface ThemeCaptionStyle {
+  /** Empty uses the main text's font. */
+  fontFamily: string
+  fontWeight: number
+  /** Percent of screen height. */
+  size: number
+  color: string
+  textCase: TextCase
+  italic: boolean
+}
+
+/**
+ * Sizes scale with the screen, so a theme looks the same on the projector, the live preview and a thumbnail:
+ * font sizes and vertical margins are percent of screen height, side margins percent of width, and shadow
+ * and outline sizes are em (relative to the text).
+ */
+export interface ThemeStyle {
+  /** A family name such as "Avenir Next", or a CSS font stack. */
+  fontFamily: string
+  fontWeight: number
+  /** auto: as large as fits the safe area. fixed: `fontSize`, shrunk only when the slide would overflow. */
+  sizeMode: 'auto' | 'fixed'
+  /** Percent of screen height; used in fixed mode. */
+  fontSize: number
+  color: string
+  align: 'left' | 'center' | 'right'
+  verticalAlign: 'top' | 'middle' | 'bottom'
+  lineHeight: number
+  textCase: TextCase
+  shadow: { enabled: boolean; color: string; blur: number; offset: number }
+  outline: { enabled: boolean; color: string; width: number }
+  /** Safe area: top and bottom in percent of height, left and right in percent of width. */
+  margins: { top: number; right: number; bottom: number; left: number }
+  /** A solid band filling the safe area behind the text, as lower thirds use. */
+  band: { enabled: boolean; color: string; opacity: number }
+  background: ThemeBackground
+  /** Darkens the background: 0 leaves it, 1 makes it black. */
+  overlay: number
+  caption: ThemeCaptionStyle
+}
+
+export interface Theme {
+  id: number
+  name: string
+  /** Built-in themes ship with the app and cannot be changed or deleted; save a copy instead. */
+  type: 'builtin' | 'custom'
+  style: ThemeStyle
+}
+
+export type ThemeDefaults = Record<ThemeContentType, number>
+
+export interface ThemesApi {
+  /** Built-in themes first, then custom ones in the order they were made. */
+  list(): Promise<Theme[]>
+  create(name: string, style: ThemeStyle): Promise<Theme>
+  /** Custom themes only. Resolves to false for a built-in or missing theme. */
+  update(id: number, name: string, style: ThemeStyle): Promise<boolean>
+  /** Custom themes only. Songs and defaults that used it fall back to the built-in defaults. */
+  delete(id: number): Promise<boolean>
+  getDefaults(): Promise<ThemeDefaults>
+  setDefault(type: ThemeContentType, themeId: number): Promise<void>
+  /** Picks an image or video, copies it into the app's media folder and resolves to its URL, or null if cancelled. */
+  pickMedia(kind: 'image' | 'video'): Promise<string | null>
 }
 
 /** The editable fields of a song, used when creating or updating one. */
@@ -202,6 +284,7 @@ export interface WorshipDeckApi {
   bible: BibleApi
   services: ServicesApi
   songFiles: SongFilesApi
+  themes: ThemesApi
   output: {
     /** Sends the operator's output state to the output window. */
     send(state: OutputState): void

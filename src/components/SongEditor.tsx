@@ -12,6 +12,8 @@ interface Form {
   /** Comma separated. */
   tags: string
   arrangement: SongArrangement
+  /** Null uses the default song theme. */
+  themeId: number | null
   lyrics: string
 }
 
@@ -29,14 +31,24 @@ function isForm(value: unknown): value is Form {
     typeof form === 'object' &&
     form !== null &&
     ['title', 'author', 'copyright', 'tags', 'lyrics'].every((key) => typeof form[key as keyof Form] === 'string') &&
-    isArrangement(form.arrangement)
+    isArrangement(form.arrangement) &&
+    // Drafts saved before songs had themes have no themeId.
+    (form.themeId === undefined || form.themeId === null || typeof form.themeId === 'number')
   )
+}
+
+/** The fields in toForm's order, so sameForm's JSON comparison is not thrown off by key order. */
+function orderedForm(form: Form): Form {
+  const { title, author, copyright, tags, arrangement, lyrics } = form
+  return { title, author, copyright, tags, arrangement, themeId: form.themeId ?? null, lyrics }
 }
 
 function readDraft(id: number): Draft | null {
   try {
     const draft = JSON.parse(localStorage.getItem(draftKey(id)) ?? 'null') as Partial<Draft> | null
-    return draft && isForm(draft.form) && typeof draft.savedAt === 'number' ? (draft as Draft) : null
+    return draft && isForm(draft.form) && typeof draft.savedAt === 'number'
+      ? { form: orderedForm(draft.form), savedAt: draft.savedAt }
+      : null
   } catch {
     return null
   }
@@ -65,6 +77,7 @@ function toForm(song: Omit<Song, 'id'>): Form {
     copyright: song.copyright ?? '',
     tags: song.tags.join(', '),
     arrangement: song.arrangement,
+    themeId: song.themeId,
     // The section tools count lines, so keep one kind of line break.
     lyrics: song.lyrics.replace(/\r\n?/g, '\n'),
   }
@@ -77,6 +90,7 @@ function toInput(form: Form): SongInput {
     copyright: form.copyright.trim() || null,
     tags: [...new Set(form.tags.split(',').map((tag) => tag.trim()).filter(Boolean))],
     arrangement: form.arrangement,
+    themeId: form.themeId,
     lyrics: form.lyrics,
   }
 }
@@ -104,6 +118,8 @@ export function SongEditor({ songId }: { songId: number }) {
   const editSong = useOperatorStore((s) => s.editSong)
   const songSaved = useOperatorStore((s) => s.songSaved)
   const songDeleted = useOperatorStore((s) => s.songDeleted)
+  const themes = useOperatorStore((s) => s.themes)
+  const songDefaultTheme = useOperatorStore((s) => s.themes.find((t) => t.id === s.themeDefaults?.song))
 
   const dirty = form !== null && saved !== null && !sameForm(form, saved)
   const sections = useMemo(() => parseLyrics(form?.lyrics ?? ''), [form?.lyrics])
@@ -366,6 +382,21 @@ export function SongEditor({ songId }: { songId: number }) {
             value={form.tags}
             onChange={(e) => update({ tags: e.target.value })}
           />
+        </label>
+        <label className="field">
+          <span>Theme</span>
+          <select
+            className="input"
+            value={form.themeId ?? ''}
+            onChange={(e) => update({ themeId: e.target.value ? Number(e.target.value) : null })}
+          >
+            <option value="">Default for songs{songDefaultTheme ? ` (${songDefaultTheme.name})` : ''}</option>
+            {themes.map((theme) => (
+              <option key={theme.id} value={theme.id}>
+                {theme.name}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
 

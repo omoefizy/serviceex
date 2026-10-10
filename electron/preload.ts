@@ -1,5 +1,13 @@
 import { ipcRenderer, contextBridge, webUtils } from 'electron'
-import type { BibleApi, OutputState, ServicesApi, SongFilesApi, SongsApi, WorshipDeckApi } from '../shared/types'
+import type {
+  BibleApi,
+  OutputState,
+  ServicesApi,
+  SongFilesApi,
+  SongsApi,
+  ThemesApi,
+  WorshipDeckApi,
+} from '../shared/types'
 
 // --------- Expose some API to the Renderer process ---------
 contextBridge.exposeInMainWorld('ipcRenderer', {
@@ -60,6 +68,16 @@ const songFiles: SongFilesApi = {
   export: (songIds, format) => ipcRenderer.invoke('songFiles:export', songIds, format),
 }
 
+const themes: ThemesApi = {
+  list: () => ipcRenderer.invoke('themes:list'),
+  create: (name, style) => ipcRenderer.invoke('themes:create', name, style),
+  update: (id, name, style) => ipcRenderer.invoke('themes:update', id, name, style),
+  delete: (id) => ipcRenderer.invoke('themes:delete', id),
+  getDefaults: () => ipcRenderer.invoke('themes:getDefaults'),
+  setDefault: (type, themeId) => ipcRenderer.invoke('themes:setDefault', type, themeId),
+  pickMedia: (kind) => ipcRenderer.invoke('themes:pickMedia', kind),
+}
+
 const output: WorshipDeckApi['output'] = {
   send: (state) => ipcRenderer.send('output:send', state),
   onState(listener) {
@@ -69,5 +87,5 @@ const output: WorshipDeckApi['output'] = {
   },
 }
 
-const api: WorshipDeckApi = { songs, bible, services, songFiles, output }
+const api: WorshipDeckApi = { songs, bible, services, songFiles, themes, output }
 contextBridge.exposeInMainWorld('api', api)

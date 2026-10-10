@@ -4,6 +4,7 @@ import { SchedulePanel } from './components/SchedulePanel'
 import { ScripturePanel } from './components/ScripturePanel'
 import { SlideGrid } from './components/SlideGrid'
 import { SongEditor } from './components/SongEditor'
+import { ThemeEditor } from './components/ThemeEditor'
 import { SongList } from './components/SongList'
 import { selectOutputState, useOperatorStore } from './store'
 
@@ -16,6 +17,11 @@ function isTyping(target: EventTarget | null): boolean {
 function App() {
   const [libraryTab, setLibraryTab] = useState<'songs' | 'scripture'>('songs')
   const editingSongId = useOperatorStore((s) => s.editingSongId)
+  const themeEditorOpen = useOperatorStore((s) => s.themeEditorOpen)
+
+  useEffect(() => {
+    useOperatorStore.getState().loadThemes().catch(console.error)
+  }, [])
 
   // Mirror the operator state to the output window.
   useEffect(() => {
@@ -88,7 +94,13 @@ function App() {
           <ScripturePanel />
         </div>
       </div>
-      {editingSongId !== null ? <SongEditor key={editingSongId} songId={editingSongId} /> : <SlideGrid />}
+      {editingSongId !== null ? (
+        <SongEditor key={editingSongId} songId={editingSongId} />
+      ) : themeEditorOpen ? (
+        <ThemeEditor />
+      ) : (
+        <SlideGrid />
+      )}
       <LivePreview />
       <SchedulePanel />
     </main>

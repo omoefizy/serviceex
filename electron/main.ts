@@ -2,10 +2,13 @@ import { app, BrowserWindow, screen } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import './db'
+import { seedBuiltinThemes } from './db/themes'
 import { registerSongIpc } from './ipc/songs'
 import { registerBibleIpc } from './ipc/bible'
 import { registerServiceIpc } from './ipc/services'
 import { registerSongFileIpc } from './ipc/songFiles'
+import { registerThemeIpc } from './ipc/themes'
+import { registerMediaProtocol, registerMediaScheme } from './media'
 import { registerOutputIpc, sendLastOutputState } from './ipc/output'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -27,6 +30,9 @@ export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron')
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
+
+// Must run before the app is ready.
+registerMediaScheme()
 
 let win: BrowserWindow | null
 let outputWin: BrowserWindow | null = null
@@ -108,10 +114,13 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(() => {
+  seedBuiltinThemes()
+  registerMediaProtocol()
   registerSongIpc()
   registerBibleIpc()
   registerServiceIpc()
   registerSongFileIpc()
+  registerThemeIpc()
   registerOutputIpc(() => outputWin)
   createWindow()
   createOutputWindow()

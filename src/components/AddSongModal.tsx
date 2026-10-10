@@ -36,6 +36,7 @@ export function AddSongModal({ onSave, onCancel }: Props) {
         copyright: null,
         tags: [],
         arrangement: DEFAULT_ARRANGEMENT,
+        themeId: null,
         lyrics,
       })
     } catch (err) {

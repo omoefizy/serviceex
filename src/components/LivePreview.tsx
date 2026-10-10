@@ -1,6 +1,6 @@
 import type { OutputMode } from '../../shared/types'
-import { useOperatorStore } from '../store'
-import { LogoPlaceholder } from './OutputView'
+import { selectDeckTheme, useOperatorStore } from '../store'
+import { ThemedSlide } from './ThemedSlide'
 
 const MODES: { mode: OutputMode; label: string }[] = [
   { mode: 'show', label: 'Show' },
@@ -12,7 +12,7 @@ const MODES: { mode: OutputMode; label: string }[] = [
 export function LivePreview() {
   const slide = useOperatorStore((s) => (s.liveSlideIndex === null ? null : s.slides[s.liveSlideIndex]))
   const mode = useOperatorStore((s) => s.outputMode)
-  const background = useOperatorStore((s) => s.background)
+  const theme = useOperatorStore(selectDeckTheme)
   const setOutputMode = useOperatorStore((s) => s.setOutputMode)
   const onAir = mode === 'show' && slide !== null
 
@@ -38,14 +38,8 @@ export function LivePreview() {
         ))}
       </div>
 
-      <div className="preview-screen" style={{ background: mode === 'black' ? '#000' : background }}>
-        {mode === 'show' && slide !== null && (
-          <div className="preview-slide">
-            <p className="preview-text">{slide.text}</p>
-            {slide.caption && <p className="preview-caption">{slide.caption}</p>}
-          </div>
-        )}
-        {mode === 'logo' && <LogoPlaceholder />}
+      <div className="preview-screen">
+        <ThemedSlide theme={theme} text={slide?.text ?? ''} caption={slide?.caption} mode={mode} />
       </div>
     </section>
   )

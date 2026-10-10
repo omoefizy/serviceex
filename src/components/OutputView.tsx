@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { OutputState } from '../../shared/types'
+import { ThemedSlide } from './ThemedSlide'
 
 /** Keep in sync with the `output-fade` animation duration in index.css. */
 const FADE_MS = 400
@@ -7,110 +8,73 @@ const FADE_MS = 400
 interface Frame {
   key: number
   state: OutputState
+  leaving: boolean
 }
 
-/** True when two states look the same on screen, so switching between them needs no fade. */
-function looksSame(a: OutputState, b: OutputState): boolean {
-  if (a.mode !== b.mode) return false
-  if (a.mode === 'black') return true
-  return a.background === b.background && (a.mode !== 'show' || (a.text === b.text && a.caption === b.caption))
+/** What the background layer shows: unchanged backgrounds (a playing video, say) are not redrawn between slides. */
+function backgroundOf(state: OutputState): string {
+  return state.mode === 'black' ? 'black' : JSON.stringify([state.theme.background, state.theme.overlay])
 }
 
-export function LogoPlaceholder() {
-  return (
-    <div className="logo-placeholder">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M10 2h4v6h6v4h-6v10h-4V12H4V8h6z" />
-      </svg>
-      <span>WorshipDeck</span>
-    </div>
-  )
+/** What the text layer shows, so identical states need no fade. */
+function contentOf(state: OutputState): string {
+  if (state.mode === 'black' || state.mode === 'clear') return state.mode
+  if (state.mode === 'logo') return 'logo'
+  return JSON.stringify([state.text, state.caption, { ...state.theme, background: null, overlay: null }])
 }
 
-/** Slide text at the largest font size that still fits the screen, with an optional caption line under it. */
-function FittedText({ text, caption }: { text: string; caption: string }) {
-  const boxRef = useRef<HTMLDivElement>(null)
-  const textRef = useRef<HTMLParagraphElement>(null)
-  const captionRef = useRef<HTMLParagraphElement>(null)
-
-  useLayoutEffect(() => {
-    const box = boxRef.current
-    const el = textRef.current
-    if (!box || !el) return
-
-    const fit = () => {
-      const captionEl = captionRef.current
-      const captionHeight = captionEl
-        ? captionEl.offsetHeight + parseFloat(getComputedStyle(captionEl).marginTop)
-        : 0
-      const height = box.clientHeight - captionHeight
-      let low = 8
-      let high = Math.max(low, box.clientHeight * 0.16)
-      while (high - low > 0.5) {
-        const size = (low + high) / 2
-        el.style.fontSize = `${size}px`
-        if (el.scrollWidth <= box.clientWidth && el.scrollHeight <= height) low = size
-        else high = size
-      }
-      el.style.fontSize = `${low}px`
-    }
-
-    fit()
-    const observer = new ResizeObserver(fit)
-    observer.observe(box)
-    return () => observer.disconnect()
-  }, [text, caption])
-
-  return (
-    <div className="output-text-box" ref={boxRef}>
-      <p className="output-text" ref={textRef}>
-        {text}
-      </p>
-      {caption && (
-        <p className="output-caption" ref={captionRef}>
-          {caption}
-        </p>
-      )}
-    </div>
-  )
-}
-
-/** The projector screen. New frames fade in over the previous one, which is removed once covered. */
-export function OutputView() {
+/**
+ * A stack of fading frames for one layer. A new frame fades in on top; with `fadeOut`, older frames fade out
+ * at the same time (text layers are transparent, so the old words would otherwise show through).
+ */
+function useFrames(state: OutputState | null, identity: (state: OutputState) => string, fadeOut: boolean): Frame[] {
   const [frames, setFrames] = useState<Frame[]>([])
+  const currentRef = useRef<string | null>(null)
+  const lastKeyRef = useRef(0)
+  const timersRef = useRef<number[]>([])
 
   useEffect(() => {
-    let lastKey = 0
-    let current: OutputState | null = null
-    const timers: number[] = []
-
-    const unsubscribe = window.api.output.onState((state) => {
-      if (current && looksSame(current, state)) {
-        current = state
-        return
-      }
-      current = state
-      const key = ++lastKey
-      setFrames((frames) => [...frames, { key, state }])
-      timers.push(window.setTimeout(() => setFrames((frames) => frames.filter((f) => f.key >= key)), FADE_MS))
-    })
-
-    return () => {
-      unsubscribe()
-      timers.forEach(clearTimeout)
-    }
+    const timers = timersRef.current
+    return () => timers.forEach(clearTimeout)
   }, [])
+
+  useEffect(() => {
+    if (!state) return
+    const id = identity(state)
+    if (id === currentRef.current) {
+      // Same look; keep the newest state on the top frame without a fade.
+      setFrames((frames) => frames.map((f, i) => (i === frames.length - 1 ? { ...f, state } : f)))
+      return
+    }
+    currentRef.current = id
+    const key = ++lastKeyRef.current
+    setFrames((frames) => [...frames.map((f) => ({ ...f, leaving: fadeOut })), { key, state, leaving: false }])
+    timersRef.current.push(window.setTimeout(() => setFrames((frames) => frames.filter((f) => f.key >= key)), FADE_MS))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per new output state
+  }, [state])
+
+  return frames
+}
+
+/** The projector screen: a background layer and a text layer, each crossfading on its own. */
+export function OutputView() {
+  const [state, setState] = useState<OutputState | null>(null)
+
+  useEffect(() => window.api.output.onState(setState), [])
+
+  const backgrounds = useFrames(state, backgroundOf, false)
+  const contents = useFrames(state, contentOf, true)
 
   return (
     <div className="output">
-      {frames.map(({ key, state }) => (
-        <div
-          key={key}
-          className="output-frame"
-          style={{ background: state.mode === 'black' ? '#000' : state.background }}
-        >
-          {state.mode === 'show' && state.text !== '' && <FittedText text={state.text} caption={state.caption} />}
-          {state.mode === 'logo' && <LogoPlaceholder />}
+      {backgrounds.map(({ key, state }) => (
+        <div key={key} className="output-frame">
+          <ThemedSlide theme={state.theme} text="" mode={state.mode} layer="background" />
+        </div>
+      ))}
+      {contents.map(({ key, state, leaving }) => (
+        <div key={key} className={`output-frame${leaving ? ' leaving' : ''}`}>
+          <ThemedSlide theme={state.theme} text={state.text} caption={state.caption} mode={state.mode} layer="content" />
         </div>
       ))}
     </div>

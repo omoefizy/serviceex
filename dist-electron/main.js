@@ -1,12 +1,11 @@
-import { app, ipcMain, dialog, BrowserWindow, screen } from "electron";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
-import Database from "better-sqlite3";
-import { writeFile, stat, readdir, readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-function initSchema(db2) {
-  db2.pragma("foreign_keys = ON");
-  db2.exec(`
+import { app as G, ipcMain as m, dialog as R, BrowserWindow as se, protocol as gt, net as Qt, screen as Ye } from "electron";
+import { pathToFileURL as Zt, fileURLToPath as en } from "node:url";
+import E from "node:path";
+import tn from "better-sqlite3";
+import { writeFile as mt, stat as Et, readdir as nn, readFile as rn, mkdir as sn, copyFile as on } from "node:fs/promises";
+import { existsSync as an } from "node:fs";
+function ln(t) {
+  t.pragma("foreign_keys = ON"), t.exec(`
     CREATE TABLE IF NOT EXISTS songs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
@@ -14,7 +13,8 @@ function initSchema(db2) {
       lyrics TEXT,
       copyright TEXT,
       tags TEXT,
-      arrangement TEXT
+      arrangement TEXT,
+      theme_id INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS slides (
@@ -54,446 +54,564 @@ function initSchema(db2) {
       text TEXT NOT NULL,
       UNIQUE (version_id, book, chapter, verse)
     );
-  `);
-  addColumnIfMissing(db2, "service_items", "payload", "TEXT");
-  addColumnIfMissing(db2, "songs", "copyright", "TEXT");
-  addColumnIfMissing(db2, "songs", "tags", "TEXT");
-  addColumnIfMissing(db2, "songs", "arrangement", "TEXT");
+
+    -- type is 'builtin' (shipped with the app, read-only) or 'custom'; json is a ThemeStyle.
+    CREATE TABLE IF NOT EXISTS themes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      json TEXT NOT NULL
+    );
+
+    -- App-wide choices such as the default theme per content type.
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `), z(t, "service_items", "payload", "TEXT"), z(t, "songs", "copyright", "TEXT"), z(t, "songs", "tags", "TEXT"), z(t, "songs", "arrangement", "TEXT"), z(t, "songs", "theme_id", "INTEGER");
 }
-function addColumnIfMissing(db2, table, column, type) {
-  const columns = db2.prepare(`PRAGMA table_info(${table})`).all();
-  if (!columns.some((c) => c.name === column)) {
-    db2.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+function z(t, e, n, r) {
+  t.prepare(`PRAGMA table_info(${e})`).all().some((s) => s.name === n) || t.exec(`ALTER TABLE ${e} ADD COLUMN ${n} ${r}`);
+}
+const cn = E.join(G.getPath("userData"), "worshipdeck.db"), f = new tn(cn);
+f.pragma("journal_mode = WAL");
+ln(f);
+const dn = "'Helvetica Neue', Inter, 'Segoe UI', Arial, sans-serif", Ge = "Georgia, 'Times New Roman', serif", F = {
+  fontFamily: dn,
+  fontWeight: 600,
+  sizeMode: "auto",
+  fontSize: 8,
+  color: "#ffffff",
+  align: "center",
+  verticalAlign: "middle",
+  lineHeight: 1.25,
+  textCase: "normal",
+  shadow: { enabled: !0, color: "#000000", blur: 0.12, offset: 0.04 },
+  outline: { enabled: !1, color: "#000000", width: 0.03 },
+  margins: { top: 6, right: 5, bottom: 6, left: 5 },
+  band: { enabled: !1, color: "#000000", opacity: 0.6 },
+  background: { kind: "solid", color: "#000000" },
+  overlay: 0,
+  caption: { fontFamily: "", fontWeight: 500, size: 3.2, color: "#bfc4cc", textCase: "normal", italic: !1 }
+}, D = (t) => ({ ...F, ...t }), un = [
+  { name: "Classic Black", style: F },
+  {
+    name: "Deep Blue Gradient",
+    style: D({
+      fontWeight: 700,
+      background: { kind: "gradient", from: "#0b1d4d", to: "#1f5fbf", angle: 160 },
+      shadow: { enabled: !0, color: "#020617", blur: 0.18, offset: 0.05 },
+      caption: { ...F.caption, color: "#c7d7f5" }
+    })
+  },
+  {
+    name: "Warm Sunset",
+    style: D({
+      fontWeight: 700,
+      background: { kind: "gradient", from: "#f59e0b", to: "#7c2d12", angle: 135 },
+      overlay: 0.15,
+      shadow: { enabled: !0, color: "#3b0d02", blur: 0.2, offset: 0.05 },
+      caption: { ...F.caption, color: "#ffe7c2" }
+    })
+  },
+  {
+    name: "Minimal White",
+    style: D({
+      fontWeight: 500,
+      color: "#111111",
+      shadow: { ...F.shadow, enabled: !1 },
+      background: { kind: "solid", color: "#ffffff" },
+      caption: { ...F.caption, color: "#666666" }
+    })
+  },
+  {
+    // Chroma green behind an opaque band at the bottom: key the green out in OBS or a video switcher.
+    name: "Lower Third",
+    style: D({
+      fontWeight: 600,
+      align: "left",
+      lineHeight: 1.2,
+      margins: { top: 72, right: 0, bottom: 0, left: 0 },
+      band: { enabled: !0, color: "#0b0f1a", opacity: 1 },
+      background: { kind: "solid", color: "#00b140" },
+      shadow: { ...F.shadow, enabled: !1 },
+      caption: { ...F.caption, size: 2.8 }
+    })
+  },
+  {
+    name: "Scripture Serif",
+    style: D({
+      fontFamily: Ge,
+      fontWeight: 400,
+      align: "left",
+      lineHeight: 1.45,
+      color: "#f4efe6",
+      margins: { top: 8, right: 8, bottom: 8, left: 8 },
+      background: { kind: "gradient", from: "#1c1712", to: "#0d0b09", angle: 180 },
+      shadow: { enabled: !0, color: "#000000", blur: 0.1, offset: 0.03 },
+      caption: { fontFamily: Ge, fontWeight: 400, size: 3.4, color: "#d6b98c", textCase: "normal", italic: !0 }
+    })
+  }
+], pn = {
+  song: "Classic Black",
+  scripture: "Scripture Serif",
+  announcement: "Deep Blue Gradient"
+}, xe = ["song", "scripture", "announcement"], U = (t) => typeof t == "object" && t !== null && !Array.isArray(t) ? t : {}, ze = (t, e) => typeof t == "string" ? t : e, P = (t, e) => typeof t == "string" && /^#[0-9a-f]{6}$/i.test(t) ? t.toLowerCase() : e, ae = (t, e) => typeof t == "boolean" ? t : e, w = (t, e, n, r) => typeof t == "number" && Number.isFinite(t) ? Math.min(r, Math.max(n, t)) : e, K = (t, e, n) => e.includes(t) ? t : n, De = ["normal", "upper", "lower"];
+function hn(t, e) {
+  const n = U(t);
+  switch (n.kind) {
+    case "solid":
+      return { kind: "solid", color: P(n.color, "#000000") };
+    case "gradient":
+      return { kind: "gradient", from: P(n.from, "#000000"), to: P(n.to, "#333333"), angle: w(n.angle, 180, 0, 360) };
+    case "image":
+    case "video":
+      return typeof n.src == "string" && n.src ? { kind: n.kind, src: n.src } : { kind: "solid", color: "#000000" };
+    default:
+      return e;
   }
 }
-const dbPath = path.join(app.getPath("userData"), "worshipdeck.db");
-const db = new Database(dbPath);
-db.pragma("journal_mode = WAL");
-initSchema(db);
-const DEFAULT_ARRANGEMENT = { order: [], linesPerSlide: null };
-const LINES_PER_SLIDE_OPTIONS = [2, 3, 4];
-const LABEL_LINE = /^\s*\[([^\]]+)\]\s*$/;
-function isArrangement(value) {
-  const a = value;
-  return typeof a === "object" && a !== null && Array.isArray(a.order) && a.order.every((label) => typeof label === "string") && (a.linesPerSlide === null || LINES_PER_SLIDE_OPTIONS.includes(a.linesPerSlide));
-}
-function parseLyrics(lyrics) {
-  const lines = lyrics.replace(/\r\n?/g, "\n").split("\n");
-  const sections = [];
-  let section = null;
-  let chunk = null;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const label = LABEL_LINE.exec(line);
-    if (label || line.trim() === "") {
-      if (chunk && section) {
-        chunk.endLine = i;
-        section.chunks.push(chunk);
-      }
-      chunk = null;
+function X(t) {
+  const e = F, n = U(t), r = U(n.shadow), i = U(n.outline), s = U(n.margins), a = U(n.band), o = U(n.caption);
+  return {
+    fontFamily: ze(n.fontFamily, e.fontFamily).trim() || e.fontFamily,
+    fontWeight: Math.round(w(n.fontWeight, e.fontWeight, 100, 900) / 100) * 100,
+    sizeMode: K(n.sizeMode, ["auto", "fixed"], e.sizeMode),
+    fontSize: w(n.fontSize, e.fontSize, 1, 30),
+    color: P(n.color, e.color),
+    align: K(n.align, ["left", "center", "right"], e.align),
+    verticalAlign: K(n.verticalAlign, ["top", "middle", "bottom"], e.verticalAlign),
+    lineHeight: w(n.lineHeight, e.lineHeight, 0.8, 2.5),
+    textCase: K(n.textCase, De, e.textCase),
+    shadow: {
+      enabled: ae(r.enabled, e.shadow.enabled),
+      color: P(r.color, e.shadow.color),
+      blur: w(r.blur, e.shadow.blur, 0, 1),
+      offset: w(r.offset, e.shadow.offset, 0, 0.5)
+    },
+    outline: {
+      enabled: ae(i.enabled, e.outline.enabled),
+      color: P(i.color, e.outline.color),
+      width: w(i.width, e.outline.width, 0, 0.2)
+    },
+    margins: {
+      top: w(s.top, e.margins.top, 0, 90),
+      right: w(s.right, e.margins.right, 0, 45),
+      bottom: w(s.bottom, e.margins.bottom, 0, 90),
+      left: w(s.left, e.margins.left, 0, 45)
+    },
+    band: {
+      enabled: ae(a.enabled, e.band.enabled),
+      color: P(a.color, e.band.color),
+      opacity: w(a.opacity, e.band.opacity, 0, 1)
+    },
+    background: hn(n.background, e.background),
+    overlay: w(n.overlay, e.overlay, 0, 1),
+    caption: {
+      fontFamily: ze(o.fontFamily, e.caption.fontFamily).trim(),
+      fontWeight: Math.round(w(o.fontWeight, e.caption.fontWeight, 100, 900) / 100) * 100,
+      size: w(o.size, e.caption.size, 1, 15),
+      color: P(o.color, e.caption.color),
+      textCase: K(o.textCase, De, e.caption.textCase),
+      italic: ae(o.italic, e.caption.italic)
     }
-    if (label) {
-      if (section) section.endLine = i;
-      section = { label: label[1].trim(), labelLine: i, startLine: i, endLine: lines.length, chunks: [] };
-      sections.push(section);
+  };
+}
+function yt(t) {
+  try {
+    return X(JSON.parse(t));
+  } catch {
+    return X(null);
+  }
+}
+const fn = (t) => ({ id: t.id, name: t.name, type: t.type, style: yt(t.json) }), gn = f.transaction(() => {
+  const t = f.prepare("SELECT id FROM themes WHERE type = 'builtin' AND name = ?"), e = f.prepare("INSERT INTO themes (name, type, json) VALUES (?, 'builtin', ?)"), n = f.prepare("UPDATE themes SET json = ? WHERE id = ?");
+  for (const { name: r, style: i } of un) {
+    const s = t.get(r);
+    s ? n.run(JSON.stringify(i), s.id) : e.run(r, JSON.stringify(i));
+  }
+});
+function mn() {
+  return f.prepare("SELECT id, name, type, json FROM themes ORDER BY type = 'custom', id").all().map(
+    fn
+  );
+}
+function En(t, e) {
+  const n = JSON.stringify(X(e)), r = f.prepare("INSERT INTO themes (name, type, json) VALUES (?, 'custom', ?)").run(t, n);
+  return { id: Number(r.lastInsertRowid), name: t, type: "custom", style: yt(n) };
+}
+function yn(t, e, n) {
+  return f.prepare("UPDATE themes SET name = ?, json = ? WHERE id = ? AND type = 'custom'").run(e, JSON.stringify(X(n)), t).changes > 0;
+}
+const bn = f.transaction((t) => f.prepare("DELETE FROM themes WHERE id = ? AND type = 'custom'").run(t).changes === 0 ? !1 : (f.prepare("UPDATE songs SET theme_id = NULL WHERE theme_id = ?").run(t), f.prepare("DELETE FROM settings WHERE key LIKE 'theme.default.%' AND value = ?").run(String(t)), !0)), bt = (t) => `theme.default.${t}`;
+function Tn() {
+  var i;
+  const t = f.prepare("SELECT 1 FROM themes WHERE id = ?"), e = f.prepare("SELECT id FROM themes WHERE type = 'builtin' AND name = ?"), n = f.prepare("SELECT value FROM settings WHERE key = ?"), r = {};
+  for (const s of xe) {
+    const a = Number((i = n.get(bt(s))) == null ? void 0 : i.value);
+    r[s] = Number.isInteger(a) && t.get(a) ? a : e.get(pn[s]).id;
+  }
+  return r;
+}
+function wn(t, e) {
+  if (!f.prepare("SELECT 1 FROM themes WHERE id = ?").get(e)) throw new Error(`Theme ${e} does not exist`);
+  f.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(
+    bt(t),
+    String(e)
+  );
+}
+const he = { order: [], linesPerSlide: null }, Tt = [2, 3, 4], Sn = /^\s*\[([^\]]+)\]\s*$/;
+function wt(t) {
+  const e = t;
+  return typeof e == "object" && e !== null && Array.isArray(e.order) && e.order.every((n) => typeof n == "string") && (e.linesPerSlide === null || Tt.includes(e.linesPerSlide));
+}
+function St(t) {
+  const e = t.replace(/\r\n?/g, `
+`).split(`
+`), n = [];
+  let r = null, i = null;
+  for (let s = 0; s < e.length; s++) {
+    const a = e[s], o = Sn.exec(a);
+    if ((o || a.trim() === "") && (i && r && (i.endLine = s, r.chunks.push(i)), i = null), o) {
+      r && (r.endLine = s), r = { label: o[1].trim(), labelLine: s, startLine: s, endLine: e.length, chunks: [] }, n.push(r);
       continue;
     }
-    if (line.trim() === "") continue;
-    if (!section) {
-      section = { label: null, labelLine: null, startLine: 0, endLine: lines.length, chunks: [] };
-      sections.push(section);
-    }
-    chunk ?? (chunk = { startLine: i, endLine: i + 1, lines: [] });
-    chunk.lines.push(line.trim());
+    a.trim() !== "" && (r || (r = { label: null, labelLine: null, startLine: 0, endLine: e.length, chunks: [] }, n.push(r)), i ?? (i = { startLine: s, endLine: s + 1, lines: [] }), i.lines.push(a.trim()));
   }
-  if (chunk && section) {
-    chunk.endLine = lines.length;
-    section.chunks.push(chunk);
+  return i && r && (i.endLine = e.length, r.chunks.push(i)), n;
+}
+function Nn(t, e) {
+  if (e === null || t.length <= e) return [t];
+  const n = Math.ceil(t.length / e), r = [];
+  let i = 0;
+  for (let s = 0; s < n; s++) {
+    const a = Math.floor(t.length / n) + (s < t.length % n ? 1 : 0);
+    r.push(t.slice(i, i + a)), i += a;
   }
-  return sections;
+  return r;
 }
-function splitLines(lines, max) {
-  if (max === null || lines.length <= max) return [lines];
-  const count = Math.ceil(lines.length / max);
-  const groups = [];
-  let start = 0;
-  for (let i = 0; i < count; i++) {
-    const size = Math.floor(lines.length / count) + (i < lines.length % count ? 1 : 0);
-    groups.push(lines.slice(start, start + size));
-    start += size;
-  }
-  return groups;
+function Ke(t, e) {
+  return t.chunks.flatMap((n) => Nn(n.lines, e)).map((n) => ({ text: n.join(`
+`), label: t.label }));
 }
-function sectionSlides(section, linesPerSlide) {
-  return section.chunks.flatMap((chunk) => splitLines(chunk.lines, linesPerSlide)).map((lines) => ({ text: lines.join("\n"), label: section.label }));
-}
-function findSection(sections, label) {
-  const key = label.trim().toLowerCase();
-  return sections.find((section) => {
-    var _a;
-    return ((_a = section.label) == null ? void 0 : _a.toLowerCase()) === key;
+function xn(t, e) {
+  const n = e.trim().toLowerCase();
+  return t.find((r) => {
+    var i;
+    return ((i = r.label) == null ? void 0 : i.toLowerCase()) === n;
   });
 }
-function buildSongSlides(lyrics, arrangement = DEFAULT_ARRANGEMENT) {
-  const sections = parseLyrics(lyrics);
-  if (arrangement.order.length === 0) return sections.flatMap((s) => sectionSlides(s, arrangement.linesPerSlide));
-  return arrangement.order.flatMap((label) => {
-    const section = findSection(sections, label);
-    return section ? sectionSlides(section, arrangement.linesPerSlide) : [];
+function An(t, e = he) {
+  const n = St(t);
+  return e.order.length === 0 ? n.flatMap((r) => Ke(r, e.linesPerSlide)) : e.order.flatMap((r) => {
+    const i = xn(n, r);
+    return i ? Ke(i, e.linesPerSlide) : [];
   });
 }
-function parseJson(value) {
-  if (value === null) return null;
+function Je(t) {
+  if (t === null) return null;
   try {
-    return JSON.parse(value);
+    return JSON.parse(t);
   } catch {
     return null;
   }
 }
-function toSong(row) {
-  const tags = parseJson(row.tags);
-  const arrangement = parseJson(row.arrangement);
+function _n(t) {
+  const e = Je(t.tags), n = Je(t.arrangement);
   return {
-    id: row.id,
-    title: row.title,
-    author: row.author,
-    copyright: row.copyright,
-    tags: Array.isArray(tags) ? tags.filter((tag) => typeof tag === "string") : [],
-    arrangement: isArrangement(arrangement) ? arrangement : DEFAULT_ARRANGEMENT,
-    lyrics: row.lyrics ?? ""
+    id: t.id,
+    title: t.title,
+    author: t.author,
+    copyright: t.copyright,
+    tags: Array.isArray(e) ? e.filter((r) => typeof r == "string") : [],
+    arrangement: wt(n) ? n : he,
+    themeId: t.theme_id,
+    lyrics: t.lyrics ?? ""
   };
 }
-function replaceSlides(songId, lyrics, arrangement) {
-  db.prepare("DELETE FROM slides WHERE song_id = ?").run(songId);
-  const insert = db.prepare("INSERT INTO slides (song_id, order_index, text) VALUES (?, ?, ?)");
-  buildSongSlides(lyrics, arrangement).forEach((slide, index) => insert.run(songId, index, slide.text));
+function Nt(t, e, n) {
+  f.prepare("DELETE FROM slides WHERE song_id = ?").run(t);
+  const r = f.prepare("INSERT INTO slides (song_id, order_index, text) VALUES (?, ?, ?)");
+  An(e, n).forEach((i, s) => r.run(t, s, i.text));
 }
-function songParams(input) {
+function xt(t) {
   return {
-    title: input.title,
-    author: input.author,
-    copyright: input.copyright,
-    tags: JSON.stringify(input.tags),
-    arrangement: JSON.stringify(input.arrangement),
-    lyrics: input.lyrics
+    title: t.title,
+    author: t.author,
+    copyright: t.copyright,
+    tags: JSON.stringify(t.tags),
+    arrangement: JSON.stringify(t.arrangement),
+    theme_id: t.themeId,
+    lyrics: t.lyrics
   };
 }
-function listSongs(search) {
-  const query = search == null ? void 0 : search.trim();
-  if (!query) {
-    return db.prepare("SELECT id, title, author FROM songs ORDER BY title COLLATE NOCASE").all();
-  }
-  const pattern = `%${query.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  return db.prepare(
+function Me(t) {
+  const e = t == null ? void 0 : t.trim();
+  if (!e)
+    return f.prepare("SELECT id, title, author FROM songs ORDER BY title COLLATE NOCASE").all();
+  const n = `%${e.replace(/[\\%_]/g, (r) => `\\${r}`)}%`;
+  return f.prepare(
     `SELECT id, title, author FROM songs
        WHERE title LIKE @pattern ESCAPE '\\'
           OR author LIKE @pattern ESCAPE '\\'
           OR tags LIKE @pattern ESCAPE '\\'
           OR lyrics LIKE @pattern ESCAPE '\\'
        ORDER BY title COLLATE NOCASE`
-  ).all({ pattern });
+  ).all({ pattern: n });
 }
-function getSong(id) {
-  const row = db.prepare("SELECT id, title, author, copyright, tags, arrangement, lyrics FROM songs WHERE id = ?").get(id);
-  return row && toSong(row);
+function At(t) {
+  const e = f.prepare("SELECT id, title, author, copyright, tags, arrangement, theme_id, lyrics FROM songs WHERE id = ?").get(t);
+  return e && _n(e);
 }
-const createSong = db.transaction((input) => {
-  const result = db.prepare(
-    `INSERT INTO songs (title, author, copyright, tags, arrangement, lyrics)
-       VALUES (@title, @author, @copyright, @tags, @arrangement, @lyrics)`
-  ).run(songParams(input));
-  const id = Number(result.lastInsertRowid);
-  replaceSlides(id, input.lyrics, input.arrangement);
-  return { id, ...input };
-});
-const createSongs = db.transaction((inputs) => {
-  inputs.forEach((input) => createSong(input));
-  return inputs.length;
-});
-const updateSong = db.transaction((id, input) => {
-  const result = db.prepare(
-    `UPDATE songs SET title = @title, author = @author, copyright = @copyright, tags = @tags,
-         arrangement = @arrangement, lyrics = @lyrics
+const _t = f.transaction((t) => {
+  const e = f.prepare(
+    `INSERT INTO songs (title, author, copyright, tags, arrangement, theme_id, lyrics)
+       VALUES (@title, @author, @copyright, @tags, @arrangement, @theme_id, @lyrics)`
+  ).run(xt(t)), n = Number(e.lastInsertRowid);
+  return Nt(n, t.lyrics, t.arrangement), { id: n, ...t };
+}), In = f.transaction((t) => (t.forEach((e) => _t(e)), t.length)), Cn = f.transaction((t, e) => f.prepare(
+  `UPDATE songs SET title = @title, author = @author, copyright = @copyright, tags = @tags,
+         arrangement = @arrangement, theme_id = @theme_id, lyrics = @lyrics
        WHERE id = @id`
-  ).run({ ...songParams(input), id });
-  if (result.changes === 0) return false;
-  replaceSlides(id, input.lyrics, input.arrangement);
-  return true;
-});
-function deleteSong(id) {
-  return db.prepare("DELETE FROM songs WHERE id = ?").run(id).changes > 0;
+).run({ ...xt(e), id: t }).changes === 0 ? !1 : (Nt(t, e.lyrics, e.arrangement), !0));
+function vn(t) {
+  return f.prepare("DELETE FROM songs WHERE id = ?").run(t).changes > 0;
 }
-function assertId$1(value) {
-  if (!Number.isInteger(value) || value < 1) {
+function me(t) {
+  if (!Number.isInteger(t) || t < 1)
     throw new TypeError("Song id must be a positive integer");
-  }
-  return value;
+  return t;
 }
-function assertSongInput(value) {
-  const input = value;
-  if (typeof input !== "object" || input === null || typeof input.title !== "string" || input.title.trim() === "" || input.author !== null && typeof input.author !== "string" || input.copyright !== null && typeof input.copyright !== "string" || !Array.isArray(input.tags) || !input.tags.every((tag) => typeof tag === "string") || !isArrangement(input.arrangement) || typeof input.lyrics !== "string") {
+function Ae(t) {
+  const e = t;
+  if (typeof e != "object" || e === null || typeof e.title != "string" || e.title.trim() === "" || e.author !== null && typeof e.author != "string" || e.copyright !== null && typeof e.copyright != "string" || !Array.isArray(e.tags) || !e.tags.every((n) => typeof n == "string") || !wt(e.arrangement) || e.themeId !== null && !(Number.isInteger(e.themeId) && e.themeId > 0) || typeof e.lyrics != "string")
     throw new TypeError(
-      "Song needs a non-empty title, author and copyright (string or null), tags, an arrangement and lyrics"
+      "Song needs a non-empty title, author and copyright (string or null), tags, an arrangement, a theme id (or null) and lyrics"
     );
-  }
   return {
-    title: input.title.trim(),
-    author: input.author,
-    copyright: input.copyright,
-    tags: input.tags,
-    arrangement: { order: input.arrangement.order, linesPerSlide: input.arrangement.linesPerSlide },
-    lyrics: input.lyrics
+    title: e.title.trim(),
+    author: e.author,
+    copyright: e.copyright,
+    tags: e.tags,
+    arrangement: { order: e.arrangement.order, linesPerSlide: e.arrangement.linesPerSlide },
+    themeId: e.themeId,
+    lyrics: e.lyrics
   };
 }
-function registerSongIpc() {
-  ipcMain.handle(
+function Ln() {
+  m.handle(
     "songs:list",
-    (_event, search) => listSongs(typeof search === "string" ? search : void 0)
-  );
-  ipcMain.handle("songs:get", (_event, id) => getSong(assertId$1(id)));
-  ipcMain.handle("songs:create", (_event, input) => createSong(assertSongInput(input)));
-  ipcMain.handle(
+    (t, e) => Me(typeof e == "string" ? e : void 0)
+  ), m.handle("songs:get", (t, e) => At(me(e))), m.handle("songs:create", (t, e) => _t(Ae(e))), m.handle(
     "songs:update",
-    (_event, id, input) => updateSong(assertId$1(id), assertSongInput(input))
-  );
-  ipcMain.handle("songs:delete", (_event, id) => deleteSong(assertId$1(id)));
+    (t, e, n) => Cn(me(e), Ae(n))
+  ), m.handle("songs:delete", (t, e) => vn(me(e)));
 }
-const VERSE_COLUMNS = "v.book, v.chapter, v.verse, v.text";
-const FROM_VERSION = "FROM verses v JOIN bible_versions b ON b.id = v.version_id WHERE b.code = @version";
-function getVerse(version, book, chapter, verse) {
-  return db.prepare(
-    `SELECT ${VERSE_COLUMNS} ${FROM_VERSION}
+const Pe = "v.book, v.chapter, v.verse, v.text", ke = "FROM verses v JOIN bible_versions b ON b.id = v.version_id WHERE b.code = @version";
+function On(t, e, n, r) {
+  return f.prepare(
+    `SELECT ${Pe} ${ke}
          AND v.book = @book AND v.chapter = @chapter AND v.verse = @verse`
-  ).get({ version, book, chapter, verse });
+  ).get({ version: t, book: e, chapter: n, verse: r });
 }
-function getRange(version, book, chapter, verseStart, verseEnd) {
-  return db.prepare(
-    `SELECT ${VERSE_COLUMNS} ${FROM_VERSION}
+function Rn(t, e, n, r, i) {
+  return f.prepare(
+    `SELECT ${Pe} ${ke}
          AND v.book = @book AND v.chapter = @chapter AND v.verse BETWEEN @verseStart AND @verseEnd
        ORDER BY v.verse`
-  ).all({ version, book, chapter, verseStart, verseEnd });
+  ).all({ version: t, book: e, chapter: n, verseStart: r, verseEnd: i });
 }
-function searchText(version, query) {
-  const trimmed = query.trim();
-  if (!trimmed) return [];
-  const pattern = `%${trimmed.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  return db.prepare(
-    `SELECT ${VERSE_COLUMNS} ${FROM_VERSION}
+function Fn(t, e) {
+  const n = e.trim();
+  if (!n) return [];
+  const r = `%${n.replace(/[\\%_]/g, (i) => `\\${i}`)}%`;
+  return f.prepare(
+    `SELECT ${Pe} ${ke}
          AND v.text LIKE @pattern ESCAPE '\\'
        ORDER BY v.id
        LIMIT 100`
-  ).all({ version, pattern });
+  ).all({ version: t, pattern: r });
 }
-function listBooks() {
-  return db.prepare("SELECT book FROM verses GROUP BY book ORDER BY MIN(id)").all().map(
-    (row) => row.book
+function $n() {
+  return f.prepare("SELECT book FROM verses GROUP BY book ORDER BY MIN(id)").all().map(
+    (t) => t.book
   );
 }
-const VERSIONS = ["KJV", "WEB"];
-function assertVersion(value) {
-  if (!VERSIONS.includes(value)) {
-    throw new TypeError(`Bible version must be one of ${VERSIONS.join(", ")}`);
-  }
-  return value;
+const Qe = ["KJV", "WEB"];
+function Ee(t) {
+  if (!Qe.includes(t))
+    throw new TypeError(`Bible version must be one of ${Qe.join(", ")}`);
+  return t;
 }
-function assertBook(value) {
-  if (typeof value !== "string" || value.trim() === "") throw new TypeError("Book must be a non-empty string");
-  return value;
+function Ze(t) {
+  if (typeof t != "string" || t.trim() === "") throw new TypeError("Book must be a non-empty string");
+  return t;
 }
-function assertNumber(value, name) {
-  if (!Number.isInteger(value) || value < 1) {
-    throw new TypeError(`${name} must be a positive integer`);
-  }
-  return value;
+function J(t, e) {
+  if (!Number.isInteger(t) || t < 1)
+    throw new TypeError(`${e} must be a positive integer`);
+  return t;
 }
-function registerBibleIpc() {
-  ipcMain.handle(
+function Mn() {
+  m.handle(
     "bible:getVerse",
-    (_event, version, book, chapter, verse) => getVerse(assertVersion(version), assertBook(book), assertNumber(chapter, "Chapter"), assertNumber(verse, "Verse"))
-  );
-  ipcMain.handle(
+    (t, e, n, r, i) => On(Ee(e), Ze(n), J(r, "Chapter"), J(i, "Verse"))
+  ), m.handle(
     "bible:getRange",
-    (_event, version, book, chapter, verseStart, verseEnd) => getRange(
-      assertVersion(version),
-      assertBook(book),
-      assertNumber(chapter, "Chapter"),
-      assertNumber(verseStart, "First verse"),
-      assertNumber(verseEnd, "Last verse")
+    (t, e, n, r, i, s) => Rn(
+      Ee(e),
+      Ze(n),
+      J(r, "Chapter"),
+      J(i, "First verse"),
+      J(s, "Last verse")
     )
-  );
-  ipcMain.handle(
+  ), m.handle(
     "bible:searchText",
-    (_event, version, query) => searchText(assertVersion(version), typeof query === "string" ? query : "")
-  );
-  ipcMain.handle("bible:listBooks", () => listBooks());
+    (t, e, n) => Fn(Ee(e), typeof n == "string" ? n : "")
+  ), m.handle("bible:listBooks", () => $n());
 }
-const SELECT_ITEMS = `
+const It = `
   SELECT i.id, i.service_id, i.type, i.ref_id, i.order_index, i.payload, s.title AS song_title
   FROM service_items i
   LEFT JOIN songs s ON i.type = 'song' AND s.id = i.ref_id`;
-function toItem(row) {
-  const fields = { id: row.id, service_id: row.service_id, order: row.order_index };
-  if (row.type === "song") {
-    return { ...fields, type: "song", ref_id: row.ref_id, payload: null, title: row.song_title ?? "Missing song" };
+function Ct(t) {
+  const e = { id: t.id, service_id: t.service_id, order: t.order_index };
+  if (t.type === "song")
+    return { ...e, type: "song", ref_id: t.ref_id, payload: null, title: t.song_title ?? "Missing song" };
+  if (t.type === "scripture") {
+    const r = JSON.parse(t.payload ?? "{}");
+    return { ...e, type: "scripture", ref_id: null, payload: r, title: r.title };
   }
-  if (row.type === "scripture") {
-    const payload2 = JSON.parse(row.payload ?? "{}");
-    return { ...fields, type: "scripture", ref_id: null, payload: payload2, title: payload2.title };
-  }
-  const payload = JSON.parse(row.payload ?? "{}");
-  return { ...fields, type: "announcement", ref_id: null, payload, title: payload.title };
+  const n = JSON.parse(t.payload ?? "{}");
+  return { ...e, type: "announcement", ref_id: null, payload: n, title: n.title };
 }
-function getItem(id) {
-  const row = db.prepare(`${SELECT_ITEMS} WHERE i.id = ?`).get(id);
-  return row && toItem(row);
+function Pn(t) {
+  const e = f.prepare(`${It} WHERE i.id = ?`).get(t);
+  return e && Ct(e);
 }
-function createService(name, date) {
-  const result = db.prepare("INSERT INTO services (name, date) VALUES (?, ?)").run(name, date);
-  return { id: Number(result.lastInsertRowid), name, date };
+function kn(t, e) {
+  const n = f.prepare("INSERT INTO services (name, date) VALUES (?, ?)").run(t, e);
+  return { id: Number(n.lastInsertRowid), name: t, date: e };
 }
-function listServices() {
-  return db.prepare("SELECT id, name, date FROM services ORDER BY date IS NULL, date DESC, id DESC").all();
+function jn() {
+  return f.prepare("SELECT id, name, date FROM services ORDER BY date IS NULL, date DESC, id DESC").all();
 }
-function getService(id) {
-  const service = db.prepare("SELECT id, name, date FROM services WHERE id = ?").get(id);
-  if (!service) return void 0;
-  const rows = db.prepare(`${SELECT_ITEMS} WHERE i.service_id = ? ORDER BY i.order_index, i.id`).all(id);
-  return { ...service, items: rows.map(toItem) };
+function Un(t) {
+  const e = f.prepare("SELECT id, name, date FROM services WHERE id = ?").get(t);
+  if (!e) return;
+  const n = f.prepare(`${It} WHERE i.service_id = ? ORDER BY i.order_index, i.id`).all(t);
+  return { ...e, items: n.map(Ct) };
 }
-function deleteService(id) {
-  return db.prepare("DELETE FROM services WHERE id = ?").run(id).changes > 0;
+function Bn(t) {
+  return f.prepare("DELETE FROM services WHERE id = ?").run(t).changes > 0;
 }
-const addItem = db.transaction(
-  (serviceId, type, refId, payload) => {
-    if (!db.prepare("SELECT 1 FROM services WHERE id = ?").get(serviceId)) {
-      throw new Error(`Service ${serviceId} does not exist`);
-    }
-    if (type === "song" && !db.prepare("SELECT 1 FROM songs WHERE id = ?").get(refId)) {
-      throw new Error(`Song ${refId} does not exist`);
-    }
-    const { next } = db.prepare("SELECT COALESCE(MAX(order_index) + 1, 0) AS next FROM service_items WHERE service_id = ?").get(serviceId);
-    const result = db.prepare("INSERT INTO service_items (service_id, type, ref_id, order_index, payload) VALUES (?, ?, ?, ?, ?)").run(serviceId, type, refId, next, payload === null ? null : JSON.stringify(payload));
-    return getItem(Number(result.lastInsertRowid));
+const Vn = f.transaction(
+  (t, e, n, r) => {
+    if (!f.prepare("SELECT 1 FROM services WHERE id = ?").get(t))
+      throw new Error(`Service ${t} does not exist`);
+    if (e === "song" && !f.prepare("SELECT 1 FROM songs WHERE id = ?").get(n))
+      throw new Error(`Song ${n} does not exist`);
+    const { next: i } = f.prepare("SELECT COALESCE(MAX(order_index) + 1, 0) AS next FROM service_items WHERE service_id = ?").get(t), s = f.prepare("INSERT INTO service_items (service_id, type, ref_id, order_index, payload) VALUES (?, ?, ?, ?, ?)").run(t, e, n, i, r === null ? null : JSON.stringify(r));
+    return Pn(Number(s.lastInsertRowid));
   }
 );
-function removeItem(itemId) {
-  return db.prepare("DELETE FROM service_items WHERE id = ?").run(itemId).changes > 0;
+function Wn(t) {
+  return f.prepare("DELETE FROM service_items WHERE id = ?").run(t).changes > 0;
 }
-const reorderItems = db.transaction((serviceId, orderedItemIds) => {
-  const current = new Set(
-    db.prepare("SELECT id FROM service_items WHERE service_id = ?").all(serviceId).map(
-      (row) => row.id
+const Xn = f.transaction((t, e) => {
+  const n = new Set(
+    f.prepare("SELECT id FROM service_items WHERE service_id = ?").all(t).map(
+      (s) => s.id
     )
-  );
-  const requested = new Set(orderedItemIds);
-  if (requested.size !== orderedItemIds.length || requested.size !== current.size || orderedItemIds.some((id) => !current.has(id))) {
-    return false;
-  }
-  const update = db.prepare("UPDATE service_items SET order_index = ? WHERE id = ?");
-  orderedItemIds.forEach((id, index) => update.run(index, id));
-  return true;
-});
-const ITEM_TYPES = ["song", "scripture", "announcement"];
-function assertId(value, name = "Id") {
-  if (!Number.isInteger(value) || value < 1) {
-    throw new TypeError(`${name} must be a positive integer`);
-  }
-  return value;
+  ), r = new Set(e);
+  if (r.size !== e.length || r.size !== n.size || e.some((s) => !n.has(s)))
+    return !1;
+  const i = f.prepare("UPDATE service_items SET order_index = ? WHERE id = ?");
+  return e.forEach((s, a) => i.run(a, s)), !0;
+}), et = ["song", "scripture", "announcement"];
+function B(t, e = "Id") {
+  if (!Number.isInteger(t) || t < 1)
+    throw new TypeError(`${e} must be a positive integer`);
+  return t;
 }
-function assertName(value) {
-  if (typeof value !== "string" || value.trim() === "") throw new TypeError("Service needs a non-empty name");
-  return value.trim();
+function qn(t) {
+  if (typeof t != "string" || t.trim() === "") throw new TypeError("Service needs a non-empty name");
+  return t.trim();
 }
-function assertDate(value) {
-  if (value === null || value === void 0 || value === "") return null;
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+function Hn(t) {
+  if (t == null || t === "") return null;
+  if (typeof t != "string" || !/^\d{4}-\d{2}-\d{2}$/.test(t))
     throw new TypeError("Service date must be YYYY-MM-DD or null");
-  }
-  return value;
+  return t;
 }
-function assertTitle(value) {
-  if (typeof value !== "string" || value.trim() === "") throw new TypeError("Item needs a non-empty title");
-  return value.trim();
+function vt(t) {
+  if (typeof t != "string" || t.trim() === "") throw new TypeError("Item needs a non-empty title");
+  return t.trim();
 }
-function assertScripture(value) {
-  const payload = value;
-  if (typeof payload !== "object" || payload === null || !Array.isArray(payload.verses) || payload.verses.length === 0) {
+function Yn(t) {
+  const e = t;
+  if (typeof e != "object" || e === null || !Array.isArray(e.verses) || e.verses.length === 0)
     throw new TypeError("Scripture needs a title and at least one verse");
-  }
-  const verses = payload.verses.map((verse) => {
-    if (typeof (verse == null ? void 0 : verse.text) !== "string" || typeof verse.caption !== "string") {
+  const n = e.verses.map((r) => {
+    if (typeof (r == null ? void 0 : r.text) != "string" || typeof r.caption != "string")
       throw new TypeError("Each verse needs text and a caption");
-    }
-    return { text: verse.text, caption: verse.caption };
+    return { text: r.text, caption: r.caption };
   });
-  return { title: assertTitle(payload.title), verses };
+  return { title: vt(e.title), verses: n };
 }
-function assertAnnouncement(value) {
-  const payload = value;
-  if (typeof payload !== "object" || payload === null || typeof payload.body !== "string") {
+function Gn(t) {
+  const e = t;
+  if (typeof e != "object" || e === null || typeof e.body != "string")
     throw new TypeError("Announcement needs a title and body text");
-  }
-  return { title: assertTitle(payload.title), body: payload.body };
+  return { title: vt(e.title), body: e.body };
 }
-function assertItem(type, refId, payload) {
-  if (!ITEM_TYPES.includes(type)) {
-    throw new TypeError(`Item type must be one of ${ITEM_TYPES.join(", ")}`);
+function zn(t, e, n) {
+  if (!et.includes(t))
+    throw new TypeError(`Item type must be one of ${et.join(", ")}`);
+  if (t === "song") {
+    if (n != null) throw new TypeError("Song items have no payload");
+    return { type: t, refId: B(e, "Song id"), payload: null };
   }
-  if (type === "song") {
-    if (payload !== null && payload !== void 0) throw new TypeError("Song items have no payload");
-    return { type, refId: assertId(refId, "Song id"), payload: null };
-  }
-  if (refId !== null && refId !== void 0) throw new TypeError(`${type} items have no refId`);
-  return type === "scripture" ? { type, refId: null, payload: assertScripture(payload) } : { type: "announcement", refId: null, payload: assertAnnouncement(payload) };
+  if (e != null) throw new TypeError(`${t} items have no refId`);
+  return t === "scripture" ? { type: t, refId: null, payload: Yn(n) } : { type: "announcement", refId: null, payload: Gn(n) };
 }
-function registerServiceIpc() {
-  ipcMain.handle(
+function Dn() {
+  m.handle(
     "services:create",
-    (_event, name, date) => createService(assertName(name), assertDate(date))
-  );
-  ipcMain.handle("services:list", () => listServices());
-  ipcMain.handle("services:get", (_event, id) => getService(assertId(id, "Service id")));
-  ipcMain.handle("services:delete", (_event, id) => deleteService(assertId(id, "Service id")));
-  ipcMain.handle("services:addItem", (_event, serviceId, type, refId, payload) => {
-    const item = assertItem(type, refId, payload);
-    return addItem(assertId(serviceId, "Service id"), item.type, item.refId, item.payload);
-  });
-  ipcMain.handle("services:removeItem", (_event, itemId) => removeItem(assertId(itemId, "Item id")));
-  ipcMain.handle("services:reorderItems", (_event, serviceId, orderedItemIds) => {
-    if (!Array.isArray(orderedItemIds)) throw new TypeError("Item ids must be an array");
-    return reorderItems(
-      assertId(serviceId, "Service id"),
-      orderedItemIds.map((id) => assertId(id, "Item id"))
+    (t, e, n) => kn(qn(e), Hn(n))
+  ), m.handle("services:list", () => jn()), m.handle("services:get", (t, e) => Un(B(e, "Service id"))), m.handle("services:delete", (t, e) => Bn(B(e, "Service id"))), m.handle("services:addItem", (t, e, n, r, i) => {
+    const s = zn(n, r, i);
+    return Vn(B(e, "Service id"), s.type, s.refId, s.payload);
+  }), m.handle("services:removeItem", (t, e) => Wn(B(e, "Item id"))), m.handle("services:reorderItems", (t, e, n) => {
+    if (!Array.isArray(n)) throw new TypeError("Item ids must be an array");
+    return Xn(
+      B(e, "Service id"),
+      n.map((r) => B(r, "Item id"))
     );
   });
 }
-const nameStartChar = ":A-Za-z_\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u02FF\\u0370-\\u037D\\u037F-\\u1FFF\\u200C-\\u200D\\u2070-\\u218F\\u2C00-\\u2FEF\\u3001-\\uD7FF\\uF900-\\uFDCF\\uFDF0-\\uFFFD";
-const nameChar = nameStartChar + "\\-.\\d\\u00B7\\u0300-\\u036F\\u203F-\\u2040";
-const nameRegexp = "[" + nameStartChar + "][" + nameChar + "]*";
-const regexName = new RegExp("^" + nameRegexp + "$");
-function getAllMatches(string, regex) {
-  const matches = [];
-  let match = regex.exec(string);
-  while (match) {
-    const allmatches = [];
-    allmatches.startIndex = regex.lastIndex - match[0].length;
-    const len = match.length;
-    for (let index = 0; index < len; index++) {
-      allmatches.push(match[index]);
-    }
-    matches.push(allmatches);
-    match = regex.exec(string);
+const Lt = ":A-Za-z_\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u02FF\\u0370-\\u037D\\u037F-\\u1FFF\\u200C-\\u200D\\u2070-\\u218F\\u2C00-\\u2FEF\\u3001-\\uD7FF\\uF900-\\uFDCF\\uFDF0-\\uFFFD", Kn = Lt + "\\-.\\d\\u00B7\\u0300-\\u036F\\u203F-\\u2040", Jn = "[" + Lt + "][" + Kn + "]*", Qn = new RegExp("^" + Jn + "$");
+function Zn(t, e) {
+  const n = [];
+  let r = e.exec(t);
+  for (; r; ) {
+    const i = [];
+    i.startIndex = e.lastIndex - r[0].length;
+    const s = r.length;
+    for (let a = 0; a < s; a++)
+      i.push(r[a]);
+    n.push(i), r = e.exec(t);
   }
-  return matches;
+  return n;
 }
-const isName = function(string) {
-  const match = regexName.exec(string);
-  return !(match === null || typeof match === "undefined");
+const Ot = function(t) {
+  const e = Qn.exec(t);
+  return !(e === null || typeof e > "u");
 };
-function isExist(v) {
-  return typeof v !== "undefined";
+function er(t) {
+  return typeof t < "u";
 }
-const DANGEROUS_PROPERTY_NAMES = [
+const je = [
   // '__proto__',
   // 'constructor',
   // 'prototype',
@@ -504,359 +622,264 @@ const DANGEROUS_PROPERTY_NAMES = [
   "__defineSetter__",
   "__lookupGetter__",
   "__lookupSetter__"
-];
-const criticalProperties = ["__proto__", "constructor", "prototype"];
-const defaultOptions$1 = {
-  allowBooleanAttributes: false,
+], Rt = ["__proto__", "constructor", "prototype"], tr = {
+  allowBooleanAttributes: !1,
   //A tag can have attributes without any value
   unpairedTags: []
 };
-function validate(xmlData, options) {
-  options = Object.assign({}, defaultOptions$1, options);
-  const tags = [];
-  let tagFound = false;
-  let reachedRoot = false;
-  if (xmlData[0] === "\uFEFF") {
-    xmlData = xmlData.substr(1);
-  }
-  for (let i = 0; i < xmlData.length; i++) {
-    if (xmlData[i] === "<" && xmlData[i + 1] === "?") {
-      i += 2;
-      i = readPI(xmlData, i);
-      if (i.err) return i;
-    } else if (xmlData[i] === "<") {
-      let tagStartPos = i;
-      i++;
-      if (xmlData[i] === "!") {
-        i = readCommentAndCDATA(xmlData, i);
+function nr(t, e) {
+  e = Object.assign({}, tr, e);
+  const n = [];
+  let r = !1, i = !1;
+  t[0] === "\uFEFF" && (t = t.substr(1));
+  for (let s = 0; s < t.length; s++)
+    if (t[s] === "<" && t[s + 1] === "?") {
+      if (s += 2, s = tt(t, s), s.err) return s;
+    } else if (t[s] === "<") {
+      let a = s;
+      if (s++, t[s] === "!") {
+        s = nt(t, s);
         continue;
       } else {
-        let closingTag = false;
-        if (xmlData[i] === "/") {
-          closingTag = true;
-          i++;
+        let o = !1;
+        t[s] === "/" && (o = !0, s++);
+        let l = "";
+        for (; s < t.length && t[s] !== ">" && t[s] !== " " && t[s] !== "	" && t[s] !== `
+` && t[s] !== "\r"; s++)
+          l += t[s];
+        if (l = l.trim(), l[l.length - 1] === "/" && (l = l.substring(0, l.length - 1), s--), !dr(l)) {
+          let u;
+          return l.trim().length === 0 ? u = "Invalid space after '<'." : u = "Tag '" + l + "' is an invalid name.", b("InvalidTag", u, S(t, s));
         }
-        let tagName = "";
-        for (; i < xmlData.length && xmlData[i] !== ">" && xmlData[i] !== " " && xmlData[i] !== "	" && xmlData[i] !== "\n" && xmlData[i] !== "\r"; i++) {
-          tagName += xmlData[i];
-        }
-        tagName = tagName.trim();
-        if (tagName[tagName.length - 1] === "/") {
-          tagName = tagName.substring(0, tagName.length - 1);
-          i--;
-        }
-        if (!validateTagName(tagName)) {
-          let msg;
-          if (tagName.trim().length === 0) {
-            msg = "Invalid space after '<'.";
-          } else {
-            msg = "Tag '" + tagName + "' is an invalid name.";
-          }
-          return getErrorObject("InvalidTag", msg, getLineNumberForPosition(xmlData, i));
-        }
-        const result = readAttributeStr(xmlData, i);
-        if (result === false) {
-          return getErrorObject("InvalidAttr", "Attributes for '" + tagName + "' have open quote.", getLineNumberForPosition(xmlData, i));
-        }
-        let attrStr = result.value;
-        i = result.index;
-        if (attrStr[attrStr.length - 1] === "/") {
-          const attrStrStart = i - attrStr.length;
-          attrStr = attrStr.substring(0, attrStr.length - 1);
-          const isValid = validateAttributeString(attrStr, options);
-          if (isValid === true) {
-            tagFound = true;
-          } else {
-            return getErrorObject(isValid.err.code, isValid.err.msg, getLineNumberForPosition(xmlData, attrStrStart + isValid.err.line));
-          }
-        } else if (closingTag) {
-          if (!result.tagClosed) {
-            return getErrorObject("InvalidTag", "Closing tag '" + tagName + "' doesn't have proper closing.", getLineNumberForPosition(xmlData, i));
-          } else if (attrStr.trim().length > 0) {
-            return getErrorObject("InvalidTag", "Closing tag '" + tagName + "' can't have attributes or invalid starting.", getLineNumberForPosition(xmlData, tagStartPos));
-          } else if (tags.length === 0) {
-            return getErrorObject("InvalidTag", "Closing tag '" + tagName + "' has not been opened.", getLineNumberForPosition(xmlData, tagStartPos));
-          } else {
-            const otg = tags.pop();
-            if (tagName !== otg.tagName) {
-              let openPos = getLineNumberForPosition(xmlData, otg.tagStartPos);
-              return getErrorObject(
-                "InvalidTag",
-                "Expected closing tag '" + otg.tagName + "' (opened in line " + openPos.line + ", col " + openPos.col + ") instead of closing tag '" + tagName + "'.",
-                getLineNumberForPosition(xmlData, tagStartPos)
-              );
+        const d = sr(t, s);
+        if (d === !1)
+          return b("InvalidAttr", "Attributes for '" + l + "' have open quote.", S(t, s));
+        let c = d.value;
+        if (s = d.index, c[c.length - 1] === "/") {
+          const u = s - c.length;
+          c = c.substring(0, c.length - 1);
+          const p = rt(c, e);
+          if (p === !0)
+            r = !0;
+          else
+            return b(p.err.code, p.err.msg, S(t, u + p.err.line));
+        } else if (o)
+          if (d.tagClosed) {
+            if (c.trim().length > 0)
+              return b("InvalidTag", "Closing tag '" + l + "' can't have attributes or invalid starting.", S(t, a));
+            if (n.length === 0)
+              return b("InvalidTag", "Closing tag '" + l + "' has not been opened.", S(t, a));
+            {
+              const u = n.pop();
+              if (l !== u.tagName) {
+                let p = S(t, u.tagStartPos);
+                return b(
+                  "InvalidTag",
+                  "Expected closing tag '" + u.tagName + "' (opened in line " + p.line + ", col " + p.col + ") instead of closing tag '" + l + "'.",
+                  S(t, a)
+                );
+              }
+              n.length == 0 && (i = !0);
             }
-            if (tags.length == 0) {
-              reachedRoot = true;
-            }
-          }
-        } else {
-          const isValid = validateAttributeString(attrStr, options);
-          if (isValid !== true) {
-            return getErrorObject(isValid.err.code, isValid.err.msg, getLineNumberForPosition(xmlData, i - attrStr.length + isValid.err.line));
-          }
-          if (reachedRoot === true) {
-            return getErrorObject("InvalidXml", "Multiple possible root nodes found.", getLineNumberForPosition(xmlData, i));
-          } else if (options.unpairedTags.indexOf(tagName) !== -1) ;
-          else {
-            tags.push({ tagName, tagStartPos });
-          }
-          tagFound = true;
+          } else return b("InvalidTag", "Closing tag '" + l + "' doesn't have proper closing.", S(t, s));
+        else {
+          const u = rt(c, e);
+          if (u !== !0)
+            return b(u.err.code, u.err.msg, S(t, s - c.length + u.err.line));
+          if (i === !0)
+            return b("InvalidXml", "Multiple possible root nodes found.", S(t, s));
+          e.unpairedTags.indexOf(l) !== -1 || n.push({ tagName: l, tagStartPos: a }), r = !0;
         }
-        for (i++; i < xmlData.length; i++) {
-          if (xmlData[i] === "<") {
-            if (xmlData[i + 1] === "!") {
-              i++;
-              i = readCommentAndCDATA(xmlData, i);
+        for (s++; s < t.length; s++)
+          if (t[s] === "<")
+            if (t[s + 1] === "!") {
+              s++, s = nt(t, s);
               continue;
-            } else if (xmlData[i + 1] === "?") {
-              i = readPI(xmlData, ++i);
-              if (i.err) return i;
-            } else {
+            } else if (t[s + 1] === "?") {
+              if (s = tt(t, ++s), s.err) return s;
+            } else
               break;
-            }
-          } else if (xmlData[i] === "&") {
-            const afterAmp = validateAmpersand(xmlData, i);
-            if (afterAmp == -1)
-              return getErrorObject("InvalidChar", "char '&' is not expected.", getLineNumberForPosition(xmlData, i));
-            i = afterAmp;
-          } else {
-            if (reachedRoot === true && !isWhiteSpace(xmlData[i])) {
-              return getErrorObject("InvalidXml", "Extra text at the end", getLineNumberForPosition(xmlData, i));
-            }
-          }
-        }
-        if (xmlData[i] === "<") {
-          i--;
-        }
+          else if (t[s] === "&") {
+            const u = lr(t, s);
+            if (u == -1)
+              return b("InvalidChar", "char '&' is not expected.", S(t, s));
+            s = u;
+          } else if (i === !0 && !q(t[s]))
+            return b("InvalidXml", "Extra text at the end", S(t, s));
+        t[s] === "<" && s--;
       }
     } else {
-      if (isWhiteSpace(xmlData[i])) {
+      if (q(t[s]))
         continue;
-      }
-      return getErrorObject("InvalidChar", "char '" + xmlData[i] + "' is not expected.", getLineNumberForPosition(xmlData, i));
+      return b("InvalidChar", "char '" + t[s] + "' is not expected.", S(t, s));
     }
-  }
-  if (!tagFound) {
-    return getErrorObject("InvalidXml", "Start tag expected.", 1);
-  } else if (tags.length == 1) {
-    return getErrorObject("InvalidTag", "Unclosed tag '" + tags[0].tagName + "'.", getLineNumberForPosition(xmlData, tags[0].tagStartPos));
-  } else if (tags.length > 0) {
-    return getErrorObject("InvalidXml", "Invalid '" + JSON.stringify(tags.map((t) => t.tagName), null, 4).replace(/\r?\n/g, "") + "' found.", { line: 1, col: 1 });
-  }
-  return true;
+  if (r) {
+    if (n.length == 1)
+      return b("InvalidTag", "Unclosed tag '" + n[0].tagName + "'.", S(t, n[0].tagStartPos));
+    if (n.length > 0)
+      return b("InvalidXml", "Invalid '" + JSON.stringify(n.map((s) => s.tagName), null, 4).replace(/\r?\n/g, "") + "' found.", { line: 1, col: 1 });
+  } else return b("InvalidXml", "Start tag expected.", 1);
+  return !0;
 }
-function isWhiteSpace(char) {
-  return char === " " || char === "	" || char === "\n" || char === "\r";
+function q(t) {
+  return t === " " || t === "	" || t === `
+` || t === "\r";
 }
-function readPI(xmlData, i) {
-  const start = i;
-  for (; i < xmlData.length; i++) {
-    if (xmlData[i] == "?" || xmlData[i] == " ") {
-      const tagname = xmlData.substr(start, i - start);
-      if (i > 5 && tagname === "xml") {
-        return getErrorObject("InvalidXml", "XML declaration allowed only at the start of the document.", getLineNumberForPosition(xmlData, i));
-      } else if (xmlData[i] == "?" && xmlData[i + 1] == ">") {
-        i++;
+function tt(t, e) {
+  const n = e;
+  for (; e < t.length; e++)
+    if (t[e] == "?" || t[e] == " ") {
+      const r = t.substr(n, e - n);
+      if (e > 5 && r === "xml")
+        return b("InvalidXml", "XML declaration allowed only at the start of the document.", S(t, e));
+      if (t[e] == "?" && t[e + 1] == ">") {
+        e++;
         break;
-      } else {
+      } else
         continue;
-      }
     }
-  }
-  return i;
+  return e;
 }
-function readCommentAndCDATA(xmlData, i) {
-  if (xmlData.length > i + 5 && xmlData[i + 1] === "-" && xmlData[i + 2] === "-") {
-    for (i += 3; i < xmlData.length; i++) {
-      if (xmlData[i] === "-" && xmlData[i + 1] === "-" && xmlData[i + 2] === ">") {
-        i += 2;
+function nt(t, e) {
+  if (t.length > e + 5 && t[e + 1] === "-" && t[e + 2] === "-") {
+    for (e += 3; e < t.length; e++)
+      if (t[e] === "-" && t[e + 1] === "-" && t[e + 2] === ">") {
+        e += 2;
         break;
       }
-    }
-  } else if (xmlData.length > i + 8 && xmlData[i + 1] === "D" && xmlData[i + 2] === "O" && xmlData[i + 3] === "C" && xmlData[i + 4] === "T" && xmlData[i + 5] === "Y" && xmlData[i + 6] === "P" && xmlData[i + 7] === "E") {
-    let angleBracketsCount = 1;
-    for (i += 8; i < xmlData.length; i++) {
-      if (xmlData[i] === "<") {
-        angleBracketsCount++;
-      } else if (xmlData[i] === ">") {
-        angleBracketsCount--;
-        if (angleBracketsCount === 0) {
-          break;
-        }
-      }
-    }
-  } else if (xmlData.length > i + 9 && xmlData[i + 1] === "[" && xmlData[i + 2] === "C" && xmlData[i + 3] === "D" && xmlData[i + 4] === "A" && xmlData[i + 5] === "T" && xmlData[i + 6] === "A" && xmlData[i + 7] === "[") {
-    for (i += 8; i < xmlData.length; i++) {
-      if (xmlData[i] === "]" && xmlData[i + 1] === "]" && xmlData[i + 2] === ">") {
-        i += 2;
+  } else if (t.length > e + 8 && t[e + 1] === "D" && t[e + 2] === "O" && t[e + 3] === "C" && t[e + 4] === "T" && t[e + 5] === "Y" && t[e + 6] === "P" && t[e + 7] === "E") {
+    let n = 1;
+    for (e += 8; e < t.length; e++)
+      if (t[e] === "<")
+        n++;
+      else if (t[e] === ">" && (n--, n === 0))
+        break;
+  } else if (t.length > e + 9 && t[e + 1] === "[" && t[e + 2] === "C" && t[e + 3] === "D" && t[e + 4] === "A" && t[e + 5] === "T" && t[e + 6] === "A" && t[e + 7] === "[") {
+    for (e += 8; e < t.length; e++)
+      if (t[e] === "]" && t[e + 1] === "]" && t[e + 2] === ">") {
+        e += 2;
         break;
       }
-    }
   }
-  return i;
+  return e;
 }
-const doubleQuote = '"';
-const singleQuote = "'";
-function readAttributeStr(xmlData, i) {
-  let attrStr = "";
-  let startChar = "";
-  let tagClosed = false;
-  for (; i < xmlData.length; i++) {
-    if (xmlData[i] === doubleQuote || xmlData[i] === singleQuote) {
-      if (startChar === "") {
-        startChar = xmlData[i];
-      } else if (startChar !== xmlData[i]) ;
-      else {
-        startChar = "";
-      }
-    } else if (xmlData[i] === ">") {
-      if (startChar === "") {
-        tagClosed = true;
-        break;
-      }
+const rr = '"', ir = "'";
+function sr(t, e) {
+  let n = "", r = "", i = !1;
+  for (; e < t.length; e++) {
+    if (t[e] === rr || t[e] === ir)
+      r === "" ? r = t[e] : r !== t[e] || (r = "");
+    else if (t[e] === ">" && r === "") {
+      i = !0;
+      break;
     }
-    attrStr += xmlData[i];
+    n += t[e];
   }
-  if (startChar !== "") {
-    return false;
-  }
-  return {
-    value: attrStr,
-    index: i,
-    tagClosed
+  return r !== "" ? !1 : {
+    value: n,
+    index: e,
+    tagClosed: i
   };
 }
-function scanAttributeTokens(attrStr) {
-  const tokens = [];
-  const len = attrStr.length;
-  let i = 0;
-  while (i < len) {
-    const tokenStart = i;
-    while (i < len && isWhiteSpace(attrStr[i])) i++;
-    if (i >= len) break;
-    if (attrStr[i] === "=") {
-      i = tokenStart + 1;
+function or(t) {
+  const e = [], n = t.length;
+  let r = 0;
+  for (; r < n; ) {
+    const i = r;
+    for (; r < n && q(t[r]); ) r++;
+    if (r >= n) break;
+    if (t[r] === "=") {
+      r = i + 1;
       continue;
     }
-    const leadingWs = attrStr.slice(tokenStart, i);
-    const nameStart = i;
-    while (i < len && !isWhiteSpace(attrStr[i]) && attrStr[i] !== "=") i++;
-    const name = attrStr.slice(nameStart, i);
-    let equalsGroup;
-    let j = i;
-    while (j < len && isWhiteSpace(attrStr[j])) j++;
-    if (j < len && attrStr[j] === "=") {
-      equalsGroup = attrStr.slice(i, j + 1);
-      i = j + 1;
+    const s = t.slice(i, r), a = r;
+    for (; r < n && !q(t[r]) && t[r] !== "="; ) r++;
+    const o = t.slice(a, r);
+    let l, d = r;
+    for (; d < n && q(t[d]); ) d++;
+    d < n && t[d] === "=" && (l = t.slice(r, d + 1), r = d + 1);
+    let c, u, p = r;
+    for (; p < n && q(t[p]); ) p++;
+    if (p < n && (t[p] === '"' || t[p] === "'")) {
+      const y = p + 1, g = t.indexOf(t[p], y);
+      g !== -1 && (c = t[p], u = t.slice(y, g), r = g + 1);
     }
-    let quoteChar;
-    let value;
-    let k = i;
-    while (k < len && isWhiteSpace(attrStr[k])) k++;
-    if (k < len && (attrStr[k] === '"' || attrStr[k] === "'")) {
-      const valueStart = k + 1;
-      const closeIdx = attrStr.indexOf(attrStr[k], valueStart);
-      if (closeIdx !== -1) {
-        quoteChar = attrStr[k];
-        value = attrStr.slice(valueStart, closeIdx);
-        i = closeIdx + 1;
-      }
-    }
-    const token = { startIndex: tokenStart };
-    token[1] = leadingWs;
-    token[2] = name;
-    token[3] = equalsGroup;
-    token[4] = quoteChar !== void 0 ? true : void 0;
-    token[5] = quoteChar;
-    token[6] = value;
-    tokens.push(token);
+    const h = { startIndex: i };
+    h[1] = s, h[2] = o, h[3] = l, h[4] = c !== void 0 ? !0 : void 0, h[5] = c, h[6] = u, e.push(h);
   }
-  return tokens;
+  return e;
 }
-function validateAttributeString(attrStr, options) {
-  const matches = scanAttributeTokens(attrStr);
-  const attrNames = {};
-  for (let i = 0; i < matches.length; i++) {
-    if (matches[i][1].length === 0) {
-      return getErrorObject("InvalidAttr", "Attribute '" + matches[i][2] + "' has no space in starting.", getPositionFromMatch(matches[i]));
-    } else if (matches[i][3] !== void 0 && matches[i][4] === void 0) {
-      return getErrorObject("InvalidAttr", "Attribute '" + matches[i][2] + "' is without value.", getPositionFromMatch(matches[i]));
-    } else if (matches[i][3] === void 0 && !options.allowBooleanAttributes) {
-      return getErrorObject("InvalidAttr", "boolean attribute '" + matches[i][2] + "' is not allowed.", getPositionFromMatch(matches[i]));
-    }
-    const attrName = matches[i][2];
-    if (!validateAttrName(attrName)) {
-      return getErrorObject("InvalidAttr", "Attribute '" + attrName + "' is an invalid name.", getPositionFromMatch(matches[i]));
-    }
-    if (!Object.prototype.hasOwnProperty.call(attrNames, attrName)) {
-      attrNames[attrName] = 1;
-    } else {
-      return getErrorObject("InvalidAttr", "Attribute '" + attrName + "' is repeated.", getPositionFromMatch(matches[i]));
-    }
+function rt(t, e) {
+  const n = or(t), r = {};
+  for (let i = 0; i < n.length; i++) {
+    if (n[i][1].length === 0)
+      return b("InvalidAttr", "Attribute '" + n[i][2] + "' has no space in starting.", Q(n[i]));
+    if (n[i][3] !== void 0 && n[i][4] === void 0)
+      return b("InvalidAttr", "Attribute '" + n[i][2] + "' is without value.", Q(n[i]));
+    if (n[i][3] === void 0 && !e.allowBooleanAttributes)
+      return b("InvalidAttr", "boolean attribute '" + n[i][2] + "' is not allowed.", Q(n[i]));
+    const s = n[i][2];
+    if (!cr(s))
+      return b("InvalidAttr", "Attribute '" + s + "' is an invalid name.", Q(n[i]));
+    if (!Object.prototype.hasOwnProperty.call(r, s))
+      r[s] = 1;
+    else
+      return b("InvalidAttr", "Attribute '" + s + "' is repeated.", Q(n[i]));
   }
-  return true;
+  return !0;
 }
-function validateNumberAmpersand(xmlData, i) {
-  let re = /\d/;
-  if (xmlData[i] === "x") {
-    i++;
-    re = /[\da-fA-F]/;
-  }
-  for (; i < xmlData.length; i++) {
-    if (xmlData[i] === ";")
-      return i;
-    if (!xmlData[i].match(re))
+function ar(t, e) {
+  let n = /\d/;
+  for (t[e] === "x" && (e++, n = /[\da-fA-F]/); e < t.length; e++) {
+    if (t[e] === ";")
+      return e;
+    if (!t[e].match(n))
       break;
   }
   return -1;
 }
-function validateAmpersand(xmlData, i) {
-  i++;
-  if (xmlData[i] === ";")
+function lr(t, e) {
+  if (e++, t[e] === ";")
     return -1;
-  if (xmlData[i] === "#") {
-    i++;
-    return validateNumberAmpersand(xmlData, i);
-  }
-  let count = 0;
-  for (; i < xmlData.length; i++, count++) {
-    if (xmlData[i].match(/\w/) && count < 20)
-      continue;
-    if (xmlData[i] === ";")
-      break;
-    return -1;
-  }
-  return i;
+  if (t[e] === "#")
+    return e++, ar(t, e);
+  let n = 0;
+  for (; e < t.length; e++, n++)
+    if (!(t[e].match(/\w/) && n < 20)) {
+      if (t[e] === ";")
+        break;
+      return -1;
+    }
+  return e;
 }
-function getErrorObject(code, message, lineNumber) {
+function b(t, e, n) {
   return {
     err: {
-      code,
-      msg: message,
-      line: lineNumber.line || lineNumber,
-      col: lineNumber.col
+      code: t,
+      msg: e,
+      line: n.line || n,
+      col: n.col
     }
   };
 }
-function validateAttrName(attrName) {
-  return isName(attrName);
+function cr(t) {
+  return Ot(t);
 }
-function validateTagName(tagname) {
-  return isName(tagname);
+function dr(t) {
+  return Ot(t);
 }
-function getLineNumberForPosition(xmlData, index) {
-  const lines = xmlData.substring(0, index).split(/\r?\n/);
+function S(t, e) {
+  const n = t.substring(0, e).split(/\r?\n/);
   return {
-    line: lines.length,
+    line: n.length,
     // column number is last line's length + 1, because column numbering starts at 1:
-    col: lines[lines.length - 1].length + 1
+    col: n[n.length - 1].length + 1
   };
 }
-function getPositionFromMatch(match) {
-  return match.startIndex + match[1].length;
+function Q(t) {
+  return t.startIndex + t[1].length;
 }
-const CURRENCY = {
+const ur = {
   cent: "¢",
   pound: "£",
   curren: "¤",
@@ -872,15 +895,13 @@ const CURRENCY = {
   won: "₩",
   yuan: "¥",
   cedil: "¸"
-};
-const XML = {
+}, Ft = {
   amp: "&",
   apos: "'",
   gt: ">",
   lt: "<",
   quot: '"'
-};
-const COMMON_HTML = {
+}, pr = {
   nbsp: " ",
   copy: "©",
   reg: "®",
@@ -901,68 +922,49 @@ const COMMON_HTML = {
   frac12: "½",
   frac14: "¼",
   frac34: "¾"
-};
-const ENTITY_ACTION = Object.freeze({
+}, de = Object.freeze({
   /** Resolve and expand the entity normally. */
   ALLOW: "allow",
   /** Silently skip this entity — it will not be registered. */
   BLOCK: "block",
   /** Throw an error, aborting entity registration entirely. */
   THROW: "throw"
-});
-const SPECIAL_CHARS = new Set("!?\\\\/[]$%{}^&*()<>|+");
-function validateEntityName$1(name) {
-  if (name[0] === "#") {
-    throw new Error(`[EntityReplacer] Invalid character '#' in entity name: "${name}"`);
-  }
-  for (const ch of name) {
-    if (SPECIAL_CHARS.has(ch)) {
-      throw new Error(`[EntityReplacer] Invalid character '${ch}' in entity name: "${name}"`);
-    }
-  }
-  return name;
+}), hr = new Set("!?\\\\/[]$%{}^&*()<>|+");
+function it(t) {
+  if (t[0] === "#")
+    throw new Error(`[EntityReplacer] Invalid character '#' in entity name: "${t}"`);
+  for (const e of t)
+    if (hr.has(e))
+      throw new Error(`[EntityReplacer] Invalid character '${e}' in entity name: "${t}"`);
+  return t;
 }
-function mergeEntityMaps(...maps) {
-  const out = /* @__PURE__ */ Object.create(null);
-  for (const map of maps) {
-    if (!map) continue;
-    for (const key of Object.keys(map)) {
-      const raw = map[key];
-      if (typeof raw === "string") {
-        out[key] = raw;
-      } else if (raw && typeof raw === "object" && raw.val !== void 0) {
-        const val = raw.val;
-        if (typeof val === "string") {
-          out[key] = val;
+function Z(...t) {
+  const e = /* @__PURE__ */ Object.create(null);
+  for (const n of t)
+    if (n)
+      for (const r of Object.keys(n)) {
+        const i = n[r];
+        if (typeof i == "string")
+          e[r] = i;
+        else if (i && typeof i == "object" && i.val !== void 0) {
+          const s = i.val;
+          typeof s == "string" && (e[r] = s);
         }
       }
-    }
-  }
-  return out;
+  return e;
 }
-const LIMIT_TIER_EXTERNAL = "external";
-const LIMIT_TIER_BASE = "base";
-const LIMIT_TIER_ALL = "all";
-function parseLimitTiers(raw) {
-  if (!raw || raw === LIMIT_TIER_EXTERNAL) return /* @__PURE__ */ new Set([LIMIT_TIER_EXTERNAL]);
-  if (raw === LIMIT_TIER_ALL) return /* @__PURE__ */ new Set([LIMIT_TIER_ALL]);
-  if (raw === LIMIT_TIER_BASE) return /* @__PURE__ */ new Set([LIMIT_TIER_BASE]);
-  if (Array.isArray(raw)) return new Set(raw);
-  return /* @__PURE__ */ new Set([LIMIT_TIER_EXTERNAL]);
+const W = "external", ue = "base", _e = "all";
+function fr(t) {
+  return !t || t === W ? /* @__PURE__ */ new Set([W]) : t === _e ? /* @__PURE__ */ new Set([_e]) : t === ue ? /* @__PURE__ */ new Set([ue]) : Array.isArray(t) ? new Set(t) : /* @__PURE__ */ new Set([W]);
 }
-const NCR_LEVEL = Object.freeze({ allow: 0, leave: 1, remove: 2, throw: 3 });
-const XML10_ALLOWED_C0 = /* @__PURE__ */ new Set([9, 10, 13]);
-function parseNCRConfig(ncr) {
-  if (!ncr) {
-    return { xmlVersion: 1, onLevel: NCR_LEVEL.allow, nullLevel: NCR_LEVEL.remove };
-  }
-  const xmlVersion = ncr.xmlVersion === 1.1 ? 1.1 : 1;
-  const onLevel = NCR_LEVEL[ncr.onNCR] ?? NCR_LEVEL.allow;
-  const nullLevel = NCR_LEVEL[ncr.nullNCR] ?? NCR_LEVEL.remove;
-  const clampedNull = Math.max(nullLevel, NCR_LEVEL.remove);
-  return { xmlVersion, onLevel, nullLevel: clampedNull };
+const A = Object.freeze({ allow: 0, leave: 1, remove: 2, throw: 3 }), gr = /* @__PURE__ */ new Set([9, 10, 13]);
+function mr(t) {
+  if (!t)
+    return { xmlVersion: 1, onLevel: A.allow, nullLevel: A.remove };
+  const e = t.xmlVersion === 1.1 ? 1.1 : 1, n = A[t.onNCR] ?? A.allow, r = A[t.nullNCR] ?? A.remove, i = Math.max(r, A.remove);
+  return { xmlVersion: e, onLevel: n, nullLevel: i };
 }
-class EntityDecoder {
+class Er {
   /**
    * @param {object} [options]
    * @param {object|null}  [options.namedEntities]        — extra named entities merged into base map
@@ -998,26 +1000,10 @@ class EntityDecoder {
    *   `ENTITY_ACTION.ALLOW` to accept, `ENTITY_ACTION.BLOCK` to silently skip, or
    *   `ENTITY_ACTION.THROW` to abort with an error.
    */
-  constructor(options = {}) {
-    this._limit = options.limit || {};
-    this._maxTotalExpansions = this._limit.maxTotalExpansions || 0;
-    this._maxExpandedLength = this._limit.maxExpandedLength || 0;
-    this._postCheck = typeof options.postCheck === "function" ? options.postCheck : (r) => r;
-    this._limitTiers = parseLimitTiers(this._limit.applyLimitsTo ?? LIMIT_TIER_EXTERNAL);
-    this._numericAllowed = options.numericAllowed ?? true;
-    this._baseMap = mergeEntityMaps(XML, options.namedEntities || null);
-    this._externalMap = /* @__PURE__ */ Object.create(null);
-    this._inputMap = /* @__PURE__ */ Object.create(null);
-    this._totalExpansions = 0;
-    this._expandedLength = 0;
-    this._removeSet = new Set(options.remove && Array.isArray(options.remove) ? options.remove : []);
-    this._leaveSet = new Set(options.leave && Array.isArray(options.leave) ? options.leave : []);
-    const ncrCfg = parseNCRConfig(options.ncr);
-    this._ncrXmlVersion = ncrCfg.xmlVersion;
-    this._ncrOnLevel = ncrCfg.onLevel;
-    this._ncrNullLevel = ncrCfg.nullLevel;
-    this._onExternalEntity = typeof options.onExternalEntity === "function" ? options.onExternalEntity : null;
-    this._onInputEntity = typeof options.onInputEntity === "function" ? options.onInputEntity : null;
+  constructor(e = {}) {
+    this._limit = e.limit || {}, this._maxTotalExpansions = this._limit.maxTotalExpansions || 0, this._maxExpandedLength = this._limit.maxExpandedLength || 0, this._postCheck = typeof e.postCheck == "function" ? e.postCheck : (r) => r, this._limitTiers = fr(this._limit.applyLimitsTo ?? W), this._numericAllowed = e.numericAllowed ?? !0, this._baseMap = Z(Ft, e.namedEntities || null), this._externalMap = /* @__PURE__ */ Object.create(null), this._inputMap = /* @__PURE__ */ Object.create(null), this._totalExpansions = 0, this._expandedLength = 0, this._removeSet = new Set(e.remove && Array.isArray(e.remove) ? e.remove : []), this._leaveSet = new Set(e.leave && Array.isArray(e.leave) ? e.leave : []);
+    const n = mr(e.ncr);
+    this._ncrXmlVersion = n.xmlVersion, this._ncrOnLevel = n.onLevel, this._ncrNullLevel = n.nullLevel, this._onExternalEntity = typeof e.onExternalEntity == "function" ? e.onExternalEntity : null, this._onInputEntity = typeof e.onInputEntity == "function" ? e.onInputEntity : null;
   }
   // -------------------------------------------------------------------------
   // Private: registration hook dispatch
@@ -1033,16 +1019,15 @@ class EntityDecoder {
    * @param {string} context  — used in error messages ('external' | 'input')
    * @returns {boolean}  true = accept, false = skip
    */
-  _applyRegistrationHook(hook, name, value, context) {
-    if (!hook) return true;
-    const action = hook(name, value);
-    if (action === ENTITY_ACTION.BLOCK) return false;
-    if (action === ENTITY_ACTION.THROW) {
+  _applyRegistrationHook(e, n, r, i) {
+    if (!e) return !0;
+    const s = e(n, r);
+    if (s === de.BLOCK) return !1;
+    if (s === de.THROW)
       throw new Error(
-        `[EntityDecoder] Registration of ${context} entity "&${name};" was rejected by hook`
+        `[EntityDecoder] Registration of ${i} entity "&${n};" was rejected by hook`
       );
-    }
-    return true;
+    return !0;
   }
   // -------------------------------------------------------------------------
   // Persistent external entity registration
@@ -1055,24 +1040,18 @@ class EntityDecoder {
    * aborts the whole call.
    * @param {Record<string, string | { regex?: RegExp, val: string }>} map
    */
-  setExternalEntities(map) {
-    if (map) {
-      for (const key of Object.keys(map)) {
-        validateEntityName$1(key);
-      }
-    }
+  setExternalEntities(e) {
+    if (e)
+      for (const i of Object.keys(e))
+        it(i);
     if (!this._onExternalEntity) {
-      this._externalMap = mergeEntityMaps(map);
+      this._externalMap = Z(e);
       return;
     }
-    const flat = mergeEntityMaps(map);
-    const filtered = /* @__PURE__ */ Object.create(null);
-    for (const [name, value] of Object.entries(flat)) {
-      if (this._applyRegistrationHook(this._onExternalEntity, name, value, "external")) {
-        filtered[name] = value;
-      }
-    }
-    this._externalMap = filtered;
+    const n = Z(e), r = /* @__PURE__ */ Object.create(null);
+    for (const [i, s] of Object.entries(n))
+      this._applyRegistrationHook(this._onExternalEntity, i, s, "external") && (r[i] = s);
+    this._externalMap = r;
   }
   /**
    * Add a single persistent external entity.
@@ -1081,13 +1060,8 @@ class EntityDecoder {
    * @param {string} key
    * @param {string} value
    */
-  addExternalEntity(key, value) {
-    validateEntityName$1(key);
-    if (typeof value === "string" && value.indexOf("&") === -1) {
-      if (this._applyRegistrationHook(this._onExternalEntity, key, value, "external")) {
-        this._externalMap[key] = value;
-      }
-    }
+  addExternalEntity(e, n) {
+    it(e), typeof n == "string" && n.indexOf("&") === -1 && this._applyRegistrationHook(this._onExternalEntity, e, n, "external") && (this._externalMap[e] = n);
   }
   // -------------------------------------------------------------------------
   // Input / runtime entity registration (per document)
@@ -1099,21 +1073,15 @@ class EntityDecoder {
    * `ENTITY_ACTION.BLOCK` are silently omitted, `ENTITY_ACTION.THROW` aborts.
    * @param {Record<string, string | { regx?: RegExp, regex?: RegExp, val: string }>} map
    */
-  addInputEntities(map) {
-    this._totalExpansions = 0;
-    this._expandedLength = 0;
-    if (!this._onInputEntity) {
-      this._inputMap = mergeEntityMaps(map);
+  addInputEntities(e) {
+    if (this._totalExpansions = 0, this._expandedLength = 0, !this._onInputEntity) {
+      this._inputMap = Z(e);
       return;
     }
-    const flat = mergeEntityMaps(map);
-    const filtered = /* @__PURE__ */ Object.create(null);
-    for (const [name, value] of Object.entries(flat)) {
-      if (this._applyRegistrationHook(this._onInputEntity, name, value, "input")) {
-        filtered[name] = value;
-      }
-    }
-    this._inputMap = filtered;
+    const n = Z(e), r = /* @__PURE__ */ Object.create(null);
+    for (const [i, s] of Object.entries(n))
+      this._applyRegistrationHook(this._onInputEntity, i, s, "input") && (r[i] = s);
+    this._inputMap = r;
   }
   // -------------------------------------------------------------------------
   // Per-document reset
@@ -1124,10 +1092,7 @@ class EntityDecoder {
    * @returns {this}
    */
   reset() {
-    this._inputMap = /* @__PURE__ */ Object.create(null);
-    this._totalExpansions = 0;
-    this._expandedLength = 0;
-    return this;
+    return this._inputMap = /* @__PURE__ */ Object.create(null), this._totalExpansions = 0, this._expandedLength = 0, this;
   }
   // -------------------------------------------------------------------------
   // XML version (can be set after construction, e.g. once parser reads <?xml?>)
@@ -1137,8 +1102,8 @@ class EntityDecoder {
    * Call this as soon as the document's `<?xml version="...">` declaration is parsed.
    * @param {1.0|1.1|number} version
    */
-  setXmlVersion(version) {
-    this._ncrXmlVersion = version === 1.1 ? 1.1 : 1;
+  setXmlVersion(e) {
+    this._ncrXmlVersion = e === 1.1 ? 1.1 : 1;
   }
   // -------------------------------------------------------------------------
   // Primary API
@@ -1149,89 +1114,65 @@ class EntityDecoder {
    * @param {string} str
    * @returns {string}
    */
-  decode(str) {
-    if (typeof str !== "string" || str.length === 0) return str;
-    if (str.indexOf("&") === -1) return str;
-    const original = str;
-    const chunks = [];
-    const len = str.length;
-    let last = 0;
-    let i = 0;
-    const limitExpansions = this._maxTotalExpansions > 0;
-    const limitLength = this._maxExpandedLength > 0;
-    const checkLimits = limitExpansions || limitLength;
-    while (i < len) {
-      if (str.charCodeAt(i) !== 38) {
-        i++;
+  decode(e) {
+    if (typeof e != "string" || e.length === 0 || e.indexOf("&") === -1) return e;
+    const n = e, r = [], i = e.length;
+    let s = 0, a = 0;
+    const o = this._maxTotalExpansions > 0, l = this._maxExpandedLength > 0, d = o || l;
+    for (; a < i; ) {
+      if (e.charCodeAt(a) !== 38) {
+        a++;
         continue;
       }
-      let j = i + 1;
-      while (j < len && str.charCodeAt(j) !== 59 && j - i <= 32) j++;
-      if (j >= len || str.charCodeAt(j) !== 59) {
-        i++;
+      let u = a + 1;
+      for (; u < i && e.charCodeAt(u) !== 59 && u - a <= 32; ) u++;
+      if (u >= i || e.charCodeAt(u) !== 59) {
+        a++;
         continue;
       }
-      const token = str.slice(i + 1, j);
-      if (token.length === 0) {
-        i++;
+      const p = e.slice(a + 1, u);
+      if (p.length === 0) {
+        a++;
         continue;
       }
-      let replacement;
-      let tier;
-      if (this._removeSet.has(token)) {
-        replacement = "";
-        if (tier === void 0) {
-          tier = LIMIT_TIER_EXTERNAL;
-        }
-      } else if (this._leaveSet.has(token)) {
-        i++;
+      let h, y;
+      if (this._removeSet.has(p))
+        h = "", y === void 0 && (y = W);
+      else if (this._leaveSet.has(p)) {
+        a++;
         continue;
-      } else if (token.charCodeAt(0) === 35) {
-        const ncrResult = this._resolveNCR(token);
-        if (ncrResult === void 0) {
-          i++;
+      } else if (p.charCodeAt(0) === 35) {
+        const g = this._resolveNCR(p);
+        if (g === void 0) {
+          a++;
           continue;
         }
-        replacement = ncrResult;
-        tier = LIMIT_TIER_BASE;
+        h = g, y = ue;
       } else {
-        const resolved = this._resolveName(token);
-        replacement = resolved == null ? void 0 : resolved.value;
-        tier = resolved == null ? void 0 : resolved.tier;
+        const g = this._resolveName(p);
+        h = g == null ? void 0 : g.value, y = g == null ? void 0 : g.tier;
       }
-      if (replacement === void 0) {
-        i++;
+      if (h === void 0) {
+        a++;
         continue;
       }
-      if (i > last) chunks.push(str.slice(last, i));
-      chunks.push(replacement);
-      last = j + 1;
-      i = last;
-      if (checkLimits && this._tierCounts(tier)) {
-        if (limitExpansions) {
-          this._totalExpansions++;
-          if (this._totalExpansions > this._maxTotalExpansions) {
+      if (a > s && r.push(e.slice(s, a)), r.push(h), s = u + 1, a = s, d && this._tierCounts(y)) {
+        if (o && (this._totalExpansions++, this._totalExpansions > this._maxTotalExpansions))
+          throw new Error(
+            `[EntityReplacer] Entity expansion count limit exceeded: ${this._totalExpansions} > ${this._maxTotalExpansions}`
+          );
+        if (l) {
+          const g = h.length - (p.length + 2);
+          if (g > 0 && (this._expandedLength += g, this._expandedLength > this._maxExpandedLength))
             throw new Error(
-              `[EntityReplacer] Entity expansion count limit exceeded: ${this._totalExpansions} > ${this._maxTotalExpansions}`
+              `[EntityReplacer] Expanded content length limit exceeded: ${this._expandedLength} > ${this._maxExpandedLength}`
             );
-          }
-        }
-        if (limitLength) {
-          const delta = replacement.length - (token.length + 2);
-          if (delta > 0) {
-            this._expandedLength += delta;
-            if (this._expandedLength > this._maxExpandedLength) {
-              throw new Error(
-                `[EntityReplacer] Expanded content length limit exceeded: ${this._expandedLength} > ${this._maxExpandedLength}`
-              );
-            }
-          }
         }
       }
     }
-    if (last < len) chunks.push(str.slice(last));
-    const result = chunks.length === 0 ? str : chunks.join("");
-    return this._postCheck(result, original);
+    s < i && r.push(e.slice(s));
+    const c = r.length === 0 ? e : r.join("");
+    return this._postCheck(c, n);
   }
   // -------------------------------------------------------------------------
   // Private: limit tier check
@@ -1242,9 +1183,8 @@ class EntityDecoder {
    * @param {string} tier  — LIMIT_TIER_EXTERNAL | LIMIT_TIER_BASE
    * @returns {boolean}
    */
-  _tierCounts(tier) {
-    if (this._limitTiers.has(LIMIT_TIER_ALL)) return true;
-    return this._limitTiers.has(tier);
+  _tierCounts(e) {
+    return this._limitTiers.has(_e) ? !0 : this._limitTiers.has(e);
   }
   // -------------------------------------------------------------------------
   // Private: entity resolution
@@ -1257,11 +1197,10 @@ class EntityDecoder {
    * @param {string} name
    * @returns {{ value: string, tier: string }|undefined}
    */
-  _resolveName(name) {
-    if (name in this._inputMap) return { value: this._inputMap[name], tier: LIMIT_TIER_EXTERNAL };
-    if (name in this._externalMap) return { value: this._externalMap[name], tier: LIMIT_TIER_EXTERNAL };
-    if (name in this._baseMap) return { value: this._baseMap[name], tier: LIMIT_TIER_BASE };
-    return void 0;
+  _resolveName(e) {
+    if (e in this._inputMap) return { value: this._inputMap[e], tier: W };
+    if (e in this._externalMap) return { value: this._externalMap[e], tier: W };
+    if (e in this._baseMap) return { value: this._baseMap[e], tier: ue };
   }
   /**
    * Classify a codepoint and return the minimum action level that must be applied.
@@ -1276,13 +1215,8 @@ class EntityDecoder {
    * @param {number} cp  — codepoint
    * @returns {number}   — minimum NCR_LEVEL value, or -1 for no restriction
    */
-  _classifyNCR(cp) {
-    if (cp === 0) return this._ncrNullLevel;
-    if (cp >= 55296 && cp <= 57343) return NCR_LEVEL.remove;
-    if (this._ncrXmlVersion === 1) {
-      if (cp >= 1 && cp <= 31 && !XML10_ALLOWED_C0.has(cp)) return NCR_LEVEL.remove;
-    }
-    return -1;
+  _classifyNCR(e) {
+    return e === 0 ? this._ncrNullLevel : e >= 55296 && e <= 57343 || this._ncrXmlVersion === 1 && e >= 1 && e <= 31 && !gr.has(e) ? A.remove : -1;
   }
   /**
    * Execute a resolved NCR action.
@@ -1296,20 +1230,20 @@ class EntityDecoder {
    *   - undefined                 → 'leave' (caller must skip past '&' only)
    *   - throws Error              → 'throw'
    */
-  _applyNCRAction(action, token, cp) {
-    switch (action) {
-      case NCR_LEVEL.allow:
-        return String.fromCodePoint(cp);
-      case NCR_LEVEL.remove:
+  _applyNCRAction(e, n, r) {
+    switch (e) {
+      case A.allow:
+        return String.fromCodePoint(r);
+      case A.remove:
         return "";
-      case NCR_LEVEL.leave:
-        return void 0;
-      case NCR_LEVEL.throw:
+      case A.leave:
+        return;
+      case A.throw:
         throw new Error(
-          `[EntityDecoder] Prohibited numeric character reference &${token}; (U+${cp.toString(16).toUpperCase().padStart(4, "0")})`
+          `[EntityDecoder] Prohibited numeric character reference &${n}; (U+${r.toString(16).toUpperCase().padStart(4, "0")})`
         );
       default:
-        return String.fromCodePoint(cp);
+        return String.fromCodePoint(r);
     }
   }
   /**
@@ -1328,511 +1262,351 @@ class EntityDecoder {
    *   - string (incl. '')  — replacement ('' = remove)
    *   - undefined          — leave original &token; as-is
    */
-  _resolveNCR(token) {
-    const second = token.charCodeAt(1);
-    let cp;
-    if (second === 120 || second === 88) {
-      cp = parseInt(token.slice(2), 16);
-    } else {
-      cp = parseInt(token.slice(1), 10);
-    }
-    if (Number.isNaN(cp) || cp < 0 || cp > 1114111) return void 0;
-    const minimum = this._classifyNCR(cp);
-    if (!this._numericAllowed && minimum < NCR_LEVEL.remove) return void 0;
-    const effective = minimum === -1 ? this._ncrOnLevel : Math.max(this._ncrOnLevel, minimum);
-    return this._applyNCRAction(effective, token, cp);
+  _resolveNCR(e) {
+    const n = e.charCodeAt(1);
+    let r;
+    if (n === 120 || n === 88 ? r = parseInt(e.slice(2), 16) : r = parseInt(e.slice(1), 10), Number.isNaN(r) || r < 0 || r > 1114111) return;
+    const i = this._classifyNCR(r);
+    if (!this._numericAllowed && i < A.remove) return;
+    const s = i === -1 ? this._ncrOnLevel : Math.max(this._ncrOnLevel, i);
+    return this._applyNCRAction(s, e, r);
   }
 }
-const defaultOnDangerousProperty = (name) => {
-  if (DANGEROUS_PROPERTY_NAMES.includes(name)) {
-    return "__" + name;
-  }
-  return name;
-};
-const defaultOptions = {
-  preserveOrder: false,
+const $t = (t) => je.includes(t) ? "__" + t : t, yr = {
+  preserveOrder: !1,
   attributeNamePrefix: "@_",
-  attributesGroupName: false,
+  attributesGroupName: !1,
   textNodeName: "#text",
-  ignoreAttributes: true,
-  removeNSPrefix: false,
+  ignoreAttributes: !0,
+  removeNSPrefix: !1,
   // remove NS from tag name or attribute name if true
-  allowBooleanAttributes: false,
+  allowBooleanAttributes: !1,
   //a tag can have attributes without any value
   //ignoreRootElement : false,
-  parseTagValue: true,
-  parseAttributeValue: false,
-  trimValues: true,
+  parseTagValue: !0,
+  parseAttributeValue: !1,
+  trimValues: !0,
   //Trim string values of tag and attributes
-  cdataPropName: false,
+  cdataPropName: !1,
   numberParseOptions: {
-    hex: true,
-    leadingZeros: true,
-    eNotation: true,
-    unicode: false
+    hex: !0,
+    leadingZeros: !0,
+    eNotation: !0,
+    unicode: !1
   },
-  tagValueProcessor: function(tagName, val) {
-    return val;
+  tagValueProcessor: function(t, e) {
+    return e;
   },
-  attributeValueProcessor: function(attrName, val) {
-    return val;
+  attributeValueProcessor: function(t, e) {
+    return e;
   },
   stopNodes: [],
   //nested tags will not be parsed even for errors
-  alwaysCreateTextNode: false,
-  isArray: () => false,
-  commentPropName: false,
+  alwaysCreateTextNode: !1,
+  isArray: () => !1,
+  commentPropName: !1,
   unpairedTags: [],
-  processEntities: true,
-  htmlEntities: false,
+  processEntities: !0,
+  htmlEntities: !1,
   entityDecoder: null,
-  ignoreDeclaration: false,
-  ignorePiTags: false,
-  transformTagName: false,
-  transformAttributeName: false,
-  updateTag: function(tagName, jPath, attrs) {
-    return tagName;
+  ignoreDeclaration: !1,
+  ignorePiTags: !1,
+  transformTagName: !1,
+  transformAttributeName: !1,
+  updateTag: function(t, e, n) {
+    return t;
   },
   // skipEmptyListItem: false
-  captureMetaData: false,
+  captureMetaData: !1,
   maxNestedTags: 100,
-  strictReservedNames: true,
-  jPath: true,
+  strictReservedNames: !0,
+  jPath: !0,
   // if true, pass jPath string to callbacks; if false, pass matcher instance
-  onDangerousProperty: defaultOnDangerousProperty
+  onDangerousProperty: $t
 };
-function validatePropertyName(propertyName, optionName) {
-  if (typeof propertyName !== "string") {
+function br(t, e) {
+  if (typeof t != "string")
     return;
-  }
-  const normalized = propertyName.toLowerCase();
-  if (DANGEROUS_PROPERTY_NAMES.some((dangerous) => normalized === dangerous.toLowerCase())) {
+  const n = t.toLowerCase();
+  if (je.some((r) => n === r.toLowerCase()))
     throw new Error(
-      `[SECURITY] Invalid ${optionName}: "${propertyName}" is a reserved JavaScript keyword that could cause prototype pollution`
+      `[SECURITY] Invalid ${e}: "${t}" is a reserved JavaScript keyword that could cause prototype pollution`
     );
-  }
-  if (criticalProperties.some((dangerous) => normalized === dangerous.toLowerCase())) {
+  if (Rt.some((r) => n === r.toLowerCase()))
     throw new Error(
-      `[SECURITY] Invalid ${optionName}: "${propertyName}" is a reserved JavaScript keyword that could cause prototype pollution`
+      `[SECURITY] Invalid ${e}: "${t}" is a reserved JavaScript keyword that could cause prototype pollution`
     );
-  }
 }
-function normalizeProcessEntities(value, htmlEntities) {
-  if (typeof value === "boolean") {
-    return {
-      enabled: value,
-      // true or false
-      maxEntitySize: 1e4,
-      maxExpansionDepth: 1e4,
-      maxTotalExpansions: Infinity,
-      maxExpandedLength: 1e5,
-      maxEntityCount: 1e3,
-      allowedTags: null,
-      tagFilter: null,
-      appliesTo: "all"
-    };
-  }
-  if (typeof value === "object" && value !== null) {
-    return {
-      enabled: value.enabled !== false,
-      maxEntitySize: Math.max(1, value.maxEntitySize ?? 1e4),
-      maxExpansionDepth: Math.max(1, value.maxExpansionDepth ?? 1e4),
-      maxTotalExpansions: Math.max(1, value.maxTotalExpansions ?? Infinity),
-      maxExpandedLength: Math.max(1, value.maxExpandedLength ?? 1e5),
-      maxEntityCount: Math.max(1, value.maxEntityCount ?? 1e3),
-      allowedTags: value.allowedTags ?? null,
-      tagFilter: value.tagFilter ?? null,
-      appliesTo: value.appliesTo ?? "all"
-    };
-  }
-  return normalizeProcessEntities(true);
+function Mt(t, e) {
+  return typeof t == "boolean" ? {
+    enabled: t,
+    // true or false
+    maxEntitySize: 1e4,
+    maxExpansionDepth: 1e4,
+    maxTotalExpansions: 1 / 0,
+    maxExpandedLength: 1e5,
+    maxEntityCount: 1e3,
+    allowedTags: null,
+    tagFilter: null,
+    appliesTo: "all"
+  } : typeof t == "object" && t !== null ? {
+    enabled: t.enabled !== !1,
+    maxEntitySize: Math.max(1, t.maxEntitySize ?? 1e4),
+    maxExpansionDepth: Math.max(1, t.maxExpansionDepth ?? 1e4),
+    maxTotalExpansions: Math.max(1, t.maxTotalExpansions ?? 1 / 0),
+    maxExpandedLength: Math.max(1, t.maxExpandedLength ?? 1e5),
+    maxEntityCount: Math.max(1, t.maxEntityCount ?? 1e3),
+    allowedTags: t.allowedTags ?? null,
+    tagFilter: t.tagFilter ?? null,
+    appliesTo: t.appliesTo ?? "all"
+  } : Mt(!0);
 }
-const buildOptions = function(options) {
-  const built = Object.assign({}, defaultOptions, options);
-  const propertyNameOptions = [
-    { value: built.attributeNamePrefix, name: "attributeNamePrefix" },
-    { value: built.attributesGroupName, name: "attributesGroupName" },
-    { value: built.textNodeName, name: "textNodeName" },
-    { value: built.cdataPropName, name: "cdataPropName" },
-    { value: built.commentPropName, name: "commentPropName" }
+const Tr = function(t) {
+  const e = Object.assign({}, yr, t), n = [
+    { value: e.attributeNamePrefix, name: "attributeNamePrefix" },
+    { value: e.attributesGroupName, name: "attributesGroupName" },
+    { value: e.textNodeName, name: "textNodeName" },
+    { value: e.cdataPropName, name: "cdataPropName" },
+    { value: e.commentPropName, name: "commentPropName" }
   ];
-  for (const { value, name } of propertyNameOptions) {
-    if (value) {
-      validatePropertyName(value, name);
-    }
-  }
-  if (built.onDangerousProperty === null) {
-    built.onDangerousProperty = defaultOnDangerousProperty;
-  }
-  built.processEntities = normalizeProcessEntities(built.processEntities, built.htmlEntities);
-  built.unpairedTagsSet = new Set(built.unpairedTags);
-  if (built.stopNodes && Array.isArray(built.stopNodes)) {
-    built.stopNodes = built.stopNodes.map((node) => {
-      if (typeof node === "string" && node.startsWith("*.")) {
-        return ".." + node.substring(2);
-      }
-      return node;
-    });
-  }
-  return built;
+  for (const { value: r, name: i } of n)
+    r && br(r, i);
+  return e.onDangerousProperty === null && (e.onDangerousProperty = $t), e.processEntities = Mt(e.processEntities, e.htmlEntities), e.unpairedTagsSet = new Set(e.unpairedTags), e.stopNodes && Array.isArray(e.stopNodes) && (e.stopNodes = e.stopNodes.map((r) => typeof r == "string" && r.startsWith("*.") ? ".." + r.substring(2) : r)), e;
 };
-let METADATA_SYMBOL$1;
-if (typeof Symbol !== "function") {
-  METADATA_SYMBOL$1 = "@@xmlMetadata";
-} else {
-  METADATA_SYMBOL$1 = Symbol("XML Node Metadata");
-}
-class XmlNode {
-  constructor(tagname) {
-    this.tagname = tagname;
-    this.child = [];
-    this[":@"] = /* @__PURE__ */ Object.create(null);
+let V;
+typeof Symbol != "function" ? V = "@@xmlMetadata" : V = Symbol("XML Node Metadata");
+class M {
+  constructor(e) {
+    this.tagname = e, this.child = [], this[":@"] = /* @__PURE__ */ Object.create(null);
   }
-  add(key, val) {
-    if (key === "__proto__") key = "#__proto__";
-    this.child.push({ [key]: val });
+  add(e, n) {
+    e === "__proto__" && (e = "#__proto__"), this.child.push({ [e]: n });
   }
-  addChild(node, startIndex) {
-    if (node.tagname === "__proto__") node.tagname = "#__proto__";
-    if (node[":@"] && Object.keys(node[":@"]).length > 0) {
-      this.child.push({ [node.tagname]: node.child, [":@"]: node[":@"] });
-    } else {
-      this.child.push({ [node.tagname]: node.child });
-    }
-    this.addStartIndex(startIndex);
+  addChild(e, n) {
+    e.tagname === "__proto__" && (e.tagname = "#__proto__"), e[":@"] && Object.keys(e[":@"]).length > 0 ? this.child.push({ [e.tagname]: e.child, ":@": e[":@"] }) : this.child.push({ [e.tagname]: e.child }), this.addStartIndex(n);
   }
-  addStartIndex(startIndex) {
-    if (startIndex !== void 0) {
-      this.child[this.child.length - 1][METADATA_SYMBOL$1] = { startIndex };
-    }
+  addStartIndex(e) {
+    e !== void 0 && (this.child[this.child.length - 1][V] = { startIndex: e });
   }
-  addEndIndex(endIndex) {
-    const lastChild = this.child[this.child.length - 1];
-    if (lastChild !== void 0 && lastChild[METADATA_SYMBOL$1] !== void 0 && lastChild[METADATA_SYMBOL$1].endIndex === void 0) {
-      lastChild[METADATA_SYMBOL$1].endIndex = endIndex;
-    }
+  addEndIndex(e) {
+    const n = this.child[this.child.length - 1];
+    n !== void 0 && n[V] !== void 0 && n[V].endIndex === void 0 && (n[V].endIndex = e);
   }
   /** symbol used for metadata */
   static getMetaDataSymbol() {
-    return METADATA_SYMBOL$1;
+    return V;
   }
 }
-const nameStartChar10 = ":A-Za-z_À-ÖØ-öø-˿Ͱ-ͽͿ-҆҈-῿‌-‍⁰-↏Ⰰ-⿯、-퟿豈-﷏ﷰ-�";
-const nameChar10 = nameStartChar10 + "\\-\\.\\d·̀-ͯ‿-⁀";
-const nameStartChar11 = ":A-Za-z_À-˿Ͱ-ͽͿ-҆҈-῿‌-‍⁰-↏Ⰰ-⿯、-퟿豈-﷏ﷰ-�𐀀-󯿿";
-const nameChar11 = nameStartChar11 + "\\-\\.\\d·̀-ͯ҇‿-⁀";
-const buildRegexes = (startChar, char, flags = "") => {
-  const ncStart = startChar.replace(":", "");
-  const ncChar = char.replace(":", "");
-  const ncNamePat = `[${ncStart}][${ncChar}]*`;
+const Pt = ":A-Za-z_À-ÖØ-öø-˿Ͱ-ͽͿ-҆҈-῿‌-‍⁰-↏Ⰰ-⿯、-퟿豈-﷏ﷰ-�", wr = Pt + "\\-\\.\\d·̀-ͯ‿-⁀", kt = ":A-Za-z_À-˿Ͱ-ͽͿ-҆҈-῿‌-‍⁰-↏Ⰰ-⿯、-퟿豈-﷏ﷰ-�𐀀-󯿿", Sr = kt + "\\-\\.\\d·̀-ͯ҇‿-⁀", Ue = (t, e, n = "") => {
+  const r = t.replace(":", ""), i = e.replace(":", ""), s = `[${r}][${i}]*`;
   return {
-    name: new RegExp(`^[${startChar}][${char}]*$`, flags),
-    ncName: new RegExp(`^${ncNamePat}$`, flags),
-    qName: new RegExp(`^${ncNamePat}(?::${ncNamePat})?$`, flags),
-    nmToken: new RegExp(`^[${char}]+$`, flags),
-    nmTokens: new RegExp(`^[${char}]+(?:\\s+[${char}]+)*$`, flags)
+    name: new RegExp(`^[${t}][${e}]*$`, n),
+    ncName: new RegExp(`^${s}$`, n),
+    qName: new RegExp(`^${s}(?::${s})?$`, n),
+    nmToken: new RegExp(`^[${e}]+$`, n),
+    nmTokens: new RegExp(`^[${e}]+(?:\\s+[${e}]+)*$`, n)
   };
-};
-const regexes10 = buildRegexes(nameStartChar10, nameChar10);
-const regexes11 = buildRegexes(nameStartChar11, nameChar11, "u");
-const nameStartCharAscii = ":A-Za-z_";
-const nameCharAscii = nameStartCharAscii + "\\-\\.\\d";
-const regexesAscii = buildRegexes(nameStartCharAscii, nameCharAscii);
-const getRegexes = (xmlVersion = "1.0", asciiOnly = false) => {
-  if (asciiOnly) return regexesAscii;
-  return xmlVersion === "1.1" ? regexes11 : regexes10;
-};
-const qName = (str, { xmlVersion = "1.0", asciiOnly = false } = {}) => getRegexes(xmlVersion, asciiOnly).qName.test(str);
-class DocTypeReader {
-  constructor(options, xmlVersion) {
-    this.suppressValidationErr = !options;
-    this.options = options;
-    this.xmlVersion = xmlVersion || 1;
+}, Nr = Ue(Pt, wr), xr = Ue(kt, Sr, "u"), jt = ":A-Za-z_", Ar = jt + "\\-\\.\\d", _r = Ue(jt, Ar), Ir = (t = "1.0", e = !1) => e ? _r : t === "1.1" ? xr : Nr, Ut = (t, { xmlVersion: e = "1.0", asciiOnly: n = !1 } = {}) => Ir(e, n).qName.test(t);
+class Cr {
+  constructor(e, n) {
+    this.suppressValidationErr = !e, this.options = e, this.xmlVersion = n || 1;
   }
-  setXmlVersion(xmlVersion = 1) {
-    this.xmlVersion = xmlVersion;
+  setXmlVersion(e = 1) {
+    this.xmlVersion = e;
   }
-  readDocType(xmlData, i) {
-    const entities = /* @__PURE__ */ Object.create(null);
-    let entityCount = 0;
-    if (xmlData[i + 3] === "O" && xmlData[i + 4] === "C" && xmlData[i + 5] === "T" && xmlData[i + 6] === "Y" && xmlData[i + 7] === "P" && xmlData[i + 8] === "E") {
-      i = i + 9;
-      let angleBracketsCount = 1;
-      let hasBody = false, comment = false;
-      let quoteChar = null;
-      let exp = "";
-      for (; i < xmlData.length; i++) {
-        if (quoteChar !== null) {
-          if (xmlData[i] === quoteChar) quoteChar = null;
-          exp += xmlData[i];
+  readDocType(e, n) {
+    const r = /* @__PURE__ */ Object.create(null);
+    let i = 0;
+    if (e[n + 3] === "O" && e[n + 4] === "C" && e[n + 5] === "T" && e[n + 6] === "Y" && e[n + 7] === "P" && e[n + 8] === "E") {
+      n = n + 9;
+      let s = 1, a = !1, o = !1, l = null, d = "";
+      for (; n < e.length; n++) {
+        if (l !== null) {
+          e[n] === l && (l = null), d += e[n];
           continue;
         }
-        if (!hasBody && !comment && (xmlData[i] === '"' || xmlData[i] === "'")) {
-          quoteChar = xmlData[i];
-          exp += xmlData[i];
+        if (!a && !o && (e[n] === '"' || e[n] === "'")) {
+          l = e[n], d += e[n];
           continue;
         }
-        if (xmlData[i] === "<" && !comment) {
-          if (hasBody && hasSeq(xmlData, "!ENTITY", i)) {
-            i += 7;
-            let entityName, val;
-            [entityName, val, i] = this.readEntityExp(xmlData, i + 1, this.suppressValidationErr);
-            if (val.indexOf("&") === -1) {
-              if (this.options.enabled !== false && this.options.maxEntityCount != null && entityCount >= this.options.maxEntityCount) {
+        if (e[n] === "<" && !o) {
+          if (a && j(e, "!ENTITY", n)) {
+            n += 7;
+            let c, u;
+            if ([c, u, n] = this.readEntityExp(e, n + 1, this.suppressValidationErr), u.indexOf("&") === -1) {
+              if (this.options.enabled !== !1 && this.options.maxEntityCount != null && i >= this.options.maxEntityCount)
                 throw new Error(
-                  `Entity count (${entityCount + 1}) exceeds maximum allowed (${this.options.maxEntityCount})`
+                  `Entity count (${i + 1}) exceeds maximum allowed (${this.options.maxEntityCount})`
                 );
-              }
-              entities[entityName] = val;
-              entityCount++;
+              r[c] = u, i++;
             }
-          } else if (hasBody && hasSeq(xmlData, "!ELEMENT", i)) {
-            i += 8;
-            const { index } = this.readElementExp(xmlData, i + 1);
-            i = index;
-          } else if (hasBody && hasSeq(xmlData, "!ATTLIST", i)) {
-            i += 8;
-          } else if (hasBody && hasSeq(xmlData, "!NOTATION", i)) {
-            i += 9;
-            const { index } = this.readNotationExp(xmlData, i + 1, this.suppressValidationErr);
-            i = index;
-          } else if (hasSeq(xmlData, "!--", i)) comment = true;
-          else throw new Error(`Invalid DOCTYPE`);
-          angleBracketsCount++;
-          exp = "";
-        } else if (xmlData[i] === ">") {
-          if (comment) {
-            if (xmlData[i - 1] === "-" && xmlData[i - 2] === "-") {
-              comment = false;
-              angleBracketsCount--;
-            }
-          } else {
-            angleBracketsCount--;
-          }
-          if (angleBracketsCount === 0) {
+          } else if (a && j(e, "!ELEMENT", n)) {
+            n += 8;
+            const { index: c } = this.readElementExp(e, n + 1);
+            n = c;
+          } else if (a && j(e, "!ATTLIST", n))
+            n += 8;
+          else if (a && j(e, "!NOTATION", n)) {
+            n += 9;
+            const { index: c } = this.readNotationExp(e, n + 1, this.suppressValidationErr);
+            n = c;
+          } else if (j(e, "!--", n)) o = !0;
+          else throw new Error("Invalid DOCTYPE");
+          s++, d = "";
+        } else if (e[n] === ">") {
+          if (o ? e[n - 1] === "-" && e[n - 2] === "-" && (o = !1, s--) : s--, s === 0)
             break;
-          }
-        } else if (xmlData[i] === "[") {
-          hasBody = true;
-        } else {
-          exp += xmlData[i];
-        }
+        } else e[n] === "[" ? a = !0 : d += e[n];
       }
-      if (quoteChar !== null || angleBracketsCount !== 0) {
-        throw new Error(`Unclosed DOCTYPE`);
-      }
-    } else {
-      throw new Error(`Invalid Tag instead of DOCTYPE`);
-    }
-    return { entities, i };
+      if (l !== null || s !== 0)
+        throw new Error("Unclosed DOCTYPE");
+    } else
+      throw new Error("Invalid Tag instead of DOCTYPE");
+    return { entities: r, i: n };
   }
-  readEntityExp(xmlData, i) {
-    i = skipWhitespace(xmlData, i);
-    const startIndex = i;
-    while (i < xmlData.length && !/\s/.test(xmlData[i]) && xmlData[i] !== '"' && xmlData[i] !== "'") {
-      i++;
-    }
-    let entityName = xmlData.substring(startIndex, i);
-    validateEntityName(entityName, { xmlVersion: this.xmlVersion });
-    i = skipWhitespace(xmlData, i);
-    if (!this.suppressValidationErr) {
-      if (xmlData.substring(i, i + 6).toUpperCase() === "SYSTEM") {
+  readEntityExp(e, n) {
+    n = x(e, n);
+    const r = n;
+    for (; n < e.length && !/\s/.test(e[n]) && e[n] !== '"' && e[n] !== "'"; )
+      n++;
+    let i = e.substring(r, n);
+    if (ee(i, { xmlVersion: this.xmlVersion }), n = x(e, n), !this.suppressValidationErr) {
+      if (e.substring(n, n + 6).toUpperCase() === "SYSTEM")
         throw new Error("External entities are not supported");
-      } else if (xmlData[i] === "%") {
+      if (e[n] === "%")
         throw new Error("Parameter entities are not supported");
-      }
     }
-    let entityValue = "";
-    [i, entityValue] = this.readIdentifierVal(xmlData, i, "entity");
-    if (this.options.enabled !== false && this.options.maxEntitySize != null && entityValue.length > this.options.maxEntitySize) {
+    let s = "";
+    if ([n, s] = this.readIdentifierVal(e, n, "entity"), this.options.enabled !== !1 && this.options.maxEntitySize != null && s.length > this.options.maxEntitySize)
       throw new Error(
-        `Entity "${entityName}" size (${entityValue.length}) exceeds maximum allowed size (${this.options.maxEntitySize})`
+        `Entity "${i}" size (${s.length}) exceeds maximum allowed size (${this.options.maxEntitySize})`
       );
-    }
-    i--;
-    return [entityName, entityValue, i];
+    return n--, [i, s, n];
   }
-  readNotationExp(xmlData, i) {
-    i = skipWhitespace(xmlData, i);
-    const startIndex = i;
-    while (i < xmlData.length && !/\s/.test(xmlData[i])) {
-      i++;
-    }
-    let notationName = xmlData.substring(startIndex, i);
-    !this.suppressValidationErr && validateEntityName(notationName, { xmlVersion: this.xmlVersion });
-    i = skipWhitespace(xmlData, i);
-    const identifierType = xmlData.substring(i, i + 6).toUpperCase();
-    if (!this.suppressValidationErr && identifierType !== "SYSTEM" && identifierType !== "PUBLIC") {
-      throw new Error(`Expected SYSTEM or PUBLIC, found "${identifierType}"`);
-    }
-    i += identifierType.length;
-    i = skipWhitespace(xmlData, i);
-    let publicIdentifier = null;
-    let systemIdentifier = null;
-    if (identifierType === "PUBLIC") {
-      [i, publicIdentifier] = this.readIdentifierVal(xmlData, i, "publicIdentifier");
-      i = skipWhitespace(xmlData, i);
-      if (xmlData[i] === '"' || xmlData[i] === "'") {
-        [i, systemIdentifier] = this.readIdentifierVal(xmlData, i, "systemIdentifier");
-      }
-    } else if (identifierType === "SYSTEM") {
-      [i, systemIdentifier] = this.readIdentifierVal(xmlData, i, "systemIdentifier");
-      if (!this.suppressValidationErr && !systemIdentifier) {
-        throw new Error("Missing mandatory system identifier for SYSTEM notation");
-      }
-    }
-    return { notationName, publicIdentifier, systemIdentifier, index: --i };
+  readNotationExp(e, n) {
+    n = x(e, n);
+    const r = n;
+    for (; n < e.length && !/\s/.test(e[n]); )
+      n++;
+    let i = e.substring(r, n);
+    !this.suppressValidationErr && ee(i, { xmlVersion: this.xmlVersion }), n = x(e, n);
+    const s = e.substring(n, n + 6).toUpperCase();
+    if (!this.suppressValidationErr && s !== "SYSTEM" && s !== "PUBLIC")
+      throw new Error(`Expected SYSTEM or PUBLIC, found "${s}"`);
+    n += s.length, n = x(e, n);
+    let a = null, o = null;
+    if (s === "PUBLIC")
+      [n, a] = this.readIdentifierVal(e, n, "publicIdentifier"), n = x(e, n), (e[n] === '"' || e[n] === "'") && ([n, o] = this.readIdentifierVal(e, n, "systemIdentifier"));
+    else if (s === "SYSTEM" && ([n, o] = this.readIdentifierVal(e, n, "systemIdentifier"), !this.suppressValidationErr && !o))
+      throw new Error("Missing mandatory system identifier for SYSTEM notation");
+    return { notationName: i, publicIdentifier: a, systemIdentifier: o, index: --n };
   }
-  readIdentifierVal(xmlData, i, type) {
-    let identifierVal = "";
-    const startChar = xmlData[i];
-    if (startChar !== '"' && startChar !== "'") {
-      throw new Error(`Expected quoted string, found "${startChar}"`);
-    }
-    i++;
-    const startIndex = i;
-    while (i < xmlData.length && xmlData[i] !== startChar) {
-      i++;
-    }
-    identifierVal = xmlData.substring(startIndex, i);
-    if (xmlData[i] !== startChar) {
-      throw new Error(`Unterminated ${type} value`);
-    }
-    i++;
-    return [i, identifierVal];
+  readIdentifierVal(e, n, r) {
+    let i = "";
+    const s = e[n];
+    if (s !== '"' && s !== "'")
+      throw new Error(`Expected quoted string, found "${s}"`);
+    n++;
+    const a = n;
+    for (; n < e.length && e[n] !== s; )
+      n++;
+    if (i = e.substring(a, n), e[n] !== s)
+      throw new Error(`Unterminated ${r} value`);
+    return n++, [n, i];
   }
-  readElementExp(xmlData, i) {
-    i = skipWhitespace(xmlData, i);
-    const startIndex = i;
-    while (i < xmlData.length && !/\s/.test(xmlData[i])) {
-      i++;
-    }
-    let elementName = xmlData.substring(startIndex, i);
-    if (!this.suppressValidationErr && !qName(elementName, { xmlVersion: this.xmlVersion })) {
-      throw new Error(`Invalid element name: "${elementName}"`);
-    }
-    i = skipWhitespace(xmlData, i);
-    let contentModel = "";
-    if (xmlData[i] === "E" && hasSeq(xmlData, "MPTY", i)) i += 4;
-    else if (xmlData[i] === "A" && hasSeq(xmlData, "NY", i)) i += 2;
-    else if (xmlData[i] === "(") {
-      i++;
-      const startIndex2 = i;
-      while (i < xmlData.length && xmlData[i] !== ")") {
-        i++;
-      }
-      contentModel = xmlData.substring(startIndex2, i);
-      if (xmlData[i] !== ")") {
+  readElementExp(e, n) {
+    n = x(e, n);
+    const r = n;
+    for (; n < e.length && !/\s/.test(e[n]); )
+      n++;
+    let i = e.substring(r, n);
+    if (!this.suppressValidationErr && !Ut(i, { xmlVersion: this.xmlVersion }))
+      throw new Error(`Invalid element name: "${i}"`);
+    n = x(e, n);
+    let s = "";
+    if (e[n] === "E" && j(e, "MPTY", n)) n += 4;
+    else if (e[n] === "A" && j(e, "NY", n)) n += 2;
+    else if (e[n] === "(") {
+      n++;
+      const a = n;
+      for (; n < e.length && e[n] !== ")"; )
+        n++;
+      if (s = e.substring(a, n), e[n] !== ")")
         throw new Error("Unterminated content model");
-      }
-    } else if (!this.suppressValidationErr) {
-      throw new Error(`Invalid Element Expression, found "${xmlData[i]}"`);
-    }
+    } else if (!this.suppressValidationErr)
+      throw new Error(`Invalid Element Expression, found "${e[n]}"`);
     return {
-      elementName,
-      contentModel: contentModel.trim(),
-      index: i
+      elementName: i,
+      contentModel: s.trim(),
+      index: n
     };
   }
-  readAttlistExp(xmlData, i) {
-    i = skipWhitespace(xmlData, i);
-    let startIndex = i;
-    while (i < xmlData.length && !/\s/.test(xmlData[i])) {
-      i++;
-    }
-    let elementName = xmlData.substring(startIndex, i);
-    validateEntityName(elementName, { xmlVersion: this.xmlVersion });
-    i = skipWhitespace(xmlData, i);
-    startIndex = i;
-    while (i < xmlData.length && !/\s/.test(xmlData[i])) {
-      i++;
-    }
-    let attributeName = xmlData.substring(startIndex, i);
-    if (!validateEntityName(attributeName, { xmlVersion: this.xmlVersion })) {
-      throw new Error(`Invalid attribute name: "${attributeName}"`);
-    }
-    i = skipWhitespace(xmlData, i);
-    let attributeType = "";
-    if (xmlData.substring(i, i + 8).toUpperCase() === "NOTATION") {
-      attributeType = "NOTATION";
-      i += 8;
-      i = skipWhitespace(xmlData, i);
-      if (xmlData[i] !== "(") {
-        throw new Error(`Expected '(', found "${xmlData[i]}"`);
+  readAttlistExp(e, n) {
+    n = x(e, n);
+    let r = n;
+    for (; n < e.length && !/\s/.test(e[n]); )
+      n++;
+    let i = e.substring(r, n);
+    for (ee(i, { xmlVersion: this.xmlVersion }), n = x(e, n), r = n; n < e.length && !/\s/.test(e[n]); )
+      n++;
+    let s = e.substring(r, n);
+    if (!ee(s, { xmlVersion: this.xmlVersion }))
+      throw new Error(`Invalid attribute name: "${s}"`);
+    n = x(e, n);
+    let a = "";
+    if (e.substring(n, n + 8).toUpperCase() === "NOTATION") {
+      if (a = "NOTATION", n += 8, n = x(e, n), e[n] !== "(")
+        throw new Error(`Expected '(', found "${e[n]}"`);
+      n++;
+      let l = [];
+      for (; n < e.length && e[n] !== ")"; ) {
+        const d = n;
+        for (; n < e.length && e[n] !== "|" && e[n] !== ")"; )
+          n++;
+        let c = e.substring(d, n);
+        if (c = c.trim(), !ee(c, { xmlVersion: this.xmlVersion }))
+          throw new Error(`Invalid notation name: "${c}"`);
+        l.push(c), e[n] === "|" && (n++, n = x(e, n));
       }
-      i++;
-      let allowedNotations = [];
-      while (i < xmlData.length && xmlData[i] !== ")") {
-        const startIndex2 = i;
-        while (i < xmlData.length && xmlData[i] !== "|" && xmlData[i] !== ")") {
-          i++;
-        }
-        let notation = xmlData.substring(startIndex2, i);
-        notation = notation.trim();
-        if (!validateEntityName(notation, { xmlVersion: this.xmlVersion })) {
-          throw new Error(`Invalid notation name: "${notation}"`);
-        }
-        allowedNotations.push(notation);
-        if (xmlData[i] === "|") {
-          i++;
-          i = skipWhitespace(xmlData, i);
-        }
-      }
-      if (xmlData[i] !== ")") {
+      if (e[n] !== ")")
         throw new Error("Unterminated list of notations");
-      }
-      i++;
-      attributeType += " (" + allowedNotations.join("|") + ")";
+      n++, a += " (" + l.join("|") + ")";
     } else {
-      const startIndex2 = i;
-      while (i < xmlData.length && !/\s/.test(xmlData[i])) {
-        i++;
-      }
-      attributeType += xmlData.substring(startIndex2, i);
-      const validTypes = ["CDATA", "ID", "IDREF", "IDREFS", "ENTITY", "ENTITIES", "NMTOKEN", "NMTOKENS"];
-      if (!this.suppressValidationErr && !validTypes.includes(attributeType.toUpperCase())) {
-        throw new Error(`Invalid attribute type: "${attributeType}"`);
-      }
+      const l = n;
+      for (; n < e.length && !/\s/.test(e[n]); )
+        n++;
+      a += e.substring(l, n);
+      const d = ["CDATA", "ID", "IDREF", "IDREFS", "ENTITY", "ENTITIES", "NMTOKEN", "NMTOKENS"];
+      if (!this.suppressValidationErr && !d.includes(a.toUpperCase()))
+        throw new Error(`Invalid attribute type: "${a}"`);
     }
-    i = skipWhitespace(xmlData, i);
-    let defaultValue = "";
-    if (xmlData.substring(i, i + 8).toUpperCase() === "#REQUIRED") {
-      defaultValue = "#REQUIRED";
-      i += 8;
-    } else if (xmlData.substring(i, i + 7).toUpperCase() === "#IMPLIED") {
-      defaultValue = "#IMPLIED";
-      i += 7;
-    } else {
-      [i, defaultValue] = this.readIdentifierVal(xmlData, i, "ATTLIST");
-    }
-    return {
-      elementName,
-      attributeName,
-      attributeType,
-      defaultValue,
-      index: i
+    n = x(e, n);
+    let o = "";
+    return e.substring(n, n + 8).toUpperCase() === "#REQUIRED" ? (o = "#REQUIRED", n += 8) : e.substring(n, n + 7).toUpperCase() === "#IMPLIED" ? (o = "#IMPLIED", n += 7) : [n, o] = this.readIdentifierVal(e, n, "ATTLIST"), {
+      elementName: i,
+      attributeName: s,
+      attributeType: a,
+      defaultValue: o,
+      index: n
     };
   }
 }
-const skipWhitespace = (data, index) => {
-  while (index < data.length && /\s/.test(data[index])) {
-    index++;
-  }
-  return index;
+const x = (t, e) => {
+  for (; e < t.length && /\s/.test(t[e]); )
+    e++;
+  return e;
 };
-function hasSeq(data, seq, i) {
-  for (let j = 0; j < seq.length; j++) {
-    if (seq[j] !== data[i + j + 1]) return false;
-  }
-  return true;
+function j(t, e, n) {
+  for (let r = 0; r < e.length; r++)
+    if (e[r] !== t[n + r + 1]) return !1;
+  return !0;
 }
-function validateEntityName(name, xmlVersion) {
-  if (qName(name, { xmlVersion }))
-    return name;
-  else
-    throw new Error(`Invalid entity name ${name}`);
+function ee(t, e) {
+  if (Ut(t, { xmlVersion: e }))
+    return t;
+  throw new Error(`Invalid entity name ${t}`);
 }
-const SCRIPT_ZEROS = [
+const vr = [
   // Basic Latin (ASCII) — included for completeness / pass-through
   48,
   // 0-9
@@ -1962,267 +1736,196 @@ const SCRIPT_ZEROS = [
   // Adlam 𞥐𞥑𞥒𞥓𞥔𞥕𞥖𞥗𞥘𞥙
   130032
   // Segmented digit symbols 🯰🯱🯲🯳🯴🯵🯶🯷🯸🯹
-];
-const NOT_DIGIT = 255;
-const HIGH_MAP = /* @__PURE__ */ new Map();
-const LOW_MAX = 65535;
-const LOW_MIN = 1632;
-const TABLE_OFFSET = LOW_MIN;
-const TABLE_SIZE = LOW_MAX - LOW_MIN + 1;
-const TABLE = new Uint8Array(TABLE_SIZE).fill(NOT_DIGIT);
-for (const zero of SCRIPT_ZEROS) {
-  for (let d = 0; d < 10; d++) {
-    const cp = zero + d;
-    if (cp <= LOW_MAX) {
-      TABLE[cp - TABLE_OFFSET] = d;
-    } else {
-      HIGH_MAP.set(cp, d);
-    }
+], Ie = 255, Ce = /* @__PURE__ */ new Map(), Bt = 65535, Vt = 1632, ne = Vt, Lr = Bt - Vt + 1, ve = new Uint8Array(Lr).fill(Ie);
+for (const t of vr)
+  for (let e = 0; e < 10; e++) {
+    const n = t + e;
+    n <= Bt ? ve[n - ne] = e : Ce.set(n, e);
   }
-}
-const CHAR_0 = 48;
-const CHAR_9 = 57;
-const CHAR_MINUS = 45;
-const MINUS_SET = /* @__PURE__ */ new Set([8722, 65293, 65123]);
-function anynum(str) {
-  if (typeof str !== "string") return str;
-  const len = str.length;
-  if (len === 0) return str;
-  let firstHit = -1;
-  for (let i = 0; i < len; i++) {
-    const cc = str.charCodeAt(i);
-    if (cc >= CHAR_0 && cc <= CHAR_9 || cc === CHAR_MINUS) continue;
-    if (cc < TABLE_OFFSET) {
-      if (MINUS_SET.has(cc)) {
-        firstHit = i;
-        break;
+const st = 48, ot = 57, at = 45, le = /* @__PURE__ */ new Set([8722, 65293, 65123]);
+function Or(t) {
+  if (typeof t != "string") return t;
+  const e = t.length;
+  if (e === 0) return t;
+  let n = -1;
+  for (let i = 0; i < e; i++) {
+    const s = t.charCodeAt(i);
+    if (!(s >= st && s <= ot || s === at)) {
+      if (s < ne) {
+        if (le.has(s)) {
+          n = i;
+          break;
+        }
+        continue;
       }
-      continue;
-    }
-    if (cc >= 55296 && cc <= 56319) {
-      if (i + 1 < len) {
-        const low = str.charCodeAt(i + 1);
-        if (low >= 56320 && low <= 57343) {
-          const cp = 65536 + (cc - 55296 << 10) + (low - 56320);
-          if (HIGH_MAP.has(cp)) {
-            firstHit = i;
-            break;
+      if (s >= 55296 && s <= 56319) {
+        if (i + 1 < e) {
+          const a = t.charCodeAt(i + 1);
+          if (a >= 56320 && a <= 57343) {
+            const o = 65536 + (s - 55296 << 10) + (a - 56320);
+            if (Ce.has(o)) {
+              n = i;
+              break;
+            }
           }
         }
+        continue;
       }
-      continue;
-    }
-    if (TABLE[cc - TABLE_OFFSET] !== NOT_DIGIT || MINUS_SET.has(cc)) {
-      firstHit = i;
-      break;
+      if (ve[s - ne] !== Ie || le.has(s)) {
+        n = i;
+        break;
+      }
     }
   }
-  if (firstHit === -1) return str;
-  const chars = [];
-  if (firstHit > 0) chars.push(str.slice(0, firstHit));
-  for (let i = firstHit; i < len; i++) {
-    const cc = str.charCodeAt(i);
-    if (cc >= CHAR_0 && cc <= CHAR_9 || cc === CHAR_MINUS) {
-      chars.push(str[i]);
+  if (n === -1) return t;
+  const r = [];
+  n > 0 && r.push(t.slice(0, n));
+  for (let i = n; i < e; i++) {
+    const s = t.charCodeAt(i);
+    if (s >= st && s <= ot || s === at) {
+      r.push(t[i]);
       continue;
     }
-    if (cc < TABLE_OFFSET) {
-      chars.push(MINUS_SET.has(cc) ? "-" : str[i]);
+    if (s < ne) {
+      r.push(le.has(s) ? "-" : t[i]);
       continue;
     }
-    if (cc >= 55296 && cc <= 56319) {
-      if (i + 1 < len) {
-        const low = str.charCodeAt(i + 1);
-        if (low >= 56320 && low <= 57343) {
-          const cp = 65536 + (cc - 55296 << 10) + (low - 56320);
-          const d2 = HIGH_MAP.get(cp);
-          if (d2 !== void 0) {
-            chars.push(String.fromCharCode(d2 + 48));
-            i++;
+    if (s >= 55296 && s <= 56319) {
+      if (i + 1 < e) {
+        const o = t.charCodeAt(i + 1);
+        if (o >= 56320 && o <= 57343) {
+          const l = 65536 + (s - 55296 << 10) + (o - 56320), d = Ce.get(l);
+          if (d !== void 0) {
+            r.push(String.fromCharCode(d + 48)), i++;
             continue;
           }
         }
       }
-      chars.push(str[i]);
+      r.push(t[i]);
       continue;
     }
-    if (MINUS_SET.has(cc)) {
-      chars.push("-");
+    if (le.has(s)) {
+      r.push("-");
       continue;
     }
-    const d = TABLE[cc - TABLE_OFFSET];
-    chars.push(d !== NOT_DIGIT ? String.fromCharCode(d + 48) : str[i]);
+    const a = ve[s - ne];
+    r.push(a !== Ie ? String.fromCharCode(a + 48) : t[i]);
   }
-  return chars.join("");
+  return r.join("");
 }
-const hexRegex = /^[-+]?0x[a-fA-F0-9]+$/;
-const binRegex = /^0b[01]+$/;
-const octRegex = /^0o[0-7]+$/;
-const numRegex = /^([\-\+])?(0*)([0-9]*(\.[0-9]*)?)$/;
-const consider = {
-  hex: true,
-  binary: false,
-  octal: false,
-  leadingZeros: true,
+const Rr = /^[-+]?0x[a-fA-F0-9]+$/, Fr = /^0b[01]+$/, $r = /^0o[0-7]+$/, Mr = /^([\-\+])?(0*)([0-9]*(\.[0-9]*)?)$/, Pr = {
+  hex: !0,
+  binary: !1,
+  octal: !1,
+  leadingZeros: !0,
   decimalPoint: ".",
-  eNotation: true,
+  eNotation: !0,
   //skipLike: /regex/,
   infinity: "original",
   // "null", "infinity" (Infinity type), "string" ("Infinity" (the string literal))
-  unicode: false
+  unicode: !1
 };
-function toNumber(str, options = {}) {
-  options = Object.assign({}, consider, options);
-  if (!str || typeof str !== "string") return str;
-  let trimmedStr = str.trim();
-  if (trimmedStr.length === 0) return str;
-  else if (options.skipLike !== void 0 && options.skipLike.test(trimmedStr)) return str;
-  else if (trimmedStr === "0") return 0;
-  if (options.unicode) {
-    trimmedStr = anynum(trimmedStr);
-    if (trimmedStr === "0") return 0;
-  }
-  if (options.hex && hexRegex.test(trimmedStr)) {
-    return parse_int(trimmedStr, 16);
-  } else if (options.binary && binRegex.test(trimmedStr)) {
-    return parse_int(trimmedStr, 2);
-  } else if (options.octal && octRegex.test(trimmedStr)) {
-    return parse_int(trimmedStr, 8);
-  } else if (!isFinite(trimmedStr)) {
-    return handleInfinity(str, Number(trimmedStr), options);
-  } else if (trimmedStr.includes("e") || trimmedStr.includes("E")) {
-    return resolveEnotation(str, trimmedStr, options);
-  } else {
-    const match = numRegex.exec(trimmedStr);
-    if (match) {
-      const sign = match[1] || "";
-      const leadingZeros = match[2];
-      let numTrimmedByZeros = trimZeros(match[3]);
-      const decimalAdjacentToLeadingZeros = sign ? (
-        // 0., -00., 000.
-        str[leadingZeros.length + 1] === "."
-      ) : str[leadingZeros.length] === ".";
-      if (!options.leadingZeros && (leadingZeros.length > 1 || leadingZeros.length === 1 && !decimalAdjacentToLeadingZeros)) {
-        return str;
-      } else {
-        const num = Number(trimmedStr);
-        const parsedStr = String(num);
-        if (num === 0) return num;
-        if (parsedStr.search(/[eE]/) !== -1) {
-          if (options.eNotation) return num;
-          else return str;
-        } else if (trimmedStr.indexOf(".") !== -1) {
-          if (parsedStr === "0") return num;
-          else if (parsedStr === numTrimmedByZeros) return num;
-          else if (parsedStr === `${sign}${numTrimmedByZeros}`) return num;
-          else return str;
+function kr(t, e = {}) {
+  if (e = Object.assign({}, Pr, e), !t || typeof t != "string") return t;
+  let n = t.trim();
+  if (n.length === 0) return t;
+  if (e.skipLike !== void 0 && e.skipLike.test(n)) return t;
+  if (n === "0" || e.unicode && (n = Or(n), n === "0"))
+    return 0;
+  if (e.hex && Rr.test(n))
+    return ye(n, 16);
+  if (e.binary && Fr.test(n))
+    return ye(n, 2);
+  if (e.octal && $r.test(n))
+    return ye(n, 8);
+  if (isFinite(n)) {
+    if (n.includes("e") || n.includes("E"))
+      return Ur(t, n, e);
+    {
+      const r = Mr.exec(n);
+      if (r) {
+        const i = r[1] || "", s = r[2];
+        let a = Br(r[3]);
+        const o = i ? (
+          // 0., -00., 000.
+          t[s.length + 1] === "."
+        ) : t[s.length] === ".";
+        if (!e.leadingZeros && (s.length > 1 || s.length === 1 && !o))
+          return t;
+        {
+          const l = Number(n), d = String(l);
+          if (l === 0) return l;
+          if (d.search(/[eE]/) !== -1)
+            return e.eNotation ? l : t;
+          if (n.indexOf(".") !== -1)
+            return d === "0" || d === a || d === `${i}${a}` ? l : t;
+          let c = s ? a : n;
+          return s ? c === d || i + c === d ? l : t : c === d || c === i + d ? l : t;
         }
-        let n = leadingZeros ? numTrimmedByZeros : trimmedStr;
-        if (leadingZeros) {
-          return n === parsedStr || sign + n === parsedStr ? num : str;
-        } else {
-          return n === parsedStr || n === sign + parsedStr ? num : str;
-        }
-      }
-    } else {
-      return str;
+      } else
+        return t;
     }
-  }
+  } else return Vr(t, Number(n), e);
 }
-const eNotationRegx = /^([-+])?(0*)(\d*(\.\d*)?[eE][-\+]?\d+)$/;
-function resolveEnotation(str, trimmedStr, options) {
-  if (!options.eNotation) return str;
-  const notation = trimmedStr.match(eNotationRegx);
-  if (notation) {
-    let sign = notation[1] || "";
-    const eChar = notation[3].indexOf("e") === -1 ? "E" : "e";
-    const leadingZeros = notation[2];
-    const eAdjacentToLeadingZeros = sign ? (
+const jr = /^([-+])?(0*)(\d*(\.\d*)?[eE][-\+]?\d+)$/;
+function Ur(t, e, n) {
+  if (!n.eNotation) return t;
+  const r = e.match(jr);
+  if (r) {
+    let i = r[1] || "";
+    const s = r[3].indexOf("e") === -1 ? "E" : "e", a = r[2], o = i ? (
       // 0E.
-      str[leadingZeros.length + 1] === eChar
-    ) : str[leadingZeros.length] === eChar;
-    if (leadingZeros.length > 1 && eAdjacentToLeadingZeros) return str;
-    else if (leadingZeros.length === 1 && (notation[3].startsWith(`.${eChar}`) || notation[3][0] === eChar)) {
-      return Number(trimmedStr);
-    } else if (leadingZeros.length > 0) {
-      if (options.leadingZeros && !eAdjacentToLeadingZeros) {
-        trimmedStr = (notation[1] || "") + notation[3];
-        return Number(trimmedStr);
-      } else return str;
-    } else {
-      return Number(trimmedStr);
-    }
-  } else {
-    return str;
+      t[a.length + 1] === s
+    ) : t[a.length] === s;
+    return a.length > 1 && o ? t : a.length === 1 && (r[3].startsWith(`.${s}`) || r[3][0] === s) ? Number(e) : a.length > 0 ? n.leadingZeros && !o ? (e = (r[1] || "") + r[3], Number(e)) : t : Number(e);
+  } else
+    return t;
+}
+function Br(t) {
+  if (t && t.indexOf(".") !== -1) {
+    let e = t.length;
+    for (; e > 0 && t.charCodeAt(e - 1) === 48; ) e--;
+    return t = t.slice(0, e), t === "." ? t = "0" : t[0] === "." ? t = "0" + t : t[t.length - 1] === "." && (t = t.substring(0, t.length - 1)), t;
   }
+  return t;
 }
-function trimZeros(numStr) {
-  if (numStr && numStr.indexOf(".") !== -1) {
-    let end = numStr.length;
-    while (end > 0 && numStr.charCodeAt(end - 1) === 48) end--;
-    numStr = numStr.slice(0, end);
-    if (numStr === ".") numStr = "0";
-    else if (numStr[0] === ".") numStr = "0" + numStr;
-    else if (numStr[numStr.length - 1] === ".") numStr = numStr.substring(0, numStr.length - 1);
-    return numStr;
-  }
-  return numStr;
+function ye(t, e) {
+  const n = t.trim();
+  if ((e === 2 || e === 8) && (t = n.substring(2)), parseInt) return parseInt(t, e);
+  if (Number.parseInt) return Number.parseInt(t, e);
+  if (window && window.parseInt) return window.parseInt(t, e);
+  throw new Error("parseInt, Number.parseInt, window.parseInt are not supported");
 }
-function parse_int(numStr, base) {
-  const str = numStr.trim();
-  if (base === 2 || base === 8) numStr = str.substring(2);
-  if (parseInt) return parseInt(numStr, base);
-  else if (Number.parseInt) return Number.parseInt(numStr, base);
-  else if (window && window.parseInt) return window.parseInt(numStr, base);
-  else throw new Error("parseInt, Number.parseInt, window.parseInt are not supported");
-}
-function handleInfinity(str, num, options) {
-  const isPositive = num === Infinity;
-  switch (options.infinity.toLowerCase()) {
+function Vr(t, e, n) {
+  const r = e === 1 / 0;
+  switch (n.infinity.toLowerCase()) {
     case "null":
       return null;
     case "infinity":
-      return num;
+      return e;
     case "string":
-      return isPositive ? "Infinity" : "-Infinity";
+      return r ? "Infinity" : "-Infinity";
     case "original":
     default:
-      return str;
+      return t;
   }
 }
-function getIgnoreAttributesFn(ignoreAttributes) {
-  if (typeof ignoreAttributes === "function") {
-    return ignoreAttributes;
-  }
-  if (Array.isArray(ignoreAttributes)) {
-    return (attrName) => {
-      for (const pattern of ignoreAttributes) {
-        if (typeof pattern === "string" && attrName === pattern) {
-          return true;
-        }
-        if (pattern instanceof RegExp && pattern.test(attrName)) {
-          return true;
-        }
-      }
-    };
-  }
-  return () => false;
+function Wr(t) {
+  return typeof t == "function" ? t : Array.isArray(t) ? (e) => {
+    for (const n of t)
+      if (typeof n == "string" && e === n || n instanceof RegExp && n.test(e))
+        return !0;
+  } : () => !1;
 }
-class Expression {
+class lt {
   /**
    * Create a new Expression
    * @param {string} pattern - Pattern string (e.g., "root.users.user", "..user[id]")
    * @param {Object} options - Configuration options
    * @param {string} options.separator - Path separator (default: '.')
    */
-  constructor(pattern, options = {}, data) {
-    this.pattern = pattern;
-    this.separator = options.separator || ".";
-    this.segments = this._parse(pattern);
-    this.data = data;
-    this._hasDeepWildcard = this.segments.some((seg) => seg.type === "deep-wildcard");
-    this._hasAttributeCondition = this.segments.some((seg) => seg.attrName !== void 0);
-    this._hasPositionSelector = this.segments.some((seg) => seg.position !== void 0);
+  constructor(e, n = {}, r) {
+    this.pattern = e, this.separator = n.separator || ".", this.segments = this._parse(e), this.data = r, this._hasDeepWildcard = this.segments.some((i) => i.type === "deep-wildcard"), this._hasAttributeCondition = this.segments.some((i) => i.attrName !== void 0), this._hasPositionSelector = this.segments.some((i) => i.position !== void 0);
   }
   /**
    * Parse pattern string into segments
@@ -2230,35 +1933,12 @@ class Expression {
    * @param {string} pattern - Pattern to parse
    * @returns {Array} Array of segment objects
    */
-  _parse(pattern) {
-    const segments = [];
-    let i = 0;
-    let currentPart = "";
-    while (i < pattern.length) {
-      if (pattern[i] === this.separator) {
-        if (i + 1 < pattern.length && pattern[i + 1] === this.separator) {
-          if (currentPart.trim()) {
-            segments.push(this._parseSegment(currentPart.trim()));
-            currentPart = "";
-          }
-          segments.push({ type: "deep-wildcard" });
-          i += 2;
-        } else {
-          if (currentPart.trim()) {
-            segments.push(this._parseSegment(currentPart.trim()));
-          }
-          currentPart = "";
-          i++;
-        }
-      } else {
-        currentPart += pattern[i];
-        i++;
-      }
-    }
-    if (currentPart.trim()) {
-      segments.push(this._parseSegment(currentPart.trim()));
-    }
-    return segments;
+  _parse(e) {
+    const n = [];
+    let r = 0, i = "";
+    for (; r < e.length; )
+      e[r] === this.separator ? r + 1 < e.length && e[r + 1] === this.separator ? (i.trim() && (n.push(this._parseSegment(i.trim())), i = ""), n.push({ type: "deep-wildcard" }), r += 2) : (i.trim() && n.push(this._parseSegment(i.trim())), i = "", r++) : (i += e[r], r++);
+    return i.trim() && n.push(this._parseSegment(i.trim())), n;
   }
   /**
    * Parse a single segment
@@ -2266,72 +1946,39 @@ class Expression {
    * @param {string} part - Segment string (e.g., "user", "ns::user", "user[id]", "ns::user:first")
    * @returns {Object} Segment object
    */
-  _parseSegment(part) {
-    const segment = { type: "tag" };
-    let bracketContent = null;
-    let withoutBrackets = part;
-    const bracketMatch = part.match(/^([^\[]+)(\[[^\]]*\])(.*)$/);
-    if (bracketMatch) {
-      withoutBrackets = bracketMatch[1] + bracketMatch[3];
-      if (bracketMatch[2]) {
-        const content = bracketMatch[2].slice(1, -1);
-        if (content) {
-          bracketContent = content;
-        }
-      }
+  _parseSegment(e) {
+    const n = { type: "tag" };
+    let r = null, i = e;
+    const s = e.match(/^([^\[]+)(\[[^\]]*\])(.*)$/);
+    if (s && (i = s[1] + s[3], s[2])) {
+      const c = s[2].slice(1, -1);
+      c && (r = c);
     }
-    let namespace = void 0;
-    let tagAndPosition = withoutBrackets;
-    if (withoutBrackets.includes("::")) {
-      const nsIndex = withoutBrackets.indexOf("::");
-      namespace = withoutBrackets.substring(0, nsIndex).trim();
-      tagAndPosition = withoutBrackets.substring(nsIndex + 2).trim();
-      if (!namespace) {
-        throw new Error(`Invalid namespace in pattern: ${part}`);
-      }
+    let a, o = i;
+    if (i.includes("::")) {
+      const c = i.indexOf("::");
+      if (a = i.substring(0, c).trim(), o = i.substring(c + 2).trim(), !a)
+        throw new Error(`Invalid namespace in pattern: ${e}`);
     }
-    let tag = void 0;
-    let positionMatch = null;
-    if (tagAndPosition.includes(":")) {
-      const colonIndex = tagAndPosition.lastIndexOf(":");
-      const tagPart = tagAndPosition.substring(0, colonIndex).trim();
-      const posPart = tagAndPosition.substring(colonIndex + 1).trim();
-      const isPositionKeyword = ["first", "last", "odd", "even"].includes(posPart) || /^nth\(\d+\)$/.test(posPart);
-      if (isPositionKeyword) {
-        tag = tagPart;
-        positionMatch = posPart;
-      } else {
-        tag = tagAndPosition;
-      }
-    } else {
-      tag = tagAndPosition;
+    let l, d = null;
+    if (o.includes(":")) {
+      const c = o.lastIndexOf(":"), u = o.substring(0, c).trim(), p = o.substring(c + 1).trim();
+      ["first", "last", "odd", "even"].includes(p) || /^nth\(\d+\)$/.test(p) ? (l = u, d = p) : l = o;
+    } else
+      l = o;
+    if (!l)
+      throw new Error(`Invalid segment pattern: ${e}`);
+    if (n.tag = l, a && (n.namespace = a), r)
+      if (r.includes("=")) {
+        const c = r.indexOf("=");
+        n.attrName = r.substring(0, c).trim(), n.attrValue = r.substring(c + 1).trim();
+      } else
+        n.attrName = r.trim();
+    if (d) {
+      const c = d.match(/^nth\((\d+)\)$/);
+      c ? (n.position = "nth", n.positionValue = parseInt(c[1], 10)) : n.position = d;
     }
-    if (!tag) {
-      throw new Error(`Invalid segment pattern: ${part}`);
-    }
-    segment.tag = tag;
-    if (namespace) {
-      segment.namespace = namespace;
-    }
-    if (bracketContent) {
-      if (bracketContent.includes("=")) {
-        const eqIndex = bracketContent.indexOf("=");
-        segment.attrName = bracketContent.substring(0, eqIndex).trim();
-        segment.attrValue = bracketContent.substring(eqIndex + 1).trim();
-      } else {
-        segment.attrName = bracketContent.trim();
-      }
-    }
-    if (positionMatch) {
-      const nthMatch = positionMatch.match(/^nth\((\d+)\)$/);
-      if (nthMatch) {
-        segment.position = "nth";
-        segment.positionValue = parseInt(nthMatch[1], 10);
-      } else {
-        segment.position = positionMatch;
-      }
-    }
-    return segment;
+    return n;
   }
   /**
    * Get the number of segments
@@ -2369,14 +2016,9 @@ class Expression {
     return this.pattern;
   }
 }
-class ExpressionSet {
+class Xr {
   constructor() {
-    this._byDepthAndTag = /* @__PURE__ */ new Map();
-    this._wildcardByDepth = /* @__PURE__ */ new Map();
-    this._deepWildcards = [];
-    this._deepByTerminalTag = /* @__PURE__ */ new Map();
-    this._patterns = /* @__PURE__ */ new Set();
-    this._sealed = false;
+    this._byDepthAndTag = /* @__PURE__ */ new Map(), this._wildcardByDepth = /* @__PURE__ */ new Map(), this._deepWildcards = [], this._deepByTerminalTag = /* @__PURE__ */ new Map(), this._patterns = /* @__PURE__ */ new Set(), this._sealed = !1;
   }
   /**
    * Add an Expression to the set.
@@ -2390,35 +2032,27 @@ class ExpressionSet {
    * set.add(new Expression('root.users.user'));
    * set.add(new Expression('..script'));
    */
-  add(expression) {
-    if (this._sealed) {
+  add(e) {
+    if (this._sealed)
       throw new TypeError(
         "ExpressionSet is sealed. Create a new ExpressionSet to add more expressions."
       );
-    }
-    if (this._patterns.has(expression.pattern)) return this;
-    this._patterns.add(expression.pattern);
-    if (expression.hasDeepWildcard()) {
-      const lastSeg2 = expression.segments[expression.segments.length - 1];
-      if (lastSeg2 && lastSeg2.type !== "deep-wildcard" && lastSeg2.tag !== "*") {
-        const tag2 = lastSeg2.tag;
-        if (!this._deepByTerminalTag.has(tag2)) this._deepByTerminalTag.set(tag2, []);
-        this._deepByTerminalTag.get(tag2).push(expression);
-      } else {
-        this._deepWildcards.push(expression);
-      }
+    if (this._patterns.has(e.pattern)) return this;
+    if (this._patterns.add(e.pattern), e.hasDeepWildcard()) {
+      const s = e.segments[e.segments.length - 1];
+      if (s && s.type !== "deep-wildcard" && s.tag !== "*") {
+        const a = s.tag;
+        this._deepByTerminalTag.has(a) || this._deepByTerminalTag.set(a, []), this._deepByTerminalTag.get(a).push(e);
+      } else
+        this._deepWildcards.push(e);
       return this;
     }
-    const depth = expression.length;
-    const lastSeg = expression.segments[expression.segments.length - 1];
-    const tag = lastSeg == null ? void 0 : lastSeg.tag;
-    if (!tag || tag === "*") {
-      if (!this._wildcardByDepth.has(depth)) this._wildcardByDepth.set(depth, []);
-      this._wildcardByDepth.get(depth).push(expression);
-    } else {
-      const key = `${depth}:${tag}`;
-      if (!this._byDepthAndTag.has(key)) this._byDepthAndTag.set(key, []);
-      this._byDepthAndTag.get(key).push(expression);
+    const n = e.length, r = e.segments[e.segments.length - 1], i = r == null ? void 0 : r.tag;
+    if (!i || i === "*")
+      this._wildcardByDepth.has(n) || this._wildcardByDepth.set(n, []), this._wildcardByDepth.get(n).push(e);
+    else {
+      const s = `${n}:${i}`;
+      this._byDepthAndTag.has(s) || this._byDepthAndTag.set(s, []), this._byDepthAndTag.get(s).push(e);
     }
     return this;
   }
@@ -2434,8 +2068,8 @@ class ExpressionSet {
    *   new Expression('root.config.setting'),
    * ]);
    */
-  addAll(expressions) {
-    for (const expr of expressions) this.add(expr);
+  addAll(e) {
+    for (const n of e) this.add(n);
     return this;
   }
   /**
@@ -2444,8 +2078,8 @@ class ExpressionSet {
    * @param {import('./Expression.js').default} expression
    * @returns {boolean}
    */
-  has(expression) {
-    return this._patterns.has(expression.pattern);
+  has(e) {
+    return this._patterns.has(e.pattern);
   }
   /**
    * Number of expressions in the set.
@@ -2462,8 +2096,7 @@ class ExpressionSet {
    * @returns {this}
    */
   seal() {
-    this._sealed = true;
-    return this;
+    return this._sealed = !0, this;
   }
   /**
    * Whether the set has been sealed.
@@ -2488,8 +2121,8 @@ class ExpressionSet {
    *   // handle stop node
    * }
    */
-  matchesAny(matcher) {
-    return this.findMatch(matcher) !== null;
+  matchesAny(e) {
+    return this.findMatch(e) !== null;
   }
   /**
   * Find and return the first Expression that matches the matcher's current path.
@@ -2508,40 +2141,33 @@ class ExpressionSet {
   *   // access expr.config, expr.pattern, etc.
   * }
   */
-  findMatch(matcher) {
-    const depth = matcher.getDepth();
-    const tag = matcher.getCurrentTag();
-    const exactKey = `${depth}:${tag}`;
-    const exactBucket = this._byDepthAndTag.get(exactKey);
-    if (exactBucket) {
-      for (let i = 0; i < exactBucket.length; i++) {
-        if (matcher.matches(exactBucket[i])) return exactBucket[i];
-      }
+  findMatch(e) {
+    const n = e.getDepth(), r = e.getCurrentTag(), i = `${n}:${r}`, s = this._byDepthAndTag.get(i);
+    if (s) {
+      for (let l = 0; l < s.length; l++)
+        if (e.matches(s[l])) return s[l];
     }
-    const wildcardBucket = this._wildcardByDepth.get(depth);
-    if (wildcardBucket) {
-      for (let i = 0; i < wildcardBucket.length; i++) {
-        if (matcher.matches(wildcardBucket[i])) return wildcardBucket[i];
-      }
+    const a = this._wildcardByDepth.get(n);
+    if (a) {
+      for (let l = 0; l < a.length; l++)
+        if (e.matches(a[l])) return a[l];
     }
-    const deepBucket = this._deepByTerminalTag.get(tag);
-    if (deepBucket) {
-      for (let i = 0; i < deepBucket.length; i++) {
-        if (matcher.matches(deepBucket[i])) return deepBucket[i];
-      }
+    const o = this._deepByTerminalTag.get(r);
+    if (o) {
+      for (let l = 0; l < o.length; l++)
+        if (e.matches(o[l])) return o[l];
     }
-    for (let i = 0; i < this._deepWildcards.length; i++) {
-      if (matcher.matches(this._deepWildcards[i])) return this._deepWildcards[i];
-    }
+    for (let l = 0; l < this._deepWildcards.length; l++)
+      if (e.matches(this._deepWildcards[l])) return this._deepWildcards[l];
     return null;
   }
 }
-class MatcherView {
+class qr {
   /**
    * @param {Matcher} matcher - The parent Matcher instance to read from.
    */
-  constructor(matcher) {
-    this._matcher = matcher;
+  constructor(e) {
+    this._matcher = e;
   }
   /**
    * Get the path separator used by the parent matcher.
@@ -2555,38 +2181,38 @@ class MatcherView {
    * @returns {string|undefined}
    */
   getCurrentTag() {
-    const path2 = this._matcher.path;
-    return path2.length > 0 ? path2[path2.length - 1].tag : void 0;
+    const e = this._matcher.path;
+    return e.length > 0 ? e[e.length - 1].tag : void 0;
   }
   /**
    * Get current namespace.
    * @returns {string|undefined}
    */
   getCurrentNamespace() {
-    const path2 = this._matcher.path;
-    return path2.length > 0 ? path2[path2.length - 1].namespace : void 0;
+    const e = this._matcher.path;
+    return e.length > 0 ? e[e.length - 1].namespace : void 0;
   }
   /**
    * Get current node's attribute value.
    * @param {string} attrName
    * @returns {*}
    */
-  getAttrValue(attrName) {
-    var _a;
-    const path2 = this._matcher.path;
-    if (path2.length === 0) return void 0;
-    return (_a = path2[path2.length - 1].values) == null ? void 0 : _a[attrName];
+  getAttrValue(e) {
+    var r;
+    const n = this._matcher.path;
+    if (n.length !== 0)
+      return (r = n[n.length - 1].values) == null ? void 0 : r[e];
   }
   /**
    * Check if current node has an attribute.
    * @param {string} attrName
    * @returns {boolean}
    */
-  hasAttr(attrName) {
-    const path2 = this._matcher.path;
-    if (path2.length === 0) return false;
-    const current = path2[path2.length - 1];
-    return current.values !== void 0 && attrName in current.values;
+  hasAttr(e) {
+    const n = this._matcher.path;
+    if (n.length === 0) return !1;
+    const r = n[n.length - 1];
+    return r.values !== void 0 && e in r.values;
   }
   /**
    * Get the value of a "kept" attribute from the nearest ancestor (or
@@ -2594,8 +2220,8 @@ class MatcherView {
    * @param {string} attrName
    * @returns {*}
    */
-  getAnyParentAttr(attrName) {
-    return this._matcher.getAnyParentAttr(attrName);
+  getAnyParentAttr(e) {
+    return this._matcher.getAnyParentAttr(e);
   }
   /**
    * Check whether any ancestor (or the current node) kept the given
@@ -2603,26 +2229,24 @@ class MatcherView {
    * @param {string} attrName
    * @returns {boolean}
    */
-  hasAnyParentAttr(attrName) {
-    return this._matcher.hasAnyParentAttr(attrName);
+  hasAnyParentAttr(e) {
+    return this._matcher.hasAnyParentAttr(e);
   }
   /**
    * Get current node's sibling position (child index in parent).
    * @returns {number}
    */
   getPosition() {
-    const path2 = this._matcher.path;
-    if (path2.length === 0) return -1;
-    return path2[path2.length - 1].position ?? 0;
+    const e = this._matcher.path;
+    return e.length === 0 ? -1 : e[e.length - 1].position ?? 0;
   }
   /**
    * Get current node's repeat counter (occurrence count of this tag name).
    * @returns {number}
    */
   getCounter() {
-    const path2 = this._matcher.path;
-    if (path2.length === 0) return -1;
-    return path2[path2.length - 1].counter ?? 0;
+    const e = this._matcher.path;
+    return e.length === 0 ? -1 : e[e.length - 1].counter ?? 0;
   }
   /**
    * Get current node's sibling index (alias for getPosition).
@@ -2645,46 +2269,41 @@ class MatcherView {
    * @param {boolean} [includeNamespace=true]
    * @returns {string}
    */
-  toString(separator, includeNamespace = true) {
-    return this._matcher.toString(separator, includeNamespace);
+  toString(e, n = !0) {
+    return this._matcher.toString(e, n);
   }
   /**
    * Get path as array of tag names.
    * @returns {string[]}
    */
   toArray() {
-    return this._matcher.path.map((n) => n.tag);
+    return this._matcher.path.map((e) => e.tag);
   }
   /**
    * Match current path against an Expression.
    * @param {Expression} expression
    * @returns {boolean}
    */
-  matches(expression) {
-    return this._matcher.matches(expression);
+  matches(e) {
+    return this._matcher.matches(e);
   }
   /**
    * Match any expression in the given set against the current path.
    * @param {ExpressionSet} exprSet
    * @returns {boolean}
    */
-  matchesAny(exprSet) {
-    return exprSet.matchesAny(this._matcher);
+  matchesAny(e) {
+    return e.matchesAny(this._matcher);
   }
 }
-class Matcher {
+class Hr {
   /**
    * Create a new Matcher.
    * @param {Object} [options={}]
    * @param {string} [options.separator='.'] - Default path separator
    */
-  constructor(options = {}) {
-    this.separator = options.separator || ".";
-    this.path = [];
-    this.siblingStacks = [];
-    this._pathStringCache = null;
-    this._view = new MatcherView(this);
-    this._keptAttrs = [];
+  constructor(e = {}) {
+    this.separator = e.separator || ".", this.path = [], this.siblingStacks = [], this._pathStringCache = null, this._view = new qr(this), this._keptAttrs = [];
   }
   /**
    * Push a new tag onto the path.
@@ -2694,73 +2313,49 @@ class Matcher {
    * @param {Object|null} [options=null]
    * @param {string[]} [options.keep] - Names of attributes (from attrValues)
    */
-  push(tagName, attrValues = null, namespace = null, options = null) {
-    this._pathStringCache = null;
-    if (this.path.length > 0) {
-      this.path[this.path.length - 1].values = void 0;
-    }
-    const currentLevel = this.path.length;
-    let level = this.siblingStacks[currentLevel];
-    if (!level) {
-      level = { counts: /* @__PURE__ */ new Map(), total: 0 };
-      this.siblingStacks[currentLevel] = level;
-    }
-    const siblingKey = namespace ? `${namespace}:${tagName}` : tagName;
-    const counter = level.counts.get(siblingKey) || 0;
-    const position = level.total;
-    level.counts.set(siblingKey, counter + 1);
-    level.total++;
-    const node = {
-      tag: tagName,
-      position,
-      counter
+  push(e, n = null, r = null, i = null) {
+    this._pathStringCache = null, this.path.length > 0 && (this.path[this.path.length - 1].values = void 0);
+    const s = this.path.length;
+    let a = this.siblingStacks[s];
+    a || (a = { counts: /* @__PURE__ */ new Map(), total: 0 }, this.siblingStacks[s] = a);
+    const o = r ? `${r}:${e}` : e, l = a.counts.get(o) || 0, d = a.total;
+    a.counts.set(o, l + 1), a.total++;
+    const c = {
+      tag: e,
+      position: d,
+      counter: l
     };
-    if (namespace !== null && namespace !== void 0) {
-      node.namespace = namespace;
-    }
-    if (attrValues !== null && attrValues !== void 0) {
-      node.values = attrValues;
-    }
-    this.path.push(node);
-    const depth = this.path.length;
-    const keep = options !== null ? options.keep : null;
-    if (keep !== null && keep !== void 0 && keep.length > 0 && attrValues) {
-      for (let i = 0; i < keep.length; i++) {
-        const name = keep[i];
-        if (attrValues[name] !== void 0) {
-          this._keptAttrs.push({ depth, name, value: attrValues[name] });
-        }
+    r != null && (c.namespace = r), n != null && (c.values = n), this.path.push(c);
+    const u = this.path.length, p = i !== null ? i.keep : null;
+    if (p != null && p.length > 0 && n)
+      for (let h = 0; h < p.length; h++) {
+        const y = p[h];
+        n[y] !== void 0 && this._keptAttrs.push({ depth: u, name: y, value: n[y] });
       }
-    }
   }
   /**
    * Pop the last tag from the path.
    * @returns {Object|undefined} The popped node
    */
   pop() {
-    if (this.path.length === 0) return void 0;
+    if (this.path.length === 0) return;
     this._pathStringCache = null;
-    const node = this.path.pop();
-    if (this.siblingStacks.length > this.path.length + 1) {
-      this.siblingStacks.length = this.path.length + 1;
-    }
-    const poppedDepth = this.path.length + 1;
-    while (this._keptAttrs.length > 0 && this._keptAttrs[this._keptAttrs.length - 1].depth >= poppedDepth) {
+    const e = this.path.pop();
+    this.siblingStacks.length > this.path.length + 1 && (this.siblingStacks.length = this.path.length + 1);
+    const n = this.path.length + 1;
+    for (; this._keptAttrs.length > 0 && this._keptAttrs[this._keptAttrs.length - 1].depth >= n; )
       this._keptAttrs.pop();
-    }
-    return node;
+    return e;
   }
   /**
    * Update current node's attribute values.
    * Useful when attributes are parsed after push.
    * @param {Object} attrValues
    */
-  updateCurrent(attrValues) {
+  updateCurrent(e) {
     if (this.path.length > 0) {
-      const current = this.path[this.path.length - 1];
-      if (attrValues !== null && attrValues !== void 0) {
-        current.values = attrValues;
-      }
+      const n = this.path[this.path.length - 1];
+      e != null && (n.values = e);
     }
   }
   /**
@@ -2782,20 +2377,20 @@ class Matcher {
    * @param {string} attrName
    * @returns {*}
    */
-  getAttrValue(attrName) {
-    var _a;
-    if (this.path.length === 0) return void 0;
-    return (_a = this.path[this.path.length - 1].values) == null ? void 0 : _a[attrName];
+  getAttrValue(e) {
+    var n;
+    if (this.path.length !== 0)
+      return (n = this.path[this.path.length - 1].values) == null ? void 0 : n[e];
   }
   /**
    * Check if current node has an attribute.
    * @param {string} attrName
    * @returns {boolean}
    */
-  hasAttr(attrName) {
-    if (this.path.length === 0) return false;
-    const current = this.path[this.path.length - 1];
-    return current.values !== void 0 && attrName in current.values;
+  hasAttr(e) {
+    if (this.path.length === 0) return !1;
+    const n = this.path[this.path.length - 1];
+    return n.values !== void 0 && e in n.values;
   }
   /**
    * Get the value of a "kept" attribute from the nearest ancestor (or
@@ -2807,12 +2402,10 @@ class Matcher {
    * @param {string} attrName
    * @returns {*} the value, or undefined if no ancestor kept this attribute
    */
-  getAnyParentAttr(attrName) {
-    const kept = this._keptAttrs;
-    for (let i = kept.length - 1; i >= 0; i--) {
-      if (kept[i].name === attrName) return kept[i].value;
-    }
-    return void 0;
+  getAnyParentAttr(e) {
+    const n = this._keptAttrs;
+    for (let r = n.length - 1; r >= 0; r--)
+      if (n[r].name === e) return n[r].value;
   }
   /**
    * Check whether any ancestor (or the current node) kept the given
@@ -2820,28 +2413,25 @@ class Matcher {
    * @param {string} attrName
    * @returns {boolean}
    */
-  hasAnyParentAttr(attrName) {
-    const kept = this._keptAttrs;
-    for (let i = kept.length - 1; i >= 0; i--) {
-      if (kept[i].name === attrName) return true;
-    }
-    return false;
+  hasAnyParentAttr(e) {
+    const n = this._keptAttrs;
+    for (let r = n.length - 1; r >= 0; r--)
+      if (n[r].name === e) return !0;
+    return !1;
   }
   /**
    * Get current node's sibling position (child index in parent).
    * @returns {number}
    */
   getPosition() {
-    if (this.path.length === 0) return -1;
-    return this.path[this.path.length - 1].position ?? 0;
+    return this.path.length === 0 ? -1 : this.path[this.path.length - 1].position ?? 0;
   }
   /**
    * Get current node's repeat counter (occurrence count of this tag name).
    * @returns {number}
    */
   getCounter() {
-    if (this.path.length === 0) return -1;
-    return this.path[this.path.length - 1].counter ?? 0;
+    return this.path.length === 0 ? -1 : this.path[this.path.length - 1].counter ?? 0;
   }
   /**
    * Get current node's sibling index (alias for getPosition).
@@ -2864,153 +2454,108 @@ class Matcher {
    * @param {boolean} [includeNamespace=true]
    * @returns {string}
    */
-  toString(separator, includeNamespace = true) {
-    const sep2 = separator || this.separator;
-    const isDefault = sep2 === this.separator && includeNamespace === true;
-    if (isDefault) {
-      if (this._pathStringCache !== null) {
+  toString(e, n = !0) {
+    const r = e || this.separator;
+    if (r === this.separator && n === !0) {
+      if (this._pathStringCache !== null)
         return this._pathStringCache;
-      }
-      const result = this.path.map(
-        (n) => n.namespace ? `${n.namespace}:${n.tag}` : n.tag
-      ).join(sep2);
-      this._pathStringCache = result;
-      return result;
+      const s = this.path.map(
+        (a) => a.namespace ? `${a.namespace}:${a.tag}` : a.tag
+      ).join(r);
+      return this._pathStringCache = s, s;
     }
     return this.path.map(
-      (n) => includeNamespace && n.namespace ? `${n.namespace}:${n.tag}` : n.tag
-    ).join(sep2);
+      (s) => n && s.namespace ? `${s.namespace}:${s.tag}` : s.tag
+    ).join(r);
   }
   /**
    * Get path as array of tag names.
    * @returns {string[]}
    */
   toArray() {
-    return this.path.map((n) => n.tag);
+    return this.path.map((e) => e.tag);
   }
   /**
    * Reset the path to empty.
    */
   reset() {
-    this._pathStringCache = null;
-    this.path = [];
-    this.siblingStacks = [];
-    this._keptAttrs = [];
+    this._pathStringCache = null, this.path = [], this.siblingStacks = [], this._keptAttrs = [];
   }
   /**
    * Match current path against an Expression.
    * @param {Expression} expression
    * @returns {boolean}
    */
-  matches(expression) {
-    const segments = expression.segments;
-    if (segments.length === 0) {
-      return false;
-    }
-    if (expression.hasDeepWildcard()) {
-      return this._matchWithDeepWildcard(segments);
-    }
-    return this._matchSimple(segments);
+  matches(e) {
+    const n = e.segments;
+    return n.length === 0 ? !1 : e.hasDeepWildcard() ? this._matchWithDeepWildcard(n) : this._matchSimple(n);
   }
   /**
    * @private
    */
-  _matchSimple(segments) {
-    if (this.path.length !== segments.length) {
-      return false;
-    }
-    for (let i = 0; i < segments.length; i++) {
-      if (!this._matchSegment(segments[i], this.path[i], i === this.path.length - 1)) {
-        return false;
-      }
-    }
-    return true;
+  _matchSimple(e) {
+    if (this.path.length !== e.length)
+      return !1;
+    for (let n = 0; n < e.length; n++)
+      if (!this._matchSegment(e[n], this.path[n], n === this.path.length - 1))
+        return !1;
+    return !0;
   }
   /**
    * @private
    */
-  _matchWithDeepWildcard(segments) {
-    let pathIdx = this.path.length - 1;
-    let segIdx = segments.length - 1;
-    while (segIdx >= 0 && pathIdx >= 0) {
-      const segment = segments[segIdx];
-      if (segment.type === "deep-wildcard") {
-        segIdx--;
-        if (segIdx < 0) {
-          return true;
-        }
-        const nextSeg = segments[segIdx];
-        let found = false;
-        for (let i = pathIdx; i >= 0; i--) {
-          if (this._matchSegment(nextSeg, this.path[i], i === this.path.length - 1)) {
-            pathIdx = i - 1;
-            segIdx--;
-            found = true;
+  _matchWithDeepWildcard(e) {
+    let n = this.path.length - 1, r = e.length - 1;
+    for (; r >= 0 && n >= 0; ) {
+      const i = e[r];
+      if (i.type === "deep-wildcard") {
+        if (r--, r < 0)
+          return !0;
+        const s = e[r];
+        let a = !1;
+        for (let o = n; o >= 0; o--)
+          if (this._matchSegment(s, this.path[o], o === this.path.length - 1)) {
+            n = o - 1, r--, a = !0;
             break;
           }
-        }
-        if (!found) {
-          return false;
-        }
+        if (!a)
+          return !1;
       } else {
-        if (!this._matchSegment(segment, this.path[pathIdx], pathIdx === this.path.length - 1)) {
-          return false;
-        }
-        pathIdx--;
-        segIdx--;
+        if (!this._matchSegment(i, this.path[n], n === this.path.length - 1))
+          return !1;
+        n--, r--;
       }
     }
-    return segIdx < 0;
+    return r < 0;
   }
   /**
    * @private
    */
-  _matchSegment(segment, node, isCurrentNode) {
-    if (segment.tag !== "*" && segment.tag !== node.tag) {
-      return false;
+  _matchSegment(e, n, r) {
+    if (e.tag !== "*" && e.tag !== n.tag || e.namespace !== void 0 && e.namespace !== "*" && e.namespace !== n.namespace || e.attrName !== void 0 && (!r || !n.values || !(e.attrName in n.values) || e.attrValue !== void 0 && String(n.values[e.attrName]) !== String(e.attrValue)))
+      return !1;
+    if (e.position !== void 0) {
+      if (!r)
+        return !1;
+      const i = n.counter ?? 0;
+      if (e.position === "first" && i !== 0)
+        return !1;
+      if (e.position === "odd" && i % 2 !== 1)
+        return !1;
+      if (e.position === "even" && i % 2 !== 0)
+        return !1;
+      if (e.position === "nth" && i !== e.positionValue)
+        return !1;
     }
-    if (segment.namespace !== void 0) {
-      if (segment.namespace !== "*" && segment.namespace !== node.namespace) {
-        return false;
-      }
-    }
-    if (segment.attrName !== void 0) {
-      if (!isCurrentNode) {
-        return false;
-      }
-      if (!node.values || !(segment.attrName in node.values)) {
-        return false;
-      }
-      if (segment.attrValue !== void 0) {
-        if (String(node.values[segment.attrName]) !== String(segment.attrValue)) {
-          return false;
-        }
-      }
-    }
-    if (segment.position !== void 0) {
-      if (!isCurrentNode) {
-        return false;
-      }
-      const counter = node.counter ?? 0;
-      if (segment.position === "first" && counter !== 0) {
-        return false;
-      } else if (segment.position === "odd" && counter % 2 !== 1) {
-        return false;
-      } else if (segment.position === "even" && counter % 2 !== 0) {
-        return false;
-      } else if (segment.position === "nth" && counter !== segment.positionValue) {
-        return false;
-      }
-    }
-    return true;
+    return !0;
   }
   /**
    * Match any expression in the given set against the current path.
    * @param {ExpressionSet} exprSet
    * @returns {boolean}
    */
-  matchesAny(exprSet) {
-    return exprSet.matchesAny(this);
+  matchesAny(e) {
+    return e.matchesAny(this);
   }
   /**
    * Create a snapshot of current state.
@@ -3018,20 +2563,17 @@ class Matcher {
    */
   snapshot() {
     return {
-      path: this.path.map((node) => ({ ...node })),
-      siblingStacks: this.siblingStacks.map((level) => level ? { counts: new Map(level.counts), total: level.total } : level),
-      keptAttrs: this._keptAttrs.map((entry) => ({ ...entry }))
+      path: this.path.map((e) => ({ ...e })),
+      siblingStacks: this.siblingStacks.map((e) => e && { counts: new Map(e.counts), total: e.total }),
+      keptAttrs: this._keptAttrs.map((e) => ({ ...e }))
     };
   }
   /**
    * Restore state from snapshot.
    * @param {Object} snapshot
    */
-  restore(snapshot) {
-    this._pathStringCache = null;
-    this.path = snapshot.path.map((node) => ({ ...node }));
-    this.siblingStacks = snapshot.siblingStacks.map((level) => level ? { counts: new Map(level.counts), total: level.total } : level);
-    this._keptAttrs = (snapshot.keptAttrs || []).map((entry) => ({ ...entry }));
+  restore(e) {
+    this._pathStringCache = null, this.path = e.path.map((n) => ({ ...n })), this.siblingStacks = e.siblingStacks.map((n) => n && { counts: new Map(n.counts), total: n.total }), this._keptAttrs = (e.keptAttrs || []).map((n) => ({ ...n }));
   }
   /**
    * Return the read-only {@link MatcherView} for this matcher.
@@ -3053,7 +2595,7 @@ class Matcher {
     return this._view;
   }
 }
-const HTML_PATTERNS = [
+const Wt = [
   {
     id: "html-script-open",
     description: "<script opening tag",
@@ -3142,8 +2684,7 @@ const HTML_PATTERNS = [
     description: "<form tag — can be used for phishing / credential harvesting injection",
     pattern: /<form[\s>/]/i
   }
-];
-const XML_PATTERNS = [
+], Xt = [
   {
     id: "xml-cdata-injection",
     description: "CDATA section injection: <![CDATA[ breaks out of text node context",
@@ -3207,8 +2748,7 @@ const XML_PATTERNS = [
     description: "?> closes an enclosing processing instruction",
     pattern: /\?>/
   }
-];
-const SVG_PATTERNS = [
+], Yr = [
   {
     id: "svg-script-element",
     description: "<script element inside SVG executes JavaScript",
@@ -3276,8 +2816,7 @@ const SVG_PATTERNS = [
     description: "style= attribute containing javascript: (e.g. background:url(javascript:...))",
     pattern: /style\s*=[\s\S]{0,60}javascript\s*:/i
   }
-];
-const SQL_PATTERNS = [
+], qt = [
   {
     id: "sql-block-comment-open",
     description: "SQL block comment open: /* ... */ — unusual in legitimate user text",
@@ -3355,8 +2894,7 @@ const SQL_PATTERNS = [
     description: "INFORMATION_SCHEMA — reconnaissance query for table/column enumeration",
     pattern: /\bINFORMATION_SCHEMA\b/i
   }
-];
-const SHELL_PATTERNS = [
+], Gr = [
   {
     id: "shell-path-traversal-unix",
     description: "Unix path traversal: ../  — climbing the directory tree",
@@ -3450,8 +2988,7 @@ const SHELL_PATTERNS = [
     // "curl is a tool" won't match; "curl http://..." or "curl -s ..." will
     pattern: /\b(?:curl|wget)\s+(?:https?:\/\/|ftp:\/\/|-)/i
   }
-];
-const REDOS_PATTERNS = [
+], zr = [
   {
     id: "redos-nested-quantifier-plus",
     description: "Nested + quantifier inside a group with outer quantifier: (a+)+, (.+b)*, etc.",
@@ -3496,74 +3033,72 @@ const REDOS_PATTERNS = [
     // Heuristic: 10+ pipe-separated alternatives in a single group
     pattern: /\([^)]{0,200}(?:\|[^|)]{0,50}){9,}\)/
   }
-];
-const sep = `["'\\s]*:`;
-const NOSQL_PATTERNS = [
+], _ = `["'\\s]*:`, Dr = [
   // ─── MongoDB $ operator injection ────────────────────────────────────────
   {
     id: "nosql-where-operator",
     description: "$where — executes arbitrary JavaScript server-side in MongoDB",
-    pattern: new RegExp(`\\$where${sep}`, "i")
+    pattern: new RegExp(`\\$where${_}`, "i")
   },
   {
     id: "nosql-ne-operator",
     description: '$ne — "not equal" operator used to bypass equality checks',
-    pattern: new RegExp(`\\$ne${sep}`, "i")
+    pattern: new RegExp(`\\$ne${_}`, "i")
   },
   {
     id: "nosql-gt-operator",
     description: '$gt — "greater than" used to bypass password/value checks',
-    pattern: new RegExp(`\\$gte?${sep}`, "i")
+    pattern: new RegExp(`\\$gte?${_}`, "i")
   },
   {
     id: "nosql-lt-operator",
     description: '$lt / $lte — "less than" bypass variants',
-    pattern: new RegExp(`\\$lte?${sep}`, "i")
+    pattern: new RegExp(`\\$lte?${_}`, "i")
   },
   {
     id: "nosql-regex-operator",
     description: "$regex — can be used to extract data character by character (blind injection)",
-    pattern: new RegExp(`\\$regex${sep}`, "i")
+    pattern: new RegExp(`\\$regex${_}`, "i")
   },
   {
     id: "nosql-or-operator",
     description: "$or — logical OR; used to create always-true conditions",
-    pattern: new RegExp(`\\$or${sep}\\s*\\[`, "i")
+    pattern: new RegExp(`\\$or${_}\\s*\\[`, "i")
   },
   {
     id: "nosql-and-operator",
     description: "$and — logical AND operator injection",
-    pattern: new RegExp(`\\$and${sep}\\s*\\[`, "i")
+    pattern: new RegExp(`\\$and${_}\\s*\\[`, "i")
   },
   {
     id: "nosql-nor-operator",
     description: "$nor — logical NOR operator injection",
-    pattern: new RegExp(`\\$nor${sep}\\s*\\[`, "i")
+    pattern: new RegExp(`\\$nor${_}\\s*\\[`, "i")
   },
   {
     id: "nosql-exists-operator",
     description: "$exists — can enumerate fields to determine schema",
-    pattern: new RegExp(`\\$exists${sep}`, "i")
+    pattern: new RegExp(`\\$exists${_}`, "i")
   },
   {
     id: "nosql-in-operator",
     description: "$in — matches any value in a list; can enumerate values",
-    pattern: new RegExp(`\\$in${sep}\\s*\\[`, "i")
+    pattern: new RegExp(`\\$in${_}\\s*\\[`, "i")
   },
   {
     id: "nosql-expr-operator",
     description: "$expr — allows aggregation expressions in queries (MongoDB 3.6+)",
-    pattern: new RegExp(`\\$expr${sep}`, "i")
+    pattern: new RegExp(`\\$expr${_}`, "i")
   },
   {
     id: "nosql-function-operator",
     description: "$function — executes arbitrary JavaScript in MongoDB 4.4+",
-    pattern: new RegExp(`\\$function${sep}`, "i")
+    pattern: new RegExp(`\\$function${_}`, "i")
   },
   {
     id: "nosql-accumulator-operator",
     description: "$accumulator — custom aggregation with arbitrary JS execution",
-    pattern: new RegExp(`\\$accumulator${sep}`, "i")
+    pattern: new RegExp(`\\$accumulator${_}`, "i")
   },
   // ─── Prototype pollution ─────────────────────────────────────────────────
   {
@@ -3583,8 +3118,7 @@ const NOSQL_PATTERNS = [
     description: '["__proto__"] — bracket-notation prototype pollution',
     pattern: /\[["']__proto__["']\]/
   }
-];
-const LOG_PATTERNS = [
+], Kr = [
   // ─── CRLF / newline injection ─────────────────────────────────────────────
   {
     id: "log-crlf-injection",
@@ -3654,8 +3188,7 @@ const LOG_PATTERNS = [
     description: "ANSI escape sequence: ESC[ — can manipulate terminal output when logs are tailed",
     pattern: /\x1b\[/
   }
-];
-const SQL_STRICT_EXTRA = [
+], Jr = [
   {
     id: "sql-line-comment",
     description: "SQL line comment: -- followed by whitespace or end of string",
@@ -3671,824 +3204,503 @@ const SQL_STRICT_EXTRA = [
     description: "Hex-encoded string injection: 0x41414141 style (MySQL)",
     pattern: /\b0x[0-9a-f]{4,}/i
   }
-];
-const SQL_STRICT_PATTERNS = [...SQL_PATTERNS, ...SQL_STRICT_EXTRA];
-HTML_PATTERNS.label = "HTML";
-XML_PATTERNS.label = "XML";
-SVG_PATTERNS.label = "SVG";
-SQL_PATTERNS.label = "SQL";
-SQL_STRICT_PATTERNS.label = "SQL-STRICT";
-SHELL_PATTERNS.label = "SHELL";
-REDOS_PATTERNS.label = "REDOS";
-NOSQL_PATTERNS.label = "NOSQL";
-LOG_PATTERNS.label = "LOG";
-function assertString(value) {
-  if (typeof value !== "string") {
+], Qr = [...qt, ...Jr];
+Wt.label = "HTML";
+Xt.label = "XML";
+Yr.label = "SVG";
+qt.label = "SQL";
+Qr.label = "SQL-STRICT";
+Gr.label = "SHELL";
+zr.label = "REDOS";
+Dr.label = "NOSQL";
+Kr.label = "LOG";
+function Zr(t) {
+  if (typeof t != "string")
     throw new TypeError(
-      `is-unsafe: first argument must be a string, got ${typeof value}`
+      `is-unsafe: first argument must be a string, got ${typeof t}`
+    );
+}
+function ei(t) {
+  if (!(t instanceof RegExp)) {
+    if (Array.isArray(t)) {
+      if (t.length === 0)
+        throw new TypeError("is-unsafe: context must not be an empty array");
+      if (Array.isArray(t[0])) {
+        for (const e of t)
+          if (!Array.isArray(e) || e.length === 0)
+            throw new TypeError(
+              "is-unsafe: each context in the array must be a non-empty pattern array (PatternList)"
+            );
+      }
+      return;
+    }
+    throw new TypeError(
+      `is-unsafe: second argument must be a PatternList (e.g. HTML), an array of PatternLists (e.g. [HTML, XML]), or a RegExp. Got: ${typeof t}`
     );
   }
 }
-function assertContext(context) {
-  if (context instanceof RegExp) return;
-  if (Array.isArray(context)) {
-    if (context.length === 0) {
-      throw new TypeError("is-unsafe: context must not be an empty array");
-    }
-    if (Array.isArray(context[0])) {
-      for (const list of context) {
-        if (!Array.isArray(list) || list.length === 0) {
-          throw new TypeError(
-            "is-unsafe: each context in the array must be a non-empty pattern array (PatternList)"
-          );
-        }
-      }
-    }
-    return;
-  }
-  throw new TypeError(
-    `is-unsafe: second argument must be a PatternList (e.g. HTML), an array of PatternLists (e.g. [HTML, XML]), or a RegExp. Got: ${typeof context}`
-  );
+function ti(t) {
+  return t instanceof RegExp ? { lists: null, regex: t } : Array.isArray(t[0]) ? { lists: t, regex: null } : { lists: [t], regex: null };
 }
-function normalise(context) {
-  if (context instanceof RegExp) return { lists: null, regex: context };
-  if (Array.isArray(context[0])) return { lists: context, regex: null };
-  return { lists: [context], regex: null };
-}
-function matchList(value, list) {
-  const label = list.label ?? "CUSTOM";
-  for (const rule of list) {
-    if (rule.pattern.test(value)) {
-      return { context: label, id: rule.id, description: rule.description, pattern: rule.pattern };
-    }
-  }
+function ni(t, e) {
+  const n = e.label ?? "CUSTOM";
+  for (const r of e)
+    if (r.pattern.test(t))
+      return { context: n, id: r.id, description: r.description, pattern: r.pattern };
   return null;
 }
-function isUnsafe(value, context) {
-  assertString(value);
-  assertContext(context);
-  const { lists, regex } = normalise(context);
-  if (regex) return regex.test(value);
-  for (const list of lists) {
-    if (matchList(value, list) !== null) return true;
-  }
-  return false;
+function ri(t, e) {
+  Zr(t), ei(e);
+  const { lists: n, regex: r } = ti(e);
+  if (r) return r.test(t);
+  for (const i of n)
+    if (ni(t, i) !== null) return !0;
+  return !1;
 }
-function extractRawAttributes(prefixedAttrs, options) {
-  if (!prefixedAttrs) return {};
-  const attrs = options.attributesGroupName ? prefixedAttrs[options.attributesGroupName] : prefixedAttrs;
-  if (!attrs) return {};
-  const rawAttrs = {};
-  for (const key in attrs) {
-    if (key.startsWith(options.attributeNamePrefix)) {
-      const rawName = key.substring(options.attributeNamePrefix.length);
-      rawAttrs[rawName] = attrs[key];
-    } else {
-      rawAttrs[key] = attrs[key];
-    }
-  }
-  return rawAttrs;
+function ii(t, e) {
+  if (!t) return {};
+  const n = e.attributesGroupName ? t[e.attributesGroupName] : t;
+  if (!n) return {};
+  const r = {};
+  for (const i in n)
+    if (i.startsWith(e.attributeNamePrefix)) {
+      const s = i.substring(e.attributeNamePrefix.length);
+      r[s] = n[i];
+    } else
+      r[i] = n[i];
+  return r;
 }
-function extractNamespace(rawTagName) {
-  if (!rawTagName || typeof rawTagName !== "string") return void 0;
-  const colonIndex = rawTagName.indexOf(":");
-  if (colonIndex !== -1 && colonIndex > 0) {
-    const ns = rawTagName.substring(0, colonIndex);
-    if (ns !== "xmlns") {
-      return ns;
-    }
+function si(t) {
+  if (!t || typeof t != "string") return;
+  const e = t.indexOf(":");
+  if (e !== -1 && e > 0) {
+    const n = t.substring(0, e);
+    if (n !== "xmlns")
+      return n;
   }
-  return void 0;
 }
-class OrderedObjParser {
-  constructor(options, externalEntities) {
-    this.options = options;
-    this.currentNode = null;
-    this.tagsNodeStack = [];
-    this.parseXml = parseXml;
-    this.parseTextData = parseTextData;
-    this.resolveNameSpace = resolveNameSpace;
-    this.buildAttributesMap = buildAttributesMap;
-    this.isItStopNode = isItStopNode;
-    this.replaceEntitiesValue = replaceEntitiesValue;
-    this.readStopNodeData = readStopNodeData;
-    this.saveTextToParentTag = saveTextToParentTag;
-    this.addChild = addChild;
-    this.ignoreAttributesFn = getIgnoreAttributesFn(this.options.ignoreAttributes);
-    this.entityExpansionCount = 0;
-    this.currentExpandedLength = 0;
-    this.doctypefound = false;
-    let namedEntities = { ...XML };
-    if (this.options.entityDecoder) {
-      this.entityDecoder = this.options.entityDecoder;
-    } else {
-      if (typeof this.options.htmlEntities === "object") namedEntities = this.options.htmlEntities;
-      else if (this.options.htmlEntities === true) namedEntities = { ...COMMON_HTML, ...CURRENCY };
-      this.entityDecoder = new EntityDecoder({
-        namedEntities: { ...namedEntities, ...externalEntities },
-        numericAllowed: this.options.htmlEntities,
-        limit: {
-          maxTotalExpansions: this.options.processEntities.maxTotalExpansions,
-          maxExpandedLength: this.options.processEntities.maxExpandedLength,
-          applyLimitsTo: this.options.processEntities.appliesTo
-        },
-        // onExternalEntity: (name, value) => isUnsafe(value) ? 'block' : 'allow',
-        onInputEntity: (name, value) => (
-          //TODO: VALID_CONTEXTS.HTML should be set only if this.options.htmlEntities
-          isUnsafe(value, [HTML_PATTERNS, XML_PATTERNS]) ? ENTITY_ACTION.BLOCK : ENTITY_ACTION.ALLOW
-        )
-        //postCheck: resolved => resolved
-      });
-    }
-    this.matcher = new Matcher();
-    this.readonlyMatcher = this.matcher.readOnly();
-    this.isCurrentNodeStopNode = false;
-    this.stopNodeExpressionsSet = new ExpressionSet();
-    const stopNodesOpts = this.options.stopNodes;
-    if (stopNodesOpts && stopNodesOpts.length > 0) {
-      for (let i = 0; i < stopNodesOpts.length; i++) {
-        const stopNodeExp = stopNodesOpts[i];
-        if (typeof stopNodeExp === "string") {
-          this.stopNodeExpressionsSet.add(new Expression(stopNodeExp));
-        } else if (stopNodeExp instanceof Expression) {
-          this.stopNodeExpressionsSet.add(stopNodeExp);
-        }
+class oi {
+  constructor(e, n) {
+    this.options = e, this.currentNode = null, this.tagsNodeStack = [], this.parseXml = ui, this.parseTextData = ai, this.resolveNameSpace = li, this.buildAttributesMap = di, this.isItStopNode = gi, this.replaceEntitiesValue = hi, this.readStopNodeData = yi, this.saveTextToParentTag = fi, this.addChild = pi, this.ignoreAttributesFn = Wr(this.options.ignoreAttributes), this.entityExpansionCount = 0, this.currentExpandedLength = 0, this.doctypefound = !1;
+    let r = { ...Ft };
+    this.options.entityDecoder ? this.entityDecoder = this.options.entityDecoder : (typeof this.options.htmlEntities == "object" ? r = this.options.htmlEntities : this.options.htmlEntities === !0 && (r = { ...pr, ...ur }), this.entityDecoder = new Er({
+      namedEntities: { ...r, ...n },
+      numericAllowed: this.options.htmlEntities,
+      limit: {
+        maxTotalExpansions: this.options.processEntities.maxTotalExpansions,
+        maxExpandedLength: this.options.processEntities.maxExpandedLength,
+        applyLimitsTo: this.options.processEntities.appliesTo
+      },
+      // onExternalEntity: (name, value) => isUnsafe(value) ? 'block' : 'allow',
+      onInputEntity: (s, a) => (
+        //TODO: VALID_CONTEXTS.HTML should be set only if this.options.htmlEntities
+        ri(a, [Wt, Xt]) ? de.BLOCK : de.ALLOW
+      )
+      //postCheck: resolved => resolved
+    })), this.matcher = new Hr(), this.readonlyMatcher = this.matcher.readOnly(), this.isCurrentNodeStopNode = !1, this.stopNodeExpressionsSet = new Xr();
+    const i = this.options.stopNodes;
+    if (i && i.length > 0) {
+      for (let s = 0; s < i.length; s++) {
+        const a = i[s];
+        typeof a == "string" ? this.stopNodeExpressionsSet.add(new lt(a)) : a instanceof lt && this.stopNodeExpressionsSet.add(a);
       }
       this.stopNodeExpressionsSet.seal();
     }
   }
 }
-function parseTextData(val, tagName, jPath, dontTrim, hasAttributes, isLeafNode, escapeEntities) {
-  const options = this.options;
-  if (val !== void 0) {
-    if (options.trimValues && !dontTrim) {
-      val = val.trim();
-    }
-    if (val.length > 0) {
-      if (!escapeEntities) val = this.replaceEntitiesValue(val, tagName, jPath);
-      const jPathOrMatcher = options.jPath ? jPath.toString() : jPath;
-      const newval = options.tagValueProcessor(tagName, val, jPathOrMatcher, hasAttributes, isLeafNode);
-      if (newval === null || newval === void 0) {
-        return val;
-      } else if (typeof newval !== typeof val || newval !== val) {
-        return newval;
-      } else if (options.trimValues) {
-        return parseValue(val, options.parseTagValue, options.numberParseOptions);
-      } else {
-        const trimmedVal = val.trim();
-        if (trimmedVal === val) {
-          return parseValue(val, options.parseTagValue, options.numberParseOptions);
-        } else {
-          return val;
-        }
-      }
-    }
+function ai(t, e, n, r, i, s, a) {
+  const o = this.options;
+  if (t !== void 0 && (o.trimValues && !r && (t = t.trim()), t.length > 0)) {
+    a || (t = this.replaceEntitiesValue(t, e, n));
+    const l = o.jPath ? n.toString() : n, d = o.tagValueProcessor(e, t, l, i, s);
+    return d == null ? t : typeof d != typeof t || d !== t ? d : o.trimValues || t.trim() === t ? Oe(t, o.parseTagValue, o.numberParseOptions) : t;
   }
 }
-function resolveNameSpace(tagname) {
+function li(t) {
   if (this.options.removeNSPrefix) {
-    const tags = tagname.split(":");
-    const prefix = tagname.charAt(0) === "/" ? "/" : "";
-    if (tags[0] === "xmlns") {
+    const e = t.split(":"), n = t.charAt(0) === "/" ? "/" : "";
+    if (e[0] === "xmlns")
       return "";
-    }
-    if (tags.length === 2) {
-      tagname = prefix + tags[1];
-    }
+    e.length === 2 && (t = n + e[1]);
   }
-  return tagname;
+  return t;
 }
-const attrsRegx = new RegExp(`([^\\s=]+)\\s*(=\\s*(['"])([\\s\\S]*?)\\3)?`, "gm");
-function buildAttributesMap(attrStr, jPath, tagName, force = false) {
-  const options = this.options;
-  if (force === true || options.ignoreAttributes !== true && typeof attrStr === "string") {
-    const matches = getAllMatches(attrStr, attrsRegx);
-    const len = matches.length;
-    const attrs = {};
-    const processedVals = new Array(len);
-    let hasRawAttrs = false;
-    const rawAttrsForMatcher = {};
-    for (let i = 0; i < len; i++) {
-      const attrName = this.resolveNameSpace(matches[i][1]);
-      const oldVal = matches[i][4];
-      if (attrName.length && oldVal !== void 0) {
-        let val = oldVal;
-        if (options.trimValues) val = val.trim();
-        val = this.replaceEntitiesValue(val, tagName, this.readonlyMatcher);
-        processedVals[i] = val;
-        rawAttrsForMatcher[attrName] = val;
-        hasRawAttrs = true;
+const ci = new RegExp(`([^\\s=]+)\\s*(=\\s*(['"])([\\s\\S]*?)\\3)?`, "gm");
+function di(t, e, n, r = !1) {
+  const i = this.options;
+  if (r === !0 || i.ignoreAttributes !== !0 && typeof t == "string") {
+    const s = Zn(t, ci), a = s.length, o = {}, l = new Array(a);
+    let d = !1;
+    const c = {};
+    for (let h = 0; h < a; h++) {
+      const y = this.resolveNameSpace(s[h][1]), g = s[h][4];
+      if (y.length && g !== void 0) {
+        let T = g;
+        i.trimValues && (T = T.trim()), T = this.replaceEntitiesValue(T, n, this.readonlyMatcher), l[h] = T, c[y] = T, d = !0;
       }
     }
-    if (hasRawAttrs && typeof jPath === "object" && jPath.updateCurrent) {
-      jPath.updateCurrent(rawAttrsForMatcher);
+    d && typeof e == "object" && e.updateCurrent && e.updateCurrent(c);
+    const u = i.jPath ? e.toString() : this.readonlyMatcher;
+    let p = !1;
+    for (let h = 0; h < a; h++) {
+      const y = this.resolveNameSpace(s[h][1]);
+      if (this.ignoreAttributesFn(y, u)) continue;
+      let g = i.attributeNamePrefix + y;
+      if (y.length)
+        if (i.transformAttributeName && (g = i.transformAttributeName(g)), g = Ht(g, i), s[h][4] !== void 0) {
+          const T = l[h], I = i.attributeValueProcessor(y, T, u);
+          I == null ? o[g] = T : typeof I != typeof T || I !== T ? o[g] = I : o[g] = Oe(T, i.parseAttributeValue, i.numberParseOptions), p = !0;
+        } else i.allowBooleanAttributes && (o[g] = !0, p = !0);
     }
-    const jPathStr = options.jPath ? jPath.toString() : this.readonlyMatcher;
-    let hasAttrs = false;
-    for (let i = 0; i < len; i++) {
-      const attrName = this.resolveNameSpace(matches[i][1]);
-      if (this.ignoreAttributesFn(attrName, jPathStr)) continue;
-      let aName = options.attributeNamePrefix + attrName;
-      if (attrName.length) {
-        if (options.transformAttributeName) {
-          aName = options.transformAttributeName(aName);
-        }
-        aName = sanitizeName(aName, options);
-        if (matches[i][4] !== void 0) {
-          const oldVal = processedVals[i];
-          const newVal = options.attributeValueProcessor(attrName, oldVal, jPathStr);
-          if (newVal === null || newVal === void 0) {
-            attrs[aName] = oldVal;
-          } else if (typeof newVal !== typeof oldVal || newVal !== oldVal) {
-            attrs[aName] = newVal;
-          } else {
-            attrs[aName] = parseValue(oldVal, options.parseAttributeValue, options.numberParseOptions);
-          }
-          hasAttrs = true;
-        } else if (options.allowBooleanAttributes) {
-          attrs[aName] = true;
-          hasAttrs = true;
-        }
-      }
+    if (!p) return;
+    if (i.attributesGroupName && !i.preserveOrder) {
+      const h = {};
+      return h[i.attributesGroupName] = o, h;
     }
-    if (!hasAttrs) return;
-    if (options.attributesGroupName && !options.preserveOrder) {
-      const attrCollection = {};
-      attrCollection[options.attributesGroupName] = attrs;
-      return attrCollection;
-    }
-    return attrs;
+    return o;
   }
 }
-const parseXml = function(xmlData) {
-  xmlData = xmlData.replace(/\r\n?/g, "\n");
-  const xmlObj = new XmlNode("!xml");
-  let currentNode = xmlObj;
-  let textData = "";
-  this.matcher.reset();
-  this.entityDecoder.reset();
-  this.entityExpansionCount = 0;
-  this.currentExpandedLength = 0;
-  this.doctypefound = false;
-  const options = this.options;
-  const docTypeReader = new DocTypeReader(options.processEntities);
-  const xmlLen = xmlData.length;
-  for (let i = 0; i < xmlLen; i++) {
-    const ch = xmlData[i];
-    if (ch === "<") {
-      const c1 = xmlData.charCodeAt(i + 1);
-      if (c1 === 47) {
-        const closeIndex = findClosingIndex(xmlData, ">", i, "Closing Tag is not closed.");
-        let tagName = xmlData.substring(i + 2, closeIndex).trim();
-        if (options.removeNSPrefix) {
-          const colonIndex = tagName.indexOf(":");
-          if (colonIndex !== -1) {
-            tagName = tagName.substr(colonIndex + 1);
-          }
+const ui = function(t) {
+  t = t.replace(/\r\n?/g, `
+`);
+  const e = new M("!xml");
+  let n = e, r = "";
+  this.matcher.reset(), this.entityDecoder.reset(), this.entityExpansionCount = 0, this.currentExpandedLength = 0, this.doctypefound = !1;
+  const i = this.options, s = new Cr(i.processEntities), a = t.length;
+  for (let o = 0; o < a; o++)
+    if (t[o] === "<") {
+      const d = t.charCodeAt(o + 1);
+      if (d === 47) {
+        const c = Y(t, ">", o, "Closing Tag is not closed.");
+        let u = t.substring(o + 2, c).trim();
+        if (i.removeNSPrefix) {
+          const h = u.indexOf(":");
+          h !== -1 && (u = u.substr(h + 1));
         }
-        tagName = transformTagName(options.transformTagName, tagName, "", options).tagName;
-        if (currentNode) {
-          textData = this.saveTextToParentTag(textData, currentNode, this.readonlyMatcher);
+        u = be(i.transformTagName, u, "", i).tagName, n && (r = this.saveTextToParentTag(r, n, this.readonlyMatcher));
+        const p = this.matcher.getCurrentTag();
+        if (u && i.unpairedTagsSet.has(u))
+          throw new Error(`Unpaired tag can not be used as closing tag: </${u}>`);
+        p && i.unpairedTagsSet.has(p) && (this.matcher.pop(), this.tagsNodeStack.pop()), this.matcher.pop(), this.isCurrentNodeStopNode = !1, n = this.tagsNodeStack.pop() || e, i.captureMetaData && n && n.addEndIndex(c + 1), r = "", o = c;
+      } else if (d === 63) {
+        let c = Le(t, o, !1, "?>");
+        if (!c) throw new Error("Pi Tag is not closed.");
+        r = this.saveTextToParentTag(r, n, this.readonlyMatcher);
+        const u = this.buildAttributesMap(c.tagExp, this.matcher, c.tagName, !0);
+        if (u) {
+          const p = u[this.options.attributeNamePrefix + "version"];
+          this.entityDecoder.setXmlVersion(Number(p) || 1), s.setXmlVersion(Number(p) || 1);
         }
-        const lastTagName = this.matcher.getCurrentTag();
-        if (tagName && options.unpairedTagsSet.has(tagName)) {
-          throw new Error(`Unpaired tag can not be used as closing tag: </${tagName}>`);
+        if (!(i.ignoreDeclaration && c.tagName === "?xml" || i.ignorePiTags)) {
+          const p = new M(c.tagName);
+          p.add(i.textNodeName, ""), c.tagName !== c.tagExp && c.attrExpPresent && i.ignoreAttributes !== !0 && (p[":@"] = u), this.addChild(n, p, this.readonlyMatcher, o), i.captureMetaData && n.addEndIndex(c.closeIndex + 2);
         }
-        if (lastTagName && options.unpairedTagsSet.has(lastTagName)) {
-          this.matcher.pop();
-          this.tagsNodeStack.pop();
+        o = c.closeIndex + 1;
+      } else if (d === 33 && t.charCodeAt(o + 2) === 45 && t.charCodeAt(o + 3) === 45) {
+        const c = Y(t, "-->", o + 4, "Comment is not closed.");
+        if (i.commentPropName) {
+          const u = t.substring(o + 4, c - 2);
+          r = this.saveTextToParentTag(r, n, this.readonlyMatcher), n.add(i.commentPropName, [{ [i.textNodeName]: u }]);
         }
-        this.matcher.pop();
-        this.isCurrentNodeStopNode = false;
-        currentNode = this.tagsNodeStack.pop() || xmlObj;
-        if (options.captureMetaData && currentNode) {
-          currentNode.addEndIndex(closeIndex + 1);
-        }
-        textData = "";
-        i = closeIndex;
-      } else if (c1 === 63) {
-        let tagData = readTagExp(xmlData, i, false, "?>");
-        if (!tagData) throw new Error("Pi Tag is not closed.");
-        textData = this.saveTextToParentTag(textData, currentNode, this.readonlyMatcher);
-        const attsMap = this.buildAttributesMap(tagData.tagExp, this.matcher, tagData.tagName, true);
-        if (attsMap) {
-          const ver = attsMap[this.options.attributeNamePrefix + "version"];
-          this.entityDecoder.setXmlVersion(Number(ver) || 1);
-          docTypeReader.setXmlVersion(Number(ver) || 1);
-        }
-        if (options.ignoreDeclaration && tagData.tagName === "?xml" || options.ignorePiTags) ;
-        else {
-          const childNode = new XmlNode(tagData.tagName);
-          childNode.add(options.textNodeName, "");
-          if (tagData.tagName !== tagData.tagExp && tagData.attrExpPresent && options.ignoreAttributes !== true) {
-            childNode[":@"] = attsMap;
-          }
-          this.addChild(currentNode, childNode, this.readonlyMatcher, i);
-          if (options.captureMetaData) {
-            currentNode.addEndIndex(tagData.closeIndex + 2);
-          }
-        }
-        i = tagData.closeIndex + 1;
-      } else if (c1 === 33 && xmlData.charCodeAt(i + 2) === 45 && xmlData.charCodeAt(i + 3) === 45) {
-        const endIndex = findClosingIndex(xmlData, "-->", i + 4, "Comment is not closed.");
-        if (options.commentPropName) {
-          const comment = xmlData.substring(i + 4, endIndex - 2);
-          textData = this.saveTextToParentTag(textData, currentNode, this.readonlyMatcher);
-          currentNode.add(options.commentPropName, [{ [options.textNodeName]: comment }]);
-        }
-        i = endIndex;
-      } else if (c1 === 33 && xmlData.charCodeAt(i + 2) === 68) {
+        o = c;
+      } else if (d === 33 && t.charCodeAt(o + 2) === 68) {
         if (this.doctypefound) throw new Error("Multiple DOCTYPE declarations found.");
-        this.doctypefound = true;
-        const result = docTypeReader.readDocType(xmlData, i);
-        this.entityDecoder.addInputEntities(result.entities);
-        i = result.i;
-      } else if (c1 === 33 && xmlData.charCodeAt(i + 2) === 91) {
-        const closeIndex = findClosingIndex(xmlData, "]]>", i, "CDATA is not closed.") - 2;
-        const tagExp = xmlData.substring(i + 9, closeIndex);
-        textData = this.saveTextToParentTag(textData, currentNode, this.readonlyMatcher);
-        let val = this.parseTextData(tagExp, currentNode.tagname, this.readonlyMatcher, true, false, true, true);
-        if (val == void 0) val = "";
-        if (options.cdataPropName) {
-          currentNode.add(options.cdataPropName, [{ [options.textNodeName]: tagExp }]);
-        } else {
-          currentNode.add(options.textNodeName, val);
-        }
-        i = closeIndex + 2;
+        this.doctypefound = !0;
+        const c = s.readDocType(t, o);
+        this.entityDecoder.addInputEntities(c.entities), o = c.i;
+      } else if (d === 33 && t.charCodeAt(o + 2) === 91) {
+        const c = Y(t, "]]>", o, "CDATA is not closed.") - 2, u = t.substring(o + 9, c);
+        r = this.saveTextToParentTag(r, n, this.readonlyMatcher);
+        let p = this.parseTextData(u, n.tagname, this.readonlyMatcher, !0, !1, !0, !0);
+        p == null && (p = ""), i.cdataPropName ? n.add(i.cdataPropName, [{ [i.textNodeName]: u }]) : n.add(i.textNodeName, p), o = c + 2;
       } else {
-        let result = readTagExp(xmlData, i, options.removeNSPrefix);
-        if (!result) {
-          const context = xmlData.substring(Math.max(0, i - 50), Math.min(xmlLen, i + 50));
-          throw new Error(`readTagExp returned undefined at position ${i}. Context: "${context}"`);
+        let c = Le(t, o, i.removeNSPrefix);
+        if (!c) {
+          const N = t.substring(Math.max(0, o - 50), Math.min(a, o + 50));
+          throw new Error(`readTagExp returned undefined at position ${o}. Context: "${N}"`);
         }
-        let tagName = result.tagName;
-        const rawTagName = result.rawTagName;
-        let tagExp = result.tagExp;
-        let attrExpPresent = result.attrExpPresent;
-        let closeIndex = result.closeIndex;
-        ({ tagName, tagExp } = transformTagName(options.transformTagName, tagName, tagExp, options));
-        if (options.strictReservedNames && (tagName === options.commentPropName || tagName === options.cdataPropName || tagName === options.textNodeName || tagName === options.attributesGroupName)) {
-          throw new Error(`Invalid tag name: ${tagName}`);
-        }
-        if (currentNode && textData) {
-          if (currentNode.tagname !== "!xml") {
-            textData = this.saveTextToParentTag(textData, currentNode, this.readonlyMatcher, false);
-          }
-        }
-        const lastTag = currentNode;
-        if (lastTag && options.unpairedTagsSet.has(lastTag.tagname)) {
-          currentNode = this.tagsNodeStack.pop();
-          this.matcher.pop();
-        }
-        let isSelfClosing = false;
-        if (tagExp.length > 0 && tagExp.lastIndexOf("/") === tagExp.length - 1) {
-          isSelfClosing = true;
-          if (tagName[tagName.length - 1] === "/") {
-            tagName = tagName.substr(0, tagName.length - 1);
-            tagExp = tagName;
-          } else {
-            tagExp = tagExp.substr(0, tagExp.length - 1);
-          }
-          attrExpPresent = tagName !== tagExp;
-        }
-        let prefixedAttrs = null;
-        let namespace = void 0;
-        namespace = extractNamespace(rawTagName);
-        if (tagName !== xmlObj.tagname) {
-          this.matcher.push(tagName, {}, namespace);
-        }
-        if (tagName !== tagExp && attrExpPresent) {
-          prefixedAttrs = this.buildAttributesMap(tagExp, this.matcher, tagName);
-          if (prefixedAttrs) {
-            extractRawAttributes(prefixedAttrs, options);
-          }
-        }
-        if (tagName !== xmlObj.tagname) {
-          this.isCurrentNodeStopNode = this.isItStopNode();
-        }
-        const startIndex = i;
+        let u = c.tagName;
+        const p = c.rawTagName;
+        let h = c.tagExp, y = c.attrExpPresent, g = c.closeIndex;
+        if ({ tagName: u, tagExp: h } = be(i.transformTagName, u, h, i), i.strictReservedNames && (u === i.commentPropName || u === i.cdataPropName || u === i.textNodeName || u === i.attributesGroupName))
+          throw new Error(`Invalid tag name: ${u}`);
+        n && r && n.tagname !== "!xml" && (r = this.saveTextToParentTag(r, n, this.readonlyMatcher, !1));
+        const T = n;
+        T && i.unpairedTagsSet.has(T.tagname) && (n = this.tagsNodeStack.pop(), this.matcher.pop());
+        let I = !1;
+        h.length > 0 && h.lastIndexOf("/") === h.length - 1 && (I = !0, u[u.length - 1] === "/" ? (u = u.substr(0, u.length - 1), h = u) : h = h.substr(0, h.length - 1), y = u !== h);
+        let L = null, He;
+        He = si(p), u !== e.tagname && this.matcher.push(u, {}, He), u !== h && y && (L = this.buildAttributesMap(h, this.matcher, u), L && ii(L, i)), u !== e.tagname && (this.isCurrentNodeStopNode = this.isItStopNode());
+        const oe = o;
         if (this.isCurrentNodeStopNode) {
-          let tagContent = "";
-          if (isSelfClosing) {
-            i = result.closeIndex;
-          } else if (options.unpairedTagsSet.has(tagName)) {
-            i = result.closeIndex;
-          } else {
-            const result2 = this.readStopNodeData(xmlData, rawTagName, closeIndex + 1);
-            if (!result2) throw new Error(`Unexpected end of ${rawTagName}`);
-            i = result2.i;
-            tagContent = result2.tagContent;
+          let N = "";
+          if (I)
+            o = c.closeIndex;
+          else if (i.unpairedTagsSet.has(u))
+            o = c.closeIndex;
+          else {
+            const ge = this.readStopNodeData(t, p, g + 1);
+            if (!ge) throw new Error(`Unexpected end of ${p}`);
+            o = ge.i, N = ge.tagContent;
           }
-          const childNode = new XmlNode(tagName);
-          if (prefixedAttrs) {
-            childNode[":@"] = prefixedAttrs;
-          }
-          childNode.add(options.textNodeName, tagContent);
-          this.matcher.pop();
-          this.isCurrentNodeStopNode = false;
-          this.addChild(currentNode, childNode, this.readonlyMatcher, startIndex);
-          if (options.captureMetaData) {
-            currentNode.addEndIndex(i + 1);
-          }
+          const fe = new M(u);
+          L && (fe[":@"] = L), fe.add(i.textNodeName, N), this.matcher.pop(), this.isCurrentNodeStopNode = !1, this.addChild(n, fe, this.readonlyMatcher, oe), i.captureMetaData && n.addEndIndex(o + 1);
         } else {
-          if (isSelfClosing) {
-            ({ tagName, tagExp } = transformTagName(options.transformTagName, tagName, tagExp, options));
-            const childNode = new XmlNode(tagName);
-            if (prefixedAttrs) {
-              childNode[":@"] = prefixedAttrs;
-            }
-            this.addChild(currentNode, childNode, this.readonlyMatcher, startIndex);
-            if (options.captureMetaData) {
-              currentNode.addEndIndex(closeIndex + 1);
-            }
-            this.matcher.pop();
-            this.isCurrentNodeStopNode = false;
-          } else if (options.unpairedTagsSet.has(tagName)) {
-            const childNode = new XmlNode(tagName);
-            if (prefixedAttrs) {
-              childNode[":@"] = prefixedAttrs;
-            }
-            this.addChild(currentNode, childNode, this.readonlyMatcher, startIndex);
-            if (options.captureMetaData) {
-              currentNode.addEndIndex(result.closeIndex + 1);
-            }
-            this.matcher.pop();
-            this.isCurrentNodeStopNode = false;
-            i = result.closeIndex;
+          if (I) {
+            ({ tagName: u, tagExp: h } = be(i.transformTagName, u, h, i));
+            const N = new M(u);
+            L && (N[":@"] = L), this.addChild(n, N, this.readonlyMatcher, oe), i.captureMetaData && n.addEndIndex(g + 1), this.matcher.pop(), this.isCurrentNodeStopNode = !1;
+          } else if (i.unpairedTagsSet.has(u)) {
+            const N = new M(u);
+            L && (N[":@"] = L), this.addChild(n, N, this.readonlyMatcher, oe), i.captureMetaData && n.addEndIndex(c.closeIndex + 1), this.matcher.pop(), this.isCurrentNodeStopNode = !1, o = c.closeIndex;
             continue;
           } else {
-            const childNode = new XmlNode(tagName);
-            if (this.tagsNodeStack.length > options.maxNestedTags) {
+            const N = new M(u);
+            if (this.tagsNodeStack.length > i.maxNestedTags)
               throw new Error("Maximum nested tags exceeded");
-            }
-            this.tagsNodeStack.push(currentNode);
-            if (prefixedAttrs) {
-              childNode[":@"] = prefixedAttrs;
-            }
-            this.addChild(currentNode, childNode, this.readonlyMatcher, startIndex);
-            currentNode = childNode;
+            this.tagsNodeStack.push(n), L && (N[":@"] = L), this.addChild(n, N, this.readonlyMatcher, oe), n = N;
           }
-          textData = "";
-          i = closeIndex;
+          r = "", o = g;
         }
       }
-    } else {
-      textData += xmlData[i];
-    }
-  }
-  return xmlObj.child;
+    } else
+      r += t[o];
+  return e.child;
 };
-function addChild(currentNode, childNode, matcher, startIndex) {
-  if (!this.options.captureMetaData) startIndex = void 0;
-  const jPathOrMatcher = this.options.jPath ? matcher.toString() : matcher;
-  const result = this.options.updateTag(childNode.tagname, jPathOrMatcher, childNode[":@"]);
-  if (result === false) ;
-  else if (typeof result === "string") {
-    childNode.tagname = result;
-    currentNode.addChild(childNode, startIndex);
-  } else {
-    currentNode.addChild(childNode, startIndex);
+function pi(t, e, n, r) {
+  this.options.captureMetaData || (r = void 0);
+  const i = this.options.jPath ? n.toString() : n, s = this.options.updateTag(e.tagname, i, e[":@"]);
+  s === !1 || (typeof s == "string" && (e.tagname = s), t.addChild(e, r));
+}
+function hi(t, e, n) {
+  const r = this.options.processEntities;
+  if (!r || !r.enabled)
+    return t;
+  if (r.allowedTags) {
+    const i = this.options.jPath ? n.toString() : n;
+    if (!(Array.isArray(r.allowedTags) ? r.allowedTags.includes(e) : r.allowedTags(e, i)))
+      return t;
+  }
+  if (r.tagFilter) {
+    const i = this.options.jPath ? n.toString() : n;
+    if (!r.tagFilter(e, i))
+      return t;
+  }
+  return this.entityDecoder.decode(t);
+}
+function fi(t, e, n, r) {
+  return t && (r === void 0 && (r = e.child.length === 0), t = this.parseTextData(
+    t,
+    e.tagname,
+    n,
+    !1,
+    e[":@"] ? Object.keys(e[":@"]).length !== 0 : !1,
+    r
+  ), t !== void 0 && t !== "" && e.add(this.options.textNodeName, t), t = ""), t;
+}
+function gi() {
+  return this.stopNodeExpressionsSet.size === 0 ? !1 : this.matcher.matchesAny(this.stopNodeExpressionsSet);
+}
+function mi(t, e, n = ">") {
+  let r = 0;
+  const i = t.length, s = n.charCodeAt(0), a = n.length > 1 ? n.charCodeAt(1) : -1;
+  let o = "", l = e;
+  for (let d = e; d < i; d++) {
+    const c = t.charCodeAt(d);
+    if (r)
+      c === r && (r = 0);
+    else if (c === 34 || c === 39)
+      r = c;
+    else if (c === s)
+      if (a !== -1) {
+        if (t.charCodeAt(d + 1) === a)
+          return o += t.substring(l, d), { data: o, index: d };
+      } else
+        return o += t.substring(l, d), { data: o, index: d };
+    else c === 9 && !r && (o += t.substring(l, d) + " ", l = d + 1);
   }
 }
-function replaceEntitiesValue(val, tagName, jPath) {
-  const entityConfig = this.options.processEntities;
-  if (!entityConfig || !entityConfig.enabled) {
-    return val;
-  }
-  if (entityConfig.allowedTags) {
-    const jPathOrMatcher = this.options.jPath ? jPath.toString() : jPath;
-    const allowed = Array.isArray(entityConfig.allowedTags) ? entityConfig.allowedTags.includes(tagName) : entityConfig.allowedTags(tagName, jPathOrMatcher);
-    if (!allowed) {
-      return val;
-    }
-  }
-  if (entityConfig.tagFilter) {
-    const jPathOrMatcher = this.options.jPath ? jPath.toString() : jPath;
-    if (!entityConfig.tagFilter(tagName, jPathOrMatcher)) {
-      return val;
-    }
-  }
-  return this.entityDecoder.decode(val);
+function Y(t, e, n, r) {
+  const i = t.indexOf(e, n);
+  if (i === -1)
+    throw new Error(r);
+  return i + e.length - 1;
 }
-function saveTextToParentTag(textData, parentNode, matcher, isLeafNode) {
-  if (textData) {
-    if (isLeafNode === void 0) isLeafNode = parentNode.child.length === 0;
-    textData = this.parseTextData(
-      textData,
-      parentNode.tagname,
-      matcher,
-      false,
-      parentNode[":@"] ? Object.keys(parentNode[":@"]).length !== 0 : false,
-      isLeafNode
-    );
-    if (textData !== void 0 && textData !== "")
-      parentNode.add(this.options.textNodeName, textData);
-    textData = "";
-  }
-  return textData;
+function Ei(t, e, n, r) {
+  const i = t.indexOf(e, n);
+  if (i === -1) throw new Error(r);
+  return i;
 }
-function isItStopNode() {
-  if (this.stopNodeExpressionsSet.size === 0) return false;
-  return this.matcher.matchesAny(this.stopNodeExpressionsSet);
-}
-function tagExpWithClosingIndex(xmlData, i, closingChar = ">") {
-  let attrBoundary = 0;
-  const len = xmlData.length;
-  const closeCode0 = closingChar.charCodeAt(0);
-  const closeCode1 = closingChar.length > 1 ? closingChar.charCodeAt(1) : -1;
-  let result = "";
-  let segmentStart = i;
-  for (let index = i; index < len; index++) {
-    const code = xmlData.charCodeAt(index);
-    if (attrBoundary) {
-      if (code === attrBoundary) attrBoundary = 0;
-    } else if (code === 34 || code === 39) {
-      attrBoundary = code;
-    } else if (code === closeCode0) {
-      if (closeCode1 !== -1) {
-        if (xmlData.charCodeAt(index + 1) === closeCode1) {
-          result += xmlData.substring(segmentStart, index);
-          return { data: result, index };
-        }
-      } else {
-        result += xmlData.substring(segmentStart, index);
-        return { data: result, index };
-      }
-    } else if (code === 9 && !attrBoundary) {
-      result += xmlData.substring(segmentStart, index) + " ";
-      segmentStart = index + 1;
-    }
-  }
-}
-function findClosingIndex(xmlData, str, i, errMsg) {
-  const closingIndex = xmlData.indexOf(str, i);
-  if (closingIndex === -1) {
-    throw new Error(errMsg);
-  } else {
-    return closingIndex + str.length - 1;
-  }
-}
-function findClosingChar(xmlData, char, i, errMsg) {
-  const closingIndex = xmlData.indexOf(char, i);
-  if (closingIndex === -1) throw new Error(errMsg);
-  return closingIndex;
-}
-function readTagExp(xmlData, i, removeNSPrefix, closingChar = ">") {
-  const result = tagExpWithClosingIndex(xmlData, i + 1, closingChar);
-  if (!result) return;
-  let tagExp = result.data;
-  const closeIndex = result.index;
-  const separatorIndex = tagExp.search(/\s/);
-  let tagName = tagExp;
-  let attrExpPresent = true;
-  if (separatorIndex !== -1) {
-    tagName = tagExp.substring(0, separatorIndex);
-    tagExp = tagExp.substring(separatorIndex + 1).trimStart();
-  }
-  const rawTagName = tagName;
-  if (removeNSPrefix) {
-    const colonIndex = tagName.indexOf(":");
-    if (colonIndex !== -1) {
-      tagName = tagName.substr(colonIndex + 1);
-      attrExpPresent = tagName !== result.data.substr(colonIndex + 1);
-    }
+function Le(t, e, n, r = ">") {
+  const i = mi(t, e + 1, r);
+  if (!i) return;
+  let s = i.data;
+  const a = i.index, o = s.search(/\s/);
+  let l = s, d = !0;
+  o !== -1 && (l = s.substring(0, o), s = s.substring(o + 1).trimStart());
+  const c = l;
+  if (n) {
+    const u = l.indexOf(":");
+    u !== -1 && (l = l.substr(u + 1), d = l !== i.data.substr(u + 1));
   }
   return {
-    tagName,
-    tagExp,
-    closeIndex,
-    attrExpPresent,
-    rawTagName
+    tagName: l,
+    tagExp: s,
+    closeIndex: a,
+    attrExpPresent: d,
+    rawTagName: c
   };
 }
-function readStopNodeData(xmlData, tagName, i) {
-  const startIndex = i;
-  let openTagCount = 1;
-  const xmllen = xmlData.length;
-  for (; i < xmllen; i++) {
-    if (xmlData[i] === "<") {
-      const c1 = xmlData.charCodeAt(i + 1);
-      if (c1 === 47) {
-        const closeIndex = findClosingChar(xmlData, ">", i, `${tagName} is not closed`);
-        let closeTagName = xmlData.substring(i + 2, closeIndex).trim();
-        if (closeTagName === tagName) {
-          openTagCount--;
-          if (openTagCount === 0) {
-            return {
-              tagContent: xmlData.substring(startIndex, i),
-              i: closeIndex
-            };
-          }
-        }
-        i = closeIndex;
-      } else if (c1 === 63) {
-        const closeIndex = findClosingIndex(xmlData, "?>", i + 1, "StopNode is not closed.");
-        i = closeIndex;
-      } else if (c1 === 33 && xmlData.charCodeAt(i + 2) === 45 && xmlData.charCodeAt(i + 3) === 45) {
-        const closeIndex = findClosingIndex(xmlData, "-->", i + 3, "StopNode is not closed.");
-        i = closeIndex;
-      } else if (c1 === 33 && xmlData.charCodeAt(i + 2) === 91) {
-        const closeIndex = findClosingIndex(xmlData, "]]>", i, "StopNode is not closed.") - 2;
-        i = closeIndex;
-      } else {
-        const tagData = readTagExp(xmlData, i, false);
-        if (tagData) {
-          const openTagName = tagData && tagData.tagName;
-          if (openTagName === tagName && tagData.tagExp[tagData.tagExp.length - 1] !== "/") {
-            openTagCount++;
-          }
-          i = tagData.closeIndex;
-        }
+function yi(t, e, n) {
+  const r = n;
+  let i = 1;
+  const s = t.length;
+  for (; n < s; n++)
+    if (t[n] === "<") {
+      const a = t.charCodeAt(n + 1);
+      if (a === 47) {
+        const o = Ei(t, ">", n, `${e} is not closed`);
+        if (t.substring(n + 2, o).trim() === e && (i--, i === 0))
+          return {
+            tagContent: t.substring(r, n),
+            i: o
+          };
+        n = o;
+      } else if (a === 63)
+        n = Y(t, "?>", n + 1, "StopNode is not closed.");
+      else if (a === 33 && t.charCodeAt(n + 2) === 45 && t.charCodeAt(n + 3) === 45)
+        n = Y(t, "-->", n + 3, "StopNode is not closed.");
+      else if (a === 33 && t.charCodeAt(n + 2) === 91)
+        n = Y(t, "]]>", n, "StopNode is not closed.") - 2;
+      else {
+        const o = Le(t, n, !1);
+        o && ((o && o.tagName) === e && o.tagExp[o.tagExp.length - 1] !== "/" && i++, n = o.closeIndex);
       }
     }
+}
+function Oe(t, e, n) {
+  if (e && typeof t == "string") {
+    const r = t.trim();
+    return r === "true" ? !0 : r === "false" ? !1 : kr(t, n);
+  } else
+    return er(t) ? t : "";
+}
+function be(t, e, n, r) {
+  if (t) {
+    const i = t(e);
+    n === e && (n = i), e = i;
   }
+  return e = Ht(e, r), { tagName: e, tagExp: n };
 }
-function parseValue(val, shouldParse, options) {
-  if (shouldParse && typeof val === "string") {
-    const newval = val.trim();
-    if (newval === "true") return true;
-    else if (newval === "false") return false;
-    else return toNumber(val, options);
-  } else {
-    if (isExist(val)) {
-      return val;
-    } else {
-      return "";
-    }
-  }
+function Ht(t, e) {
+  if (Rt.includes(t))
+    throw new Error(`[SECURITY] Invalid name: "${t}" is a reserved JavaScript keyword that could cause prototype pollution`);
+  return je.includes(t) ? e.onDangerousProperty(t) : t;
 }
-function transformTagName(fn, tagName, tagExp, options) {
-  if (fn) {
-    const newTagName = fn(tagName);
-    if (tagExp === tagName) {
-      tagExp = newTagName;
-    }
-    tagName = newTagName;
-  }
-  tagName = sanitizeName(tagName, options);
-  return { tagName, tagExp };
+const Te = M.getMetaDataSymbol();
+function bi(t, e) {
+  if (!t || typeof t != "object") return {};
+  if (!e) return t;
+  const n = {};
+  for (const r in t)
+    if (r.startsWith(e)) {
+      const i = r.substring(e.length);
+      n[i] = t[r];
+    } else
+      n[r] = t[r];
+  return n;
 }
-function sanitizeName(name, options) {
-  if (criticalProperties.includes(name)) {
-    throw new Error(`[SECURITY] Invalid name: "${name}" is a reserved JavaScript keyword that could cause prototype pollution`);
-  } else if (DANGEROUS_PROPERTY_NAMES.includes(name)) {
-    return options.onDangerousProperty(name);
-  }
-  return name;
+function Ti(t, e, n, r) {
+  return Yt(t, e, n, r);
 }
-const METADATA_SYMBOL = XmlNode.getMetaDataSymbol();
-function stripAttributePrefix(attrs, prefix) {
-  if (!attrs || typeof attrs !== "object") return {};
-  if (!prefix) return attrs;
-  const rawAttrs = {};
-  for (const key in attrs) {
-    if (key.startsWith(prefix)) {
-      const rawName = key.substring(prefix.length);
-      rawAttrs[rawName] = attrs[key];
-    } else {
-      rawAttrs[key] = attrs[key];
-    }
-  }
-  return rawAttrs;
-}
-function prettify(node, options, matcher, readonlyMatcher) {
-  return compress(node, options, matcher, readonlyMatcher);
-}
-function compress(arr, options, matcher, readonlyMatcher) {
-  let text;
-  const compressedObj = {};
-  for (let i = 0; i < arr.length; i++) {
-    const tagObj = arr[i];
-    const property = propName(tagObj);
-    if (property !== void 0 && property !== options.textNodeName) {
-      const rawAttrs = stripAttributePrefix(
-        tagObj[":@"] || {},
-        options.attributeNamePrefix
+function Yt(t, e, n, r) {
+  let i;
+  const s = {};
+  for (let a = 0; a < t.length; a++) {
+    const o = t[a], l = wi(o);
+    if (l !== void 0 && l !== e.textNodeName) {
+      const d = bi(
+        o[":@"] || {},
+        e.attributeNamePrefix
       );
-      matcher.push(property, rawAttrs);
+      n.push(l, d);
     }
-    if (property === options.textNodeName) {
-      if (text === void 0) text = tagObj[property];
-      else text += "" + tagObj[property];
-    } else if (property === void 0) {
-      continue;
-    } else if (tagObj[property]) {
-      let val = compress(tagObj[property], options, matcher, readonlyMatcher);
-      const isLeaf = isLeafTag(val, options);
-      if (Object.keys(val).length === 0 && options.alwaysCreateTextNode) {
-        val[options.textNodeName] = "";
-      }
-      if (tagObj[":@"]) {
-        assignAttributes(val, tagObj[":@"], readonlyMatcher, options);
-      } else if (Object.keys(val).length === 1 && val[options.textNodeName] !== void 0 && !options.alwaysCreateTextNode) {
-        val = val[options.textNodeName];
-      } else if (Object.keys(val).length === 0) {
-        if (options.alwaysCreateTextNode) val[options.textNodeName] = "";
-        else val = "";
-      }
-      if (tagObj[METADATA_SYMBOL] !== void 0 && typeof val === "object" && val !== null) {
-        val[METADATA_SYMBOL] = tagObj[METADATA_SYMBOL];
-      }
-      if (compressedObj[property] !== void 0 && Object.prototype.hasOwnProperty.call(compressedObj, property)) {
-        if (!Array.isArray(compressedObj[property])) {
-          compressedObj[property] = [compressedObj[property]];
+    if (l === e.textNodeName)
+      i === void 0 ? i = o[l] : i += "" + o[l];
+    else {
+      if (l === void 0)
+        continue;
+      if (o[l]) {
+        let d = Yt(o[l], e, n, r);
+        const c = Ni(d, e);
+        if (Object.keys(d).length === 0 && e.alwaysCreateTextNode && (d[e.textNodeName] = ""), o[":@"] ? Si(d, o[":@"], r, e) : Object.keys(d).length === 1 && d[e.textNodeName] !== void 0 && !e.alwaysCreateTextNode ? d = d[e.textNodeName] : Object.keys(d).length === 0 && (e.alwaysCreateTextNode ? d[e.textNodeName] = "" : d = ""), o[Te] !== void 0 && typeof d == "object" && d !== null && (d[Te] = o[Te]), s[l] !== void 0 && Object.prototype.hasOwnProperty.call(s, l))
+          Array.isArray(s[l]) || (s[l] = [s[l]]), s[l].push(d);
+        else {
+          const u = e.jPath ? r.toString() : r;
+          e.isArray(l, u, c) ? s[l] = [d] : s[l] = d;
         }
-        compressedObj[property].push(val);
-      } else {
-        const jPathOrMatcher = options.jPath ? readonlyMatcher.toString() : readonlyMatcher;
-        if (options.isArray(property, jPathOrMatcher, isLeaf)) {
-          compressedObj[property] = [val];
-        } else {
-          compressedObj[property] = val;
-        }
-      }
-      if (property !== void 0 && property !== options.textNodeName) {
-        matcher.pop();
+        l !== void 0 && l !== e.textNodeName && n.pop();
       }
     }
   }
-  if (typeof text === "string") {
-    if (text.length > 0) compressedObj[options.textNodeName] = text;
-  } else if (text !== void 0) compressedObj[options.textNodeName] = text;
-  return compressedObj;
+  return typeof i == "string" ? i.length > 0 && (s[e.textNodeName] = i) : i !== void 0 && (s[e.textNodeName] = i), s;
 }
-function propName(obj) {
-  const keys = Object.keys(obj);
-  for (let i = 0; i < keys.length; i++) {
-    const key = keys[i];
-    if (key !== ":@") return key;
+function wi(t) {
+  const e = Object.keys(t);
+  for (let n = 0; n < e.length; n++) {
+    const r = e[n];
+    if (r !== ":@") return r;
   }
 }
-function assignAttributes(obj, attrMap, readonlyMatcher, options) {
-  if (attrMap) {
-    const keys = Object.keys(attrMap);
-    const len = keys.length;
-    for (let i = 0; i < len; i++) {
-      const atrrName = keys[i];
-      const rawAttrName = atrrName.startsWith(options.attributeNamePrefix) ? atrrName.substring(options.attributeNamePrefix.length) : atrrName;
-      const jPathOrMatcher = options.jPath ? readonlyMatcher.toString() + "." + rawAttrName : readonlyMatcher;
-      if (options.isArray(atrrName, jPathOrMatcher, true, true)) {
-        obj[atrrName] = [attrMap[atrrName]];
-      } else {
-        obj[atrrName] = attrMap[atrrName];
-      }
+function Si(t, e, n, r) {
+  if (e) {
+    const i = Object.keys(e), s = i.length;
+    for (let a = 0; a < s; a++) {
+      const o = i[a], l = o.startsWith(r.attributeNamePrefix) ? o.substring(r.attributeNamePrefix.length) : o, d = r.jPath ? n.toString() + "." + l : n;
+      r.isArray(o, d, !0, !0) ? t[o] = [e[o]] : t[o] = e[o];
     }
   }
 }
-function isLeafTag(obj, options) {
-  const { textNodeName } = options;
-  const propCount = Object.keys(obj).length;
-  if (propCount === 0) {
-    return true;
-  }
-  if (propCount === 1 && (obj[textNodeName] || typeof obj[textNodeName] === "boolean" || obj[textNodeName] === 0)) {
-    return true;
-  }
-  return false;
+function Ni(t, e) {
+  const { textNodeName: n } = e, r = Object.keys(t).length;
+  return !!(r === 0 || r === 1 && (t[n] || typeof t[n] == "boolean" || t[n] === 0));
 }
-class XMLParser {
-  constructor(options) {
-    this.externalEntities = {};
-    this.options = buildOptions(options);
+class xi {
+  constructor(e) {
+    this.externalEntities = {}, this.options = Tr(e);
   }
   /**
    * Parse XML dats to JS object 
    * @param {string|Uint8Array} xmlData 
    * @param {boolean|Object} validationOption 
    */
-  parse(xmlData, validationOption) {
-    if (typeof xmlData !== "string" && xmlData.toString) {
-      xmlData = xmlData.toString();
-    } else if (typeof xmlData !== "string") {
+  parse(e, n) {
+    if (typeof e != "string" && e.toString)
+      e = e.toString();
+    else if (typeof e != "string")
       throw new Error("XML data is accepted in String or Bytes[] form.");
+    if (n) {
+      n === !0 && (n = {});
+      const s = nr(e, n);
+      if (s !== !0)
+        throw Error(`${s.err.msg}:${s.err.line}:${s.err.col}`);
     }
-    if (validationOption) {
-      if (validationOption === true) validationOption = {};
-      const result = validate(xmlData, validationOption);
-      if (result !== true) {
-        throw Error(`${result.err.msg}:${result.err.line}:${result.err.col}`);
-      }
-    }
-    const orderedObjParser = new OrderedObjParser(this.options, this.externalEntities);
-    const orderedResult = orderedObjParser.parseXml(xmlData);
-    if (this.options.preserveOrder || orderedResult === void 0) return orderedResult;
-    else return prettify(orderedResult, this.options, orderedObjParser.matcher, orderedObjParser.readonlyMatcher);
+    const r = new oi(this.options, this.externalEntities), i = r.parseXml(e);
+    return this.options.preserveOrder || i === void 0 ? i : Ti(i, this.options, r.matcher, r.readonlyMatcher);
   }
   /**
    * Add Entity which is not by default supported by this library
    * @param {string} key 
    * @param {string} value 
    */
-  addEntity(key, value) {
-    if (value.indexOf("&") !== -1) {
+  addEntity(e, n) {
+    if (n.indexOf("&") !== -1)
       throw new Error("Entity value can't have '&'");
-    } else if (key.indexOf("&") !== -1 || key.indexOf(";") !== -1) {
+    if (e.indexOf("&") !== -1 || e.indexOf(";") !== -1)
       throw new Error("An entity must be set without '&' and ';'. Eg. use '#xD' for '&#xD;'");
-    } else if (value === "&") {
+    if (n === "&")
       throw new Error("An entity with value '&' is not permitted");
-    } else {
-      this.externalEntities[key] = value;
-    }
+    this.externalEntities[e] = n;
   }
   /**
    * Returns a Symbol that can be used to access the metadata
@@ -4501,140 +3713,149 @@ class XMLParser {
    * is true in the options.
    */
   static getMetaDataSymbol() {
-    return XmlNode.getMetaDataSymbol();
+    return M.getMetaDataSymbol();
   }
 }
-function sectionsToLyrics(sections) {
-  return sections.map((section) => ({ ...section, slides: section.slides.filter((lines) => lines.length > 0) })).filter((section) => section.slides.length > 0).map((section) => {
-    const body = section.slides.map((lines) => lines.join("\n")).join("\n\n");
-    return section.label ? `[${section.label}]
-${body}` : body;
-  }).join("\n\n");
+function Gt(t) {
+  return t.map((e) => ({ ...e, slides: e.slides.filter((n) => n.length > 0) })).filter((e) => e.slides.length > 0).map((e) => {
+    const n = e.slides.map((r) => r.join(`
+`)).join(`
+
+`);
+    return e.label ? `[${e.label}]
+${n}` : n;
+  }).join(`
+
+`);
 }
-function songInput(fields) {
-  var _a, _b;
+function Be(t) {
+  var e, n;
   return {
-    title: fields.title.trim(),
-    author: ((_a = fields.author) == null ? void 0 : _a.trim()) || null,
-    copyright: ((_b = fields.copyright) == null ? void 0 : _b.trim()) || null,
-    tags: fields.tags ?? [],
-    arrangement: fields.arrangement ?? DEFAULT_ARRANGEMENT,
-    lyrics: fields.lyrics ?? ""
+    title: t.title.trim(),
+    author: ((e = t.author) == null ? void 0 : e.trim()) || null,
+    copyright: ((n = t.copyright) == null ? void 0 : n.trim()) || null,
+    tags: t.tags ?? [],
+    arrangement: t.arrangement ?? he,
+    themeId: null,
+    lyrics: t.lyrics ?? ""
   };
 }
-const TEXT_HEADER = /^(author|copyright|tags|order|lines per slide):\s*(.*)$/i;
-function parseText(text, fallbackTitle) {
-  var _a;
-  const lines = text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").split("\n");
-  while (lines.length && lines[0].trim() === "") lines.shift();
-  const title = ((_a = lines.shift()) == null ? void 0 : _a.trim()) || fallbackTitle;
-  const fields = {};
-  const arrangement = { ...DEFAULT_ARRANGEMENT };
-  for (let header = TEXT_HEADER.exec(lines[0] ?? ""); header; header = TEXT_HEADER.exec(lines[0] ?? "")) {
-    lines.shift();
-    const [, key, value] = header;
-    switch (key.toLowerCase()) {
+const ct = /^(author|copyright|tags|order|lines per slide):\s*(.*)$/i;
+function Ai(t, e) {
+  var a;
+  const n = t.replace(/^\uFEFF/, "").replace(/\r\n?/g, `
+`).split(`
+`);
+  for (; n.length && n[0].trim() === ""; ) n.shift();
+  const r = ((a = n.shift()) == null ? void 0 : a.trim()) || e, i = {}, s = { ...he };
+  for (let o = ct.exec(n[0] ?? ""); o; o = ct.exec(n[0] ?? "")) {
+    n.shift();
+    const [, l, d] = o;
+    switch (l.toLowerCase()) {
       case "author":
-        fields.author = value;
+        i.author = d;
         break;
       case "copyright":
-        fields.copyright = value;
+        i.copyright = d;
         break;
       case "tags":
-        fields.tags = value.split(",").map((tag) => tag.trim()).filter(Boolean);
+        i.tags = d.split(",").map((c) => c.trim()).filter(Boolean);
         break;
       case "order":
-        arrangement.order = value.split(",").map((label) => label.trim()).filter(Boolean);
+        s.order = d.split(",").map((c) => c.trim()).filter(Boolean);
         break;
       case "lines per slide": {
-        const n = Number(value);
-        if (LINES_PER_SLIDE_OPTIONS.includes(n)) arrangement.linesPerSlide = n;
+        const c = Number(d);
+        Tt.includes(c) && (s.linesPerSlide = c);
         break;
       }
     }
   }
-  return songInput({ ...fields, title, arrangement, lyrics: lines.join("\n").trim() });
+  return Be({ ...i, title: r, arrangement: s, lyrics: n.join(`
+`).trim() });
 }
-function toText(song) {
-  const headers = [
-    song.author && `Author: ${song.author}`,
-    song.copyright && `Copyright: ${song.copyright}`,
-    song.tags.length > 0 && `Tags: ${song.tags.join(", ")}`,
-    song.arrangement.order.length > 0 && `Order: ${song.arrangement.order.join(", ")}`,
-    song.arrangement.linesPerSlide && `Lines per slide: ${song.arrangement.linesPerSlide}`
+function _i(t) {
+  const e = [
+    t.author && `Author: ${t.author}`,
+    t.copyright && `Copyright: ${t.copyright}`,
+    t.tags.length > 0 && `Tags: ${t.tags.join(", ")}`,
+    t.arrangement.order.length > 0 && `Order: ${t.arrangement.order.join(", ")}`,
+    t.arrangement.linesPerSlide && `Lines per slide: ${t.arrangement.linesPerSlide}`
   ].filter(Boolean);
-  return `${[song.title, ...headers].join("\n")}
+  return `${[t.title, ...e].join(`
+`)}
 
-${song.lyrics.replace(/\r\n?/g, "\n").trim()}
+${t.lyrics.replace(/\r\n?/g, `
+`).trim()}
 `;
 }
-const xmlParser = new XMLParser({
-  preserveOrder: true,
-  ignoreAttributes: false,
-  trimValues: false,
+const Ii = new xi({
+  preserveOrder: !0,
+  ignoreAttributes: !1,
+  trimValues: !1,
   // keep the spaces around inline tags in mixed content
-  parseTagValue: false,
+  parseTagValue: !1,
   // a title like "1000" stays a string
-  parseAttributeValue: false,
-  processEntities: true,
-  htmlEntities: true
+  parseAttributeValue: !1,
+  processEntities: !0,
+  htmlEntities: !0
 });
-function tagOf(node) {
-  return Object.keys(node).find((key) => key !== ":@" && key !== "#text");
+function Ve(t) {
+  return Object.keys(t).find((e) => e !== ":@" && e !== "#text");
 }
-function nameOf(node) {
-  var _a;
-  return (_a = tagOf(node)) == null ? void 0 : _a.replace(/^.*:/, "");
+function $(t) {
+  var e;
+  return (e = Ve(t)) == null ? void 0 : e.replace(/^.*:/, "");
 }
-function childrenOf(node) {
-  const tag = node && tagOf(node);
-  return tag ? node[tag] : [];
+function re(t) {
+  const e = t && Ve(t);
+  return e ? t[e] : [];
 }
-function attrOf(node, name) {
-  var _a;
-  return (_a = node[":@"]) == null ? void 0 : _a[`@_${name}`];
+function dt(t, e) {
+  var n;
+  return (n = t[":@"]) == null ? void 0 : n[`@_${e}`];
 }
-function child(node, name) {
-  return childrenOf(node).find((c) => nameOf(c) === name);
+function C(t, e) {
+  return re(t).find((n) => $(n) === e);
 }
-function childList(node, name) {
-  return childrenOf(node).filter((c) => nameOf(c) === name);
+function ce(t, e) {
+  return re(t).filter((n) => $(n) === e);
 }
-function textOf(node) {
-  if (!node) return "";
-  if ("#text" in node) return String(node["#text"]);
-  const name = nameOf(node);
-  if (name === "br") return "\n";
-  if (name === "comment" || name === "chord") return "";
-  const text = childrenOf(node).map(textOf).join("");
-  return name === "line" ? `${text}
-` : text;
+function k(t) {
+  if (!t) return "";
+  if ("#text" in t) return String(t["#text"]);
+  const e = $(t);
+  if (e === "br") return `
+`;
+  if (e === "comment" || e === "chord") return "";
+  const n = re(t).map(k).join("");
+  return e === "line" ? `${n}
+` : n;
 }
-function xmlLines(text) {
-  return text.split("\n").map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+function H(t) {
+  return t.split(`
+`).map((e) => e.replace(/\s+/g, " ").trim()).filter(Boolean);
 }
-function lyricLinesOf(node) {
-  const parts = [];
-  const walk = (n) => {
-    if ("#text" in n) parts.push(String(n["#text"]).replace(/\s+/g, " "));
-    else if (nameOf(n) === "br") parts.push("\n");
-    else if (nameOf(n) === "comment" || nameOf(n) === "chord") return;
+function Ci(t) {
+  const e = [], n = (r) => {
+    if ("#text" in r) e.push(String(r["#text"]).replace(/\s+/g, " "));
+    else if ($(r) === "br") e.push(`
+`);
     else {
-      childrenOf(n).forEach(walk);
-      if (nameOf(n) === "line") parts.push("\n");
+      if ($(r) === "comment" || $(r) === "chord") return;
+      re(r).forEach(n), $(r) === "line" && e.push(`
+`);
     }
   };
-  childrenOf(node).forEach(walk);
-  return xmlLines(parts.join(""));
+  return re(t).forEach(n), H(e.join(""));
 }
-function rootOf(xml) {
-  const nodes = xmlParser.parse(xml);
-  return nodes.find((node) => {
-    var _a;
-    return nameOf(node) !== void 0 && !((_a = tagOf(node)) == null ? void 0 : _a.startsWith("?"));
+function vi(t) {
+  return Ii.parse(t).find((n) => {
+    var r;
+    return $(n) !== void 0 && !((r = Ve(n)) != null && r.startsWith("?"));
   });
 }
-const OPENLYRICS_NAMES = {
+const Li = {
   v: "Verse",
   c: "Chorus",
   b: "Bridge",
@@ -4643,37 +3864,28 @@ const OPENLYRICS_NAMES = {
   e: "Ending",
   o: "Other"
 };
-function openLyricsLabel(name) {
-  const match = /^([a-z])(\d*)([a-z]?)$/i.exec(name.trim());
-  const base = match && OPENLYRICS_NAMES[match[1].toLowerCase()];
-  if (!match || !base) return name.trim();
-  const number = `${match[2]}${match[3]}`;
-  return number ? `${base} ${number}` : base;
+function ut(t) {
+  const e = /^([a-z])(\d*)([a-z]?)$/i.exec(t.trim()), n = e && Li[e[1].toLowerCase()];
+  if (!e || !n) return t.trim();
+  const r = `${e[2]}${e[3]}`;
+  return r ? `${n} ${r}` : n;
 }
-function parseOpenLyrics(root, fallbackTitle) {
-  const properties = child(root, "properties");
-  const title = xmlLines(textOf(child(child(properties, "titles"), "title"))).join(" ");
-  const authors = childList(child(properties, "authors"), "author").filter((author) => attrOf(author, "type") !== "translation").map((author) => xmlLines(textOf(author)).join(" ")).filter(Boolean);
-  const themes = childList(child(properties, "themes"), "theme").map((theme) => xmlLines(textOf(theme)).join(" ")).filter(Boolean);
-  const order = textOf(child(properties, "verseOrder")).split(/\s+/).filter(Boolean).map(openLyricsLabel);
-  const seen = /* @__PURE__ */ new Set();
-  const sections = [];
-  for (const verse of childList(child(root, "lyrics"), "verse")) {
-    const name = attrOf(verse, "name") ?? `o${sections.length + 1}`;
-    if (seen.has(name)) continue;
-    seen.add(name);
-    sections.push({ label: openLyricsLabel(name), slides: childList(verse, "lines").map(lyricLinesOf) });
+function Oi(t, e) {
+  const n = C(t, "properties"), r = H(k(C(C(n, "titles"), "title"))).join(" "), i = ce(C(n, "authors"), "author").filter((d) => dt(d, "type") !== "translation").map((d) => H(k(d)).join(" ")).filter(Boolean), s = ce(C(n, "themes"), "theme").map((d) => H(k(d)).join(" ")).filter(Boolean), a = k(C(n, "verseOrder")).split(/\s+/).filter(Boolean).map(ut), o = /* @__PURE__ */ new Set(), l = [];
+  for (const d of ce(C(t, "lyrics"), "verse")) {
+    const c = dt(d, "name") ?? `o${l.length + 1}`;
+    o.has(c) || (o.add(c), l.push({ label: ut(c), slides: ce(d, "lines").map(Ci) }));
   }
-  return songInput({
-    title: title || fallbackTitle,
-    author: authors.join(", "),
-    copyright: xmlLines(textOf(child(properties, "copyright"))).join(" "),
-    tags: [...new Set(themes)],
-    arrangement: { order, linesPerSlide: null },
-    lyrics: sectionsToLyrics(sections)
+  return Be({
+    title: r || e,
+    author: i.join(", "),
+    copyright: H(k(C(n, "copyright"))).join(" "),
+    tags: [...new Set(s)],
+    arrangement: { order: a, linesPerSlide: null },
+    lyrics: Gt(l)
   });
 }
-const OPENLYRICS_LETTERS = {
+const Ri = {
   verse: "v",
   chorus: "c",
   bridge: "b",
@@ -4684,57 +3896,55 @@ const OPENLYRICS_LETTERS = {
   outro: "e",
   other: "o"
 };
-function openLyricsName(label, taken) {
-  const match = label ? /^([a-z-]+)\s*(\d*)([a-z]?)$/i.exec(label.trim()) : null;
-  const known = match ? OPENLYRICS_LETTERS[match[1].toLowerCase()] : void 0;
-  const letter = known ?? "o";
-  const wanted = match && known ? `${letter}${match[2]}${match[3]}` : "";
-  if (wanted && !taken.has(wanted)) return wanted;
-  let n = 1;
-  while (taken.has(`${letter}${n}`)) n++;
-  return `${letter}${n}`;
+function Fi(t, e) {
+  const n = t ? /^([a-z-]+)\s*(\d*)([a-z]?)$/i.exec(t.trim()) : null, r = n ? Ri[n[1].toLowerCase()] : void 0, i = r ?? "o", s = n && r ? `${i}${n[2]}${n[3]}` : "";
+  if (s && !e.has(s)) return s;
+  let a = 1;
+  for (; e.has(`${i}${a}`); ) a++;
+  return `${i}${a}`;
 }
-const escapeXml = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-function toOpenLyrics(song) {
-  const taken = /* @__PURE__ */ new Set();
-  const byLabel = /* @__PURE__ */ new Map();
-  const verses = parseLyrics(song.lyrics).map((section) => {
-    var _a;
-    const name = openLyricsName(section.label, taken);
-    taken.add(name);
-    const key = (_a = section.label) == null ? void 0 : _a.toLowerCase();
-    if (key && !byLabel.has(key)) byLabel.set(key, name);
-    const lines = section.chunks.map((chunk) => `      <lines>${chunk.lines.map(escapeXml).join("<br/>")}</lines>`);
-    return `    <verse name="${name}">
-${lines.join("\n")}
+const te = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function $i(t) {
+  const e = /* @__PURE__ */ new Set(), n = /* @__PURE__ */ new Map(), r = St(t.lyrics).map((a) => {
+    var c;
+    const o = Fi(a.label, e);
+    e.add(o);
+    const l = (c = a.label) == null ? void 0 : c.toLowerCase();
+    l && !n.has(l) && n.set(l, o);
+    const d = a.chunks.map((u) => `      <lines>${u.lines.map(te).join("<br/>")}</lines>`);
+    return `    <verse name="${o}">
+${d.join(`
+`)}
     </verse>`;
-  });
-  const order = song.arrangement.order.map((label) => byLabel.get(label.trim().toLowerCase())).filter((name) => name !== void 0);
-  const properties = [
+  }), i = t.arrangement.order.map((a) => n.get(a.trim().toLowerCase())).filter((a) => a !== void 0), s = [
     `    <titles>
-      <title>${escapeXml(song.title)}</title>
+      <title>${te(t.title)}</title>
     </titles>`,
-    song.author && `    <authors>
-${song.author.split(",").map((a) => a.trim()).filter(Boolean).map((a) => `      <author>${escapeXml(a)}</author>`).join("\n")}
+    t.author && `    <authors>
+${t.author.split(",").map((a) => a.trim()).filter(Boolean).map((a) => `      <author>${te(a)}</author>`).join(`
+`)}
     </authors>`,
-    song.copyright && `    <copyright>${escapeXml(song.copyright)}</copyright>`,
-    order.length > 0 && `    <verseOrder>${order.join(" ")}</verseOrder>`,
-    song.tags.length > 0 && `    <themes>
-${song.tags.map((t) => `      <theme>${escapeXml(t)}</theme>`).join("\n")}
+    t.copyright && `    <copyright>${te(t.copyright)}</copyright>`,
+    i.length > 0 && `    <verseOrder>${i.join(" ")}</verseOrder>`,
+    t.tags.length > 0 && `    <themes>
+${t.tags.map((a) => `      <theme>${te(a)}</theme>`).join(`
+`)}
     </themes>`
   ].filter(Boolean);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <song xmlns="http://openlyrics.info/namespace/2009/song" version="0.9" createdIn="WorshipDeck" modifiedDate="${(/* @__PURE__ */ new Date()).toISOString()}">
   <properties>
-${properties.join("\n")}
+${s.join(`
+`)}
   </properties>
   <lyrics>
-${verses.join("\n")}
+${r.join(`
+`)}
   </lyrics>
 </song>
 `;
 }
-const OPENSONG_NAMES = {
+const Mi = {
   V: "Verse",
   C: "Chorus",
   B: "Bridge",
@@ -4743,348 +3953,318 @@ const OPENSONG_NAMES = {
   I: "Intro",
   E: "Ending"
 };
-function openSongLabel(code) {
-  const match = /^([A-Za-z])(\d*)$/.exec(code.trim());
-  const base = match && OPENSONG_NAMES[match[1].toUpperCase()];
-  if (!match || !base) return code.trim();
-  return match[2] ? `${base} ${match[2]}` : base;
+function zt(t) {
+  const e = /^([A-Za-z])(\d*)$/.exec(t.trim()), n = e && Mi[e[1].toUpperCase()];
+  return !e || !n ? t.trim() : e[2] ? `${n} ${e[2]}` : n;
 }
-function parseOpenSongLyrics(raw) {
-  const sections = /* @__PURE__ */ new Map();
-  const groups = /* @__PURE__ */ new Map();
-  let marker = "";
-  let lastKey = null;
-  const sectionFor = (key) => {
-    let section = sections.get(key);
-    if (!section) {
-      section = { label: key ? openSongLabel(key) : null, slides: [[]] };
-      sections.set(key, section);
-      groups.set(marker, [...groups.get(marker) ?? [], key]);
-    }
-    return section;
+function Pi(t) {
+  const e = /* @__PURE__ */ new Map(), n = /* @__PURE__ */ new Map();
+  let r = "", i = null;
+  const s = (o) => {
+    let l = e.get(o);
+    return l || (l = { label: o ? zt(o) : null, slides: [[]] }, e.set(o, l), n.set(r, [...n.get(r) ?? [], o])), l;
+  }, a = (o) => {
+    const l = o !== null ? e.get(o) : void 0;
+    l && l.slides[l.slides.length - 1].length > 0 && l.slides.push([]);
   };
-  const newSlide = (key) => {
-    const section = key !== null ? sections.get(key) : void 0;
-    if (section && section.slides[section.slides.length - 1].length > 0) section.slides.push([]);
-  };
-  for (const line of raw.replace(/\r\n?/g, "\n").split("\n")) {
-    const label = /^\s*\[([^\]]+)\]\s*$/.exec(line);
-    if (label) {
-      marker = label[1].trim();
-      lastKey = null;
+  for (const o of t.replace(/\r\n?/g, `
+`).split(`
+`)) {
+    const l = /^\s*\[([^\]]+)\]\s*$/.exec(o);
+    if (l) {
+      r = l[1].trim(), i = null;
       continue;
     }
-    if (line.startsWith(".") || line.startsWith(";")) continue;
-    const numbered = /^(\d)(.*)$/.exec(line);
-    const key = numbered && !/\d$/.test(marker) ? `${marker}${numbered[1]}` : marker;
-    const text = (numbered ? numbered[2] : line).replace(/_/g, "");
-    if (text.trim() === "") {
-      newSlide(numbered ? key : lastKey);
+    if (o.startsWith(".") || o.startsWith(";")) continue;
+    const d = /^(\d)(.*)$/.exec(o), c = d && !/\d$/.test(r) ? `${r}${d[1]}` : r, u = (d ? d[2] : o).replace(/_/g, "");
+    if (u.trim() === "") {
+      a(d ? c : i);
       continue;
     }
-    const section = sectionFor(key);
-    lastKey = key;
-    const pieces = text.split("||");
-    pieces.forEach((piece, i) => {
-      if (i > 0) newSlide(key);
-      for (const part of piece.split("|")) {
-        const clean = part.replace(/\s+/g, " ").trim();
-        if (clean) section.slides[section.slides.length - 1].push(clean);
+    const p = s(c);
+    i = c, u.split("||").forEach((y, g) => {
+      g > 0 && a(c);
+      for (const T of y.split("|")) {
+        const I = T.replace(/\s+/g, " ").trim();
+        I && p.slides[p.slides.length - 1].push(I);
       }
     });
   }
-  return { sections: [...sections.values()], groups };
+  return { sections: [...e.values()], groups: n };
 }
-function parseOpenSong(root, fallbackTitle) {
-  const field = (name) => xmlLines(textOf(child(root, name))).join(" ");
-  const { sections, groups } = parseOpenSongLyrics(textOf(child(root, "lyrics")));
-  const order = field("presentation").split(/\s+/).filter(Boolean).flatMap((code) => (groups.get(code) ?? [code]).map(openSongLabel));
-  const tags = ["theme", "alttheme"].flatMap((name) => field(name).split(/[;,]/)).map((tag) => tag.trim()).filter(Boolean);
-  return songInput({
-    title: field("title") || fallbackTitle,
-    author: field("author"),
-    copyright: field("copyright"),
-    tags: [...new Set(tags)],
-    arrangement: { order, linesPerSlide: null },
-    lyrics: sectionsToLyrics(sections)
+function ki(t, e) {
+  const n = (o) => H(k(C(t, o))).join(" "), { sections: r, groups: i } = Pi(k(C(t, "lyrics"))), s = n("presentation").split(/\s+/).filter(Boolean).flatMap((o) => (i.get(o) ?? [o]).map(zt)), a = ["theme", "alttheme"].flatMap((o) => n(o).split(/[;,]/)).map((o) => o.trim()).filter(Boolean);
+  return Be({
+    title: n("title") || e,
+    author: n("author"),
+    copyright: n("copyright"),
+    tags: [...new Set(a)],
+    arrangement: { order: s, linesPerSlide: null },
+    lyrics: Gt(r)
   });
 }
-function parseXmlSong(xml, fallbackTitle) {
-  let root;
+function ji(t, e) {
+  let n;
   try {
-    root = rootOf(xml.replace(/^\uFEFF/, ""));
+    n = vi(t.replace(/^\uFEFF/, ""));
   } catch {
     throw new Error("Not valid XML");
   }
-  if (!root || nameOf(root) !== "song") throw new Error("Not an OpenLyrics or OpenSong song");
-  if (child(root, "properties")) return { format: "openlyrics", song: parseOpenLyrics(root, fallbackTitle) };
-  if (child(root, "lyrics")) return { format: "opensong", song: parseOpenSong(root, fallbackTitle) };
+  if (!n || $(n) !== "song") throw new Error("Not an OpenLyrics or OpenSong song");
+  if (C(n, "properties")) return { format: "openlyrics", song: Oi(n, e) };
+  if (C(n, "lyrics")) return { format: "opensong", song: ki(n, e) };
   throw new Error("Not an OpenLyrics or OpenSong song");
 }
-const MAX_FILES = 2e3;
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
-const SONG_EXTENSIONS = /* @__PURE__ */ new Set([".txt", ".xml", ""]);
-async function collect(paths, problems) {
-  const candidates = [];
-  for (const p of paths) {
+const pt = 2e3, Ui = 5 * 1024 * 1024, Bi = /* @__PURE__ */ new Set([".txt", ".xml", ""]);
+async function Vi(t, e) {
+  const n = [];
+  for (const r of t)
     try {
-      if ((await stat(p)).isDirectory()) {
-        const entries = await readdir(p, { withFileTypes: true });
-        for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-          if (!entry.isFile() || entry.name.startsWith(".")) continue;
-          if (!SONG_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
-          candidates.push({ file: path.join(p, entry.name), source: `${path.basename(p)}/${entry.name}` });
-        }
-      } else {
-        candidates.push({ file: p, source: path.basename(p) });
-      }
-    } catch (err) {
-      problems.push({ source: path.basename(p), error: err instanceof Error ? err.message : String(err) });
+      if ((await Et(r)).isDirectory()) {
+        const i = await nn(r, { withFileTypes: !0 });
+        for (const s of i.sort((a, o) => a.name.localeCompare(o.name)))
+          !s.isFile() || s.name.startsWith(".") || Bi.has(E.extname(s.name).toLowerCase()) && n.push({ file: E.join(r, s.name), source: `${E.basename(r)}/${s.name}` });
+      } else
+        n.push({ file: r, source: E.basename(r) });
+    } catch (i) {
+      e.push({ source: E.basename(r), error: i instanceof Error ? i.message : String(i) });
     }
-  }
-  return candidates;
+  return n;
 }
-async function readSong(candidate) {
-  const { size } = await stat(candidate.file);
-  if (size > MAX_FILE_BYTES) throw new Error("File is larger than 5 MB");
-  const text = (await readFile(candidate.file, "utf8")).replace(/^\uFEFF/, "");
-  const extension = path.extname(candidate.file).toLowerCase();
-  const fallbackTitle = path.basename(candidate.file, extension);
-  if (extension === ".txt") return { source: candidate.source, format: "text", song: parseText(text, fallbackTitle) };
-  if (!text.trimStart().startsWith("<")) throw new Error("Not a text, OpenLyrics or OpenSong song");
-  return { source: candidate.source, ...parseXmlSong(text, fallbackTitle) };
+async function Wi(t) {
+  const { size: e } = await Et(t.file);
+  if (e > Ui) throw new Error("File is larger than 5 MB");
+  const n = (await rn(t.file, "utf8")).replace(/^\uFEFF/, ""), r = E.extname(t.file).toLowerCase(), i = E.basename(t.file, r);
+  if (r === ".txt") return { source: t.source, format: "text", song: Ai(n, i) };
+  if (!n.trimStart().startsWith("<")) throw new Error("Not a text, OpenLyrics or OpenSong song");
+  return { source: t.source, ...ji(n, i) };
 }
-async function scanSongFiles(paths) {
-  const problems = [];
-  const candidates = await collect(paths, problems);
-  if (candidates.length > MAX_FILES) {
-    return { songs: [], problems: [{ source: `${candidates.length} files`, error: `Pick at most ${MAX_FILES} files at a time` }] };
-  }
-  const key = (title) => title.trim().toLowerCase();
-  const library = new Set(listSongs().map((song) => key(song.title)));
-  const seen = /* @__PURE__ */ new Set();
-  const songs = [];
-  for (const candidate of candidates) {
+async function we(t) {
+  const e = [], n = await Vi(t, e);
+  if (n.length > pt)
+    return { songs: [], problems: [{ source: `${n.length} files`, error: `Pick at most ${pt} files at a time` }] };
+  const r = (o) => o.trim().toLowerCase(), i = new Set(Me().map((o) => r(o.title))), s = /* @__PURE__ */ new Set(), a = [];
+  for (const o of n)
     try {
-      const found = await readSong(candidate);
-      if (!found.song.title) throw new Error("No title found");
-      const title = key(found.song.title);
-      songs.push({ ...found, duplicateOf: library.has(title) ? "library" : seen.has(title) ? "import" : null });
-      seen.add(title);
-    } catch (err) {
-      problems.push({ source: candidate.source, error: err instanceof Error ? err.message : String(err) });
+      const l = await Wi(o);
+      if (!l.song.title) throw new Error("No title found");
+      const d = r(l.song.title);
+      a.push({ ...l, duplicateOf: i.has(d) ? "library" : s.has(d) ? "import" : null }), s.add(d);
+    } catch (l) {
+      e.push({ source: o.source, error: l instanceof Error ? l.message : String(l) });
     }
+  return { songs: a, problems: e };
+}
+function Re(t, e, n) {
+  const r = [...t].filter((s) => s.charCodeAt(0) >= 32 && !'<>:"/\\|?*'.includes(s)).join("").replace(/\s+/g, " ").trim().slice(0, 120) || "Untitled";
+  let i = `${r}${e}`;
+  for (let s = 2; n.has(i.toLowerCase()); s++) i = `${r} (${s})${e}`;
+  return n.add(i.toLowerCase()), i;
+}
+function Xi(t) {
+  return (t ?? Me().map((n) => n.id)).map((n) => At(n)).filter((n) => n !== void 0);
+}
+const pe = { openlyrics: ".xml", text: ".txt" };
+function qi(t, e) {
+  return Re(t.title, pe[e], /* @__PURE__ */ new Set());
+}
+function Dt(t, e) {
+  return e === "openlyrics" ? $i(t) : _i(t);
+}
+async function Hi(t, e, n) {
+  await mt(n, Dt(t, e), "utf8");
+}
+async function Yi(t, e, n) {
+  const r = /* @__PURE__ */ new Set();
+  for (const i of t) {
+    let s = Re(i.title, pe[e], r);
+    for (; an(E.join(n, s)); ) s = Re(i.title, pe[e], r);
+    await mt(E.join(n, s), Dt(i, e), "utf8");
   }
-  return { songs, problems };
+  return t.length;
 }
-function fileName(title, extension, used) {
-  const base = [...title].filter((c) => c.charCodeAt(0) >= 32 && !'<>:"/\\|?*'.includes(c)).join("").replace(/\s+/g, " ").trim().slice(0, 120) || "Untitled";
-  let name = `${base}${extension}`;
-  for (let n = 2; used.has(name.toLowerCase()); n++) name = `${base} (${n})${extension}`;
-  used.add(name.toLowerCase());
-  return name;
-}
-function songsForExport(songIds) {
-  const ids = songIds ?? listSongs().map((song) => song.id);
-  return ids.map((id) => getSong(id)).filter((song) => song !== void 0);
-}
-const EXPORT_EXTENSIONS = { openlyrics: ".xml", text: ".txt" };
-function suggestedFileName(song, format) {
-  return fileName(song.title, EXPORT_EXTENSIONS[format], /* @__PURE__ */ new Set());
-}
-function serialize(song, format) {
-  return format === "openlyrics" ? toOpenLyrics(song) : toText(song);
-}
-async function writeSongFile(song, format, file) {
-  await writeFile(file, serialize(song, format), "utf8");
-}
-async function writeSongFolder(songs, format, folder) {
-  const used = /* @__PURE__ */ new Set();
-  for (const song of songs) {
-    let name = fileName(song.title, EXPORT_EXTENSIONS[format], used);
-    while (existsSync(path.join(folder, name))) name = fileName(song.title, EXPORT_EXTENSIONS[format], used);
-    await writeFile(path.join(folder, name), serialize(song, format), "utf8");
-  }
-  return songs.length;
-}
-const EXPORT_FORMATS = ["openlyrics", "text"];
-const IMPORT_FILTERS = [
+const ht = ["openlyrics", "text"], Gi = [
   { name: "Songs (text, OpenLyrics, OpenSong)", extensions: ["txt", "xml"] },
   // OpenSong song files usually have no extension.
   { name: "All files", extensions: ["*"] }
 ];
-function windowOf(event) {
-  return BrowserWindow.fromWebContents(event.sender) ?? void 0;
+function Se(t) {
+  return se.fromWebContents(t.sender) ?? void 0;
 }
-function assertPaths(value) {
-  if (!Array.isArray(value) || value.length === 0 || !value.every((p) => typeof p === "string" && path.isAbsolute(p))) {
+function zi(t) {
+  if (!Array.isArray(t) || t.length === 0 || !t.every((e) => typeof e == "string" && E.isAbsolute(e)))
     throw new TypeError("Paths must be a non-empty list of absolute paths");
-  }
-  return value;
+  return t;
 }
-function assertSongIds(value) {
-  if (value === null) return null;
-  if (!Array.isArray(value) || !value.every((id) => Number.isInteger(id) && id > 0)) {
+function Di(t) {
+  if (t === null) return null;
+  if (!Array.isArray(t) || !t.every((e) => Number.isInteger(e) && e > 0))
     throw new TypeError("Song ids must be a list of positive integers, or null for every song");
-  }
-  return value;
+  return t;
 }
-function assertFormat(value) {
-  if (!EXPORT_FORMATS.includes(value)) {
-    throw new TypeError(`Export format must be one of ${EXPORT_FORMATS.join(", ")}`);
-  }
-  return value;
+function Ki(t) {
+  if (!ht.includes(t))
+    throw new TypeError(`Export format must be one of ${ht.join(", ")}`);
+  return t;
 }
-function registerSongFileIpc() {
-  ipcMain.handle("songFiles:pickFiles", async (event) => {
-    const options = {
+function Ji() {
+  m.handle("songFiles:pickFiles", async (t) => {
+    const e = {
       title: "Import songs",
       properties: ["openFile", "multiSelections"],
-      filters: IMPORT_FILTERS
-    };
-    const win2 = windowOf(event);
-    const { canceled, filePaths } = win2 ? await dialog.showOpenDialog(win2, options) : await dialog.showOpenDialog(options);
-    return canceled || filePaths.length === 0 ? null : scanSongFiles(filePaths);
-  });
-  ipcMain.handle("songFiles:pickFolder", async (event) => {
-    const options = { title: "Import a folder of songs", properties: ["openDirectory"] };
-    const win2 = windowOf(event);
-    const { canceled, filePaths } = win2 ? await dialog.showOpenDialog(win2, options) : await dialog.showOpenDialog(options);
-    return canceled || filePaths.length === 0 ? null : scanSongFiles(filePaths);
-  });
-  ipcMain.handle("songFiles:scan", (_event, paths) => scanSongFiles(assertPaths(paths)));
-  ipcMain.handle("songFiles:import", (_event, songs) => {
-    if (!Array.isArray(songs)) throw new TypeError("Songs must be a list");
-    return createSongs(songs.map(assertSongInput));
-  });
-  ipcMain.handle(
+      filters: Gi
+    }, n = Se(t), { canceled: r, filePaths: i } = n ? await R.showOpenDialog(n, e) : await R.showOpenDialog(e);
+    return r || i.length === 0 ? null : we(i);
+  }), m.handle("songFiles:pickFolder", async (t) => {
+    const e = { title: "Import a folder of songs", properties: ["openDirectory"] }, n = Se(t), { canceled: r, filePaths: i } = n ? await R.showOpenDialog(n, e) : await R.showOpenDialog(e);
+    return r || i.length === 0 ? null : we(i);
+  }), m.handle("songFiles:scan", (t, e) => we(zi(e))), m.handle("songFiles:import", (t, e) => {
+    if (!Array.isArray(e)) throw new TypeError("Songs must be a list");
+    return In(e.map(Ae));
+  }), m.handle(
     "songFiles:export",
-    async (event, songIds, format) => {
-      const ids = assertSongIds(songIds);
-      const fileFormat = assertFormat(format);
-      const songs = songsForExport(ids);
-      if (songs.length === 0) throw new Error("There are no songs to export");
-      const win2 = windowOf(event);
-      if (songs.length === 1 && ids !== null) {
-        const options2 = {
+    async (t, e, n) => {
+      const r = Di(e), i = Ki(n), s = Xi(r);
+      if (s.length === 0) throw new Error("There are no songs to export");
+      const a = Se(t);
+      if (s.length === 1 && r !== null) {
+        const c = {
           title: "Export song",
-          defaultPath: suggestedFileName(songs[0], fileFormat),
-          filters: [{ name: fileFormat === "openlyrics" ? "OpenLyrics XML" : "Text", extensions: [EXPORT_EXTENSIONS[fileFormat].slice(1)] }]
-        };
-        const { canceled: canceled2, filePath } = win2 ? await dialog.showSaveDialog(win2, options2) : await dialog.showSaveDialog(options2);
-        if (canceled2 || !filePath) return null;
-        await writeSongFile(songs[0], fileFormat, filePath);
-        return { written: 1, location: filePath };
+          defaultPath: qi(s[0], i),
+          filters: [{ name: i === "openlyrics" ? "OpenLyrics XML" : "Text", extensions: [pe[i].slice(1)] }]
+        }, { canceled: u, filePath: p } = a ? await R.showSaveDialog(a, c) : await R.showSaveDialog(c);
+        return u || !p ? null : (await Hi(s[0], i, p), { written: 1, location: p });
       }
-      const options = {
-        title: `Choose a folder for ${songs.length} songs`,
+      const o = {
+        title: `Choose a folder for ${s.length} songs`,
         buttonLabel: "Export here",
         properties: ["openDirectory", "createDirectory"]
-      };
-      const { canceled, filePaths } = win2 ? await dialog.showOpenDialog(win2, options) : await dialog.showOpenDialog(options);
-      if (canceled || filePaths.length === 0) return null;
-      return { written: await writeSongFolder(songs, fileFormat, filePaths[0]), location: filePaths[0] };
+      }, { canceled: l, filePaths: d } = a ? await R.showOpenDialog(a, o) : await R.showOpenDialog(o);
+      return l || d.length === 0 ? null : { written: await Yi(s, i, d[0]), location: d[0] };
     }
   );
 }
-const MODES = ["show", "black", "clear", "logo"];
-let lastState = { mode: "black", text: "", caption: "", background: "#000" };
-function assertOutputState(value) {
-  const state = value;
-  if (typeof state !== "object" || state === null || !MODES.includes(state.mode) || typeof state.text !== "string" || typeof state.caption !== "string" || typeof state.background !== "string") {
-    throw new TypeError("Output state needs a mode, text, caption and background");
-  }
-  return { mode: state.mode, text: state.text, caption: state.caption, background: state.background };
+const We = "wd-media", Fe = () => E.join(G.getPath("userData"), "media");
+function Qi() {
+  gt.registerSchemesAsPrivileged([
+    { scheme: We, privileges: { standard: !0, secure: !0, supportFetchAPI: !0, stream: !0 } }
+  ]);
 }
-function registerOutputIpc(getOutputWindow) {
-  ipcMain.on("output:send", (_event, state) => {
-    var _a;
+function Zi() {
+  gt.handle(We, (t) => {
+    const e = decodeURIComponent(new URL(t.url).pathname.replace(/^\//, ""));
+    return !e || e !== E.basename(e) || e.startsWith(".") ? new Response("Not found", { status: 404 }) : Qt.fetch(Zt(E.join(Fe(), e)).toString(), { headers: t.headers });
+  });
+}
+async function es(t) {
+  await sn(Fe(), { recursive: !0 });
+  const e = E.extname(t).toLowerCase(), n = E.basename(t, E.extname(t)).replace(/[^\w.-]+/g, "-").slice(0, 60), r = `${Date.now()}-${n || "media"}${e}`;
+  return await on(t, E.join(Fe(), r)), `${We}://local/${encodeURIComponent(r)}`;
+}
+const ts = {
+  image: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp", "gif"] }],
+  video: [{ name: "Videos", extensions: ["mp4", "webm", "mov", "m4v"] }]
+};
+function Ne(t) {
+  if (!Number.isInteger(t) || t < 1) throw new TypeError("Theme id must be a positive integer");
+  return t;
+}
+function ft(t) {
+  if (typeof t != "string" || t.trim() === "") throw new TypeError("Theme needs a non-empty name");
+  return t.trim();
+}
+function ns(t) {
+  if (!xe.includes(t))
+    throw new TypeError(`Content type must be one of ${xe.join(", ")}`);
+  return t;
+}
+function rs() {
+  m.handle("themes:list", () => mn()), m.handle(
+    "themes:create",
+    (t, e, n) => En(ft(e), X(n))
+  ), m.handle(
+    "themes:update",
+    (t, e, n, r) => yn(Ne(e), ft(n), X(r))
+  ), m.handle("themes:delete", (t, e) => bn(Ne(e))), m.handle("themes:getDefaults", () => Tn()), m.handle(
+    "themes:setDefault",
+    (t, e, n) => wn(ns(e), Ne(n))
+  ), m.handle("themes:pickMedia", async (t, e) => {
+    if (e !== "image" && e !== "video") throw new TypeError("Media kind must be image or video");
+    const n = {
+      title: e === "image" ? "Choose a background image" : "Choose a background video",
+      properties: ["openFile"],
+      filters: ts[e]
+    }, r = se.fromWebContents(t.sender), { canceled: i, filePaths: s } = r ? await R.showOpenDialog(r, n) : await R.showOpenDialog(n);
+    return i || s.length === 0 ? null : es(s[0]);
+  });
+}
+const is = ["show", "black", "clear", "logo"];
+let $e = { mode: "black", text: "", caption: "", theme: F };
+function ss(t) {
+  const e = t;
+  if (typeof e != "object" || e === null || !is.includes(e.mode) || typeof e.text != "string" || typeof e.caption != "string" || typeof e.theme != "object")
+    throw new TypeError("Output state needs a mode, text, caption and theme");
+  return { mode: e.mode, text: e.text, caption: e.caption, theme: X(e.theme) };
+}
+function os(t) {
+  m.on("output:send", (e, n) => {
+    var r;
     try {
-      lastState = assertOutputState(state);
-    } catch (error) {
-      console.error(error);
+      $e = ss(n);
+    } catch (i) {
+      console.error(i);
       return;
     }
-    (_a = getOutputWindow()) == null ? void 0 : _a.webContents.send("output:state", lastState);
+    (r = t()) == null || r.webContents.send("output:state", $e);
   });
 }
-function sendLastOutputState(win2) {
-  win2.webContents.send("output:state", lastState);
+function as(t) {
+  t.webContents.send("output:state", $e);
 }
-const __dirname$1 = path.dirname(fileURLToPath(import.meta.url));
-process.env.APP_ROOT = path.join(__dirname$1, "..");
-const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
-const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
-const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
-process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
-let win;
-let outputWin = null;
-function createWindow() {
-  win = new BrowserWindow({
-    icon: path.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
+const Xe = E.dirname(en(import.meta.url));
+process.env.APP_ROOT = E.join(Xe, "..");
+const ie = process.env.VITE_DEV_SERVER_URL, fs = E.join(process.env.APP_ROOT, "dist-electron"), qe = E.join(process.env.APP_ROOT, "dist");
+process.env.VITE_PUBLIC = ie ? E.join(process.env.APP_ROOT, "public") : qe;
+Qi();
+let O, v = null;
+function Kt() {
+  O = new se({
+    icon: E.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
     webPreferences: {
-      preload: path.join(__dirname$1, "preload.mjs")
+      preload: E.join(Xe, "preload.mjs")
     }
-  });
-  win.webContents.on("did-finish-load", () => {
-    win == null ? void 0 : win.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
-  });
-  if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL);
-  } else {
-    win.loadFile(path.join(RENDERER_DIST, "index.html"));
-  }
-  win.on("closed", () => {
-    win = null;
-    outputWin == null ? void 0 : outputWin.close();
+  }), O.webContents.on("did-finish-load", () => {
+    O == null || O.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
+  }), ie ? O.loadURL(ie) : O.loadFile(E.join(qe, "index.html")), O.on("closed", () => {
+    O = null, v == null || v.close();
   });
 }
-function createOutputWindow() {
-  const primaryId = screen.getPrimaryDisplay().id;
-  const external = screen.getAllDisplays().find((display) => display.id !== primaryId);
-  outputWin = new BrowserWindow({
+function Jt() {
+  const t = Ye.getPrimaryDisplay().id, e = Ye.getAllDisplays().find((n) => n.id !== t);
+  v = new se({
     title: "WorshipDeck Output",
     backgroundColor: "#000",
-    ...external ? { ...external.bounds, fullscreen: true, frame: false } : { width: 960, height: 540, resizable: true },
+    ...e ? { ...e.bounds, fullscreen: !0, frame: !1 } : { width: 960, height: 540, resizable: !0 },
     webPreferences: {
-      preload: path.join(__dirname$1, "preload.mjs")
+      preload: E.join(Xe, "preload.mjs")
     }
-  });
-  outputWin.webContents.on("did-finish-load", () => {
-    if (outputWin) sendLastOutputState(outputWin);
-  });
-  outputWin.on("closed", () => {
-    outputWin = null;
-  });
-  if (VITE_DEV_SERVER_URL) {
-    outputWin.loadURL(`${VITE_DEV_SERVER_URL}#/output`);
-  } else {
-    outputWin.loadFile(path.join(RENDERER_DIST, "index.html"), { hash: "/output" });
-  }
+  }), v.webContents.on("did-finish-load", () => {
+    v && as(v);
+  }), v.on("closed", () => {
+    v = null;
+  }), ie ? v.loadURL(`${ie}#/output`) : v.loadFile(E.join(qe, "index.html"), { hash: "/output" });
 }
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-    win = null;
-  }
+G.on("window-all-closed", () => {
+  process.platform !== "darwin" && (G.quit(), O = null);
 });
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-    createOutputWindow();
-  }
+G.on("activate", () => {
+  se.getAllWindows().length === 0 && (Kt(), Jt());
 });
-app.whenReady().then(() => {
-  registerSongIpc();
-  registerBibleIpc();
-  registerServiceIpc();
-  registerSongFileIpc();
-  registerOutputIpc(() => outputWin);
-  createWindow();
-  createOutputWindow();
+G.whenReady().then(() => {
+  gn(), Zi(), Ln(), Mn(), Dn(), Ji(), rs(), os(() => v), Kt(), Jt();
 });
 export {
-  MAIN_DIST,
-  RENDERER_DIST,
-  VITE_DEV_SERVER_URL
+  fs as MAIN_DIST,
+  qe as RENDERER_DIST,
+  ie as VITE_DEV_SERVER_URL
 };

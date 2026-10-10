@@ -9,6 +9,7 @@ interface SongRow {
   copyright: string | null
   tags: string | null
   arrangement: string | null
+  theme_id: number | null
   lyrics: string | null
 }
 
@@ -32,6 +33,7 @@ function toSong(row: SongRow): Song {
     copyright: row.copyright,
     tags: Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : [],
     arrangement: isArrangement(arrangement) ? arrangement : DEFAULT_ARRANGEMENT,
+    themeId: row.theme_id,
     lyrics: row.lyrics ?? '',
   }
 }
@@ -50,6 +52,7 @@ function songParams(input: SongInput) {
     copyright: input.copyright,
     tags: JSON.stringify(input.tags),
     arrangement: JSON.stringify(input.arrangement),
+    theme_id: input.themeId,
     lyrics: input.lyrics,
   }
 }
@@ -77,7 +80,7 @@ export function listSongs(search?: string): SongSummary[] {
 
 export function getSong(id: number): Song | undefined {
   const row = db
-    .prepare('SELECT id, title, author, copyright, tags, arrangement, lyrics FROM songs WHERE id = ?')
+    .prepare('SELECT id, title, author, copyright, tags, arrangement, theme_id, lyrics FROM songs WHERE id = ?')
     .get(id) as SongRow | undefined
   return row && toSong(row)
 }
@@ -85,8 +88,8 @@ export function getSong(id: number): Song | undefined {
 export const createSong = db.transaction((input: SongInput): Song => {
   const result = db
     .prepare(
-      `INSERT INTO songs (title, author, copyright, tags, arrangement, lyrics)
-       VALUES (@title, @author, @copyright, @tags, @arrangement, @lyrics)`,
+      `INSERT INTO songs (title, author, copyright, tags, arrangement, theme_id, lyrics)
+       VALUES (@title, @author, @copyright, @tags, @arrangement, @theme_id, @lyrics)`,
     )
     .run(songParams(input))
   const id = Number(result.lastInsertRowid)
@@ -105,7 +108,7 @@ export const updateSong = db.transaction((id: number, input: SongInput): boolean
   const result = db
     .prepare(
       `UPDATE songs SET title = @title, author = @author, copyright = @copyright, tags = @tags,
-         arrangement = @arrangement, lyrics = @lyrics
+         arrangement = @arrangement, theme_id = @theme_id, lyrics = @lyrics
        WHERE id = @id`,
     )
     .run({ ...songParams(input), id })
