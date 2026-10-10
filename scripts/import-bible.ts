@@ -11,7 +11,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Database from 'better-sqlite3'
-import { initSchema } from '../electron/db/schema.ts'
+import { initSchema, rebuildVerseIndex } from '../electron/db/schema.ts'
 
 interface GetBibleTranslation {
   translation: string
@@ -115,6 +115,9 @@ async function main(): Promise<void> {
     const count = db.transaction(() => importTranslation(db, code, data))()
     console.log(`  ${code}  ${data.translation}: ${count} verses`)
   }
+  // Keyword search reads from this index, which does not follow changes to verses on its own.
+  console.log('Building the verse search index')
+  rebuildVerseIndex(db)
   db.close()
 }
 

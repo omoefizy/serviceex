@@ -1854,20 +1854,6 @@ button {
   overflow-y: auto;
 }
 
-.topic-search {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
-}
-
-.topic-search .settings-row .input {
-  flex: 1;
-  min-width: 0;
-}
-
-.topic-results,
 .sermon-list {
   display: flex;
   flex-direction: column;
@@ -1877,13 +1863,151 @@ button {
   list-style: none;
 }
 
-.topic-result {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-1);
+.topic-result-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
-.topic-result-main {
+/* Search box: one input with a suggestion dropdown, a "By meaning" button and filters. */
+.scripture-search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.scripture-search-row {
+  display: flex;
+  gap: var(--space-1-5);
+}
+
+.scripture-combobox {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  z-index: 6;
+  max-height: 320px;
+  margin: 0;
+  padding: var(--space-1);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  list-style: none;
+}
+
+.search-suggest-item {
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.search-suggest-item.active {
+  background: var(--accent-soft);
+}
+
+.search-suggest-item.text {
+  margin-top: var(--space-1);
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 4px 4px;
+  color: var(--text-muted);
+}
+
+.scripture-filters {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  gap: var(--space-1-5);
+}
+
+.scripture-filters .input {
+  min-width: 0;
+  padding: var(--space-1) var(--space-1-5);
+  font-size: 12px;
+}
+
+.recent-searches {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+}
+
+.recent-searches .hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-top: var(--space-1);
+  white-space: nowrap;
+}
+
+.recent-searches .chips {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Results: verse cards with highlighted matches, and a bar for what is ticked. */
+.verse-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.verse-results-head {
+  font-size: 12px;
+}
+
+.selection-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-2);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--panel);
+  font-size: 12px;
+}
+
+.selection-bar .button {
+  padding: var(--space-1) var(--space-2);
+  font-size: 12px;
+}
+
+.verse-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.verse-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+}
+
+.verse-card > input[type='checkbox'] {
+  margin-top: var(--space-2-5);
+}
+
+.verse-card-main {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -1897,22 +2021,35 @@ button {
   cursor: pointer;
 }
 
-.topic-result-main:hover:not(:disabled) {
+.verse-card-main:hover {
   border-color: var(--text-muted);
 }
 
-.topic-result-main:disabled {
-  cursor: default;
-  opacity: 0.6;
+.verse-card.selected .verse-card-main {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
-.topic-result-text {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-  color: var(--text-muted);
+.verse-card-ref {
   font-size: 12px;
+  font-weight: 700;
+}
+
+.verse-card-text {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.verse-card-text mark {
+  border-radius: 2px;
+  background: rgba(250, 204, 21, 0.35);
+  color: inherit;
+}
+
+.verse-results-more {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-2) 0;
 }
 
 .sermon-modal {

@@ -81,6 +81,15 @@ export function initSchema(db: Database.Database): void {
       PRIMARY KEY (deck_key, slide_index)
     );
 
+    -- Full-text index over verses.text for keyword search. It reads its text from verses (external content),
+    -- so it must be rebuilt after verses change: the Bible import does that, and ensureVerseIndex catches up.
+    CREATE VIRTUAL TABLE IF NOT EXISTS verses_fts USING fts5(
+      text,
+      content = 'verses',
+      content_rowid = 'id',
+      tokenize = 'unicode61 remove_diacritics 2'
+    );
+
     -- App-wide choices such as the default theme per content type.
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
@@ -94,6 +103,18 @@ export function initSchema(db: Database.Database): void {
   addColumnIfMissing(db, 'songs', 'tags', 'TEXT') // JSON array of strings
   addColumnIfMissing(db, 'songs', 'arrangement', 'TEXT') // JSON SongArrangement
   addColumnIfMissing(db, 'songs', 'theme_id', 'INTEGER') // themes.id; null uses the default song theme
+}
+
+/** Rebuilds the verse search index from the verses table. Takes a second or two for both Bibles. */
+export function rebuildVerseIndex(db: Database.Database): void {
+  db.exec("INSERT INTO verses_fts (verses_fts) VALUES ('rebuild')")
+}
+
+/** Rebuilds the verse search index when it does not cover every verse, as after upgrading an existing install. */
+export function ensureVerseIndex(db: Database.Database): void {
+  const { verses } = db.prepare('SELECT count(*) AS verses FROM verses').get() as { verses: number }
+  const { indexed } = db.prepare('SELECT count(*) AS indexed FROM verses_fts_docsize').get() as { indexed: number }
+  if (verses !== indexed) rebuildVerseIndex(db)
 }
 
 function addColumnIfMissing(db: Database.Database, table: string, column: string, type: string): void {

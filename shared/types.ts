@@ -317,6 +317,35 @@ export interface Verse {
   text: string
 }
 
+export type Testament = 'all' | 'old' | 'new'
+
+export interface VerseSearchParams {
+  /**
+   * What was typed. Words must all appear; the last one also matches as a prefix while it is being typed
+   * ("fear of the lo"). Wrap it in double quotes to search for the exact phrase.
+   */
+  query: string
+  versions: BibleVersionCode[]
+  testament: Testament
+  /** Only this book, or null for any. */
+  book: string | null
+  offset: number
+  limit: number
+}
+
+export interface VerseHit extends Verse {
+  /** The verse row id, unique across versions. */
+  id: number
+  version: BibleVersionCode
+  /** The verse text split into the words that matched and the rest, for highlighting. */
+  segments: { text: string; match: boolean }[]
+}
+
+export interface VerseSearchResult {
+  total: number
+  hits: VerseHit[]
+}
+
 export interface BibleApi {
   getVerse(version: BibleVersionCode, book: string, chapter: number, verse: number): Promise<Verse | undefined>
   /** Verses `verseStart` to `verseEnd` inclusive, in order. */
@@ -331,6 +360,10 @@ export interface BibleApi {
   searchText(version: BibleVersionCode, query: string): Promise<Verse[]>
   /** Book names in Bible order. Empty until the Bible data is imported. */
   listBooks(): Promise<string[]>
+  /** Full-text search over the local Bible (SQLite FTS5), ranked by relevance. */
+  search(params: VerseSearchParams): Promise<VerseSearchResult>
+  /** Verses per chapter for a book, from the KJV: [31, 25, …] means chapter 1 has 31 verses. Empty if unknown. */
+  bookStructure(book: string): Promise<number[]>
 }
 
 export interface ServicesApi {

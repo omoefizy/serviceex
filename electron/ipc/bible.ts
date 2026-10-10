@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
-import type { BibleVersionCode } from '../../shared/types'
-import { getRange, getVerse, listBooks, searchText } from '../db/bible'
+import { BOOK_NAMES } from '../../shared/parseReference'
+import type { BibleVersionCode, Testament, VerseSearchParams } from '../../shared/types'
+import { bookStructure, getRange, getVerse, listBooks, searchText, searchVerses } from '../db/bible'
 
 // Arguments arrive from the renderer, so check their shape before they reach the database.
 
@@ -47,4 +48,29 @@ export function registerBibleIpc(): void {
   )
 
   ipcMain.handle('bible:listBooks', () => listBooks())
+
+  ipcMain.handle('bible:search', (_event, params: unknown) => searchVerses(assertSearchParams(params)))
+
+  ipcMain.handle('bible:bookStructure', (_event, book: unknown) => bookStructure(assertBook(book)))
+}
+
+const TESTAMENTS: Testament[] = ['all', 'old', 'new']
+
+function assertSearchParams(value: unknown): VerseSearchParams {
+  const p = value as Partial<VerseSearchParams> | null
+  if (typeof p !== 'object' || p === null || typeof p.query !== 'string' || p.query.length > 500) {
+    throw new TypeError('Search needs a query of up to 500 characters')
+  }
+  if (!Array.isArray(p.versions) || !p.versions.every((v) => VERSIONS.includes(v))) throw new TypeError('Unknown Bible version')
+  if (!TESTAMENTS.includes(p.testament as Testament)) throw new TypeError('Testament must be all, old or new')
+  if (p.book !== null && !BOOK_NAMES.includes(p.book as string)) throw new TypeError('Unknown book')
+  const whole = (n: unknown, max: number) => (Number.isInteger(n) && (n as number) >= 0 ? Math.min(n as number, max) : 0)
+  return {
+    query: p.query,
+    versions: [...new Set(p.versions)],
+    testament: p.testament as Testament,
+    book: p.book as string | null,
+    offset: whole(p.offset, 100_000),
+    limit: Math.max(1, whole(p.limit, 100)),
+  }
 }

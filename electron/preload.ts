@@ -51,6 +51,8 @@ const bible: BibleApi = {
     ipcRenderer.invoke('bible:getRange', version, book, chapter, verseStart, verseEnd),
   searchText: (version, query) => ipcRenderer.invoke('bible:searchText', version, query),
   listBooks: () => ipcRenderer.invoke('bible:listBooks'),
+  search: (params) => ipcRenderer.invoke('bible:search', params),
+  bookStructure: (book) => ipcRenderer.invoke('bible:bookStructure', book),
 }
 
 const services: ServicesApi = {

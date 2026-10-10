@@ -144,3 +144,71 @@ export function formatReference({ book, chapter, verseStart, verseEnd }: Scriptu
     ? `${book} ${chapter}:${verseStart}-${verseEnd}`
     : `${book} ${chapter}:${verseStart}`
 }
+
+// ---------- Typing a reference ----------
+
+/** The 66 book names in Bible order. */
+export const BOOK_NAMES = BOOKS.map(([name]) => name)
+
+/** Genesis to Malachi; the rest are the New Testament. */
+export const OLD_TESTAMENT_BOOKS = BOOK_NAMES.slice(0, 39)
+export const NEW_TESTAMENT_BOOKS = BOOK_NAMES.slice(39)
+
+const BOOK_PREFIX = /^(?:([123])\s*|(i{1,3}|first|second|third)\s+)?([a-z][a-z ]*)$/
+
+/**
+ * Books whose name or abbreviation starts with what was typed, in Bible order: "jo" gives Joshua, Job, Joel, John,
+ * Jonah and then 1-3 John; "1 c" gives 1 Corinthians and 1 Chronicles; "ps" gives Psalms. Needs two characters.
+ */
+export function bookPrefixMatches(input: string): string[] {
+  const text = input.toLowerCase().replace(/\./g, ' ').replace(/\s+/g, ' ').trimStart()
+  const match = BOOK_PREFIX.exec(text.trimEnd())
+  if (!match || text.replace(/\s/g, '').length < 2) return []
+  const number = match[1] ?? (match[2] ? ORDINALS[match[2]] : undefined)
+  const typed = match[3].replace(/\s+/g, '')
+
+  const unnumbered: string[] = []
+  const numbered: string[] = []
+  for (const [name, aliases] of BOOKS) {
+    const bookNumber = /^[123] /.test(name) ? name[0] : undefined
+    if (number && bookNumber !== number) continue
+    const base = toKey(bookNumber ? name.slice(2) : name)
+    if ([base, ...aliases].some((key) => key.startsWith(typed))) (bookNumber && !number ? numbered : unnumbered).push(name)
+  }
+  return [...unnumbered, ...numbered]
+}
+
+/** How far a partly typed reference has got, for suggesting what comes next. */
+export type ReferenceInput =
+  /** A start of a book name: suggest books. */
+  | { stage: 'book'; books: string[] }
+  /** A book, and maybe the start of a chapter number: suggest chapters starting with `chapterPrefix`. */
+  | { stage: 'chapter'; book: string; chapterPrefix: string }
+  /** A book and chapter, then ":" or a space, and maybe the start of a verse number: suggest verses. */
+  | { stage: 'verse'; book: string; chapter: number; versePrefix: string }
+  /** Not a reference being typed (a keyword search), or a range, which only parseReference handles. */
+  | null
+
+const PARTIAL = /^(.*?[a-z])\s*(\d+)?(?:(\s*[:.]\s*|\s+)(\d*))?$/
+
+export function readReferenceInput(input: string): ReferenceInput {
+  const text = input.toLowerCase().replace(/(?<=[a-z])\./g, ' ').replace(/\s+/g, ' ').trimStart()
+  if (text.includes('-')) return null
+  const match = PARTIAL.exec(text)
+  if (!match) return null
+  const [, bookText, chapter, separator, verse] = match
+  const named = BOOK_PREFIX.exec(bookText.trim())
+  const book = named ? findBook(named[1] ?? named[2], named[3].trim()) : null
+
+  if (chapter === undefined) {
+    // "john " (a whole book name and a space) moves on to chapters; otherwise suggest books.
+    if (book && text.endsWith(' ') && ALIASES.get(toKey(bookText.trim()).replace(/^(?:first|second|third|i{1,3})/, (w) => ORDINALS[w])) === book) {
+      return { stage: 'chapter', book, chapterPrefix: '' }
+    }
+    const books = bookPrefixMatches(text)
+    return books.length > 0 ? { stage: 'book', books } : null
+  }
+  if (!book) return null
+  if (separator === undefined) return { stage: 'chapter', book, chapterPrefix: chapter }
+  return { stage: 'verse', book, chapter: Number(chapter), versePrefix: verse ?? '' }
+}
