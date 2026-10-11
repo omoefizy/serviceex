@@ -22,6 +22,7 @@ const DEFAULTS: AppSettings = {
   scriptureDetection: true,
   detectionMinConfidence: 0.6,
   detectionAlert: 'off',
+  aiScriptureFallback: false,
   quoteSpeakerName: '',
   statementPicking: false,
 }
@@ -52,6 +53,7 @@ const KEYS: Record<keyof AppSettings, string> = {
   scriptureDetection: 'detection.enabled',
   detectionMinConfidence: 'detection.minConfidence',
   detectionAlert: 'detection.alert',
+  aiScriptureFallback: 'detection.aiFallback',
   quoteSpeakerName: 'quote.speakerName',
   statementPicking: 'detection.statements',
 }
@@ -77,6 +79,7 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'micProcessing':
     case 'scriptureDetection':
     case 'statementPicking':
+    case 'aiScriptureFallback':
       return typeof value === 'boolean' ? v : undefined
     case 'quoteSpeakerName':
       return typeof value === 'string' && value.length <= 100 ? (value.trim() as never) : undefined

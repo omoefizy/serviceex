@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SpeechEngineId, SpeechMode } from '../../shared/types'
 import { useListener, type ListenerStatus } from '../lib/listener'
 import { meterFraction } from '../lib/mic'
+import { useDetectionDebug } from '../lib/scriptureDetection'
 import { useOperatorStore } from '../store'
 import { QuoteModal } from './QuoteModal'
 
@@ -42,6 +43,31 @@ function chipOf(status: ListenerStatus, mode: SpeechMode | null, reason: string,
 
 const ENGINE_LABELS: Record<SpeechEngineId, string> = { auto: 'Auto', deepgram: 'Cloud only', whisper: 'Offline only' }
 
+/** What scripture detection did with the last stretch of transcript, and how fast the last card came. */
+function DetectionDebugView() {
+  const { run, card } = useDetectionDebug()
+  return (
+    <div className="detection-debug" aria-label="Scripture detection debug">
+      <p>
+        <strong>Segment</strong> {run ? `(${run.source}, ${clockTime(run.at)})` : ''}: {run ? <q>{run.segment}</q> : 'nothing heard yet'}
+      </p>
+      {run && (
+        <ol>
+          {run.stages.map((stage, i) => (
+            <li key={i}>
+              <code>{stage.name}</code> {stage.ms} ms · {stage.result}
+            </li>
+          ))}
+        </ol>
+      )}
+      <p>
+        <strong>Last card</strong>:{' '}
+        {card ? `${card.label}, from the ${card.stage}, ${card.latencyMs} ms after the words arrived (${clockTime(card.at)})` : 'none yet'}
+      </p>
+    </div>
+  )
+}
+
 const clockTime = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
 /** Start and stop the sermon listener, and watch the live transcript: settled text in white, words still forming in grey. */
@@ -61,6 +87,8 @@ export function ListenerPanel() {
   const [selection, setSelection] = useState<{ text: string; top: number; left: number } | null>(null)
   /** The words open in the quote editor. */
   const [quoting, setQuoting] = useState<string | null>(null)
+  /** Shows what scripture detection is doing; off by default. */
+  const [debugging, setDebugging] = useState(false)
 
   // Shows the floating button for a selection inside the transcript, and hides it when the selection goes.
   useEffect(() => {
@@ -227,6 +255,11 @@ export function ListenerPanel() {
           </ol>
         )}
       </details>
+      <label className="inline-check listener-debug-toggle">
+        <input type="checkbox" checked={debugging} onChange={(e) => setDebugging(e.target.checked)} />
+        Detection debug
+      </label>
+      {debugging && <DetectionDebugView />}
     </section>
   )
 }

@@ -1,10 +1,10 @@
 import { NEW_TESTAMENT_BOOKS, OLD_TESTAMENT_BOOKS } from '../../shared/parseReference'
 import type { BibleVersionCode, Verse, VerseHit, VerseSearchParams, VerseSearchResult } from '../../shared/types'
 import { db } from './index'
-import { findQuote } from './quoteMatch'
+import { findQuotes } from './quoteMatch'
 
-/** The verse a piece of transcript quotes, if the match is strong; see quoteMatch. */
-export const matchQuote = (text: string) => findQuote(db, text)
+/** The verses a piece of transcript may quote, strongest first; see quoteMatch. */
+export const matchQuote = (text: string) => findQuotes(db, text)
 
 const VERSE_COLUMNS = 'v.book, v.chapter, v.verse, v.text'
 const FROM_VERSION = 'FROM verses v JOIN bible_versions b ON b.id = v.version_id WHERE b.code = @version'

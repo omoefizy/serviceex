@@ -5,7 +5,7 @@ import { create } from 'zustand'
 import type { SpeechMode, SpeechPerformance, SpeechStatus } from '../../shared/types'
 import { useOperatorStore } from '../store'
 import { startMic, type MicCapture } from './mic'
-import { detectScripture } from './scriptureDetection'
+import { detectFromPartial, detectScripture, resetDetection } from './scriptureDetection'
 import { collectStatementText } from './statements'
 
 export type ListenerStatus = SpeechStatus | 'starting'
@@ -91,6 +91,8 @@ export const useListener = create<ListenerState>((set, get) => ({
     if (get().status !== 'idle' && get().status !== 'error') return
     set({ status: 'starting', error: null, performance: null, mode: null, modeReason: '', warning: null, restarting: null, notice: null, dropouts: 0 })
     addLog('Start pressed; opening the microphone.')
+    // A new session starts without the last one's book and chapter.
+    resetDetection()
     // Audio captured before the engine is connected waits here, so the first words are not lost.
     let connected = false
     const waiting: ArrayBuffer[] = []
@@ -161,6 +163,8 @@ window.api?.speech.onEvent((event) => {
   switch (event.type) {
     case 'partial':
       set({ partial: event.text })
+      // Scripture is looked for in words still forming too, so a card can appear before the line is final.
+      detectFromPartial(event.text).catch(console.error)
       break
     case 'final':
       set((s) => ({ finals: [...s.finals, event.text], partial: '' }))

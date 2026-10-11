@@ -90,6 +90,10 @@ export function initSchema(db: Database.Database): void {
       tokenize = 'unicode61 remove_diacritics 2'
     );
 
+    -- How many verses each indexed word appears in, for weighting rare words in quote matching. A view of
+    -- verses_fts, so it is always up to date.
+    CREATE VIRTUAL TABLE IF NOT EXISTS verses_fts_vocab USING fts5vocab(verses_fts, 'row');
+
     -- App-wide choices such as the default theme per content type.
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,

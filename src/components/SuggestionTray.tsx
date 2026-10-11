@@ -7,6 +7,12 @@ import { QuoteModal } from './QuoteModal'
 
 const timeOf = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
 
+/** "12 s ago", "3 min ago". */
+function agoOf(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000))
+  return seconds < 60 ? `${seconds} s ago` : `${Math.floor(seconds / 60)} min ago`
+}
+
 /**
  * Verses heard in the live transcript, and statements the AI picked from it, newest first. A suggestion goes to
  * the preview, never live; Enter or Go Live then sends it. Verses disappear after two minutes and statements after
@@ -22,6 +28,16 @@ export function SuggestionTray() {
   /** Statements saved to the schedule this session, so the button says so. */
   const [scheduled, setScheduled] = useState<Set<number>>(new Set())
   const [error, setError] = useState<string | null>(null)
+  /** Ticks each second while there are cards, for "seconds ago". */
+  const [now, setNow] = useState(() => Date.now())
+  const showing = suggestions.length > 0
+
+  useEffect(() => {
+    if (!showing) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [showing])
 
   useEffect(() => {
     if (flashKey === 0) return
@@ -51,7 +67,7 @@ export function SuggestionTray() {
       <ul className="suggestion-list">
         {suggestions.map((s) =>
           s.type === 'scripture' ? (
-            <li key={s.id} className={`suggestion${s.id === previewedId ? ' previewed' : ''}${s.kind === 'quote' ? ' quote' : ''}`}>
+            <li key={s.id} className={`suggestion${s.id === previewedId ? ' previewed' : ''}${s.kind === 'reference' ? '' : ` ${s.kind}`}`}>
               <button
                 type="button"
                 className="suggestion-main"
@@ -63,12 +79,38 @@ export function SuggestionTray() {
                 }}
               >
                 <span className="suggestion-head">
-                  <strong>{s.label}</strong>
-                  {s.kind === 'quote' && <span className="suggestion-tag">Possible quote</span>}
-                  <span className="suggestion-time">{timeOf(s.heardAt)}</span>
+                  <strong className="suggestion-label">{s.label}</strong>
+                  {s.kind === 'quote' && <span className="suggestion-tag">Possible quote{s.version !== 'KJV' ? ` · ${s.version}` : ''}</span>}
+                  {s.kind === 'ai' && <span className="suggestion-tag ai">AI suggested</span>}
+                  <span className="suggestion-time" title={`Heard at ${timeOf(s.heardAt)}`}>
+                    {agoOf(now - s.heardAt)}
+                  </span>
                 </span>
-                <span className="suggestion-text">{s.text}</span>
+                <span className="suggestion-text">
+                  {s.highlight
+                    ? s.highlight.map((part, i) => (part.match ? <mark key={i}>{part.text}</mark> : <span key={i}>{part.text}</span>))
+                    : s.text}
+                </span>
               </button>
+              {s.alternatives.length > 0 && (
+                <div className="suggestion-alternatives" role="group" aria-label={`Other readings of ${s.label}`}>
+                  <span>or</span>
+                  {s.alternatives.map((alt, i) => (
+                    <button
+                      key={alt.label}
+                      type="button"
+                      className="suggestion-chip"
+                      title={`${alt.label}, ${Math.round(alt.confidence * 100)}% sure: ${alt.passage.verses[0]?.text ?? ''} Click to preview.`}
+                      onClick={(e) => {
+                        preview(s.id, i)
+                        e.currentTarget.blur()
+                      }}
+                    >
+                      {alt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <button type="button" className="suggestion-dismiss" aria-label={`Dismiss ${s.label}`} title="Dismiss" onClick={() => dismiss(s.id)}>
                 <X size={13} aria-hidden="true" />
               </button>

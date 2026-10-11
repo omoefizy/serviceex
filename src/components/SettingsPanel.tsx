@@ -574,6 +574,20 @@ function DetectionSection() {
           ))}
         </div>
       </div>
+      <label className="inline-check" title={settings.aiEnabled ? undefined : 'AI features are turned off above'}>
+        <input
+          type="checkbox"
+          checked={settings.aiEnabled && settings.aiScriptureFallback}
+          disabled={!settings.aiEnabled || !settings.scriptureDetection}
+          onChange={(e) => updateSettings({ aiScriptureFallback: e.target.checked })}
+        />
+        Ask AI when nothing is found
+      </label>
+      <p className="hint">
+        {settings.aiEnabled
+          ? 'When the talk sounds like scripture ("the Bible says", "in the book of") but nothing is found for 8 seconds, the last 25 seconds of transcript go to Claude Haiku, at most once every 10 seconds. It names passages only, each checked against the Bible here; they are marked "AI suggested".'
+          : 'Turn on AI features above to use this.'}
+      </p>
     </Section>
   )
 }

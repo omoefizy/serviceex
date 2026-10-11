@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AiResult } from '../../shared/types'
 
-const ask = vi.fn(async (_task: string, _input: { transcript: string }): Promise<AiResult<{ statements: string[] }>> => ({
+const ask = vi.fn<(task: string, input: { transcript: string }) => Promise<AiResult<{ statements: string[] }>>>(async () => ({
   ok: true,
   value: { statements: [] },
 }))

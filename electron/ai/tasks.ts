@@ -332,6 +332,28 @@ const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
     // Only words the speaker said, in their wording; nothing found is a normal answer.
     check: (output, input) => ({ statements: verbatimStatements((output as { statements?: unknown }).statements, input.transcript) }),
   },
+
+  findScriptureReferences: {
+    system: [
+      'You help a church presentation app follow a live sermon. The transcript comes from speech recognition and may',
+      'mishear words. Name the Bible passages the speaker is quoting, paraphrasing or clearly pointing to in it, at most',
+      'three, most likely first. Only passages the words themselves point to; when there are none, return an empty list.',
+      '',
+      REFERENCE_FORMAT,
+    ].join('\n'),
+    parseInput: (input) => {
+      if (!getAppSettings().aiScriptureFallback) throw new Error('AI scripture suggestions are turned off in Settings.')
+      return { transcript: textField(input, 'transcript') }
+    },
+    prompt: ({ transcript }) => `Transcript:\n\n${transcript}`,
+    schema: object({ references: { type: 'array', items: { type: 'string' } } }),
+    // Room for Haiku's thinking as well as the short answer.
+    maxTokens: 2000,
+    effort: 'low',
+    model: 'claude-haiku-5-5',
+    // Only passages that exist in the Bible database; finding none is a normal answer.
+    check: (output) => ({ references: existingReferences((output as { references?: unknown }).references).slice(0, 3) }),
+  },
 }
 
 export const isAiTask = (value: unknown): value is AiTask => typeof value === 'string' && value in TASKS

@@ -1144,6 +1144,29 @@ button {
   max-width: 140px;
 }
 
+/* Scripture detection debug: the segment read, each stage and its time, and the last card's latency. */
+.listener-debug-toggle {
+  font-size: 12px;
+}
+
+.detection-debug {
+  padding: var(--space-2);
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.detection-debug p,
+.detection-debug ol {
+  margin: 0;
+}
+
+.detection-debug ol {
+  padding-left: var(--space-4);
+  color: var(--text-muted);
+}
+
 /* How often the system muted the microphone this session; amber once it has happened. */
 .mic-dropouts {
   color: var(--text-muted);
@@ -1291,12 +1314,12 @@ button {
   text-transform: uppercase;
 }
 
-/* Newest first, scrolling sideways when there are many. */
+/* Newest first, scrolling sideways when there are many; room underneath so the scrollbar clears the chips. */
 .suggestion-list {
   display: flex;
   gap: var(--space-2);
   margin: 0;
-  padding: 0 0 var(--space-0-5);
+  padding: 0 0 var(--space-2);
   overflow-x: auto;
   list-style: none;
 }
@@ -1367,6 +1390,53 @@ button {
   line-height: 1.4;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+/* The top reading large; other readings as small chips under it. */
+.suggestion-label {
+  font-size: 16px;
+}
+
+.suggestion-tag.ai {
+  background: rgba(139, 92, 246, 0.18);
+  color: #a78bfa;
+}
+
+.suggestion.ai {
+  border-style: dotted;
+}
+
+.suggestion-text mark {
+  background: rgba(214, 185, 140, 0.28);
+  color: var(--text);
+  border-radius: 2px;
+}
+
+.suggestion-alternatives {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2) var(--space-2) var(--space-2-5);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.suggestion-chip {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.suggestion-chip:hover {
+  border-color: var(--next);
+  background: var(--accent-soft);
 }
 
 /* A statement from the sermon: its text, and Preview / Edit / Add to Schedule under it. */

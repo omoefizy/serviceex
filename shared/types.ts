@@ -271,6 +271,8 @@ export interface AppSettings {
   detectionMinConfidence: number
   /** How a new suggestion gets attention, besides appearing in the tray. */
   detectionAlert: 'off' | 'sound' | 'flash'
+  /** When the parser and quote matcher find nothing in scripture-like talk, asks Claude Haiku for references. Off by default; needs AI on. */
+  aiScriptureFallback: boolean
   /** The name under a quote slide unless changed, such as "Pastor Sam"; empty for none. */
   quoteSpeakerName: string
   /** Asks the AI every 30 seconds for quotable statements in the new transcript text. Off by default; needs AI on. */
@@ -394,8 +396,11 @@ export interface BibleApi {
   search(params: VerseSearchParams): Promise<VerseSearchResult>
   /** Verses per chapter for a book, from the KJV: [31, 25, …] means chapter 1 has 31 verses. Empty if unknown. */
   bookStructure(book: string): Promise<number[]>
-  /** The verse a piece of transcript quotes, when the words match it strongly; otherwise null. */
-  matchQuote(text: string): Promise<QuoteMatch | null>
+  /**
+   * The verses a piece of transcript (its last 8 to 25 words) may quote, strongest first, at most three; empty when
+   * nothing matches strongly. Both versions are searched.
+   */
+  matchQuote(text: string): Promise<QuoteMatch[]>
 }
 
 /** A verse the speaker seems to have quoted without naming it. */
@@ -409,6 +414,8 @@ export interface QuoteMatch {
   matched: number
   coverage: number
   confidence: number
+  /** The verse in the version that matched, split so the matched words can be highlighted. */
+  highlight: { text: string; match: boolean }[]
 }
 
 export interface ServicesApi {
@@ -528,6 +535,12 @@ export interface AiTasks {
    * word (case and punctuation aside) and returns the transcript's own wording.
    */
   pickStatements: { input: { transcript: string }; output: { statements: string[] } }
+  /**
+   * Names the passages a stretch of sermon transcript quotes, paraphrases or points to, when the app's own parser and
+   * quote matcher found nothing. References only, never verse text; each is checked to exist in the Bible database
+   * and at most 3 come back. Always uses Claude Haiku.
+   */
+  findScriptureReferences: { input: { transcript: string }; output: { references: string[] } }
 }
 
 export type AiTask = keyof AiTasks

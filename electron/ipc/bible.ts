@@ -54,7 +54,7 @@ export function registerBibleIpc(): void {
   ipcMain.handle('bible:bookStructure', (_event, book: unknown) => bookStructure(assertBook(book)))
 
   ipcMain.handle('bible:matchQuote', (_event, text: unknown) =>
-    typeof text === 'string' && text.length <= 2000 ? matchQuote(text) : null,
+    typeof text === 'string' && text.length <= 2000 ? matchQuote(text) : [],
   )
 }
 

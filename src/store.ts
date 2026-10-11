@@ -217,6 +217,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     scriptureDetection: true,
     detectionMinConfidence: 0.6,
     detectionAlert: 'off',
+    aiScriptureFallback: false,
     quoteSpeakerName: '',
     statementPicking: false,
   },
