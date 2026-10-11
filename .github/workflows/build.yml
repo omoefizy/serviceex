@@ -1,0 +1,61 @@
+# Builds the installers on macOS (dmg, Apple Silicon and Intel) and Windows (NSIS, x64) and keeps them as
+# artifacts of the run. Nothing is signed yet.
+name: Build installers
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # No code signing yet: do not look for a certificate in the keychain.
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22.18 or later runs the TypeScript scripts in scripts/ directly.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm test
+
+      # whisper.cpp's server for the offline sermon listener, put where electron-builder's extraResources looks.
+      # macOS builds it from source for each architecture (the runner is Apple Silicon); Windows downloads it.
+      - name: Fetch whisper.cpp (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          command -v cmake >/dev/null || brew install cmake
+          WHISPER_ARCH=arm64 npm run fetch:whisper
+          WHISPER_ARCH=x64 npm run fetch:whisper
+
+      - name: Fetch whisper.cpp (Windows)
+        if: runner.os == 'Windows'
+        run: npm run fetch:whisper
+
+      - name: Build installers (macOS)
+        if: runner.os == 'macOS'
+        run: npm run build:mac
+
+      - name: Build installers (Windows)
+        if: runner.os == 'Windows'
+        run: npm run build:win
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ runner.os }}
+          path: |
+            release/*/*.dmg
+            release/*/*.exe
+          if-no-files-found: error

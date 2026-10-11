@@ -3,6 +3,7 @@
 // into the packaged app's resources.
 //
 //   npm run fetch:whisper
+//   WHISPER_ARCH=x64 npm run fetch:whisper    for another architecture (an Intel Mac build on Apple Silicon)
 //
 // macOS: builds from source (needs the Xcode Command Line Tools and cmake, for example `brew install cmake`).
 // Windows: downloads the prebuilt CPU binaries from the same whisper.cpp release.
@@ -36,7 +37,7 @@ const WINDOWS: Record<string, { url: string; sha256: string }> = {
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 /** electron-builder's ${os} names, so its extraResources pattern finds the folder. */
 const OS_NAMES: Partial<Record<NodeJS.Platform, string>> = { darwin: 'mac', win32: 'win', linux: 'linux' }
-const arch = process.arch
+const arch = process.env.WHISPER_ARCH ?? process.arch
 const outDir = path.join(ROOT, 'vendor', 'whisper', `${OS_NAMES[process.platform]}-${arch}`)
 
 async function download(url: string, sha256: string, file: string): Promise<void> {

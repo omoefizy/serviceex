@@ -13,8 +13,9 @@ node_modules
 .env.*
 anthropic-key.enc
 deepgram-key.enc
-# Bible text downloaded by `npm run import:bible`
+# Bible text downloaded by `npm run import:bible`, and the bundle the installers ship
 data/bible
+vendor/bible
 # whisper.cpp binaries from `npm run fetch:whisper`
 vendor/whisper
 dist
@@ -32,3 +33,5 @@ dist-ssr
 *.sln
 *.sw?
 dist-electron/
+# Installers from electron-builder
+release/

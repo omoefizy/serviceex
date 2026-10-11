@@ -1,26 +1,52 @@
 // @see - https://www.electron.build/configuration/configuration
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "YourAppID",
+  "appId": "com.worshipdeck.app",
   "asar": true,
-  "productName": "YourAppName",
+  "productName": "WorshipDeck",
   "directories": {
     "output": "release/${version}"
   },
   "files": [
     "dist",
-    "dist-electron"
+    "dist-electron",
+    // The main process bundles every dependency except better-sqlite3 (external in vite.config.ts), so only that
+    // ships: its loader and its prebuilt N-API binaries, from which it picks the one for the machine at run time.
+    // All of them (about 2 MB each) rather than the target's alone: electron-builder filters node_modules only by
+    // these top-level patterns, where ${platform} is the platform building, not the one built for.
+    "!node_modules/**",
+    "node_modules/better-sqlite3/package.json",
+    "node_modules/better-sqlite3/lib/**",
+    "node_modules/better-sqlite3/prebuilds/*.node"
   ],
+  // Native code cannot load from inside the asar archive.
+  "asarUnpack": [
+    "node_modules/better-sqlite3/prebuilds/*.node"
+  ],
+  // better-sqlite3 ships prebuilt N-API binaries for every target (they work in Electron as in Node), so nothing
+  // is compiled while packaging, and an Intel Mac build can be made on Apple Silicon.
+  "npmRebuild": false,
   // whisper.cpp's server for the offline sermon listener, from `npm run fetch:whisper`.
   "extraResources": [
     {
       "from": "vendor/whisper/${os}-${arch}",
       "to": "whisper"
+    },
+    // The KJV and WEB, from `npm run import:bible -- --bundle`, copied into the app's database on first run.
+    {
+      "from": "vendor/bible/bible.db",
+      "to": "bible/bible.db"
     }
   ],
   "mac": {
     "target": [
-      "dmg"
+      {
+        "target": "dmg",
+        "arch": [
+          "arm64",
+          "x64"
+        ]
+      }
     ],
     // macOS shows this when asking for the microphone; without it the request fails silently.
     "extendInfo": {
@@ -29,7 +55,7 @@
     // Signed builds use the hardened runtime, which also needs the audio-input entitlement.
     "entitlements": "build/entitlements.mac.plist",
     "entitlementsInherit": "build/entitlements.mac.plist",
-    "artifactName": "${productName}-Mac-${version}-Installer.${ext}"
+    "artifactName": "${productName}-Mac-${version}-${arch}.${ext}"
   },
   "win": {
     "target": [

@@ -3,10 +3,12 @@
 //   npm run import:bible                 imports into the app's database
 //   npm run import:bible -- --db <path>  imports into another database file
 //   npm run import:bible -- --refresh    downloads again instead of using data/bible/
+//   npm run import:bible -- --bundle     builds vendor/bible/bible.db, which the installers ship and the app copies
+//                                        into its database on first run
 //
 // Runs with Node's built-in TypeScript support (Node 22.18 or later).
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -29,6 +31,7 @@ const VERSIONS = [
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const CACHE_DIR = path.join(ROOT, 'data', 'bible')
+const BUNDLE_PATH = path.join(ROOT, 'vendor', 'bible', 'bible.db')
 
 /** Where Electron's app.getPath('userData') points for an app named "worshipdeck". */
 function defaultDbPath(): string {
@@ -42,12 +45,14 @@ function defaultDbPath(): string {
   return path.join(base, 'worshipdeck', 'worshipdeck.db')
 }
 
-function parseArgs(argv: string[]): { dbPath: string; refresh: boolean } {
+function parseArgs(argv: string[]): { dbPath: string; refresh: boolean; bundle: boolean } {
   const dbIndex = argv.indexOf('--db')
   if (dbIndex !== -1 && !argv[dbIndex + 1]) throw new Error('--db needs a file path')
+  const bundle = argv.includes('--bundle')
   return {
-    dbPath: dbIndex === -1 ? defaultDbPath() : path.resolve(argv[dbIndex + 1]),
+    dbPath: bundle ? BUNDLE_PATH : dbIndex === -1 ? defaultDbPath() : path.resolve(argv[dbIndex + 1]),
     refresh: argv.includes('--refresh'),
+    bundle,
   }
 }
 
@@ -98,7 +103,7 @@ function importTranslation(db: Database.Database, code: string, data: GetBibleTr
 }
 
 async function main(): Promise<void> {
-  const { dbPath, refresh } = parseArgs(process.argv.slice(2))
+  const { dbPath, refresh, bundle } = parseArgs(process.argv.slice(2))
 
   const translations = []
   for (const { code, url } of VERSIONS) {
@@ -106,8 +111,11 @@ async function main(): Promise<void> {
   }
 
   mkdirSync(path.dirname(dbPath), { recursive: true })
+  if (bundle) rmSync(dbPath, { force: true })
   const db = new Database(dbPath)
-  db.pragma('journal_mode = WAL')
+  // The bundle stays a single file in rollback journal mode, so the app can read it where it cannot write (inside
+  // the installed app). The app's own database uses WAL.
+  db.pragma(bundle ? 'journal_mode = DELETE' : 'journal_mode = WAL')
   initSchema(db)
 
   console.log(`Importing into ${dbPath}`)
@@ -115,9 +123,14 @@ async function main(): Promise<void> {
     const count = db.transaction(() => importTranslation(db, code, data))()
     console.log(`  ${code}  ${data.translation}: ${count} verses`)
   }
-  // Keyword search reads from this index, which does not follow changes to verses on its own.
-  console.log('Building the verse search index')
-  rebuildVerseIndex(db)
+  // Keyword search reads from this index, which does not follow changes to verses on its own. The app builds its own
+  // index after copying from the bundle, so the bundle leaves it out.
+  if (!bundle) {
+    console.log('Building the verse search index')
+    rebuildVerseIndex(db)
+  } else {
+    db.exec('VACUUM')
+  }
   db.close()
 }
 

@@ -160,7 +160,7 @@ export class WhisperEngine extends EngineEvents implements SpeechEngine {
     this.baseUrl = `http://127.0.0.1:${port}`
     child.stderr?.setEncoding('utf8')
     child.stderr?.on('data', (text: string) => {
-      this.stderrTail = [...this.stderrTail, ...text.split('\n').filter(Boolean)].slice(-12)
+      this.stderrTail = [...this.stderrTail, ...text.split(/\r?\n/).filter(Boolean)].slice(-12)
     })
     let exited = false
     child.once('exit', (code) => {

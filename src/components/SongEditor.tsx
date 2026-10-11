@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEve
 import { buildSongSlides, findSection, isArrangement, LINES_PER_SLIDE_OPTIONS, parseLyrics } from '../../shared/lyrics'
 import type { AiError, AiTasks, ExportFormat, Song, SongArrangement, SongInput } from '../../shared/types'
 import { duplicateSection, mergeWithNext, splitSlideAt, type ToolResult } from '../lib/lyricsTools'
+import { MOD } from '../lib/shortcuts'
 import { useOperatorStore } from '../store'
 import { LyricsDiffModal } from './LyricsDiffModal'
 
@@ -372,7 +373,7 @@ export function SongEditor({ songId }: { songId: number }) {
           <button className="button" onClick={() => editSong(null)}>
             Close
           </button>
-          <button className="button primary" disabled={!dirty || saving} onClick={handleSave} title="Save (⌘S)">
+          <button className="button primary" disabled={!dirty || saving} onClick={handleSave} title={`Save (${MOD}S)`}>
             Save
           </button>
         </div>

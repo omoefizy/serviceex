@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && electron-builder",
+    "clean": "node -e \"for (const dir of ['dist', 'dist-electron']) require('fs').rmSync(dir, { recursive: true, force: true })\"",
+    "build:mac": "npm run clean && tsc && vite build && npm run import:bible -- --bundle && electron-builder --mac --publish never",
+    "build:win": "npm run clean && tsc && vite build && npm run import:bible -- --bundle && electron-builder --win --publish never",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "vitest run",
     "preview": "vite preview",
