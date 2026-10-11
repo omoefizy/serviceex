@@ -354,7 +354,7 @@ function ListenerSection() {
     let capture: MicCapture | null = null
     let cancelled = false
     setMicError(null)
-    startMic({ deviceId: settings.micDeviceId, onLevel: setLevel }).then(
+    startMic({ deviceId: settings.micDeviceId, processing: settings.micProcessing, onLevel: setLevel }).then(
       (started) => {
         if (cancelled) return started.stop()
         capture = started
@@ -372,7 +372,7 @@ function ListenerSection() {
       capture?.stop()
       setLevel(0)
     }
-  }, [testing, settings.micDeviceId])
+  }, [testing, settings.micDeviceId, settings.micProcessing])
 
   async function handleSave(e: FormEvent) {
     e.preventDefault()
@@ -433,6 +433,14 @@ function ListenerSection() {
         </span>
       </div>
       {micError && <p className="error">{micError}</p>}
+      <label className="inline-check">
+        <input type="checkbox" checked={settings.micProcessing} onChange={(e) => updateSettings({ micProcessing: e.target.checked })} />
+        Processing for room microphones
+      </label>
+      <p className="hint">
+        Echo cancellation, noise suppression and automatic gain. Off sends the plain signal, which suits a feed from the sound desk or
+        a lectern microphone; turn it on for a laptop or room microphone. Applies the next time listening starts.
+      </p>
 
       <div className="field">
         <span>Speech engine</span>

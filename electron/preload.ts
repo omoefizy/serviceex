@@ -155,6 +155,7 @@ const speech: SpeechApi = {
   start: () => ipcRenderer.invoke('speech:start'),
   stop: () => ipcRenderer.invoke('speech:stop'),
   pushAudio: (chunk) => ipcRenderer.send('speech:audio', new Uint8Array(chunk)),
+  setMicMuted: (muted) => ipcRenderer.send('speech:micMuted', muted === true),
   onEvent(listener) {
     const handler = (_event: Electron.IpcRendererEvent, message: SpeechEvent) => listener(message)
     ipcRenderer.on('speech:event', handler)

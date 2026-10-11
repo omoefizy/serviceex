@@ -39,6 +39,8 @@ interface ListenerState {
   notice: string | null
   /** The last 50 events, oldest first. */
   log: ListenerLogEntry[]
+  /** Times the system muted the microphone this session (each gap was filled with silence). */
+  dropouts: number
   start(): Promise<void>
   stop(): Promise<void>
   clear(): void
@@ -83,17 +85,20 @@ export const useListener = create<ListenerState>((set, get) => ({
   restarting: null,
   notice: null,
   log: [],
+  dropouts: 0,
 
   async start() {
     if (get().status !== 'idle' && get().status !== 'error') return
-    set({ status: 'starting', error: null, performance: null, mode: null, modeReason: '', warning: null, restarting: null, notice: null })
+    set({ status: 'starting', error: null, performance: null, mode: null, modeReason: '', warning: null, restarting: null, notice: null, dropouts: 0 })
     addLog('Start pressed; opening the microphone.')
     // Audio captured before the engine is connected waits here, so the first words are not lost.
     let connected = false
     const waiting: ArrayBuffer[] = []
+    const { micDeviceId, micProcessing } = useOperatorStore.getState().settings
     try {
       mic = await startMic({
-        deviceId: useOperatorStore.getState().settings.micDeviceId,
+        deviceId: micDeviceId,
+        processing: micProcessing,
         onChunk(pcm) {
           if (connected) window.api.speech.pushAudio(pcm)
           else if (waiting.length < 50) waiting.push(pcm)
@@ -101,6 +106,15 @@ export const useListener = create<ListenerState>((set, get) => ({
         onLevel: (level) => set({ level }),
         // The capture recovers by itself; the log says what happened.
         onNotice: (text) => addLog(`Microphone: ${text}`),
+        onDevice: ({ label, sampleRate, bluetooth }) =>
+          addLog(
+            `Input: ${label} · ${sampleRate} Hz · ${bluetooth ? 'Bluetooth' : 'not Bluetooth'} · processing ${micProcessing ? 'on' : 'off'}`,
+          ),
+        onMute(muted, cause) {
+          if (muted && cause === 'muted') set((s) => ({ dropouts: s.dropouts + 1 }))
+          // The watchdog does not count muted time as the engine failing to transcribe.
+          window.api.speech.setMicMuted(muted)
+        },
       })
     } catch (error) {
       set({ status: 'error', error: error instanceof Error ? error.message : String(error) })

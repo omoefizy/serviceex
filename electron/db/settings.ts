@@ -14,6 +14,7 @@ const DEFAULTS: AppSettings = {
   aiModel: 'claude-sonnet-5-5',
   autoGoLiveOnNext: false,
   micDeviceId: null,
+  micProcessing: false,
   saveTranscripts: false,
   speechEngine: 'auto',
   whisperModel: 'base.en',
@@ -43,6 +44,7 @@ const KEYS: Record<keyof AppSettings, string> = {
   aiModel: 'ai.model',
   autoGoLiveOnNext: 'schedule.autoGoLiveOnNext',
   micDeviceId: 'speech.micDeviceId',
+  micProcessing: 'speech.micProcessing',
   saveTranscripts: 'speech.saveTranscripts',
   speechEngine: 'speech.engine',
   whisperModel: 'speech.whisperModel',
@@ -72,6 +74,7 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'aiEnabled':
     case 'autoGoLiveOnNext':
     case 'saveTranscripts':
+    case 'micProcessing':
     case 'scriptureDetection':
     case 'statementPicking':
       return typeof value === 'boolean' ? v : undefined

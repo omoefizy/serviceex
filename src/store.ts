@@ -209,6 +209,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     aiModel: 'claude-sonnet-5-5',
     autoGoLiveOnNext: false,
     micDeviceId: null,
+    micProcessing: false,
     saveTranscripts: false,
     speechEngine: 'auto',
     whisperModel: 'base.en',

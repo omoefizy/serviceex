@@ -85,6 +85,10 @@ export class DeepgramEngine extends EngineEvents implements SpeechEngine {
       channels: '1',
       interim_results: 'true',
       punctuate: 'true',
+      smart_format: 'true',
+      // A final result after 300 ms of silence, and an UtteranceEnd message after a 1 second gap between words.
+      endpointing: '300',
+      utterance_end_ms: '1000',
     })
     this.stopping = false
     this.emitStatus('connecting')

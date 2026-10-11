@@ -63,6 +63,10 @@ interface Session {
   mode: SpeechMode | null
   /** The offline engine reports it is falling behind, so slow text is expected. */
   behind: boolean
+  /** The microphone track is quiet and the window sends silence in its place; that time does not count as stalled. */
+  muted: boolean
+  /** When the watchdog last ran, to discount muted time. */
+  checkedAt: number
   watchdog: ReturnType<typeof setInterval> | null
   /** Keeps the computer from suspending the app while listening. */
   blocker: number
@@ -210,7 +214,8 @@ async function launch(s: Session): Promise<void> {
  */
 async function restart(s: Session, why: string, stalled: boolean): Promise<void> {
   s.restarting = true
-  s.send({ type: 'restarting', reason: why, restartCapture: true })
+  // A stalled engine is replaced on its own; the microphone is opened again only when its audio stopped arriving.
+  s.send({ type: 'restarting', reason: why, restartCapture: !stalled })
   const old = s.engine
   s.engine = null
   s.mode = null
@@ -261,8 +266,11 @@ async function restart(s: Session, why: string, stalled: boolean): Promise<void>
 
 /** Once a second: restart when the audio has stopped, or when there is sound but no transcript. */
 function check(s: Session) {
-  if (session !== s || s.restarting || !s.engine) return
   const now = Date.now()
+  // Time with the track muted is not time without a transcript: move the clock on past it.
+  if (s.muted) s.lastTextAt += now - s.checkedAt
+  s.checkedAt = now
+  if (session !== s || s.restarting || !s.engine) return
   const audioWait = Math.min(NO_AUDIO_MS * 2 ** s.audioRestarts, NO_AUDIO_MAX_MS)
   if (now - s.lastAudioAt > audioWait) {
     s.audioRestarts++
@@ -394,6 +402,8 @@ export function registerSpeechIpc(): void {
       textRestarts: 0,
       mode: null,
       behind: false,
+      muted: false,
+      checkedAt: Date.now(),
       watchdog: null,
       blocker: powerSaveBlocker.start('prevent-app-suspension'),
     }
@@ -447,6 +457,10 @@ export function registerSpeechIpc(): void {
   })
 
   // Fire and forget, ten times a second. Only the window that started listening may send audio.
+  ipcMain.on('speech:micMuted', (event, muted: unknown) => {
+    if (session && event.sender === session.sender) session.muted = muted === true
+  })
+
   ipcMain.on('speech:audio', (event, chunk: unknown) => {
     const s = session
     if (!s || event.sender !== s.sender) return

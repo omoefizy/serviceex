@@ -1144,6 +1144,17 @@ button {
   max-width: 140px;
 }
 
+/* How often the system muted the microphone this session; amber once it has happened. */
+.mic-dropouts {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.mic-dropouts.some {
+  color: #f59e0b;
+}
+
 /* Which engine the listener uses, beside its heading. */
 .listener-engine {
   color: var(--text-muted);

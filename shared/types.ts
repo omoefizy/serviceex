@@ -255,6 +255,8 @@ export interface AppSettings {
   autoGoLiveOnNext: boolean
   /** The microphone the sermon listener uses (a MediaDeviceInfo deviceId), or null for the system default. */
   micDeviceId: string | null
+  /** Echo cancellation, noise suppression and automatic gain on the microphone. Off (the default) sends the plain signal. */
+  micProcessing: boolean
   /** Writes each finished line of the live transcript to a file; off keeps the transcript in memory only. */
   saveTranscripts: boolean
   /** Auto (cloud, falling back to offline), cloud only (Deepgram), or offline only (whisper.cpp). */
@@ -635,6 +637,8 @@ export interface SpeechApi {
   stop(): Promise<void>
   /** 100 ms of 16 kHz mono 16-bit little-endian PCM. */
   pushAudio(chunk: ArrayBuffer): void
+  /** The microphone track went quiet (silence is being sent in its place) or came back; the watchdog discounts that time. */
+  setMicMuted(muted: boolean): void
   onEvent(listener: (event: SpeechEvent) => void): () => void
   whisper: WhisperApi
 }

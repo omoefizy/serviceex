@@ -46,7 +46,7 @@ const clockTime = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2
 
 /** Start and stop the sermon listener, and watch the live transcript: settled text in white, words still forming in grey. */
 export function ListenerPanel() {
-  const { status, error, finals, partial, level, performance, mode, modeReason, warning, restarting, notice, log, start, stop, clear, dismissNotice } =
+  const { status, error, finals, partial, level, performance, mode, modeReason, warning, restarting, notice, log, dropouts, start, stop, clear, dismissNotice } =
     useListener()
   const openSettings = useOperatorStore((s) => s.openSettings)
   const saving = useOperatorStore((s) => s.settings.saveTranscripts)
@@ -125,6 +125,14 @@ export function ListenerPanel() {
         {running && (
           <span className="level-meter small" aria-hidden="true">
             <span style={{ width: `${(1 - meterFraction(level)) * 100}%` }} />
+          </span>
+        )}
+        {(running || dropouts > 0) && (
+          <span
+            className={`mic-dropouts${dropouts > 0 ? ' some' : ''}`}
+            title="Times the system muted the microphone this session. Each gap is filled with silence, so listening carries on."
+          >
+            Mic dropouts: {dropouts}
           </span>
         )}
         {!running && finals.length > 0 && (
