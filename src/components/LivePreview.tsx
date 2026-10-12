@@ -1,12 +1,16 @@
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, Undo2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { selectDeckTheme, selectLiveSlide, selectPreviewSlide, slideTheme, useOperatorStore } from '../store'
 import { ThemedSlide } from './ThemedSlide'
 
-/** "Amazing Song · slide 2 of 5", or a placeholder. */
-function slideLabel(title: string | null, index: number | null, count: number, empty: string): string {
-  if (!title || index === null) return empty
-  return `${title} · slide ${index + 1} of ${count}`
+/** "Slide 2 of 5" across the corner of a screen, when it shows a slide. */
+function SlideBadge({ index, count }: { index: number | null; count: number }) {
+  if (index === null || count === 0) return null
+  return (
+    <span className="screen-badge">
+      Slide {index + 1} of {count}
+    </span>
+  )
 }
 
 /**
@@ -27,6 +31,8 @@ export function LivePreview() {
   const logoUrl = useOperatorStore((s) => s.settings.logoUrl)
   const setFadeMs = useOperatorStore((s) => s.setFadeMs)
   const resendLive = useOperatorStore((s) => s.resendLive)
+  const goBack = useOperatorStore((s) => s.goBack)
+  const canGoBack = useOperatorStore((s) => s.liveHistory.length > 0)
   const [error, setError] = useState<string | null>(null)
 
   async function resend() {
@@ -42,12 +48,16 @@ export function LivePreview() {
     <section className="panel preview-panel">
       <header className="panel-header">
         <h2>Live</h2>
+        <button type="button" className="button go-back-button" disabled={!canGoBack} onClick={goBack} title="Put the previous live slide back on screen">
+          <Undo2 size={14} aria-hidden="true" /> Go Back
+        </button>
       </header>
       <div className="preview-screen live">
         <ThemedSlide theme={liveTheme} text={liveSlide?.text ?? ''} caption={liveSlide?.caption} mode={live.mode} logoUrl={logoUrl} />
+        <SlideBadge index={live.slideIndex} count={live.slides.length} />
       </div>
       <p className="screen-label">
-        {slideLabel(live.title, live.slideIndex, live.slides.length, 'Nothing live')}
+        {(live.slideIndex !== null && live.title) || 'Nothing live'}
         {live.mode !== 'show' && <span className="screen-mode"> · {live.mode.toUpperCase()}</span>}
       </p>
       {live.stale && (
@@ -77,8 +87,9 @@ export function LivePreview() {
         ) : (
           <p className="empty">Select something to preview</p>
         )}
+        <SlideBadge index={previewSlide ? highlightIndex : null} count={slideCount} />
       </div>
-      <p className="screen-label">{slideLabel(deckTitle, highlightIndex, slideCount, 'Nothing selected')}</p>
+      <p className="screen-label">{(highlightIndex !== null && deckTitle) || 'Nothing selected'}</p>
     </section>
   )
 }

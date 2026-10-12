@@ -23,7 +23,7 @@ export const DEFAULT_THEME_STYLE: ThemeStyle = {
   band: { enabled: false, color: '#000000', opacity: 0.6 },
   background: { kind: 'solid', color: '#000000' },
   overlay: 0,
-  caption: { fontFamily: '', fontWeight: 500, size: 3.2, color: '#bfc4cc', textCase: 'normal', italic: false },
+  caption: { fontFamily: '', fontWeight: 500, size: 3.2, color: '#bfc4cc', textCase: 'normal', italic: false, position: 'below' },
 }
 
 const style = (overrides: Partial<ThemeStyle>): ThemeStyle => ({ ...DEFAULT_THEME_STYLE, ...overrides })
@@ -85,7 +85,7 @@ export const BUILTIN_THEMES: { name: string; style: ThemeStyle }[] = [
       margins: { top: 8, right: 8, bottom: 8, left: 8 },
       background: { kind: 'gradient', from: '#1c1712', to: '#0d0b09', angle: 180 },
       shadow: { enabled: true, color: '#000000', blur: 0.1, offset: 0.03 },
-      caption: { fontFamily: SERIF, fontWeight: 400, size: 3.4, color: '#d6b98c', textCase: 'normal', italic: true },
+      caption: { fontFamily: SERIF, fontWeight: 400, size: 3.4, color: '#d6b98c', textCase: 'normal', italic: true, position: 'below' },
     }),
   },
   {
@@ -101,16 +101,31 @@ export const BUILTIN_THEMES: { name: string; style: ThemeStyle }[] = [
       margins: { top: 10, right: 10, bottom: 10, left: 10 },
       background: { kind: 'gradient', from: '#1e1b2e', to: '#0b0a12', angle: 160 },
       shadow: { enabled: true, color: '#000000', blur: 0.1, offset: 0.03 },
-      caption: { fontFamily: SANS, fontWeight: 600, size: 3.6, color: '#d6b98c', textCase: 'normal', italic: false },
+      caption: { fontFamily: SANS, fontWeight: 600, size: 3.6, color: '#d6b98c', textCase: 'normal', italic: false, position: 'below' },
+    }),
+  },
+  {
+    // Dark blue with slow drifting smoke: the reference or title in yellow across the top, bold white words centred.
+    name: 'Blue Smoke',
+    style: style({
+      fontWeight: 700,
+      sizeMode: 'auto',
+      align: 'center',
+      verticalAlign: 'middle',
+      lineHeight: 1.2,
+      margins: { top: 7, right: 6, bottom: 7, left: 6 },
+      background: { kind: 'smoke', color: '#06143a', smoke: '#5a7bc4' },
+      shadow: { enabled: true, color: '#000814', blur: 0.16, offset: 0.04 },
+      caption: { fontFamily: '', fontWeight: 700, size: 4.4, color: '#ffd400', textCase: 'normal', italic: false, position: 'top' },
     }),
   },
 ]
 
 /** Built-in themes used until someone picks other defaults. */
 export const BUILTIN_DEFAULTS: Record<ThemeContentType, string> = {
-  song: 'Classic Black',
-  scripture: 'Scripture Serif',
-  announcement: 'Deep Blue Gradient',
+  song: 'Blue Smoke',
+  scripture: 'Blue Smoke',
+  announcement: 'Blue Smoke',
   quote: 'Quote',
 }
 
@@ -147,6 +162,8 @@ function normalizeBackground(value: unknown, fallback: ThemeBackground): ThemeBa
       return v.fit === 'contain' ? { kind: 'image', src: v.src, fit: 'contain' } : { kind: 'image', src: v.src }
     case 'video':
       return typeof v.src === 'string' && v.src ? { kind: 'video', src: v.src } : { kind: 'solid', color: '#000000' }
+    case 'smoke':
+      return { kind: 'smoke', color: hex(v.color, '#06143a'), smoke: hex(v.smoke, '#5a7bc4') }
     default:
       return fallback
   }
@@ -201,6 +218,7 @@ export function normalizeTheme(value: unknown): ThemeStyle {
       color: hex(caption.color, d.caption.color),
       textCase: oneOf(caption.textCase, TEXT_CASES, d.caption.textCase),
       italic: flag(caption.italic, d.caption.italic),
+      position: oneOf(caption.position, ['below', 'top'], d.caption.position),
     },
   }
 }

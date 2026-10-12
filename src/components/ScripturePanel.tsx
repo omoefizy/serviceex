@@ -1,5 +1,5 @@
-import { History, ListPlus, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { BookPlus, History, ListPlus, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import {
   BOOK_NAMES,
   formatReference,
@@ -8,7 +8,7 @@ import {
   parseReference,
   type ScriptureReference,
 } from '../../shared/parseReference'
-import type { AiError, BibleVersionCode, ScripturePayload, Testament } from '../../shared/types'
+import type { AiError, BibleVersion, BibleVersionCode, ScripturePayload, Testament, Verse } from '../../shared/types'
 import { loadScripture, type ResultItem } from '../lib/scripture'
 import {
   bookNeeded,
@@ -27,6 +27,8 @@ import { usePersistentState } from '../lib/usePersistentState'
 import { useVerseSearch } from '../lib/useVerseSearch'
 import { useOperatorStore } from '../store'
 import { AiButton } from './AiButton'
+import { BibleImportModal } from './BibleImportModal'
+import { PassageTable } from './PassageTable'
 import { VerseResults } from './VerseResults'
 
 const DEBOUNCE_MS = 120
@@ -55,6 +57,11 @@ export function ScripturePanel() {
   const [loaded, setLoaded] = useState<ScriptureReference | null>(null)
   /** The passage last loaded into the grid, ready to add to the schedule. */
   const [result, setResult] = useState<ScripturePayload | null>(null)
+  /** The rest of the chapter after `result`, and the version both were read in, for the passage table. */
+  const [following, setFollowing] = useState<{ version: BibleVersionCode; verses: Verse[] }>({ version: 'KJV', verses: [] })
+  /** Installed versions, for the version list. */
+  const [installed, setInstalled] = useState<BibleVersion[]>([])
+  const [importOpen, setImportOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasBible, setHasBible] = useState<boolean | null>(null)
   /** "Search by meaning": the AI names passages; their text is read here from the database. */
@@ -65,15 +72,24 @@ export function ScripturePanel() {
   const service = useOperatorStore((s) => s.service)
   const addToSchedule = useOperatorStore((s) => s.addToSchedule)
 
-  const versions = searchVersions(version)
+  const versions = searchVersions(version, installed.map((v) => v.code))
   const referenceVersion = referenceVersionOf(version)
+
+  const loadVersions = useCallback(() => {
+    window.api.bible.listVersions().then((list) => {
+      setInstalled(list)
+      // A version that was removed (or never imported here) falls back to the KJV.
+      if (list.length > 0) setVersion((current) => (current === 'both' || list.some((v) => v.code === current) ? current : 'KJV'))
+    }, console.error)
+  }, [setVersion])
 
   useEffect(() => {
     window.api.bible.listBooks().then(
       (books) => setHasBible(books.length > 0),
       () => setHasBible(false),
     )
-  }, [])
+    loadVersions()
+  }, [loadVersions])
 
   // Classify after a short pause in typing.
   useEffect(() => {
@@ -125,6 +141,10 @@ export function ScripturePanel() {
       setLoaded(ref)
       setResult(passage)
       setError(null)
+      // The verses after it, to the end of the chapter, so the operator sees what is coming.
+      const last = ref.verseEnd ?? ref.verseStart ?? LAST_VERSE
+      const next = last >= LAST_VERSE ? [] : await window.api.bible.getRange(ver, ref.book, ref.chapter, last + 1, LAST_VERSE)
+      setFollowing({ version: ver, verses: next })
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -250,7 +270,18 @@ export function ScripturePanel() {
 
   function handleVersionChange(next: VersionFilter) {
     setVersion(next)
-    if (loaded) load(loaded, next === 'both' ? 'KJV' : next)
+    if (loaded) load(loaded, referenceVersionOf(next))
+  }
+
+  /** A verse from the passage table's following rows, in the grid on its own; the table keeps its place. */
+  async function openFollowingVerse(verse: number, live: boolean) {
+    if (!loaded) return
+    try {
+      const passage = await loadScripture({ book: loaded.book, chapter: loaded.chapter, verseStart: verse, verseEnd: verse }, following.version)
+      if (passage && live) useOperatorStore.getState().goLive(0)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
   }
 
   function handleTestamentChange(next: Testament) {
@@ -331,11 +362,6 @@ export function ScripturePanel() {
         </div>
 
         <div className="scripture-filters">
-          <select className="input" aria-label="Version" value={version} onChange={(e) => handleVersionChange(e.target.value as VersionFilter)}>
-            <option value="KJV">KJV</option>
-            <option value="WEB">WEB</option>
-            <option value="both">Both</option>
-          </select>
           <select className="input" aria-label="Testament" value={testament} onChange={(e) => handleTestamentChange(e.target.value as Testament)}>
             <option value="all">Whole Bible</option>
             <option value="old">Old Testament</option>
@@ -381,60 +407,89 @@ export function ScripturePanel() {
         </div>
       )}
 
-      {result && (
-        <div className="scripture-result">
-          <span>{result.title}</span>
-          <button
-            className="button"
-            title={service ? `Add to ${service.name}` : 'Create a service first'}
-            disabled={!service}
-            onClick={() => handleAddToSchedule(result)}
-          >
-            <ListPlus size={15} aria-hidden="true" /> Schedule
+      <div className="scripture-body">
+        <nav className="version-list" aria-label="Bible versions">
+          {[{ code: 'both', name: 'Search every installed version' }, ...installed].map((v) => (
+            <button
+              key={v.code}
+              type="button"
+              className={`version-item${version === v.code ? ' active' : ''}`}
+              aria-pressed={version === v.code}
+              title={v.name}
+              onClick={() => handleVersionChange(v.code)}
+            >
+              {v.code === 'both' ? 'All' : v.code}
+            </button>
+          ))}
+          <button type="button" className="version-item version-import" title="Import a Bible version your church owns" onClick={() => setImportOpen(true)}>
+            <BookPlus size={14} aria-hidden="true" />
+            <span>Import</span>
           </button>
-        </div>
-      )}
-      {error && <p className="error">{error}</p>}
-      {meaningError && (
-        <p className="error" role="alert">
-          {meaningError.message}
-        </p>
-      )}
+        </nav>
 
-      {meaning ? (
-        <VerseResults
-          items={meaning.items}
-          resetKey={`meaning:${meaning.topic}:${version}`}
-          heading={
-            <>
-              <strong>{meaning.items.length}</strong> passage{meaning.items.length === 1 ? '' : 's'} about “{meaning.topic}”{' '}
-              <span className="hint">· found by AI, text from your Bible</span>
-            </>
-          }
-          onUse={() => remember(meaning.topic)}
-        />
-      ) : (
-        textMode && (
-          <VerseResults
-            items={textItems}
-            resetKey={`text:${query}:${version}:${testament}:${bookFilter}`}
-            heading={
-              search.loading && search.hits.length === 0 ? (
-                <span className="hint">Searching…</span>
-              ) : (
+        <div className="scripture-results">
+          {result && (
+            <div className="scripture-result">
+              <span>{result.title}</span>
+              <button
+                className="button"
+                title={service ? `Add to ${service.name}` : 'Create a service first'}
+                disabled={!service}
+                onClick={() => handleAddToSchedule(result)}
+              >
+                <ListPlus size={15} aria-hidden="true" /> Schedule
+              </button>
+            </div>
+          )}
+          {error && <p className="error">{error}</p>}
+          {meaningError && (
+            <p className="error" role="alert">
+              {meaningError.message}
+            </p>
+          )}
+
+          {meaning ? (
+            <VerseResults
+              items={meaning.items}
+              resetKey={`meaning:${meaning.topic}:${version}`}
+              heading={
                 <>
-                  <strong>{search.total.toLocaleString()}</strong> verse{search.total === 1 ? '' : 's'}
-                  {search.total === 0 && <span className="hint"> · try fewer words, or "quotes" for an exact phrase</span>}
+                  <strong>{meaning.items.length}</strong> passage{meaning.items.length === 1 ? '' : 's'} about “{meaning.topic}”{' '}
+                  <span className="hint">· found by AI, text from your Bible</span>
                 </>
-              )
-            }
-            hasMore={search.hasMore}
-            loading={search.loading}
-            onLoadMore={search.loadMore}
-            onUse={() => remember(query)}
-          />
-        )
-      )}
+              }
+              onUse={() => remember(meaning.topic)}
+            />
+          ) : (
+            textMode && (
+              <VerseResults
+                items={textItems}
+                resetKey={`text:${query}:${version}:${testament}:${bookFilter}`}
+                heading={
+                  search.loading && search.hits.length === 0 ? (
+                    <span className="hint">Searching…</span>
+                  ) : (
+                    <>
+                      <strong>{search.total.toLocaleString()}</strong> verse{search.total === 1 ? '' : 's'}
+                      {search.total === 0 && <span className="hint"> · try fewer words, or "quotes" for an exact phrase</span>}
+                    </>
+                  )
+                }
+                hasMore={search.hasMore}
+                loading={search.loading}
+                onLoadMore={search.loadMore}
+                onUse={() => remember(query)}
+              />
+            )
+          )}
+
+          {!meaning && !textMode && result && (
+            <PassageTable passage={result} following={following.verses} version={following.version} onOpenVerse={openFollowingVerse} />
+          )}
+        </div>
+      </div>
+
+      {importOpen && <BibleImportModal versions={installed} onChanged={loadVersions} onClose={() => setImportOpen(false)} />}
     </section>
   )
 }

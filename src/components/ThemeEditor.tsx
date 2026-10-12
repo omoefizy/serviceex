@@ -301,9 +301,10 @@ export function ThemeEditor() {
   function setBackgroundKind(kind: ThemeBackground['kind']) {
     if (!style || style.background.kind === kind) return
     const current = style.background
-    const color = current.kind === 'solid' ? current.color : current.kind === 'gradient' ? current.from : '#000000'
+    const color = current.kind === 'solid' || current.kind === 'smoke' ? current.color : current.kind === 'gradient' ? current.from : '#000000'
     if (kind === 'solid') update({ background: { kind, color } })
     else if (kind === 'gradient') update({ background: { kind, from: color, to: '#333333', angle: 160 } })
+    else if (kind === 'smoke') update({ background: { kind, color, smoke: '#5a7bc4' } })
     else setPicking(kind)
   }
 
@@ -526,6 +527,7 @@ export function ThemeEditor() {
                     { value: 'gradient', label: 'Gradient' },
                     { value: 'image', label: 'Image' },
                     { value: 'video', label: 'Video' },
+                    { value: 'smoke', label: 'Smoke' },
                   ]}
                   onChange={setBackgroundKind}
                 />
@@ -543,6 +545,16 @@ export function ThemeEditor() {
                       <Color value={g.from} onChange={(from) => update({ background: { ...g, from } })} />
                       <Color value={g.to} onChange={(to) => update({ background: { ...g, to } })} />
                       <Range value={g.angle} min={0} max={360} step={5} format={(v) => `${v}°`} onChange={(angle) => update({ background: { ...g, angle } })} />
+                    </Row>
+                  )
+                })()}
+              {style.background.kind === 'smoke' &&
+                (() => {
+                  const b = style.background
+                  return (
+                    <Row label="Smoke">
+                      <Color value={b.color} onChange={(color) => update({ background: { ...b, color } })} />
+                      <Color value={b.smoke} onChange={(smoke) => update({ background: { ...b, smoke } })} />
                     </Row>
                   )
                 })()}
@@ -588,6 +600,16 @@ export function ThemeEditor() {
                   <input type="checkbox" checked={style.caption.italic} onChange={(e) => updateIn('caption', { italic: e.target.checked })} />
                   Italic
                 </label>
+              </Row>
+              <Row label="Position">
+                <Segmented
+                  value={style.caption.position}
+                  options={[
+                    { value: 'below', label: 'Under the text' },
+                    { value: 'top', label: 'Top' },
+                  ]}
+                  onChange={(position) => updateIn('caption', { position })}
+                />
               </Row>
               <Row label="Case">
                 <select className="input" value={style.caption.textCase} onChange={(e) => updateIn('caption', { textCase: e.target.value as TextCase })}>

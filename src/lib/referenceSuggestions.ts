@@ -1,5 +1,5 @@
 import { formatReference, parseReference, readReferenceInput, type ScriptureReference } from '../../shared/parseReference'
-import type { BibleVersionCode } from '../../shared/types'
+import { BUNDLED_BIBLE_VERSIONS, type BibleVersionCode } from '../../shared/types'
 
 /** What the Scripture tab and the command palette offer while a reference is typed. */
 export type ReferenceSuggestion =
@@ -86,12 +86,13 @@ export function loadBookStructure(book: string): Promise<number[]> {
 
 // ---------- Version choice ----------
 
+/** One version, or 'both', which searches every installed version (named when only KJV and WEB existed). */
 export type VersionFilter = BibleVersionCode | 'both'
 
 /** The Scripture tab's version choice, kept in localStorage under this key. */
 export const SCRIPTURE_VERSION_KEY = 'worshipdeck.scripture.version'
 
-export const isVersionFilter = (v: unknown): v is VersionFilter => v === 'KJV' || v === 'WEB' || v === 'both'
+export const isVersionFilter = (v: unknown): v is VersionFilter => typeof v === 'string' && /^(?:both|[A-Z0-9][A-Z0-9-]{0,11})$/.test(v)
 
 /** The version choice as saved by the Scripture tab, for searches made elsewhere such as the command palette. */
 export function savedVersionFilter(): VersionFilter {
@@ -103,8 +104,9 @@ export function savedVersionFilter(): VersionFilter {
   }
 }
 
-/** Versions a keyword search covers. */
-export const searchVersions = (filter: VersionFilter): BibleVersionCode[] => (filter === 'both' ? ['KJV', 'WEB'] : [filter])
+/** Versions a keyword search covers: one, or every installed version. */
+export const searchVersions = (filter: VersionFilter, installed: readonly BibleVersionCode[] = BUNDLED_BIBLE_VERSIONS): BibleVersionCode[] =>
+  filter === 'both' ? [...installed] : [filter]
 
-/** References open in one version; with "Both" that is the KJV. */
+/** References open in one version; with "All" that is the KJV. */
 export const referenceVersion = (filter: VersionFilter): BibleVersionCode => (filter === 'both' ? 'KJV' : filter)

@@ -1,7 +1,17 @@
 import { NEW_TESTAMENT_BOOKS, OLD_TESTAMENT_BOOKS } from '../../shared/parseReference'
-import type { BibleVersionCode, Verse, VerseHit, VerseSearchParams, VerseSearchResult } from '../../shared/types'
+import {
+  BUNDLED_BIBLE_VERSIONS,
+  type BibleVersion,
+  type BibleVersionCode,
+  type Verse,
+  type VerseHit,
+  type VerseSearchParams,
+  type VerseSearchResult,
+} from '../../shared/types'
+import type { ParsedVerse } from './bibleImport'
 import { db } from './index'
 import { findQuotes } from './quoteMatch'
+import { rebuildVerseIndex } from './schema'
 
 /** The verses a piece of transcript may quote, strongest first; see quoteMatch. */
 export const matchQuote = (text: string) => findQuotes(db, text)
@@ -54,6 +64,49 @@ export function listBooks(): string[] {
   return (db.prepare('SELECT book FROM verses GROUP BY book ORDER BY MIN(id)').all() as { book: string }[]).map(
     (row) => row.book,
   )
+}
+
+/** Installed versions with their verse counts, the bundled ones first, then in the order they were added. */
+export function listVersions(): BibleVersion[] {
+  const rows = db
+    .prepare(
+      `SELECT b.code, b.name, (SELECT count(*) FROM verses v WHERE v.version_id = b.id) AS verses
+       FROM bible_versions b ORDER BY b.id`,
+    )
+    .all() as { code: string; name: string; verses: number }[]
+  return rows
+    .map((row) => ({ ...row, bundled: BUNDLED_BIBLE_VERSIONS.includes(row.code) }))
+    .sort((a, b) => Number(b.bundled) - Number(a.bundled))
+}
+
+/**
+ * Stores an imported version under `code`, replacing an imported version with that code, then rebuilds the keyword
+ * search index (a few seconds). The bundled versions cannot be replaced.
+ */
+export function storeVersion(code: BibleVersionCode, name: string, verses: ParsedVerse[]): number {
+  if (BUNDLED_BIBLE_VERSIONS.includes(code)) throw new Error(`${code} ships with WorshipDeck; choose another code`)
+  db.transaction(() => {
+    const { id } = db
+      .prepare(
+        `INSERT INTO bible_versions (code, name) VALUES (?, ?)
+         ON CONFLICT (code) DO UPDATE SET name = excluded.name
+         RETURNING id`,
+      )
+      .get(code, name) as { id: number }
+    db.prepare('DELETE FROM verses WHERE version_id = ?').run(id)
+    const insert = db.prepare('INSERT INTO verses (version_id, book, chapter, verse, text) VALUES (?, ?, ?, ?, ?)')
+    for (const v of verses) insert.run(id, v.book, v.chapter, v.verse, v.text)
+  })()
+  rebuildVerseIndex(db)
+  return verses.length
+}
+
+/** Removes an imported version and its verses. False for a bundled or unknown version. */
+export function removeVersion(code: BibleVersionCode): boolean {
+  if (BUNDLED_BIBLE_VERSIONS.includes(code)) return false
+  if (db.prepare('DELETE FROM bible_versions WHERE code = ?').run(code).changes === 0) return false
+  rebuildVerseIndex(db)
+  return true
 }
 
 /** Verses per chapter for a book (KJV); index 0 is chapter 1. */

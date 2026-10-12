@@ -1,6 +1,8 @@
-import { useLayoutEffect, useRef, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react'
 import type { OutputMode, TextCase, ThemeBackground, ThemeStyle } from '../../shared/types'
 import { cssFontFamily } from '../lib/fonts'
+import { REFERENCE_LINE_COLOR, slideLines } from '../lib/slides'
+import { animateSmoke, drawStillSmoke, SMOKE_HEIGHT, SMOKE_WIDTH } from '../lib/smoke'
 
 /** The largest auto fit size in percent of screen height, so one short line does not fill the screen. */
 const AUTO_FIT_MAX = 16
@@ -28,6 +30,17 @@ export function LogoPlaceholder() {
       <span>WorshipDeck</span>
     </div>
   )
+}
+
+function SmokeBackground({ color, smoke, still }: { color: string; smoke: string; still: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    if (still) drawStillSmoke(canvas, color, smoke)
+    else return animateSmoke(canvas, color, smoke)
+  }, [color, smoke, still])
+  return <canvas ref={canvasRef} className="themed-bg themed-smoke" width={SMOKE_WIDTH} height={SMOKE_HEIGHT} style={{ background: color }} />
 }
 
 function Background({ background, still }: { background: ThemeBackground; still: boolean }) {
@@ -58,6 +71,8 @@ function Background({ background, still }: { background: ThemeBackground; still:
       ) : (
         <video className="themed-bg themed-media" src={background.src} autoPlay loop muted playsInline />
       )
+    case 'smoke':
+      return <SmokeBackground color={background.color} smoke={background.smoke} still={still} />
   }
 }
 
@@ -87,6 +102,8 @@ export function ThemedSlide({ theme, text, caption = '', mode = 'show', still = 
   const drawBackground = layer !== 'content' && mode !== 'black'
   const drawContent = layer !== 'background' && mode !== 'black'
   const showText = drawContent && mode === 'show' && text !== ''
+  /** The caption sits across the top of the safe area, outside the box the text is fitted into. */
+  const captionOnTop = theme.caption.position === 'top'
 
   // Size the text: as large as fits (auto), or the fixed size unless that would overflow. Sizes are in cqh,
   // so the result is the same at any slide size.
@@ -97,7 +114,7 @@ export function ThemedSlide({ theme, text, caption = '', mode = 'show', still = 
 
     const fit = () => {
       if (box.clientHeight === 0) return
-      const captionEl = captionRef.current
+      const captionEl = captionOnTop ? null : captionRef.current
       const captionHeight = captionEl ? captionEl.offsetHeight + parseFloat(getComputedStyle(captionEl).marginTop) : 0
       const height = box.clientHeight - captionHeight
       const fits = (size: number) => {
@@ -119,7 +136,7 @@ export function ThemedSlide({ theme, text, caption = '', mode = 'show', still = 
     const observer = new ResizeObserver(fit)
     observer.observe(box)
     return () => observer.disconnect()
-  }, [theme, text, caption, showText])
+  }, [theme, text, caption, showText, captionOnTop])
 
   const { margins, band, shadow, outline } = theme
   const textStyle: CSSProperties = {
@@ -142,6 +159,15 @@ export function ThemedSlide({ theme, text, caption = '', mode = 'show', still = 
     textTransform: TEXT_TRANSFORMS[theme.caption.textCase],
     textShadow: textStyle.textShadow,
   }
+  const captionLine = caption && (
+    <p
+      ref={captionRef}
+      className={`themed-caption${captionOnTop ? ' top' : ''}`}
+      style={captionOnTop ? { ...captionStyle, textAlign: theme.align } : captionStyle}
+    >
+      {caption}
+    </p>
+  )
 
   return (
     <div className={`themed-slide${layer === 'content' ? ' transparent' : ''}`}>
@@ -158,7 +184,7 @@ export function ThemedSlide({ theme, text, caption = '', mode = 'show', still = 
       )}
       {showText && (
         <div
-          className="themed-safe"
+          className={`themed-safe${captionOnTop ? ' caption-top' : ''}`}
           style={{
             top: `${margins.top}%`,
             right: `${margins.right}%`,
@@ -168,19 +194,24 @@ export function ThemedSlide({ theme, text, caption = '', mode = 'show', still = 
             padding: band.enabled ? '3cqh 4cqw' : 0,
           }}
         >
+          {captionOnTop && captionLine}
           <div
             ref={fitRef}
             className="themed-fit"
             style={{ justifyContent: JUSTIFY[theme.verticalAlign], alignItems: ALIGN_ITEMS[theme.align], textAlign: theme.align }}
           >
             <p ref={textRef} className="themed-text" style={textStyle}>
-              {text}
+              {slideLines(text).map((line, index) => (
+                <span
+                  key={index}
+                  className={`themed-line ${line.kind}`}
+                  style={line.kind === 'reference' ? { color: REFERENCE_LINE_COLOR } : undefined}
+                >
+                  {line.text}
+                </span>
+              ))}
             </p>
-            {caption && (
-              <p ref={captionRef} className="themed-caption" style={captionStyle}>
-                {caption}
-              </p>
-            )}
+            {!captionOnTop && captionLine}
           </div>
         </div>
       )}

@@ -54,6 +54,9 @@ const bible: BibleApi = {
     ipcRenderer.invoke('bible:getRange', version, book, chapter, verseStart, verseEnd),
   searchText: (version, query) => ipcRenderer.invoke('bible:searchText', version, query),
   listBooks: () => ipcRenderer.invoke('bible:listBooks'),
+  listVersions: () => ipcRenderer.invoke('bible:listVersions'),
+  importVersion: (code, name) => ipcRenderer.invoke('bible:importVersion', code, name),
+  removeVersion: (code) => ipcRenderer.invoke('bible:removeVersion', code),
   search: (params) => ipcRenderer.invoke('bible:search', params),
   bookStructure: (book) => ipcRenderer.invoke('bible:bookStructure', book),
   matchQuote: (text) => ipcRenderer.invoke('bible:matchQuote', text),
@@ -133,6 +136,13 @@ const output: WorshipDeckApi['output'] = {
     const handler = (_event: Electron.IpcRendererEvent, state: OutputState) => listener(state)
     ipcRenderer.on('output:state', handler)
     return () => ipcRenderer.off('output:state', handler)
+  },
+  setOpen: (open) => ipcRenderer.invoke('output:setOpen', open),
+  isOpen: () => ipcRenderer.invoke('output:isOpen'),
+  onOpenChange(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, open: boolean) => listener(open)
+    ipcRenderer.on('output:open-changed', handler)
+    return () => ipcRenderer.off('output:open-changed', handler)
   },
 }
 

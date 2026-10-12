@@ -115,9 +115,19 @@ function createOutputWindow() {
   output.webContents.on('did-finish-load', () => sendLastOutputState(output))
   output.on('closed', () => {
     // A replacement may already be open when the display setting changes.
-    if (outputWin === output) outputWin = null
+    if (outputWin !== output) return
+    outputWin = null
+    win?.webContents.send('output:open-changed', false)
   })
   loadRenderer(output, '/output')
+  win?.webContents.send('output:open-changed', true)
+}
+
+/** The Live menu's "Show Live Output": opens the output (or brings it forward), or closes it. */
+function setOutputOpen(open: boolean) {
+  if (!open) outputWin?.close()
+  else if (outputWin) outputWin.show()
+  else createOutputWindow()
 }
 
 /** The stage display for the worship leader: an ordinary window to drag onto a confidence monitor. */
@@ -184,7 +194,7 @@ app.whenReady().then(() => {
   startBackupSchedule()
   registerAiIpc()
   registerSpeechIpc()
-  registerOutputIpc(() => outputWin)
+  registerOutputIpc(() => outputWin, setOutputOpen)
   createWindow()
   createOutputWindow()
 })

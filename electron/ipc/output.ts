@@ -31,8 +31,11 @@ function assertOutputState(value: unknown): OutputState {
   }
 }
 
-/** Forwards output state from the operator window to the output window. */
-export function registerOutputIpc(getOutputWindow: () => BrowserWindow | null): void {
+/** Forwards output state from the operator window to the output window, and opens or closes that window. */
+export function registerOutputIpc(getOutputWindow: () => BrowserWindow | null, setOpen: (open: boolean) => void): void {
+  ipcMain.handle('output:setOpen', (_event, open: unknown) => setOpen(open === true))
+  ipcMain.handle('output:isOpen', () => getOutputWindow() !== null)
+
   ipcMain.on('output:send', (_event, state: unknown) => {
     try {
       lastState = assertOutputState(state)

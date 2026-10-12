@@ -16,8 +16,9 @@ import type {
   ThemeBackground,
   ThemeDefaults,
   ThemeStyle,
+  Verse,
 } from '../shared/types'
-import { announcementSlides, quoteSlide } from './lib/slides'
+import { announcementSlides, parseVerseCaption, quoteSlide, verseCaption } from './lib/slides'
 
 export interface DeckSlide {
   text: string
@@ -101,6 +102,8 @@ interface OperatorState {
 
   // ---------- Live: what the projector shows ----------
   live: LiveState
+  /** What was live before, newest last, for Go Back. */
+  liveHistory: LiveState[]
 
   /** App settings from the main process (crossfade, output display, logo, appearance, backups). */
   settings: AppSettings
@@ -111,6 +114,8 @@ interface OperatorState {
   paletteOpen: boolean
   /** Whether the stage display window is open; kept in step by App from the main process. */
   stageOpen: boolean
+  /** Whether the projector output window is open; kept in step by App from the main process. */
+  outputOpen: boolean
   /** The service open in the schedule panel. */
   service: ServiceWithItems | null
   /** The song open in the editor, which takes the slide grid's place. */
@@ -135,9 +140,14 @@ interface OperatorState {
   moveHighlight(delta: number): void
   /** Changes only the live output mode; browsing never resets it. */
   setOutputMode(mode: OutputMode): void
-  /** Next and previous slide of the live item (Right and Left), whatever the grid is showing. */
+  /**
+   * Next and previous slide of the live item (Right and Left), whatever the grid is showing. Past either end of live
+   * scripture they read on into the next verse, or back into the one before.
+   */
   nextSlide(): void
   previousSlide(): void
+  /** Puts the slide that was live before the current one back on screen. */
+  goBack(): void
   /** Shows the live item in the grid again. */
   jumpToLive(): void
   /**
@@ -173,6 +183,8 @@ interface OperatorState {
   setPaletteOpen(open: boolean): void
   setStageOpen(open: boolean): void
   toggleStage(): Promise<void>
+  setOutputOpen(open: boolean): void
+  toggleOutput(): Promise<void>
   /** Closes the song editor, theme editor and settings so the slide grid shows. */
   showGrid(): void
   mediaChanged(): void
@@ -196,6 +208,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   deckThemeId: null,
   activeItemId: null,
   live: NOTHING_LIVE,
+  liveHistory: [],
   settings: {
     fadeMs: 400,
     outputDisplay: 'auto',
@@ -227,6 +240,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   settingsOpen: false,
   paletteOpen: false,
   stageOpen: false,
+  outputOpen: true,
   service: null,
   editingSongId: null,
   songsVersion: 0,
@@ -285,7 +299,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   goLive(index) {
     const s = get()
     if (index < 0 || index >= s.slides.length) return
-    set({ live: { ...snapshotOf(s), slideIndex: index, mode: 'show', stale: false }, highlightIndex: index })
+    const live: LiveState = { ...snapshotOf(s), slideIndex: index, mode: 'show', stale: false }
+    set({ live, liveHistory: historyBefore(s, live), highlightIndex: index })
   },
 
   goLiveHighlighted() {
@@ -308,17 +323,18 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   nextSlide() {
-    const { live } = get()
-    if (live.slides.length === 0) return
-    const slideIndex = live.slideIndex === null ? 0 : Math.min(live.slideIndex + 1, live.slides.length - 1)
-    set({ live: { ...live, slideIndex } })
+    stepLive(1)
   },
 
   previousSlide() {
-    const { live } = get()
-    if (live.slides.length === 0) return
-    const slideIndex = live.slideIndex === null ? 0 : Math.max(live.slideIndex - 1, 0)
-    set({ live: { ...live, slideIndex } })
+    stepLive(-1)
+  },
+
+  goBack() {
+    const { liveHistory } = get()
+    const previous = liveHistory[liveHistory.length - 1]
+    if (!previous) return
+    set({ live: { ...previous, mode: 'show' }, liveHistory: liveHistory.slice(0, -1) })
   },
 
   jumpToLive() {
@@ -491,6 +507,14 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     await (get().stageOpen ? window.api.stage.close() : window.api.stage.open())
   },
 
+  setOutputOpen(open) {
+    set({ outputOpen: open })
+  },
+
+  async toggleOutput() {
+    await window.api.output.setOpen(!get().outputOpen)
+  },
+
   showGrid() {
     set({ editingSongId: null, themeEditorOpen: false, settingsOpen: false })
   },
@@ -550,6 +574,64 @@ function snapshotOf(s: OperatorState): Omit<LiveState, 'slideIndex' | 'mode' | '
       activeItemId: s.activeItemId,
     },
   }
+}
+
+const MAX_LIVE_HISTORY = 50
+
+/** The Go Back history once `next` replaces what is live: what was on screen is added, unless the slide is the same. */
+function historyBefore(s: OperatorState, next: LiveState): LiveState[] {
+  const { live } = s
+  if (live.slideIndex === null) return s.liveHistory
+  const sameSlide =
+    live.deckKey === next.deckKey && next.slideIndex !== null && live.slides[live.slideIndex]?.text === next.slides[next.slideIndex]?.text
+  return sameSlide ? s.liveHistory : [...s.liveHistory, live].slice(-MAX_LIVE_HISTORY)
+}
+
+/** Puts slide `index` of `slides` (the live item's, perhaps with a verse added) on screen. Scripture in the grid follows along. */
+function showLiveSlide(slides: DeckSlide[], index: number): void {
+  const s = useOperatorStore.getState()
+  const live: LiveState = { ...s.live, slides, slideIndex: index }
+  const follow = s.live.itemType === 'scripture' && selectBrowsingLive(s)
+  useOperatorStore.setState({ live, liveHistory: historyBefore(s, live), ...(follow ? { slides, highlightIndex: index } : {}) })
+}
+
+/** True while the next or previous verse is being read, so key presses meanwhile do not skip ahead. */
+let stepping = false
+
+function stepLive(delta: 1 | -1): void {
+  const { live } = useOperatorStore.getState()
+  if (live.slides.length === 0 || stepping) return
+  const target = live.slideIndex === null ? 0 : live.slideIndex + delta
+  if (target >= 0 && target < live.slides.length) return showLiveSlide(live.slides, target)
+  if (live.itemType !== 'scripture' || live.slideIndex === null) return
+  stepping = true
+  neighbourVerse(live.slides[live.slideIndex], delta)
+    .then((verse) => {
+      const current = useOperatorStore.getState().live
+      // Something else went live meanwhile.
+      if (!verse || current.slides !== live.slides || current.slideIndex !== live.slideIndex) return
+      const slides = delta > 0 ? [...live.slides, verse] : [verse, ...live.slides]
+      showLiveSlide(slides, delta > 0 ? slides.length - 1 : 0)
+    })
+    .catch(console.error)
+    .finally(() => {
+      stepping = false
+    })
+}
+
+/** Past the end of the longest chapter, to read a whole chapter. */
+const LAST_VERSE = 999
+
+/** The verse after (or before) a scripture slide's verse, crossing into the next (or previous) chapter; null at either end of the book. */
+async function neighbourVerse(slide: DeckSlide, delta: 1 | -1): Promise<DeckSlide | null> {
+  const at = parseVerseCaption(slide.caption)
+  if (!at) return null
+  const read = (chapter: number, from: number, to: number) => window.api.bible.getRange(at.version, at.book, chapter, from, to)
+  let found: Verse | undefined
+  if (delta > 0) found = (await read(at.chapter, at.verse + 1, at.verse + 1))[0] ?? (await read(at.chapter + 1, 1, 1))[0]
+  else if (at.verse > 1) found = (await read(at.chapter, at.verse - 1, at.verse - 1))[0]
+  else if (at.chapter > 1) found = (await read(at.chapter - 1, 1, LAST_VERSE)).at(-1)
+  return found ? { text: found.text, caption: verseCaption(found, at.version) } : null
 }
 
 /** Notes that the live item changed after it went live, without touching what is on screen. */

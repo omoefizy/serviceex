@@ -6,6 +6,8 @@
 //   How sweet the sound
 //                        a blank line starts a new slide within the section
 //   That saved a wretch
+//   [Que salvó a un vil]  a [bracketed] line right under a lyric line is its translation, shown smaller, unless it
+//                        reads as a section name such as [Chorus]
 //
 // Text before the first label forms an unlabelled section.
 
@@ -16,6 +18,14 @@ export const DEFAULT_ARRANGEMENT: SongArrangement = { order: [], linesPerSlide: 
 export const LINES_PER_SLIDE_OPTIONS = [2, 3, 4] as const
 
 const LABEL_LINE = /^\s*\[([^\]]+)\]\s*$/
+
+/** Labels that always start a section, even straight under a lyric line. */
+const SECTION_NAME =
+  /^(?:(?:verse|chorus|pre-?chorus|post-?chorus|refrain|bridge|tag|intro|outro|ending|interlude|instrumental|vamp|hook|coda|turnaround|break)\b.*|(?:v|c|b|pc|t)\s*\d*)$/i
+
+/** A [bracketed] line that translates the lyric line above it: it follows a lyric line and is not a section name. */
+const isTranslationLine = (label: RegExpExecArray, previous: string | undefined) =>
+  previous !== undefined && previous.trim() !== '' && !LABEL_LINE.test(previous) && !SECTION_NAME.test(label[1].trim())
 
 /** A run of non-blank lines. Line numbers index `lyrics.split('\n')`; `endLine` is exclusive. */
 export interface LyricsChunk {
@@ -60,7 +70,8 @@ export function parseLyrics(lyrics: string): LyricsSection[] {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
-    const label = LABEL_LINE.exec(line)
+    const bracketed = LABEL_LINE.exec(line)
+    const label = bracketed && !isTranslationLine(bracketed, lines[i - 1]) ? bracketed : null
     if (label || line.trim() === '') {
       if (chunk && section) {
         chunk.endLine = i
@@ -90,15 +101,23 @@ export function parseLyrics(lyrics: string): LyricsSection[] {
   return sections
 }
 
-/** Splits lines into as few slides of at most `max` lines as possible, sharing lines out evenly (5 lines at 4 → 3 + 2). */
+/**
+ * Splits lines into as few slides of at most `max` lines as possible, sharing lines out evenly (5 lines at 4 → 3 + 2).
+ * A translation line counts with the line above it and stays on its slide.
+ */
 function splitLines(lines: string[], max: number | null): string[][] {
-  if (max === null || lines.length <= max) return [lines]
-  const count = Math.ceil(lines.length / max)
+  const units: string[][] = []
+  for (const line of lines) {
+    if (units.length > 0 && LABEL_LINE.test(line)) units[units.length - 1].push(line)
+    else units.push([line])
+  }
+  if (max === null || units.length <= max) return [lines]
+  const count = Math.ceil(units.length / max)
   const groups: string[][] = []
   let start = 0
   for (let i = 0; i < count; i++) {
-    const size = Math.floor(lines.length / count) + (i < lines.length % count ? 1 : 0)
-    groups.push(lines.slice(start, start + size))
+    const size = Math.floor(units.length / count) + (i < units.length % count ? 1 : 0)
+    groups.push(units.slice(start, start + size).flat())
     start += size
   }
   return groups

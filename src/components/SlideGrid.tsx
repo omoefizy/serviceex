@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
-import { CornerUpLeft, ImageOff, MonitorUp, RefreshCw, ZoomIn } from 'lucide-react'
+import { CornerUpLeft, ImageOff, LayoutGrid, List, MonitorUp, RefreshCw, ZoomIn } from 'lucide-react'
 import { MEDIA_DRAG_TYPE } from '../lib/media'
 import { sectionColor } from '../lib/sections'
+import { slideLines } from '../lib/slides'
 import { MOD } from '../lib/shortcuts'
 import { usePersistentState } from '../lib/usePersistentState'
 import { selectBaseThemeId, selectBrowsingLive, selectDeckTheme, slideTheme, useOperatorStore } from '../store'
 import { SuggestionTray } from './SuggestionTray'
 import { ThemedSlide } from './ThemedSlide'
+
+type SlideView = 'grid' | 'list'
 
 export function SlideGrid() {
   const song = useOperatorStore((s) => s.selectedSong)
@@ -28,6 +31,7 @@ export function SlideGrid() {
   const baseTheme = useOperatorStore((s) => s.themes.find((t) => t.id === selectBaseThemeId(s)))
   const usesSongTheme = useOperatorStore((s) => s.deckType === 'song' && !!s.selectedSong?.themeId)
   const deckKey = useOperatorStore((s) => s.deckKey)
+  const deckType = useOperatorStore((s) => s.deckType)
   const setSlideBackground = useOperatorStore((s) => s.setSlideBackground)
   /** Thumbnail width in pixels, from the zoom slider. */
   const [thumbWidth, setThumbWidth] = usePersistentState(
@@ -35,6 +39,8 @@ export function SlideGrid() {
     200,
     (v): v is number => typeof v === 'number' && v >= 120 && v <= 400,
   )
+  /** Thumbnails, or compact numbered rows of slide text. */
+  const [view, setView] = usePersistentState<SlideView>('worshipdeck.slideView', 'grid', (v): v is SlideView => v === 'grid' || v === 'list')
   const gridRef = useRef<HTMLDivElement>(null)
   /** The slide a library item is being dragged over. */
   const [dropIndex, setDropIndex] = useState<number | null>(null)
@@ -50,6 +56,22 @@ export function SlideGrid() {
     const mediaId = Number(e.dataTransfer.getData(MEDIA_DRAG_TYPE))
     if (mediaId > 0) setSlideBackground(index, mediaId).catch(console.error)
   }
+
+  /** Lets a library item be dropped on a slide, in either view. */
+  const dropTarget = (index: number) => ({
+    onDragOver(e: DragEvent) {
+      if (!canDrop(e, index)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+      setDropIndex(index)
+    },
+    onDragLeave() {
+      setDropIndex((current) => (current === index ? null : current))
+    },
+    onDrop(e: DragEvent) {
+      handleDrop(e, index)
+    },
+  })
 
   // Keep the preview highlight, and the live slide when this is the live item, in view as the keys move them.
   useEffect(() => {
@@ -85,7 +107,15 @@ export function SlideGrid() {
               </option>
             ))}
           </select>
-          <label className="zoom-control" title="Thumbnail size">
+          <span className="segmented view-toggle" role="radiogroup" aria-label="Slide view">
+            <button type="button" role="radio" aria-checked={view === 'grid'} className={view === 'grid' ? 'active' : ''} title="Grid" aria-label="Grid" onClick={() => setView('grid')}>
+              <LayoutGrid size={14} aria-hidden="true" />
+            </button>
+            <button type="button" role="radio" aria-checked={view === 'list'} className={view === 'list' ? 'active' : ''} title="List" aria-label="List" onClick={() => setView('list')}>
+              <List size={14} aria-hidden="true" />
+            </button>
+          </span>
+          <label className="zoom-control" title="Thumbnail size" hidden={view === 'list'}>
             <ZoomIn size={15} aria-hidden="true" />
             <input
               type="range"
@@ -126,52 +156,86 @@ export function SlideGrid() {
       </div>
       {title !== null && (
         <p className="hint slide-hint">
-          Click a slide or press Enter to go live · ↑ ↓ preview · ← → live slide · {MOD}↓ next schedule item
+          Click a slide or press Enter to go live · ↑ ↓ preview (next or previous verse when scripture is live) · ← → live
+          slide · {MOD}↓ next schedule item
         </p>
       )}
 
       {title === null && <p className="empty">Select a song or look up scripture to see its slides.</p>}
       {song && slides.length === 0 && <p className="empty">This song has no lyrics.</p>}
 
-      <div className="slide-grid" ref={gridRef} style={{ '--thumb-width': `${thumbWidth}px` } as CSSProperties}>
-        {slides.map(({ text, caption, label, background, page }, index) => (
-          <div
-            key={index}
-            className={`slide-cell${dropIndex === index ? ' drop' : ''}`}
-            onDragOver={(e) => {
-              if (!canDrop(e, index)) return
-              e.preventDefault()
-              e.dataTransfer.dropEffect = 'copy'
-              setDropIndex(index)
-            }}
-            onDragLeave={() => setDropIndex((current) => (current === index ? null : current))}
-            onDrop={(e) => handleDrop(e, index)}
-          >
-            <button
-              data-index={index}
-              className={`slide-card themed${index === liveIndexHere ? ' live' : ''}${index === highlightIndex ? ' preview' : ''}`}
-              style={label ? ({ '--section-color': sectionColor(label) } as CSSProperties) : undefined}
-              aria-label={`Slide ${index + 1}${label ? `, ${label}` : ''}${index === liveIndexHere ? ', live' : ''}${index === highlightIndex ? ', in preview' : ''}`}
-              title="Go live with this slide"
-              onClick={() => goLive(index)}
+      {view === 'list' ? (
+        <div className="slide-list" ref={gridRef}>
+          {slides.map(({ text, caption, label, page }, index) => (
+            <div
+              key={index}
+              className={`slide-cell${dropIndex === index ? ' drop' : ''}`}
+              {...dropTarget(index)}
             >
-              <ThemedSlide theme={slideThemes[index]} text={text} caption={caption} still />
-              <span className="slide-number">{index + 1}</span>
-              {label && <span className="slide-caption section-label">{label}</span>}
-            </button>
-            {background && !page && (
               <button
-                className="slide-bg-clear"
-                aria-label="Use the theme background for this slide"
-                title="Use the theme background for this slide"
-                onClick={() => setSlideBackground(index, null).catch(console.error)}
+                data-index={index}
+                className={`slide-row${index === liveIndexHere ? ' live' : ''}${index === highlightIndex ? ' preview' : ''}`}
+                style={label ? ({ '--section-color': sectionColor(label) } as CSSProperties) : undefined}
+                aria-label={`Slide ${index + 1}${label ? `, ${label}` : ''}${index === liveIndexHere ? ', live' : ''}${index === highlightIndex ? ', in preview' : ''}`}
+                title="Go live with this slide"
+                onClick={() => goLive(index)}
               >
-                <ImageOff size={12} aria-hidden="true" />
+                <span className="slide-row-number">{index + 1}</span>
+                <span className="slide-row-bar" aria-hidden="true" />
+                <span className="slide-row-body">
+                  {label && <span className="slide-row-label">{label}</span>}
+                  <span className="slide-row-text">
+                    {page ? (
+                      <span className="slide-row-line hint">Presentation page</span>
+                    ) : (
+                      slideLines(text).map((line, i) => (
+                        <span key={i} className={`slide-row-line ${line.kind}`}>
+                          {line.text}
+                        </span>
+                      ))
+                    )}
+                  </span>
+                  {/* A scripture slide's reference; a song's only caption is its copyright, which is left out. */}
+                  {caption && deckType !== 'song' && <span className="slide-row-caption">{caption}</span>}
+                </span>
               </button>
-            )}
-          </div>
-        ))}
-      </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="slide-grid" ref={gridRef} style={{ '--thumb-width': `${thumbWidth}px` } as CSSProperties}>
+          {slides.map(({ text, caption, label, background, page }, index) => (
+            <div
+              key={index}
+              className={`slide-cell${dropIndex === index ? ' drop' : ''}`}
+              {...dropTarget(index)}
+            >
+              <button
+                data-index={index}
+                className={`slide-card themed${index === liveIndexHere ? ' live' : ''}${index === highlightIndex ? ' preview' : ''}`}
+                style={label ? ({ '--section-color': sectionColor(label) } as CSSProperties) : undefined}
+                aria-label={`Slide ${index + 1}${label ? `, ${label}` : ''}${index === liveIndexHere ? ', live' : ''}${index === highlightIndex ? ', in preview' : ''}`}
+                title="Go live with this slide"
+                onClick={() => goLive(index)}
+              >
+                <ThemedSlide theme={slideThemes[index]} text={text} caption={caption} still />
+                <span className="slide-number">{index + 1}</span>
+                {label && <span className="slide-caption section-label">{label}</span>}
+              </button>
+              {background && !page && (
+                <button
+                  className="slide-bg-clear"
+                  aria-label="Use the theme background for this slide"
+                  title="Use the theme background for this slide"
+                  onClick={() => setSlideBackground(index, null).catch(console.error)}
+                >
+                  <ImageOff size={12} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   )
 }

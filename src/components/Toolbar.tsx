@@ -1,9 +1,92 @@
-import { Eraser, Image, Monitor, MonitorPlay, Palette, Search, Settings, Square, type LucideIcon } from 'lucide-react'
+import { Check, ChevronDown, Eraser, Image, Monitor, MonitorPlay, Palette, Search, Settings, Square, Tv, Undo2, type LucideIcon } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import type { OutputMode } from '../../shared/types'
 import { MOD, MODE_KEYS } from '../lib/shortcuts'
 import { useOperatorStore } from '../store'
 
 const MODE_ICONS: Record<OutputMode, LucideIcon> = { show: Monitor, black: Square, clear: Eraser, logo: Image }
+
+/** The Live menu's output modes. Each one toggles: choosing the mode already on screen goes back to Show. */
+const LIVE_MENU_MODES: { mode: OutputMode; label: string; key: string }[] = [
+  { mode: 'logo', label: 'Logo', key: 'L' },
+  { mode: 'black', label: 'Black', key: 'B' },
+  { mode: 'clear', label: 'Clear Text', key: 'C' },
+]
+
+/** The Live menu: Go Back, the screen modes and whether the projector output window is open. */
+function LiveMenu() {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const mode = useOperatorStore((s) => s.live.mode)
+  const canGoBack = useOperatorStore((s) => s.liveHistory.length > 0)
+  const outputOpen = useOperatorStore((s) => s.outputOpen)
+  const setOutputMode = useOperatorStore((s) => s.setOutputMode)
+  const goBack = useOperatorStore((s) => s.goBack)
+  const toggleOutput = useOperatorStore((s) => s.toggleOutput)
+
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('mousedown', close)
+    window.addEventListener('keydown', close)
+    return () => {
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('keydown', close)
+    }
+  }, [open])
+
+  const choose = (action: () => void) => () => {
+    action()
+    setOpen(false)
+  }
+
+  return (
+    <div className="live-menu" ref={ref}>
+      <button type="button" className="button live-menu-button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+        Live <ChevronDown size={14} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="live-menu-list" role="menu" aria-label="Live">
+          <button type="button" role="menuitem" disabled={!canGoBack} onClick={choose(goBack)}>
+            <Undo2 size={15} aria-hidden="true" />
+            <span>Go Back</span>
+          </button>
+          <hr />
+          {LIVE_MENU_MODES.map(({ mode: m, label, key }) => {
+            const Icon = MODE_ICONS[m]
+            return (
+              <button
+                key={m}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={mode === m}
+                onClick={choose(() => setOutputMode(mode === m ? 'show' : m))}
+              >
+                <Icon size={15} aria-hidden="true" />
+                <span>{label}</span>
+                {mode === m && <Check size={14} aria-hidden="true" />}
+                <kbd>{key}</kbd>
+              </button>
+            )
+          })}
+          <hr />
+          <button
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={outputOpen}
+            onClick={choose(() => toggleOutput().catch(console.error))}
+          >
+            <Tv size={15} aria-hidden="true" />
+            <span>Show Live Output</span>
+            {outputOpen && <Check size={14} aria-hidden="true" />}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
 
 /** Top bar: the service, what the audience sees right now, the output mode buttons and app-wide actions. */
 export function Toolbar() {
@@ -35,6 +118,8 @@ export function Toolbar() {
         <span className="live-label">{status.toUpperCase()}</span>
         {liveTitle && <span className="live-title">{liveTitle}</span>}
       </div>
+
+      <LiveMenu />
 
       <div className="mode-buttons" role="group" aria-label="Output">
         {MODE_KEYS.map(({ mode: m, key, label }) => {

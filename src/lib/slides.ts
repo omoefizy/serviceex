@@ -1,4 +1,13 @@
-import type { AnnouncementPayload } from '../../shared/types'
+import type { AnnouncementPayload, BibleVersionCode, Verse } from '../../shared/types'
+
+/** The caption every scripture slide carries, such as "John 3:16 KJV". */
+export const verseCaption = (verse: Verse, version: BibleVersionCode) => `${verse.book} ${verse.chapter}:${verse.verse} ${version}`
+
+/** Reads a scripture slide's caption (see verseCaption) back into its verse and version; null for any other caption. */
+export function parseVerseCaption(caption: string): { book: string; chapter: number; verse: number; version: BibleVersionCode } | null {
+  const match = /^(.+) (\d+):(\d+) (\S+)$/.exec(caption)
+  return match ? { book: match[1], chapter: Number(match[2]), verse: Number(match[3]), version: match[4] } : null
+}
 
 /** Splits text into slide texts on blank lines, dropping empty chunks. Songs use buildSongSlides in shared/lyrics.ts. */
 export function splitIntoSlides(lyrics: string): string[] {
@@ -7,6 +16,28 @@ export function splitIntoSlides(lyrics: string): string[] {
     .split(/\n\s*\n/)
     .map((chunk) => chunk.trim())
     .filter((chunk) => chunk.length > 0)
+}
+
+/** How a line of slide text is drawn: plain, a smaller translation of the line above, or a yellow reference line. */
+export interface SlideLine {
+  text: string
+  kind: 'text' | 'translation' | 'reference'
+}
+
+/** The colour of a {reference} line on any theme. */
+export const REFERENCE_LINE_COLOR = '#ffd400'
+
+/**
+ * Splits slide text into lines. A line wholly in [brackets] under another line is a translation, shown smaller; a
+ * line wholly in {braces}, such as {John 3:16}, is a reference, shown in yellow. The marks themselves are not shown.
+ */
+export function slideLines(text: string): SlideLine[] {
+  return text.split('\n').map((line, index) => {
+    const trimmed = line.trim()
+    if (index > 0 && /^\[.+\]$/.test(trimmed)) return { text: trimmed.slice(1, -1).trim(), kind: 'translation' }
+    if (/^\{.+\}$/.test(trimmed)) return { text: trimmed.slice(1, -1).trim(), kind: 'reference' }
+    return { text: line, kind: 'text' }
+  })
 }
 
 /** A quote's one slide: its words in quote marks, with the speaker's name under them (the theme's caption line). */

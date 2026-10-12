@@ -4,6 +4,7 @@ const SECTION_COLORS: [prefix: string, color: string][] = [
   ['prechorus', '#ec4899'],
   ['verse', '#14b8a6'],
   ['chorus', '#f59e0b'],
+  ['refrain', '#ef4444'],
   ['bridge', '#a855f7'],
   ['tag', '#84cc16'],
   ['intro', '#64748b'],

@@ -1,6 +1,7 @@
 import type { BibleVersionCode, ScripturePayload, Verse } from '../../shared/types'
 import { formatReference, type ScriptureReference } from '../../shared/parseReference'
 import { useOperatorStore } from '../store'
+import { verseCaption } from './slides'
 
 /** One search result: a verse or passage in one version, with its text from the database. */
 export interface ResultItem {
@@ -19,7 +20,7 @@ export const itemTitle = (item: ResultItem) =>
   `${formatReference({ book: item.book, chapter: item.chapter, verseStart: item.verseStart, verseEnd: item.verseEnd })} ${item.version}`
 
 const slidesOf = (verses: Verse[], version: BibleVersionCode) =>
-  verses.map((v) => ({ text: v.text, caption: `${v.book} ${v.chapter}:${v.verse} ${version}` }))
+  verses.map((v) => ({ text: v.text, caption: verseCaption(v, version) }))
 
 /** A range needs one chapter of one version: it runs from the first selected verse to the last, gaps filled in. */
 export function canMakeRange(items: ResultItem[]): boolean {

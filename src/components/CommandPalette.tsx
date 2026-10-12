@@ -170,7 +170,7 @@ export function CommandPalette() {
           const { hits } = await window.api.bible.search({
             // As typed: a trailing space marks the last word finished, so it is not matched as a prefix.
             query,
-            versions: searchVersions(filter),
+            versions: searchVersions(filter, (await window.api.bible.listVersions()).map((v) => v.code)),
             testament: 'all',
             book: null,
             offset: 0,

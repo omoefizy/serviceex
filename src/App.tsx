@@ -14,7 +14,7 @@ import { ThemeEditor } from './components/ThemeEditor'
 import { Toolbar } from './components/Toolbar'
 import { isTyping, MODE_KEYS } from './lib/shortcuts'
 import { usePersistentState } from './lib/usePersistentState'
-import { selectOutputState, selectStageState, useOperatorStore } from './store'
+import { selectBrowsingLive, selectOutputState, selectStageState, useOperatorStore } from './store'
 
 type PanelSizes = { library: number; preview: number; schedule: number }
 
@@ -50,7 +50,13 @@ function App() {
     st.loadThemes().catch(console.error)
     st.loadSettings().catch(console.error)
     window.api.stage.isOpen().then(st.setStageOpen, console.error)
-    return window.api.stage.onOpenChange(st.setStageOpen)
+    window.api.output.isOpen().then(st.setOutputOpen, console.error)
+    const offStage = window.api.stage.onOpenChange(st.setStageOpen)
+    const offOutput = window.api.output.onOpenChange(st.setOutputOpen)
+    return () => {
+      offStage()
+      offOutput()
+    }
   }, [])
 
   // Dark or light; with "system" the stylesheet follows the operating system.
@@ -124,18 +130,20 @@ function App() {
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault()
         st.previousSlide()
-      } else if (e.key === 'ArrowDown') {
-        // Up and Down move the preview highlight in the grid's item.
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        // Up and Down move the preview highlight in the grid's item. With live scripture in the grid they step the
+        // live verse instead, as Right and Left do.
         e.preventDefault()
-        st.moveHighlight(1)
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        st.moveHighlight(-1)
+        const delta = e.key === 'ArrowDown' ? 1 : -1
+        if (st.live.itemType === 'scripture' && st.live.slideIndex !== null && selectBrowsingLive(st)) {
+          if (delta > 0) st.nextSlide()
+          else st.previousSlide()
+        } else st.moveHighlight(delta)
       } else if (e.key === 'Enter') {
         // Enter on another button (a schedule item, a dialog) keeps its own meaning; on a slide card or the page
         // it sends the highlighted preview slide live.
         const target = e.target as HTMLElement | null
-        if (target?.closest('button, a, [role="button"]') && !target.closest('.slide-card')) return
+        if (target?.closest('button, a, [role="button"]') && !target.closest('.slide-card, .slide-row')) return
         e.preventDefault()
         st.goLiveHighlighted()
       }

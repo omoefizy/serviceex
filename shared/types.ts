@@ -129,6 +129,8 @@ export type ThemeBackground =
   /** `contain` shows the whole image (presentation pages); the default `cover` fills the screen. */
   | { kind: 'image'; src: string; fit?: 'cover' | 'contain' }
   | { kind: 'video'; src: string }
+  /** Slow drifting smoke over a solid color, drawn on the fly; no media file. */
+  | { kind: 'smoke'; color: string; smoke: string }
 
 /** Style of the small line under the text: a scripture reference or a song's copyright. */
 export interface ThemeCaptionStyle {
@@ -140,6 +142,8 @@ export interface ThemeCaptionStyle {
   color: string
   textCase: TextCase
   italic: boolean
+  /** below: under the text. top: across the top of the safe area, with the text centred in the space below. */
+  position: 'below' | 'top'
 }
 
 /**
@@ -338,8 +342,31 @@ export interface SongsApi {
   delete(id: number): Promise<boolean>
 }
 
-/** Public domain Bible versions loaded by `npm run import:bible`. */
-export type BibleVersionCode = 'KJV' | 'WEB'
+/**
+ * A Bible version's short code, such as "KJV". The public domain KJV and WEB ship with the app; others are imported
+ * from the church's own files (see BibleApi.importVersion).
+ */
+export type BibleVersionCode = string
+
+/** The versions that ship with the app; they cannot be removed. */
+export const BUNDLED_BIBLE_VERSIONS: readonly BibleVersionCode[] = ['KJV', 'WEB']
+
+export interface BibleVersion {
+  code: BibleVersionCode
+  name: string
+  verses: number
+  /** Shipped with the app (KJV, WEB), so it cannot be removed. */
+  bundled: boolean
+}
+
+export interface BibleImportResult {
+  code: BibleVersionCode
+  name: string
+  /** Verses stored. */
+  verses: number
+  /** Books in the files that are not among the 66 the app knows, such as the Apocrypha; they are left out. */
+  skippedBooks: string[]
+}
 
 export interface Verse {
   /** Full book name, such as "1 Corinthians". */
@@ -392,6 +419,16 @@ export interface BibleApi {
   searchText(version: BibleVersionCode, query: string): Promise<Verse[]>
   /** Book names in Bible order. Empty until the Bible data is imported. */
   listBooks(): Promise<string[]>
+  /** Installed versions, the bundled ones first. */
+  listVersions(): Promise<BibleVersion[]>
+  /**
+   * Shows a file picker for Zefania XML, OSIS XML or USFM files (one file per book is fine) and stores them as
+   * `code`, replacing an imported version with that code. Resolves to null if cancelled. The church is responsible
+   * for holding a license for any version it imports.
+   */
+  importVersion(code: BibleVersionCode, name: string): Promise<BibleImportResult | null>
+  /** Removes an imported version. Resolves to false for a bundled or unknown version. */
+  removeVersion(code: BibleVersionCode): Promise<boolean>
   /** Full-text search over the local Bible (SQLite FTS5), ranked by relevance. */
   search(params: VerseSearchParams): Promise<VerseSearchResult>
   /** Verses per chapter for a book, from the KJV: [31, 25, …] means chapter 1 has 31 verses. Empty if unknown. */
@@ -496,6 +533,11 @@ export interface WorshipDeckApi {
     send(state: OutputState): void
     /** Subscribe to output state changes. Returns an unsubscribe function. */
     onState(listener: (state: OutputState) => void): () => void
+    /** Opens the projector output window, or closes it. */
+    setOpen(open: boolean): Promise<void>
+    isOpen(): Promise<boolean>
+    /** Called when the output window opens or closes, including by its own close button. */
+    onOpenChange(listener: (open: boolean) => void): () => void
   }
 }
 
