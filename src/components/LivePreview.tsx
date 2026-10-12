@@ -1,6 +1,8 @@
 import { RefreshCw, Undo2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { selectDeckTheme, selectLiveSlide, selectPreviewSlide, slideTheme, useOperatorStore } from '../store'
+import { useShallow } from 'zustand/react/shallow'
+import { selectAlertDisplay, selectDeckTheme, selectLiveSlide, selectPreviewSlide, slideTheme, useOperatorStore } from '../store'
+import { AlertBand } from './AlertBand'
 import { ThemedSlide } from './ThemedSlide'
 
 /** "Slide 2 of 5" across the corner of a screen, when it shows a slide. */
@@ -32,6 +34,7 @@ export function LivePreview() {
   const setFadeMs = useOperatorStore((s) => s.setFadeMs)
   const resendLive = useOperatorStore((s) => s.resendLive)
   const goBack = useOperatorStore((s) => s.goBack)
+  const alert = useOperatorStore(useShallow(selectAlertDisplay))
   const canGoBack = useOperatorStore((s) => s.liveHistory.length > 0)
   const [error, setError] = useState<string | null>(null)
 
@@ -54,6 +57,7 @@ export function LivePreview() {
       </header>
       <div className="preview-screen live">
         <ThemedSlide theme={liveTheme} text={liveSlide?.text ?? ''} caption={liveSlide?.caption} mode={live.mode} logoUrl={logoUrl} />
+        <AlertBand alert={alert} />
         <SlideBadge index={live.slideIndex} count={live.slides.length} />
       </div>
       <p className="screen-label">

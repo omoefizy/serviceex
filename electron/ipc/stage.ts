@@ -1,9 +1,10 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import type { OutputMode, SlideContent, StageState } from '../../shared/types'
+import { alertDisplayOf } from './output'
 
 const MODES: OutputMode[] = ['show', 'black', 'clear', 'logo']
 
-let lastState: StageState = { current: null, next: null, title: null, nextItemTitle: null, mode: 'show' }
+let lastState: StageState = { current: null, next: null, title: null, nextItemTitle: null, mode: 'show', alert: null }
 
 function slideOf(value: unknown): SlideContent | null {
   const slide = value as Partial<SlideContent> | null
@@ -27,6 +28,7 @@ function assertStageState(value: unknown): StageState {
     title: textOrNull(state.title),
     nextItemTitle: textOrNull(state.nextItemTitle),
     mode: state.mode as OutputMode,
+    alert: alertDisplayOf(state.alert),
   }
 }
 

@@ -104,6 +104,34 @@ export interface SlideContent {
  */
 export type OutputMode = 'show' | 'black' | 'clear' | 'logo'
 
+// ---------- Alerts ----------
+
+/**
+ * How long an alert stays up. once: for AppSettings.alertSeconds, then it hides. loop: that long, then again every
+ * `everySeconds` until hidden. hold: until hidden.
+ */
+export type AlertRepeat = 'once' | 'loop' | 'hold'
+
+/** A short message shown in a band over the live output, such as "Parking: car with lights on". */
+export interface AlertMessage {
+  id: string
+  text: string
+  /** Shown in a warning color, and replaces whatever alert is up instead of waiting for it. */
+  priority: boolean
+  repeat: AlertRepeat
+  /** For loop: seconds from the start of one showing to the start of the next. */
+  everySeconds: number
+}
+
+/** The alert band as the output and stage windows draw it, or null for none. */
+export interface AlertDisplay {
+  /** Changes every time the band appears, so it fades in again. */
+  key: number
+  text: string
+  priority: boolean
+  position: 'top' | 'bottom'
+}
+
 /** What the operator sends to the output window. `text` is empty when no slide is live. */
 export interface OutputState extends SlideContent {
   mode: OutputMode
@@ -113,6 +141,8 @@ export interface OutputState extends SlideContent {
   logoUrl: string | null
   /** The resolved theme, sent whole so the output window needs no database access. */
   theme: ThemeStyle
+  /** The alert band over the slide, independent of it. */
+  alert: AlertDisplay | null
 }
 
 // ---------- Themes ----------
@@ -238,6 +268,14 @@ export interface MediaApi {
 export type OutputDisplay = 'auto' | 'window' | number
 
 export interface AppSettings {
+  /** Saved alert messages, for reuse. */
+  alertMessages: AlertMessage[]
+  /** Where the alert band sits on the output. */
+  alertPosition: 'top' | 'bottom'
+  /** How long a once or loop alert shows each time, 3 to 120 seconds. */
+  alertSeconds: number
+  /** Whether an alert stays up in Clear mode (Black always hides it). */
+  alertKeepOnClear: boolean
   /** Crossfade between slides and backgrounds on the output, 0 to 1500 ms. */
   fadeMs: number
   outputDisplay: OutputDisplay
@@ -315,6 +353,8 @@ export interface StageState {
   /** The schedule item after the loaded one, for "coming up". */
   nextItemTitle: string | null
   mode: OutputMode
+  /** The alert the audience sees, if any. */
+  alert: AlertDisplay | null
 }
 
 export interface StageApi {

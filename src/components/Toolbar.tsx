@@ -1,8 +1,24 @@
-import { Check, ChevronDown, Eraser, Image, Monitor, MonitorPlay, Palette, Search, Settings, Square, Tv, Undo2, type LucideIcon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import {
+  Check,
+  ChevronDown,
+  Eraser,
+  Image,
+  Megaphone,
+  Monitor,
+  MonitorPlay,
+  Palette,
+  Search,
+  Settings,
+  Square,
+  Tv,
+  Undo2,
+  type LucideIcon,
+} from 'lucide-react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { OutputMode } from '../../shared/types'
 import { MOD, MODE_KEYS } from '../lib/shortcuts'
 import { useOperatorStore } from '../store'
+import { AlertsPanel } from './AlertsPanel'
 
 const MODE_ICONS: Record<OutputMode, LucideIcon> = { show: Monitor, black: Square, clear: Eraser, logo: Image }
 
@@ -12,6 +28,47 @@ const LIVE_MENU_MODES: { mode: OutputMode; label: string; key: string }[] = [
   { mode: 'black', label: 'Black', key: 'B' },
   { mode: 'clear', label: 'Clear Text', key: 'C' },
 ]
+
+/** Closes a popup on Escape or on a click outside `ref`. */
+function useDismiss(open: boolean, ref: RefObject<HTMLElement>, close: () => void) {
+  useEffect(() => {
+    if (!open) return
+    const onEvent = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !ref.current?.contains(e.target as Node)) close()
+    }
+    window.addEventListener('mousedown', onEvent)
+    window.addEventListener('keydown', onEvent)
+    return () => {
+      window.removeEventListener('mousedown', onEvent)
+      window.removeEventListener('keydown', onEvent)
+    }
+  }, [open, ref, close])
+}
+
+/** The Alerts button, beside the output modes, and its panel. */
+function AlertsButton() {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const showing = useOperatorStore((s) => s.live.alert?.visible === true)
+  useDismiss(open, ref, () => setOpen(false))
+
+  return (
+    <div className="alerts-control" ref={ref}>
+      <button
+        type="button"
+        className={`mode-button mode-alert${showing ? ' active' : ''}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title={showing ? 'Alerts (one is on screen)' : 'Alerts'}
+        onClick={() => setOpen(!open)}
+      >
+        <Megaphone size={18} aria-hidden="true" />
+        <span>Alerts</span>
+      </button>
+      {open && <AlertsPanel />}
+    </div>
+  )
+}
 
 /** The Live menu: Go Back, the screen modes and whether the projector output window is open. */
 function LiveMenu() {
@@ -24,18 +81,7 @@ function LiveMenu() {
   const goBack = useOperatorStore((s) => s.goBack)
   const toggleOutput = useOperatorStore((s) => s.toggleOutput)
 
-  useEffect(() => {
-    if (!open) return
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !ref.current?.contains(e.target as Node)) setOpen(false)
-    }
-    window.addEventListener('mousedown', close)
-    window.addEventListener('keydown', close)
-    return () => {
-      window.removeEventListener('mousedown', close)
-      window.removeEventListener('keydown', close)
-    }
-  }, [open])
+  useDismiss(open, ref, () => setOpen(false))
 
   const choose = (action: () => void) => () => {
     action()
@@ -138,6 +184,7 @@ export function Toolbar() {
             </button>
           )
         })}
+        <AlertsButton />
       </div>
 
       <div className="toolbar-actions">

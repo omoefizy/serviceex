@@ -1,10 +1,22 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { DEFAULT_THEME_STYLE, normalizeTheme } from '../../shared/themes'
-import type { OutputMode, OutputState } from '../../shared/types'
+import type { AlertDisplay, OutputMode, OutputState } from '../../shared/types'
 
 const MODES: OutputMode[] = ['show', 'black', 'clear', 'logo']
 
-let lastState: OutputState = { mode: 'black', text: '', caption: '', theme: DEFAULT_THEME_STYLE, fadeMs: 400, logoUrl: null }
+let lastState: OutputState = { mode: 'black', text: '', caption: '', theme: DEFAULT_THEME_STYLE, fadeMs: 400, logoUrl: null, alert: null }
+
+/** The alert band of an output or stage state; anything malformed shows no alert. */
+export function alertDisplayOf(value: unknown): AlertDisplay | null {
+  const alert = value as Partial<AlertDisplay> | null
+  if (typeof alert !== 'object' || alert === null || typeof alert.text !== 'string' || !Number.isFinite(alert.key)) return null
+  return {
+    key: alert.key as number,
+    text: alert.text.slice(0, 300),
+    priority: alert.priority === true,
+    position: alert.position === 'top' ? 'top' : 'bottom',
+  }
+}
 
 function assertOutputState(value: unknown): OutputState {
   const state = value as Partial<OutputState> | null
@@ -28,6 +40,7 @@ function assertOutputState(value: unknown): OutputState {
     theme: normalizeTheme(state.theme),
     fadeMs: Math.min(1500, Math.max(0, state.fadeMs)),
     logoUrl: state.logoUrl,
+    alert: alertDisplayOf(state.alert),
   }
 }
 

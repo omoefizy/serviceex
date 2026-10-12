@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { OutputState } from '../../shared/types'
+import { AlertBand } from './AlertBand'
 import { ThemedSlide } from './ThemedSlide'
 
 interface Frame {
@@ -86,6 +87,8 @@ export function OutputView() {
           />
         </div>
       ))}
+      {/* Above the slide layers and outside their crossfades, so changing slides never touches it. */}
+      <AlertBand alert={state?.alert ?? null} />
     </div>
   )
 }

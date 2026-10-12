@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { buildSongSlides } from '../shared/lyrics'
 import { DEFAULT_THEME_STYLE } from '../shared/themes'
 import type {
+  AlertDisplay,
+  AlertMessage,
   AppSettings,
   MediaItem,
   OutputMode,
@@ -41,6 +43,14 @@ type BrowseSnapshot = Pick<
   'selectedSong' | 'deckTitle' | 'slides' | 'deckType' | 'deckKey' | 'deckThemeId' | 'activeItemId'
 >
 
+/** The alert on the output: which message, and whether its band is up right now (a loop alert comes and goes). */
+export interface LiveAlert {
+  /** Changes every time the band appears, so the output fades it in again. */
+  key: number
+  message: AlertMessage
+  visible: boolean
+}
+
 /**
  * What the projector shows: a full copy taken when something goes live. Browsing, editing songs, changing themes
  * or deleting things never changes it; only going live, the arrow keys and the output mode buttons do.
@@ -64,6 +74,8 @@ export interface LiveState {
   stale: boolean
   /** What the grid showed when this went live, for "jump back to live". */
   source: BrowseSnapshot | null
+  /** The alert band over the output. It belongs to the output, not the slide: going live or changing slides keeps it. */
+  alert: LiveAlert | null
 }
 
 const NOTHING_LIVE: LiveState = {
@@ -78,6 +90,7 @@ const NOTHING_LIVE: LiveState = {
   mode: 'show',
   stale: false,
   source: null,
+  alert: null,
 }
 
 interface OperatorState {
@@ -104,6 +117,10 @@ interface OperatorState {
   live: LiveState
   /** What was live before, newest last, for Go Back. */
   liveHistory: LiveState[]
+  /** Alerts waiting for the one on screen to finish, oldest first. */
+  alertQueue: AlertMessage[]
+  /** The saved message shown last, so Next can move on to the one after it. */
+  lastAlertId: string | null
 
   /** App settings from the main process (crossfade, output display, logo, appearance, backups). */
   settings: AppSettings
@@ -148,6 +165,15 @@ interface OperatorState {
   previousSlide(): void
   /** Puts the slide that was live before the current one back on screen. */
   goBack(): void
+  /**
+   * Puts an alert over the output. A priority alert, or any alert when none is up, shows at once; otherwise it waits
+   * for the current one to finish.
+   */
+  showAlert(message: AlertMessage): void
+  /** Moves on to the next waiting alert, or else the saved message after the last one shown. */
+  nextAlert(): void
+  /** Takes the alert off the output and drops any waiting ones. */
+  hideAlert(): void
   /** Shows the live item in the grid again. */
   jumpToLive(): void
   /**
@@ -209,7 +235,13 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   activeItemId: null,
   live: NOTHING_LIVE,
   liveHistory: [],
+  alertQueue: [],
+  lastAlertId: null,
   settings: {
+    alertMessages: [],
+    alertPosition: 'bottom',
+    alertSeconds: 10,
+    alertKeepOnClear: true,
     fadeMs: 400,
     outputDisplay: 'auto',
     logoUrl: null,
@@ -299,7 +331,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   goLive(index) {
     const s = get()
     if (index < 0 || index >= s.slides.length) return
-    const live: LiveState = { ...snapshotOf(s), slideIndex: index, mode: 'show', stale: false }
+    const live: LiveState = { ...snapshotOf(s), slideIndex: index, mode: 'show', stale: false, alert: s.live.alert }
     set({ live, liveHistory: historyBefore(s, live), highlightIndex: index })
   },
 
@@ -331,10 +363,33 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   goBack() {
-    const { liveHistory } = get()
+    const { liveHistory, live } = get()
     const previous = liveHistory[liveHistory.length - 1]
     if (!previous) return
-    set({ live: { ...previous, mode: 'show' }, liveHistory: liveHistory.slice(0, -1) })
+    set({ live: { ...previous, mode: 'show', alert: live.alert }, liveHistory: liveHistory.slice(0, -1) })
+  },
+
+  showAlert(message) {
+    const { alert } = get().live
+    if (message.priority || !alert?.visible) return putAlert(message)
+    if (alert.message.id === message.id) return
+    set({ alertQueue: [...get().alertQueue.filter((m) => m.id !== message.id), message] })
+  },
+
+  nextAlert() {
+    const { alertQueue, settings, lastAlertId } = get()
+    if (alertQueue.length > 0) {
+      set({ alertQueue: alertQueue.slice(1) })
+      return putAlert(alertQueue[0])
+    }
+    const saved = settings.alertMessages
+    if (saved.length === 0) return putAlert(null)
+    putAlert(saved[(saved.findIndex((m) => m.id === lastAlertId) + 1) % saved.length])
+  },
+
+  hideAlert() {
+    set({ alertQueue: [] })
+    putAlert(null)
   },
 
   jumpToLive() {
@@ -555,7 +610,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
 }))
 
 /** A copy of the grid's item, with its theme resolved, for going live. */
-function snapshotOf(s: OperatorState): Omit<LiveState, 'slideIndex' | 'mode' | 'stale'> {
+function snapshotOf(s: OperatorState): Omit<LiveState, 'slideIndex' | 'mode' | 'stale' | 'alert'> {
   return {
     itemType: s.deckType,
     itemId: s.deckType === 'song' ? (s.selectedSong?.id ?? null) : s.activeItemId,
@@ -634,6 +689,53 @@ async function neighbourVerse(slide: DeckSlide, delta: 1 | -1): Promise<DeckSlid
   return found ? { text: found.text, caption: verseCaption(found, at.version) } : null
 }
 
+// ---------- Alerts ----------
+
+/** The timer that ends the current showing of the alert, or brings a loop alert back. */
+let alertTimer: ReturnType<typeof setTimeout> | undefined
+let alertKey = 0
+
+function setLiveAlert(alert: LiveAlert | null): void {
+  const { live } = useOperatorStore.getState()
+  useOperatorStore.setState({ live: { ...live, alert } })
+}
+
+/** Shows `message` now in place of any alert, or clears the alert with null. */
+function putAlert(message: AlertMessage | null): void {
+  clearTimeout(alertTimer)
+  if (!message) return setLiveAlert(null)
+  setLiveAlert({ key: ++alertKey, message, visible: true })
+  useOperatorStore.setState({ lastAlertId: message.id })
+  scheduleAlertEnd(message)
+}
+
+/** When a showing ends, a waiting alert takes over; else once alerts hide and loop alerts come back later. */
+function scheduleAlertEnd(message: AlertMessage): void {
+  if (message.repeat === 'hold') return
+  const seconds = useOperatorStore.getState().settings.alertSeconds
+  alertTimer = setTimeout(() => {
+    const { alertQueue } = useOperatorStore.getState()
+    if (alertQueue.length > 0) {
+      useOperatorStore.setState({ alertQueue: alertQueue.slice(1) })
+      return putAlert(alertQueue[0])
+    }
+    if (message.repeat === 'once') return setLiveAlert(null)
+    setLiveAlert({ key: alertKey, message, visible: false })
+    alertTimer = setTimeout(() => {
+      setLiveAlert({ key: ++alertKey, message, visible: true })
+      scheduleAlertEnd(message)
+    }, Math.max(1, message.everySeconds - seconds) * 1000)
+  }, seconds * 1000)
+}
+
+/** The alert band the audience sees: none in Black, and none in Clear unless the setting keeps it. */
+export function selectAlertDisplay(s: OperatorState): AlertDisplay | null {
+  const alert = s.live.alert
+  if (!alert?.visible || s.live.mode === 'black') return null
+  if (s.live.mode === 'clear' && !s.settings.alertKeepOnClear) return null
+  return { key: alert.key, text: alert.message.text, priority: alert.message.priority, position: s.settings.alertPosition }
+}
+
 /** Notes that the live item changed after it went live, without touching what is on screen. */
 function markLiveStale(deckKey: string): void {
   const { live } = useOperatorStore.getState()
@@ -705,6 +807,7 @@ export function selectOutputState(s: OperatorState): OutputState {
     theme: slideTheme(s.live.theme, live),
     fadeMs: s.settings.fadeMs,
     logoUrl: s.settings.logoUrl,
+    alert: selectAlertDisplay(s),
   }
 }
 
@@ -721,6 +824,7 @@ export function selectStageState(s: OperatorState): StageState {
     title: live.title,
     nextItemTitle: nextItem?.title ?? null,
     mode: live.mode,
+    alert: selectAlertDisplay(s),
   }
 }
 

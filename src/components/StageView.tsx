@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { DEFAULT_THEME_STYLE } from '../../shared/themes'
 import type { StageState, ThemeStyle } from '../../shared/types'
+import { AlertBand } from './AlertBand'
 import { ThemedSlide } from './ThemedSlide'
 
 /** Plain, high-contrast text for reading at a glance; the audience's theme does not matter here. */
@@ -51,6 +52,7 @@ export function StageView() {
         ) : (
           <p className="stage-empty">No slide live</p>
         )}
+        <AlertBand alert={state?.alert ?? null} />
       </section>
 
       <section className="stage-next" aria-label="Next slide">

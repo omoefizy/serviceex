@@ -1,7 +1,11 @@
-import type { AppSettings, WhisperModelId } from '../../shared/types'
+import type { AlertMessage, AlertRepeat, AppSettings, WhisperModelId } from '../../shared/types'
 import { db } from './index'
 
 const DEFAULTS: AppSettings = {
+  alertMessages: [],
+  alertPosition: 'bottom',
+  alertSeconds: 10,
+  alertKeepOnClear: true,
   fadeMs: 400,
   outputDisplay: 'auto',
   logoUrl: null,
@@ -33,6 +37,10 @@ const WHISPER_MODEL_IDS: WhisperModelId[] = ['tiny.en', 'base.en', 'small.en', '
 
 /** Settings rows: each value is JSON under its own key. fadeMs keeps the key it was first saved under. */
 const KEYS: Record<keyof AppSettings, string> = {
+  alertMessages: 'alerts.messages',
+  alertPosition: 'alerts.position',
+  alertSeconds: 'alerts.seconds',
+  alertKeepOnClear: 'alerts.keepOnClear',
   fadeMs: 'output.fadeMs',
   outputDisplay: 'output.display',
   logoUrl: 'output.logoUrl',
@@ -58,10 +66,41 @@ const KEYS: Record<keyof AppSettings, string> = {
   statementPicking: 'detection.statements',
 }
 
+const ALERT_REPEATS: AlertRepeat[] = ['once', 'loop', 'hold']
+export const ALERT_LIMITS = { messages: 100, text: 300, seconds: [3, 120], every: [5, 3600] } as const
+
+/** Saved alerts with a usable shape; anything else in the list is dropped. */
+function cleanAlertMessages(value: unknown): AlertMessage[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const messages: AlertMessage[] = []
+  for (const item of value.slice(0, ALERT_LIMITS.messages)) {
+    const m = item as Partial<AlertMessage> | null
+    if (typeof m !== 'object' || m === null || typeof m.id !== 'string' || !m.id || m.id.length > 64) continue
+    if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > ALERT_LIMITS.text) continue
+    const every = typeof m.everySeconds === 'number' && Number.isFinite(m.everySeconds) ? Math.round(m.everySeconds) : 60
+    messages.push({
+      id: m.id,
+      text: m.text.trim(),
+      priority: m.priority === true,
+      repeat: ALERT_REPEATS.includes(m.repeat as AlertRepeat) ? (m.repeat as AlertRepeat) : 'once',
+      everySeconds: Math.min(ALERT_LIMITS.every[1], Math.max(ALERT_LIMITS.every[0], every)),
+    })
+  }
+  return messages
+}
+
 /** Checks one value, returning undefined for anything unusable so the default applies. */
 function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings[K] | undefined {
   const v = value as never
   switch (key) {
+    case 'alertMessages':
+      return cleanAlertMessages(value) as never
+    case 'alertPosition':
+      return value === 'top' || value === 'bottom' ? v : undefined
+    case 'alertSeconds':
+      return typeof value === 'number' && Number.isFinite(value)
+        ? (Math.round(Math.min(ALERT_LIMITS.seconds[1], Math.max(ALERT_LIMITS.seconds[0], value))) as never)
+        : undefined
     case 'fadeMs':
       return typeof value === 'number' && Number.isFinite(value)
         ? (Math.round(Math.min(FADE_LIMITS.max, Math.max(FADE_LIMITS.min, value))) as never)
@@ -72,6 +111,7 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
       return value === null || (typeof value === 'string' && value.startsWith('wd-media://')) ? v : undefined
     case 'appearance':
       return ['system', 'dark', 'light'].includes(value as string) ? v : undefined
+    case 'alertKeepOnClear':
     case 'autosaveDrafts':
     case 'aiEnabled':
     case 'autoGoLiveOnNext':
