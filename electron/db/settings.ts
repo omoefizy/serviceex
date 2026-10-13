@@ -1,10 +1,17 @@
-import type { AlertMessage, AlertRepeat, AppSettings, WhisperModelId } from '../../shared/types'
+import type { AlertMessage, AppSettings, WhisperModelId } from '../../shared/types'
 import { db } from './index'
 
 const DEFAULTS: AppSettings = {
   alertMessages: [],
   alertPosition: 'bottom',
-  alertSeconds: 10,
+  alertSpeed: 14,
+  alertFontSize: 5,
+  alertTextColor: '#ffffff',
+  alertBandColor: '#0a0e1c',
+  alertBandOpacity: 0.85,
+  alertBandHeight: 9,
+  alertLoops: 0,
+  alertLayout: 'divider',
   alertKeepOnClear: true,
   fadeMs: 400,
   outputDisplay: 'auto',
@@ -39,7 +46,14 @@ const WHISPER_MODEL_IDS: WhisperModelId[] = ['tiny.en', 'base.en', 'small.en', '
 const KEYS: Record<keyof AppSettings, string> = {
   alertMessages: 'alerts.messages',
   alertPosition: 'alerts.position',
-  alertSeconds: 'alerts.seconds',
+  alertSpeed: 'alerts.speed',
+  alertFontSize: 'alerts.fontSize',
+  alertTextColor: 'alerts.textColor',
+  alertBandColor: 'alerts.bandColor',
+  alertBandOpacity: 'alerts.bandOpacity',
+  alertBandHeight: 'alerts.bandHeight',
+  alertLoops: 'alerts.loops',
+  alertLayout: 'alerts.layout',
   alertKeepOnClear: 'alerts.keepOnClear',
   fadeMs: 'output.fadeMs',
   outputDisplay: 'output.display',
@@ -66,8 +80,18 @@ const KEYS: Record<keyof AppSettings, string> = {
   statementPicking: 'detection.statements',
 }
 
-const ALERT_REPEATS: AlertRepeat[] = ['once', 'loop', 'hold']
-export const ALERT_LIMITS = { messages: 100, text: 300, seconds: [3, 120], every: [5, 3600] } as const
+export const ALERT_LIMITS = {
+  messages: 100,
+  text: 300,
+  speed: [3, 40],
+  fontSize: [2, 15],
+  bandHeight: [4, 25],
+  loops: [0, 99],
+} as const
+
+/** A number in [min, max], rounded to `step`; undefined for anything else. */
+const ranged = (value: unknown, [min, max]: readonly [number, number], step: number) =>
+  typeof value === 'number' && Number.isFinite(value) ? Number((Math.round(Math.min(max, Math.max(min, value)) / step) * step).toFixed(2)) : undefined
 
 /** Saved alerts with a usable shape; anything else in the list is dropped. */
 function cleanAlertMessages(value: unknown): AlertMessage[] | undefined {
@@ -77,14 +101,7 @@ function cleanAlertMessages(value: unknown): AlertMessage[] | undefined {
     const m = item as Partial<AlertMessage> | null
     if (typeof m !== 'object' || m === null || typeof m.id !== 'string' || !m.id || m.id.length > 64) continue
     if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > ALERT_LIMITS.text) continue
-    const every = typeof m.everySeconds === 'number' && Number.isFinite(m.everySeconds) ? Math.round(m.everySeconds) : 60
-    messages.push({
-      id: m.id,
-      text: m.text.trim(),
-      priority: m.priority === true,
-      repeat: ALERT_REPEATS.includes(m.repeat as AlertRepeat) ? (m.repeat as AlertRepeat) : 'once',
-      everySeconds: Math.min(ALERT_LIMITS.every[1], Math.max(ALERT_LIMITS.every[0], every)),
-    })
+    messages.push({ id: m.id, text: m.text.trim(), priority: m.priority === true })
   }
   return messages
 }
@@ -97,10 +114,21 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
       return cleanAlertMessages(value) as never
     case 'alertPosition':
       return value === 'top' || value === 'bottom' ? v : undefined
-    case 'alertSeconds':
-      return typeof value === 'number' && Number.isFinite(value)
-        ? (Math.round(Math.min(ALERT_LIMITS.seconds[1], Math.max(ALERT_LIMITS.seconds[0], value))) as never)
-        : undefined
+    case 'alertSpeed':
+      return ranged(value, ALERT_LIMITS.speed, 0.5) as never
+    case 'alertFontSize':
+      return ranged(value, ALERT_LIMITS.fontSize, 0.1) as never
+    case 'alertBandHeight':
+      return ranged(value, ALERT_LIMITS.bandHeight, 0.5) as never
+    case 'alertBandOpacity':
+      return ranged(value, [0, 1], 0.05) as never
+    case 'alertLoops':
+      return ranged(value, ALERT_LIMITS.loops, 1) as never
+    case 'alertTextColor':
+    case 'alertBandColor':
+      return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? (value.toLowerCase() as never) : undefined
+    case 'alertLayout':
+      return value === 'divider' || value === 'sequence' ? v : undefined
     case 'fadeMs':
       return typeof value === 'number' && Number.isFinite(value)
         ? (Math.round(Math.min(FADE_LIMITS.max, Math.max(FADE_LIMITS.min, value))) as never)

@@ -49,7 +49,7 @@ function useDismiss(open: boolean, ref: RefObject<HTMLElement>, close: () => voi
 function AlertsButton() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const showing = useOperatorStore((s) => s.live.alert?.visible === true)
+  const showing = useOperatorStore((s) => s.live.alert !== null)
   useDismiss(open, ref, () => setOpen(false))
 
   return (
@@ -59,7 +59,7 @@ function AlertsButton() {
         className={`mode-button mode-alert${showing ? ' active' : ''}`}
         aria-haspopup="dialog"
         aria-expanded={open}
-        title={showing ? 'Alerts (one is on screen)' : 'Alerts'}
+        title={showing ? 'Alerts (the ticker is running)' : 'Alerts'}
         onClick={() => setOpen(!open)}
       >
         <Megaphone size={18} aria-hidden="true" />
@@ -67,6 +67,23 @@ function AlertsButton() {
       </button>
       {open && <AlertsPanel />}
     </div>
+  )
+}
+
+/** Shown while the alert ticker runs, whatever the operator is doing, with a one-click Stop. */
+function AlertRunningChip() {
+  const running = useOperatorStore((s) => s.live.alert !== null)
+  const hidden = useOperatorStore((s) => s.live.alert?.hidden === true)
+  const stopAlerts = useOperatorStore((s) => s.stopAlerts)
+  if (!running) return null
+  return (
+    <span className="alert-chip" role="status">
+      <span className="live-dot" aria-hidden="true" />
+      Alert running{hidden ? ' (hidden)' : ''}
+      <button type="button" className="alert-chip-stop" onClick={stopAlerts} title="Stop the alert ticker">
+        <Square size={11} aria-hidden="true" /> Stop
+      </button>
+    </span>
   )
 }
 
@@ -164,6 +181,8 @@ export function Toolbar() {
         <span className="live-label">{status.toUpperCase()}</span>
         {liveTitle && <span className="live-title">{liveTitle}</span>}
       </div>
+
+      <AlertRunningChip />
 
       <LiveMenu />
 

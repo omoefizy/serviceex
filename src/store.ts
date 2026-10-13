@@ -21,6 +21,7 @@ import type {
   Verse,
 } from '../shared/types'
 import { announcementSlides, parseVerseCaption, quoteSlide, verseCaption } from './lib/slides'
+import { PRIORITY_BAND_COLOR, PRIORITY_PASSES, runDurationMs } from './lib/ticker'
 
 export interface DeckSlide {
   text: string
@@ -43,12 +44,26 @@ type BrowseSnapshot = Pick<
   'selectedSong' | 'deckTitle' | 'slides' | 'deckType' | 'deckKey' | 'deckThemeId' | 'activeItemId'
 >
 
-/** The alert on the output: which message, and whether its band is up right now (a loop alert comes and goes). */
-export interface LiveAlert {
-  /** Changes every time the band appears, so the output fades it in again. */
-  key: number
-  message: AlertMessage
-  visible: boolean
+/** One run of the ticker: these messages, scrolling from `startedAt`. */
+export interface TickerRun {
+  runId: number
+  texts: string[]
+  /** Epoch milliseconds when the first letter was at the band's right edge. */
+  startedAt: number
+  /** Times through the messages; 0 runs until stopped. */
+  loops: number
+}
+
+/** The alert ticker on the output. */
+export interface LiveTicker {
+  /** The saved messages playing in turn, or null when only a priority message is running. */
+  normal: TickerRun | null
+  /** A priority message interrupting them. The normal run is paused meanwhile. */
+  priority: TickerRun | null
+  /** How far into the normal run it was paused, in milliseconds, while a priority message plays. */
+  pausedAt: number | null
+  /** Off the output for now; the ticker keeps time and comes back where it would have been. */
+  hidden: boolean
 }
 
 /**
@@ -74,8 +89,11 @@ export interface LiveState {
   stale: boolean
   /** What the grid showed when this went live, for "jump back to live". */
   source: BrowseSnapshot | null
-  /** The alert band over the output. It belongs to the output, not the slide: going live or changing slides keeps it. */
-  alert: LiveAlert | null
+  /**
+   * The alert ticker over the output, or null when stopped. It belongs to the output, not the slide: going live,
+   * changing slides or loading anything else keeps it running.
+   */
+  alert: LiveTicker | null
 }
 
 const NOTHING_LIVE: LiveState = {
@@ -117,10 +135,6 @@ interface OperatorState {
   live: LiveState
   /** What was live before, newest last, for Go Back. */
   liveHistory: LiveState[]
-  /** Alerts waiting for the one on screen to finish, oldest first. */
-  alertQueue: AlertMessage[]
-  /** The saved message shown last, so Next can move on to the one after it. */
-  lastAlertId: string | null
 
   /** App settings from the main process (crossfade, output display, logo, appearance, backups). */
   settings: AppSettings
@@ -165,15 +179,16 @@ interface OperatorState {
   previousSlide(): void
   /** Puts the slide that was live before the current one back on screen. */
   goBack(): void
-  /**
-   * Puts an alert over the output. A priority alert, or any alert when none is up, shows at once; otherwise it waits
-   * for the current one to finish.
-   */
-  showAlert(message: AlertMessage): void
-  /** Moves on to the next waiting alert, or else the saved message after the last one shown. */
+  /** Starts the ticker with these messages in turn, from the first, replacing whatever it was running. */
+  startAlerts(messages: AlertMessage[]): void
+  /** Interrupts the ticker with a priority message; the normal messages carry on where they were afterwards. */
+  interruptAlert(message: AlertMessage): void
+  /** Ends a priority message early, or else moves the normal messages on to the next one. */
   nextAlert(): void
-  /** Takes the alert off the output and drops any waiting ones. */
-  hideAlert(): void
+  /** Stops the ticker. */
+  stopAlerts(): void
+  /** Takes the ticker off the output without stopping it, or brings it back. */
+  setAlertHidden(hidden: boolean): void
   /** Shows the live item in the grid again. */
   jumpToLive(): void
   /**
@@ -235,12 +250,17 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   activeItemId: null,
   live: NOTHING_LIVE,
   liveHistory: [],
-  alertQueue: [],
-  lastAlertId: null,
   settings: {
     alertMessages: [],
     alertPosition: 'bottom',
-    alertSeconds: 10,
+    alertSpeed: 14,
+    alertFontSize: 5,
+    alertTextColor: '#ffffff',
+    alertBandColor: '#0a0e1c',
+    alertBandOpacity: 0.85,
+    alertBandHeight: 9,
+    alertLoops: 0,
+    alertLayout: 'divider',
     alertKeepOnClear: true,
     fadeMs: 400,
     outputDisplay: 'auto',
@@ -369,27 +389,41 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     set({ live: { ...previous, mode: 'show', alert: live.alert }, liveHistory: liveHistory.slice(0, -1) })
   },
 
-  showAlert(message) {
-    const { alert } = get().live
-    if (message.priority || !alert?.visible) return putAlert(message)
-    if (alert.message.id === message.id) return
-    set({ alertQueue: [...get().alertQueue.filter((m) => m.id !== message.id), message] })
+  startAlerts(messages) {
+    const texts = messages.map((m) => m.text.trim()).filter(Boolean)
+    if (texts.length === 0) return
+    const normal = newRun(texts, get().settings.alertLoops)
+    setTicker({ normal, priority: null, pausedAt: null, hidden: get().live.alert?.hidden ?? false })
+    scheduleRunEnd(normal, stopTicker)
+  },
+
+  interruptAlert(message) {
+    const ticker = get().live.alert
+    const priority = newRun([message.text.trim()], PRIORITY_PASSES)
+    // A second priority message keeps the pause point of the first.
+    const pausedAt = ticker?.priority ? ticker.pausedAt : ticker?.normal ? Date.now() - ticker.normal.startedAt : null
+    setTicker({ normal: ticker?.normal ?? null, priority, pausedAt, hidden: ticker?.hidden ?? false })
+    scheduleRunEnd(priority, endPriority)
   },
 
   nextAlert() {
-    const { alertQueue, settings, lastAlertId } = get()
-    if (alertQueue.length > 0) {
-      set({ alertQueue: alertQueue.slice(1) })
-      return putAlert(alertQueue[0])
-    }
-    const saved = settings.alertMessages
-    if (saved.length === 0) return putAlert(null)
-    putAlert(saved[(saved.findIndex((m) => m.id === lastAlertId) + 1) % saved.length])
+    const ticker = get().live.alert
+    if (!ticker) return get().startAlerts(get().settings.alertMessages.filter((m) => !m.priority))
+    if (ticker.priority) return endPriority()
+    if (!ticker.normal) return
+    const { texts, loops } = ticker.normal
+    const normal = newRun([...texts.slice(1), texts[0]], loops)
+    setTicker({ ...ticker, normal })
+    scheduleRunEnd(normal, stopTicker)
   },
 
-  hideAlert() {
-    set({ alertQueue: [] })
-    putAlert(null)
+  stopAlerts() {
+    stopTicker()
+  },
+
+  setAlertHidden(hidden) {
+    const ticker = get().live.alert
+    if (ticker) setTicker({ ...ticker, hidden })
   },
 
   jumpToLive() {
@@ -689,51 +723,64 @@ async function neighbourVerse(slide: DeckSlide, delta: 1 | -1): Promise<DeckSlid
   return found ? { text: found.text, caption: verseCaption(found, at.version) } : null
 }
 
-// ---------- Alerts ----------
+// ---------- Alert ticker ----------
 
-/** The timer that ends the current showing of the alert, or brings a loop alert back. */
-let alertTimer: ReturnType<typeof setTimeout> | undefined
-let alertKey = 0
+/** Ends the current run: after its last loop, or when a priority message finishes. Never repaints anything. */
+let tickerTimer: ReturnType<typeof setTimeout> | undefined
+let tickerRuns = 0
 
-function setLiveAlert(alert: LiveAlert | null): void {
+const newRun = (texts: string[], loops: number): TickerRun => ({ runId: ++tickerRuns, texts, startedAt: Date.now(), loops })
+
+function setTicker(alert: LiveTicker | null): void {
   const { live } = useOperatorStore.getState()
   useOperatorStore.setState({ live: { ...live, alert } })
 }
 
-/** Shows `message` now in place of any alert, or clears the alert with null. */
-function putAlert(message: AlertMessage | null): void {
-  clearTimeout(alertTimer)
-  if (!message) return setLiveAlert(null)
-  setLiveAlert({ key: ++alertKey, message, visible: true })
-  useOperatorStore.setState({ lastAlertId: message.id })
-  scheduleAlertEnd(message)
+function stopTicker(): void {
+  clearTimeout(tickerTimer)
+  setTicker(null)
 }
 
-/** When a showing ends, a waiting alert takes over; else once alerts hide and loop alerts come back later. */
-function scheduleAlertEnd(message: AlertMessage): void {
-  if (message.repeat === 'hold') return
-  const seconds = useOperatorStore.getState().settings.alertSeconds
-  alertTimer = setTimeout(() => {
-    const { alertQueue } = useOperatorStore.getState()
-    if (alertQueue.length > 0) {
-      useOperatorStore.setState({ alertQueue: alertQueue.slice(1) })
-      return putAlert(alertQueue[0])
-    }
-    if (message.repeat === 'once') return setLiveAlert(null)
-    setLiveAlert({ key: alertKey, message, visible: false })
-    alertTimer = setTimeout(() => {
-      setLiveAlert({ key: ++alertKey, message, visible: true })
-      scheduleAlertEnd(message)
-    }, Math.max(1, message.everySeconds - seconds) * 1000)
-  }, seconds * 1000)
+/** Calls `onEnd` once `run` has gone through its loops on the projector; endless runs have no end. */
+function scheduleRunEnd(run: TickerRun, onEnd: () => void): void {
+  clearTimeout(tickerTimer)
+  if (run.loops === 0) return
+  const { alertLayout, alertFontSize, alertSpeed } = useOperatorStore.getState().settings
+  const remaining = runDurationMs(run.texts, run.loops, alertLayout, alertFontSize, alertSpeed) - (Date.now() - run.startedAt)
+  tickerTimer = setTimeout(onEnd, Math.max(0, remaining))
 }
 
-/** The alert band the audience sees: none in Black, and none in Clear unless the setting keeps it. */
+/** The priority message is done: the normal messages carry on from where they were paused, or the ticker stops. */
+function endPriority(): void {
+  const ticker = useOperatorStore.getState().live.alert
+  if (!ticker?.normal) return stopTicker()
+  const normal = { ...ticker.normal, startedAt: Date.now() - (ticker.pausedAt ?? 0) }
+  setTicker({ ...ticker, normal, priority: null, pausedAt: null })
+  scheduleRunEnd(normal, stopTicker)
+}
+
+/** The ticker the audience sees: none while hidden or in Black, and none in Clear unless the setting keeps it. */
 export function selectAlertDisplay(s: OperatorState): AlertDisplay | null {
-  const alert = s.live.alert
-  if (!alert?.visible || s.live.mode === 'black') return null
+  const ticker = s.live.alert
+  const run = ticker?.priority ?? ticker?.normal
+  if (!ticker || !run || ticker.hidden || s.live.mode === 'black') return null
   if (s.live.mode === 'clear' && !s.settings.alertKeepOnClear) return null
-  return { key: alert.key, text: alert.message.text, priority: alert.message.priority, position: s.settings.alertPosition }
+  const { settings } = s
+  return {
+    runId: run.runId,
+    texts: run.texts,
+    startedAt: run.startedAt,
+    loops: run.loops,
+    layout: settings.alertLayout,
+    priority: ticker.priority !== null,
+    position: settings.alertPosition,
+    speed: settings.alertSpeed,
+    fontSize: settings.alertFontSize,
+    textColor: settings.alertTextColor,
+    bandColor: ticker.priority ? PRIORITY_BAND_COLOR : settings.alertBandColor,
+    bandOpacity: ticker.priority ? Math.max(settings.alertBandOpacity, 0.9) : settings.alertBandOpacity,
+    bandHeight: settings.alertBandHeight,
+  }
 }
 
 /** Notes that the live item changed after it went live, without touching what is on screen. */

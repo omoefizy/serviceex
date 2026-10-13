@@ -6,15 +6,38 @@ const MODES: OutputMode[] = ['show', 'black', 'clear', 'logo']
 
 let lastState: OutputState = { mode: 'black', text: '', caption: '', theme: DEFAULT_THEME_STYLE, fadeMs: 400, logoUrl: null, alert: null }
 
-/** The alert band of an output or stage state; anything malformed shows no alert. */
+const clampNumber = (value: unknown, min: number, max: number, fallback: number) =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback
+const hexColor = (value: unknown, fallback: string) => (typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback)
+
+/** The alert ticker of an output or stage state; anything malformed shows no ticker. */
 export function alertDisplayOf(value: unknown): AlertDisplay | null {
   const alert = value as Partial<AlertDisplay> | null
-  if (typeof alert !== 'object' || alert === null || typeof alert.text !== 'string' || !Number.isFinite(alert.key)) return null
+  if (
+    typeof alert !== 'object' ||
+    alert === null ||
+    !Array.isArray(alert.texts) ||
+    alert.texts.length === 0 ||
+    !alert.texts.every((text) => typeof text === 'string') ||
+    !Number.isFinite(alert.runId) ||
+    !Number.isFinite(alert.startedAt)
+  ) {
+    return null
+  }
   return {
-    key: alert.key as number,
-    text: alert.text.slice(0, 300),
+    runId: alert.runId as number,
+    texts: alert.texts.slice(0, 100).map((text) => text.slice(0, 300)),
+    startedAt: alert.startedAt as number,
+    loops: Math.round(clampNumber(alert.loops, 0, 99, 0)),
+    layout: alert.layout === 'sequence' ? 'sequence' : 'divider',
     priority: alert.priority === true,
     position: alert.position === 'top' ? 'top' : 'bottom',
+    speed: clampNumber(alert.speed, 3, 40, 14),
+    fontSize: clampNumber(alert.fontSize, 2, 15, 5),
+    textColor: hexColor(alert.textColor, '#ffffff'),
+    bandColor: hexColor(alert.bandColor, '#0a0e1c'),
+    bandOpacity: clampNumber(alert.bandOpacity, 0, 1, 0.85),
+    bandHeight: clampNumber(alert.bandHeight, 4, 25, 9),
   }
 }
 

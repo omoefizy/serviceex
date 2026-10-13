@@ -106,30 +106,41 @@ export type OutputMode = 'show' | 'black' | 'clear' | 'logo'
 
 // ---------- Alerts ----------
 
-/**
- * How long an alert stays up. once: for AppSettings.alertSeconds, then it hides. loop: that long, then again every
- * `everySeconds` until hidden. hold: until hidden.
- */
-export type AlertRepeat = 'once' | 'loop' | 'hold'
-
-/** A short message shown in a band over the live output, such as "Parking: car with lights on". */
+/** A short message for the alert ticker, such as "Parents, please pick up your child". */
 export interface AlertMessage {
   id: string
   text: string
-  /** Shown in a warning color, and replaces whatever alert is up instead of waiting for it. */
+  /** Interrupts the normal messages in its own band color; they carry on where they were afterwards. */
   priority: boolean
-  repeat: AlertRepeat
-  /** For loop: seconds from the start of one showing to the start of the next. */
-  everySeconds: number
 }
 
-/** The alert band as the output and stage windows draw it, or null for none. */
+/** divider: every message in one stream with a divider between. sequence: each message crosses the band on its own. */
+export type AlertLayout = 'divider' | 'sequence'
+
+/**
+ * The ticker as the output and stage windows draw it, or null for none. Every window works out the scroll position
+ * from `startedAt` and the speed, so they all agree without sending positions.
+ */
 export interface AlertDisplay {
-  /** Changes every time the band appears, so it fades in again. */
-  key: number
-  text: string
+  /** Changes whenever a new run starts. */
+  runId: number
+  texts: string[]
+  /** Epoch milliseconds at which the start of the text was at the band's right edge. */
+  startedAt: number
+  /** Times through the messages before the band empties; 0 loops until stopped. */
+  loops: number
+  layout: AlertLayout
   priority: boolean
   position: 'top' | 'bottom'
+  /** Percent of screen height per second, so a smaller screen scrolls in step with the projector. */
+  speed: number
+  /** Percent of screen height. */
+  fontSize: number
+  textColor: string
+  bandColor: string
+  bandOpacity: number
+  /** Percent of screen height. */
+  bandHeight: number
 }
 
 /** What the operator sends to the output window. `text` is empty when no slide is live. */
@@ -268,13 +279,24 @@ export interface MediaApi {
 export type OutputDisplay = 'auto' | 'window' | number
 
 export interface AppSettings {
-  /** Saved alert messages, for reuse. */
+  /** Saved alert messages, for reuse, in play order. */
   alertMessages: AlertMessage[]
-  /** Where the alert band sits on the output. */
+  /** Where the ticker band sits on the output, inside the safe margins. */
   alertPosition: 'top' | 'bottom'
-  /** How long a once or loop alert shows each time, 3 to 120 seconds. */
-  alertSeconds: number
-  /** Whether an alert stays up in Clear mode (Black always hides it). */
+  /** Scroll speed in percent of screen height per second, 3 to 40. */
+  alertSpeed: number
+  /** Ticker text size in percent of screen height, 2 to 15. */
+  alertFontSize: number
+  alertTextColor: string
+  alertBandColor: string
+  /** 0 to 1. */
+  alertBandOpacity: number
+  /** Band height in percent of screen height, 4 to 25. */
+  alertBandHeight: number
+  /** Times through the messages before the ticker stops; 0 loops until stopped. */
+  alertLoops: number
+  alertLayout: AlertLayout
+  /** Whether the ticker stays up in Clear mode (Black always hides it). */
   alertKeepOnClear: boolean
   /** Crossfade between slides and backgrounds on the output, 0 to 1500 ms. */
   fadeMs: number

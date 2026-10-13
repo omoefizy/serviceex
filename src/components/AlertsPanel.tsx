@@ -1,59 +1,65 @@
-import { EyeOff, Pencil, Play, SkipForward, Trash2 } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
-import type { AlertMessage, AlertRepeat } from '../../shared/types'
+import { ArrowDown, ArrowUp, Eye, EyeOff, Pencil, Play, SkipForward, Square, Trash2 } from 'lucide-react'
+import { useState, type FormEvent, type ReactNode } from 'react'
+import type { AlertMessage, AppSettings } from '../../shared/types'
+import { SPEED_PRESETS } from '../lib/ticker'
 import { useOperatorStore } from '../store'
-
-const REPEATS: { value: AlertRepeat; label: string }[] = [
-  { value: 'once', label: 'Once' },
-  { value: 'loop', label: 'Loop' },
-  { value: 'hold', label: 'Until hidden' },
-]
 
 /** The message being written: a new one (id null) or a saved one being edited. */
 interface Draft {
   id: string | null
   text: string
   priority: boolean
-  repeat: AlertRepeat
-  everySeconds: number
 }
 
-const NEW_DRAFT: Draft = { id: null, text: '', priority: false, repeat: 'once', everySeconds: 60 }
+const NEW_DRAFT: Draft = { id: null, text: '', priority: false }
 
-const repeatLabel = (m: AlertMessage) => (m.repeat === 'loop' ? `Every ${m.everySeconds} s` : m.repeat === 'hold' ? 'Until hidden' : 'Once')
+const SPEEDS = [
+  { label: 'Slow', value: SPEED_PRESETS.slow },
+  { label: 'Medium', value: SPEED_PRESETS.medium },
+  { label: 'Fast', value: SPEED_PRESETS.fast },
+]
+
+function Setting({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="alerts-setting" role="group" aria-label={label}>
+      <span>{label}</span>
+      <div>{children}</div>
+    </div>
+  )
+}
 
 /**
- * Alerts: saved messages to show in a band over the live output (show, edit, remove), a box to add or show a new
- * one, Next and Hide, and where and how long the band shows.
+ * The alert ticker: saved messages (play, reorder, edit, remove), a box to add or show a new one, Start and Stop,
+ * Next and Hide, and how the band looks and scrolls.
  */
 export function AlertsPanel() {
-  const messages = useOperatorStore((s) => s.settings.alertMessages)
-  const position = useOperatorStore((s) => s.settings.alertPosition)
-  const seconds = useOperatorStore((s) => s.settings.alertSeconds)
-  const keepOnClear = useOperatorStore((s) => s.settings.alertKeepOnClear)
-  const current = useOperatorStore((s) => s.live.alert)
-  const waiting = useOperatorStore((s) => s.alertQueue.length)
-  const showAlert = useOperatorStore((s) => s.showAlert)
+  const settings = useOperatorStore((s) => s.settings)
+  const ticker = useOperatorStore((s) => s.live.alert)
+  const startAlerts = useOperatorStore((s) => s.startAlerts)
+  const interruptAlert = useOperatorStore((s) => s.interruptAlert)
   const nextAlert = useOperatorStore((s) => s.nextAlert)
-  const hideAlert = useOperatorStore((s) => s.hideAlert)
+  const stopAlerts = useOperatorStore((s) => s.stopAlerts)
+  const setAlertHidden = useOperatorStore((s) => s.setAlertHidden)
   const updateSettings = useOperatorStore((s) => s.updateSettings)
   const [draft, setDraft] = useState<Draft>(NEW_DRAFT)
   const [error, setError] = useState<string | null>(null)
+  const messages = settings.alertMessages
+  /** The messages Start plays in turn; priority ones only ever interrupt. */
+  const normal = messages.filter((m) => !m.priority)
 
-  const change = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }))
-
-  function save(patch: Parameters<typeof updateSettings>[0]) {
+  function save(patch: Partial<AppSettings>) {
     setError(null)
     updateSettings(patch).catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }
 
-  const messageOf = (d: Draft): AlertMessage => ({
-    id: d.id ?? crypto.randomUUID(),
-    text: d.text.trim(),
-    priority: d.priority,
-    repeat: d.repeat,
-    everySeconds: d.everySeconds,
-  })
+  const messageOf = (d: Draft): AlertMessage => ({ id: d.id ?? crypto.randomUUID(), text: d.text.trim(), priority: d.priority })
+
+  /** A priority message interrupts; a normal one starts the ticker there and carries on through the rest in turn. */
+  function play(message: AlertMessage) {
+    if (message.priority) return interruptAlert(message)
+    const at = normal.findIndex((m) => m.id === message.id)
+    startAlerts(at < 0 ? [message] : [...normal.slice(at), ...normal.slice(0, at)])
+  }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -68,29 +74,74 @@ export function AlertsPanel() {
     if (draft.id === id) setDraft(NEW_DRAFT)
   }
 
-  const status = !current
-    ? 'No alert showing'
-    : `${current.visible ? 'On screen' : 'Comes back soon'}: ${current.message.text}`
+  function move(index: number, delta: number) {
+    const list = [...messages]
+    const [message] = list.splice(index, 1)
+    list.splice(index + delta, 0, message)
+    save({ alertMessages: list })
+  }
+
+  const status = !ticker
+    ? 'Stopped'
+    : ticker.priority
+      ? `Priority: ${ticker.priority.texts[0]}`
+      : `Running ${ticker.normal?.texts.length ?? 0} message${ticker.normal?.texts.length === 1 ? '' : 's'}`
 
   return (
     <div className="alerts-panel" role="dialog" aria-label="Alerts">
-      <p className={`alerts-status${current?.visible ? ' on' : ''}${current?.message.priority ? ' priority' : ''}`}>
+      <p className={`alerts-status${ticker ? ' on' : ''}${ticker?.priority ? ' priority' : ''}`}>
         {status}
-        {waiting > 0 && <span className="hint"> · {waiting} waiting</span>}
+        {ticker?.hidden && <span className="hint"> · hidden</span>}
       </p>
+
+      <div className="alerts-controls">
+        {ticker ? (
+          <button type="button" className="button" onClick={stopAlerts}>
+            <Square size={14} aria-hidden="true" /> Stop
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="button primary"
+            disabled={normal.length === 0}
+            title={normal.length === 0 ? 'Add a message that is not a priority one first' : 'Scroll the saved messages in turn'}
+            onClick={() => startAlerts(normal)}
+          >
+            <Play size={14} aria-hidden="true" /> Start
+          </button>
+        )}
+        <button type="button" className="button" disabled={!ticker && normal.length === 0} onClick={nextAlert} title="End a priority message, or move on to the next message">
+          <SkipForward size={14} aria-hidden="true" /> Next
+        </button>
+        <button type="button" className="button" disabled={!ticker} aria-pressed={ticker?.hidden ?? false} onClick={() => setAlertHidden(!ticker?.hidden)}>
+          {ticker?.hidden ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}
+          {ticker?.hidden ? ' Show' : ' Hide'}
+        </button>
+      </div>
 
       {messages.length === 0 ? (
         <p className="hint">No saved messages yet. Add the ones you use often below.</p>
       ) : (
         <ul className="alerts-list" aria-label="Saved messages">
-          {messages.map((m) => (
-            <li key={m.id} className={current?.message.id === m.id ? 'current' : ''}>
-              <button type="button" className="icon-button" aria-label={`Show “${m.text}”`} title="Show Alert" onClick={() => showAlert(m)}>
+          {messages.map((m, index) => (
+            <li key={m.id}>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={`Play “${m.text}”`}
+                title={m.priority ? 'Interrupt with this message' : 'Start the ticker from this message'}
+                onClick={() => play(m)}
+              >
                 <Play size={14} />
               </button>
               <span className="alerts-text">{m.text}</span>
               {m.priority && <span className="alerts-tag priority">Priority</span>}
-              <span className="alerts-tag">{repeatLabel(m)}</span>
+              <button type="button" className="icon-button" aria-label={`Move “${m.text}” up`} disabled={index === 0} onClick={() => move(index, -1)}>
+                <ArrowUp size={14} />
+              </button>
+              <button type="button" className="icon-button" aria-label={`Move “${m.text}” down`} disabled={index === messages.length - 1} onClick={() => move(index, 1)}>
+                <ArrowDown size={14} />
+              </button>
               <button type="button" className="icon-button" aria-label={`Edit “${m.text}”`} title="Edit" onClick={() => setDraft({ ...m })}>
                 <Pencil size={14} />
               </button>
@@ -107,57 +158,28 @@ export function AlertsPanel() {
           className="input"
           rows={2}
           maxLength={300}
-          placeholder="Message, such as: Parents of child 12, please come to the nursery"
+          placeholder="Message, such as: Parents, please pick up your child"
           aria-label="Alert message"
           value={draft.text}
-          onChange={(e) => change({ text: e.target.value })}
+          onChange={(e) => setDraft((d) => ({ ...d, text: e.target.value }))}
         />
-        <div className="alerts-editor-row">
+        <div className="alerts-editor-actions">
           <button
             type="button"
             className={`button alerts-priority${draft.priority ? ' active' : ''}`}
             aria-pressed={draft.priority}
-            title="Shows in a warning color and replaces the alert on screen"
-            onClick={() => change({ priority: !draft.priority })}
+            title="Interrupts the ticker in its own color; the other messages carry on afterwards"
+            onClick={() => setDraft((d) => ({ ...d, priority: !d.priority }))}
           >
             Priority
           </button>
-          <span className="segmented" role="radiogroup" aria-label="Repeat">
-            {REPEATS.map((r) => (
-              <button
-                key={r.value}
-                type="button"
-                role="radio"
-                aria-checked={draft.repeat === r.value}
-                className={draft.repeat === r.value ? 'active' : ''}
-                onClick={() => change({ repeat: r.value })}
-              >
-                {r.label}
-              </button>
-            ))}
-          </span>
-          {draft.repeat === 'loop' && (
-            <label className="alerts-every">
-              every
-              <input
-                className="input"
-                type="number"
-                min={5}
-                max={3600}
-                value={draft.everySeconds}
-                onChange={(e) => change({ everySeconds: Math.min(3600, Math.max(5, Number(e.target.value) || 5)) })}
-              />
-              s
-            </label>
-          )}
-        </div>
-        <div className="alerts-editor-actions">
+          <span className="alerts-spacer" />
           {draft.id && (
             <button type="button" className="button" onClick={() => setDraft(NEW_DRAFT)}>
               Cancel
             </button>
           )}
-          <button type="button" className="button" disabled={!draft.text.trim()} onClick={() => showAlert(messageOf(draft))}>
+          <button type="button" className="button" disabled={!draft.text.trim()} onClick={() => play(messageOf(draft))}>
             Show now
           </button>
           <button type="submit" className="button primary" disabled={!draft.text.trim()}>
@@ -166,40 +188,85 @@ export function AlertsPanel() {
         </div>
       </form>
 
-      <div className="alerts-controls">
-        <button type="button" className="button" onClick={nextAlert} title="The next waiting alert, or the next saved message">
-          <SkipForward size={14} aria-hidden="true" /> Next
-        </button>
-        <button type="button" className="button" disabled={!current} onClick={hideAlert}>
-          <EyeOff size={14} aria-hidden="true" /> Hide
-        </button>
-      </div>
-
-      <div className="alerts-settings">
-        <span className="segmented" role="radiogroup" aria-label="Alert position">
-          {(['bottom', 'top'] as const).map((p) => (
-            <button key={p} type="button" role="radio" aria-checked={position === p} className={position === p ? 'active' : ''} onClick={() => save({ alertPosition: p })}>
-              {p === 'bottom' ? 'Bottom' : 'Top'}
-            </button>
-          ))}
-        </span>
-        <label className="alerts-every" title="How long a Once or Loop alert stays up each time">
-          show for
-          <input
-            className="input"
-            type="number"
-            min={3}
-            max={120}
-            value={seconds}
-            onChange={(e) => Number(e.target.value) > 0 && save({ alertSeconds: Number(e.target.value) })}
-          />
-          s
+      <details className="alerts-settings">
+        <summary>Ticker settings</summary>
+        <Setting label="Position">
+          <span className="segmented" role="radiogroup" aria-label="Position">
+            {(['bottom', 'top'] as const).map((p) => (
+              <button key={p} type="button" role="radio" aria-checked={settings.alertPosition === p} className={settings.alertPosition === p ? 'active' : ''} onClick={() => save({ alertPosition: p })}>
+                {p === 'bottom' ? 'Bottom' : 'Top'}
+              </button>
+            ))}
+          </span>
+        </Setting>
+        <Setting label="Speed">
+          <span className="segmented" role="radiogroup" aria-label="Speed presets">
+            {SPEEDS.map((speed) => (
+              <button
+                key={speed.label}
+                type="button"
+                role="radio"
+                aria-checked={settings.alertSpeed === speed.value}
+                className={settings.alertSpeed === speed.value ? 'active' : ''}
+                onClick={() => save({ alertSpeed: speed.value })}
+              >
+                {speed.label}
+              </button>
+            ))}
+          </span>
+          <input type="range" aria-label="Speed" min={3} max={40} step={0.5} value={settings.alertSpeed} onChange={(e) => save({ alertSpeed: Number(e.target.value) })} />
+        </Setting>
+        <Setting label="Text">
+          <input type="range" aria-label="Font size" min={2} max={15} step={0.1} value={settings.alertFontSize} onChange={(e) => save({ alertFontSize: Number(e.target.value) })} />
+          <input type="color" aria-label="Text color" value={settings.alertTextColor} onChange={(e) => save({ alertTextColor: e.target.value })} />
+        </Setting>
+        <Setting label="Band">
+          <input type="color" aria-label="Band color" value={settings.alertBandColor} onChange={(e) => save({ alertBandColor: e.target.value })} />
+          <input type="range" aria-label="Band opacity" min={0} max={1} step={0.05} value={settings.alertBandOpacity} onChange={(e) => save({ alertBandOpacity: Number(e.target.value) })} />
+          <span className="hint">{Math.round(settings.alertBandOpacity * 100)}%</span>
+        </Setting>
+        <Setting label="Height">
+          <input type="range" aria-label="Band height" min={4} max={25} step={0.5} value={settings.alertBandHeight} onChange={(e) => save({ alertBandHeight: Number(e.target.value) })} />
+          <span className="hint">{settings.alertBandHeight}% of screen</span>
+        </Setting>
+        <Setting label="Loops">
+          <label className="inline-check">
+            <input type="checkbox" checked={settings.alertLoops === 0} onChange={(e) => save({ alertLoops: e.target.checked ? 0 : 3 })} />
+            Until stopped
+          </label>
+          {settings.alertLoops > 0 && (
+            <label className="alerts-number">
+              <input
+                className="input"
+                type="number"
+                min={1}
+                max={99}
+                value={settings.alertLoops}
+                onChange={(e) => Number(e.target.value) >= 1 && save({ alertLoops: Number(e.target.value) })}
+              />
+              times, then hide
+            </label>
+          )}
+        </Setting>
+        <Setting label="Messages">
+          <span className="segmented" role="radiogroup" aria-label="Messages">
+            {(
+              [
+                ['divider', 'With a divider'],
+                ['sequence', 'One after another'],
+              ] as const
+            ).map(([value, label]) => (
+              <button key={value} type="button" role="radio" aria-checked={settings.alertLayout === value} className={settings.alertLayout === value ? 'active' : ''} onClick={() => save({ alertLayout: value })}>
+                {label}
+              </button>
+            ))}
+          </span>
+        </Setting>
+        <label className="inline-check" title="Black always hides the ticker">
+          <input type="checkbox" checked={settings.alertKeepOnClear} onChange={(e) => save({ alertKeepOnClear: e.target.checked })} />
+          Keep the ticker during Clear Text
         </label>
-        <label className="inline-check" title="Black always hides the alert">
-          <input type="checkbox" checked={keepOnClear} onChange={(e) => save({ alertKeepOnClear: e.target.checked })} />
-          Keep during Clear
-        </label>
-      </div>
+      </details>
 
       {error && <p className="error">{error}</p>}
     </div>
