@@ -17,6 +17,7 @@ import { startBackupSchedule } from './backup'
 import { getAppSettings } from './db/settings'
 import { registerMediaProtocol, registerMediaScheme } from './media'
 import { registerOutputIpc, sendLastOutputState } from './ipc/output'
+import { registerStreamIpc, sendLastStreamState } from './ipc/stream'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -44,6 +45,7 @@ registerMediaScheme()
 let win: BrowserWindow | null
 let outputWin: BrowserWindow | null = null
 let stageWin: BrowserWindow | null = null
+let streamWin: BrowserWindow | null = null
 
 /** Loads the renderer, optionally at a hash route such as /output. */
 function loadRenderer(target: BrowserWindow, route?: string) {
@@ -81,6 +83,7 @@ function createWindow() {
     win = null
     outputWin?.close()
     stageWin?.close()
+    streamWin?.close()
   })
 }
 
@@ -128,6 +131,53 @@ function setOutputOpen(open: boolean) {
   if (!open) outputWin?.close()
   else if (outputWin) outputWin.show()
   else createOutputWindow()
+}
+
+/** The display chosen for the Stream output, or null for a window (also when that display has been unplugged). */
+function streamDisplay(): Electron.Display | null {
+  const choice = getAppSettings().streamDisplay
+  return choice === 'window' ? null : (screen.getAllDisplays().find((display) => display.id === choice) ?? null)
+}
+
+/**
+ * Opens the Stream output for the livestream: fullscreen on the chosen display, otherwise a window that is the
+ * stream resolution in pixels, scaled down to fit the screen.
+ */
+function createStreamWindow() {
+  const external = streamDisplay()
+  const [width, height] = getAppSettings().streamResolution.split('x').map(Number)
+  const { workAreaSize, scaleFactor } = screen.getPrimaryDisplay()
+  const fit = Math.min(1 / scaleFactor, (workAreaSize.width * 0.9) / width, (workAreaSize.height * 0.9) / height)
+
+  const stream = new BrowserWindow({
+    title: 'WorshipDeck Stream',
+    backgroundColor: '#000',
+    ...(external
+      ? { ...external.bounds, fullscreen: true, frame: false }
+      : { width: Math.round(width * fit), height: Math.round(height * fit), useContentSize: true, resizable: true }),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.mjs'),
+      // The capture card keeps taking frames while the window is behind others.
+      backgroundThrottling: false,
+    },
+  })
+
+  streamWin = stream
+  stream.webContents.on('did-finish-load', () => sendLastStreamState(stream))
+  stream.on('closed', () => {
+    // A replacement may already be open when the display setting changes.
+    if (streamWin !== stream) return
+    streamWin = null
+    win?.webContents.send('stream:open-changed', false)
+  })
+  loadRenderer(stream, '/stream')
+  win?.webContents.send('stream:open-changed', true)
+}
+
+function setStreamOpen(open: boolean) {
+  if (!open) streamWin?.close()
+  else if (streamWin) streamWin.show()
+  else createStreamWindow()
 }
 
 /** The stage display for the worship leader: an ordinary window to drag onto a confidence monitor. */
@@ -189,12 +239,18 @@ app.whenReady().then(() => {
       outputWin?.destroy()
       createOutputWindow()
     }
+    // The same for the Stream output; a new resolution resizes its window.
+    if (streamWin && (before.streamDisplay !== after.streamDisplay || before.streamResolution !== after.streamResolution)) {
+      streamWin.destroy()
+      createStreamWindow()
+    }
   })
   registerStageIpc({ open: openStageWindow, close: () => stageWin?.close(), getWindow: () => stageWin })
   startBackupSchedule()
   registerAiIpc()
   registerSpeechIpc()
   registerOutputIpc(() => outputWin, setOutputOpen)
+  registerStreamIpc(() => streamWin, setStreamOpen)
   createWindow()
   createOutputWindow()
 })

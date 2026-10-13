@@ -1,12 +1,15 @@
 import {
+  Cast,
   Check,
   ChevronDown,
   Eraser,
   Image,
+  Layers,
   Megaphone,
   Monitor,
   MonitorPlay,
   Palette,
+  ScanLine,
   Search,
   Settings,
   Square,
@@ -87,7 +90,7 @@ function AlertRunningChip() {
   )
 }
 
-/** The Live menu: Go Back, the screen modes and whether the projector output window is open. */
+/** The Live menu: Go Back, the screen modes, whether the projector and Stream windows are open, and the Stream's layers. */
 function LiveMenu() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -97,6 +100,12 @@ function LiveMenu() {
   const setOutputMode = useOperatorStore((s) => s.setOutputMode)
   const goBack = useOperatorStore((s) => s.goBack)
   const toggleOutput = useOperatorStore((s) => s.toggleOutput)
+  const streamOpen = useOperatorStore((s) => s.streamOpen)
+  const toggleStream = useOperatorStore((s) => s.toggleStream)
+  const logoLayerVisible = useOperatorStore((s) => s.settings.logoLayerVisible)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const testPattern = useOperatorStore((s) => s.streamTestPattern)
+  const setTestPattern = useOperatorStore((s) => s.setStreamTestPattern)
 
   useDismiss(open, ref, () => setOpen(false))
 
@@ -145,6 +154,31 @@ function LiveMenu() {
             <span>Show Live Output</span>
             {outputOpen && <Check size={14} aria-hidden="true" />}
           </button>
+          <button
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={streamOpen}
+            onClick={choose(() => toggleStream().catch(console.error))}
+          >
+            <Cast size={15} aria-hidden="true" />
+            <span>Show Stream Output</span>
+            {streamOpen && <Check size={14} aria-hidden="true" />}
+          </button>
+          <button
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={logoLayerVisible}
+            onClick={choose(() => updateSettings({ logoLayerVisible: !logoLayerVisible }).catch(console.error))}
+          >
+            <Layers size={15} aria-hidden="true" />
+            <span>Logo Layer</span>
+            {logoLayerVisible && <Check size={14} aria-hidden="true" />}
+          </button>
+          <button type="button" role="menuitemcheckbox" aria-checked={testPattern} onClick={choose(() => setTestPattern(!testPattern))}>
+            <ScanLine size={15} aria-hidden="true" />
+            <span>Stream Test Pattern</span>
+            {testPattern && <Check size={14} aria-hidden="true" />}
+          </button>
         </div>
       )}
     </div>
@@ -166,6 +200,9 @@ export function Toolbar() {
   const openSettings = useOperatorStore((s) => s.openSettings)
   const stageOpen = useOperatorStore((s) => s.stageOpen)
   const toggleStage = useOperatorStore((s) => s.toggleStage)
+  const streamPanelOpen = useOperatorStore((s) => s.streamPanelOpen)
+  const openStreamPanel = useOperatorStore((s) => s.openStreamPanel)
+  const streamOpen = useOperatorStore((s) => s.streamOpen)
 
   const status = onAir ? 'live' : mode === 'show' ? 'ready' : mode
 
@@ -220,6 +257,16 @@ export function Toolbar() {
           onClick={() => toggleStage().catch(console.error)}
         >
           <MonitorPlay size={18} />
+        </button>
+        <button
+          className={`icon-button toolbar-icon${streamPanelOpen ? ' active' : ''}`}
+          aria-pressed={streamPanelOpen}
+          aria-label="Stream"
+          title={streamOpen ? 'Stream output, logos and key (the Stream output is open)' : 'Stream output, logos and key'}
+          onClick={() => openStreamPanel(!streamPanelOpen)}
+        >
+          <Cast size={18} />
+          {streamOpen && <span className="toolbar-icon-dot" aria-hidden="true" />}
         </button>
         <button
           className={`icon-button toolbar-icon${themeEditorOpen ? ' active' : ''}`}

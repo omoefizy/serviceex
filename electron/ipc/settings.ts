@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { AppSettings, DisplayInfo } from '../../shared/types'
 import { backupNow } from '../backup'
 import { getAppSettings, setAppSettings } from '../db/settings'
-import { copyIntoMedia, mediaUrl } from '../media'
+import { copyIntoMedia, mediaName, mediaUrl, removeMedia } from '../media'
 
 async function openDialog(event: IpcMainInvokeEvent, options: Electron.OpenDialogOptions): Promise<string | null> {
   const win = BrowserWindow.fromWebContents(event.sender)
@@ -17,6 +17,11 @@ export function registerSettingsIpc(onChange: (before: AppSettings, after: AppSe
     const before = getAppSettings()
     const after = setAppSettings(patch)
     onChange(before, after)
+    // A logo taken off the logo layer has its copy in the app data folder deleted.
+    const kept = new Set([...after.logoItems.map((logo) => logo.url), after.logoUrl])
+    for (const logo of before.logoItems) {
+      if (!kept.has(logo.url)) removeMedia(mediaName(logo.url)).catch(console.error)
+    }
     return after
   }
 
@@ -37,6 +42,7 @@ export function registerSettingsIpc(onChange: (before: AppSettings, after: AppSe
       label: display.label || `Display ${index + 1}`,
       width: display.size.width,
       height: display.size.height,
+      scaleFactor: display.scaleFactor,
       primary: display.id === primaryId,
     }))
   })

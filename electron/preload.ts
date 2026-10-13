@@ -13,6 +13,8 @@ import type {
   SongsApi,
   StageApi,
   StageState,
+  StreamApi,
+  StreamState,
   ThemesApi,
   WorshipDeckApi,
 } from '../shared/types'
@@ -130,6 +132,23 @@ const stage: StageApi = {
   },
 }
 
+const stream: StreamApi = {
+  send: (state) => ipcRenderer.send('stream:send', state),
+  onState(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, state: StreamState) => listener(state)
+    ipcRenderer.on('stream:state', handler)
+    return () => ipcRenderer.off('stream:state', handler)
+  },
+  setOpen: (open) => ipcRenderer.invoke('stream:setOpen', open),
+  isOpen: () => ipcRenderer.invoke('stream:isOpen'),
+  onOpenChange(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, open: boolean) => listener(open)
+    ipcRenderer.on('stream:open-changed', handler)
+    return () => ipcRenderer.off('stream:open-changed', handler)
+  },
+  pickLogo: () => ipcRenderer.invoke('stream:pickLogo'),
+}
+
 const output: WorshipDeckApi['output'] = {
   send: (state) => ipcRenderer.send('output:send', state),
   onState(listener) {
@@ -184,5 +203,5 @@ const speech: SpeechApi = {
   },
 }
 
-const api: WorshipDeckApi = { songs, bible, services, songFiles, themes, media, settings, stage, ai, speech, output }
+const api: WorshipDeckApi = { songs, bible, services, songFiles, themes, media, settings, stage, ai, speech, stream, output }
 contextBridge.exposeInMainWorld('api', api)

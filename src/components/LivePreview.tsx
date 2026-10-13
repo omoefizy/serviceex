@@ -1,8 +1,10 @@
 import { RefreshCw, Undo2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { selectAlertDisplay, selectDeckTheme, selectLiveSlide, selectPreviewSlide, slideTheme, useOperatorStore } from '../store'
+import type { OverlayLayers } from '../../shared/types'
+import { selectAlertDisplay, selectDeckTheme, selectLiveSlide, selectOutputState, selectPreviewSlide, slideTheme, useOperatorStore } from '../store'
 import { AlertBand } from './AlertBand'
+import { Overlays } from './Overlays'
 import { ThemedSlide } from './ThemedSlide'
 
 /** "Slide 2 of 5" across the corner of a screen, when it shows a slide. */
@@ -35,6 +37,9 @@ export function LivePreview() {
   const resendLive = useOperatorStore((s) => s.resendLive)
   const goBack = useOperatorStore((s) => s.goBack)
   const alert = useOperatorStore(useShallow(selectAlertDisplay))
+  // The overlays the projector shows (only with "Show overlays on the church screen"); a string compares by value.
+  const overlaysJson = useOperatorStore((s) => JSON.stringify(selectOutputState(s).overlays))
+  const overlays = useMemo(() => JSON.parse(overlaysJson) as OverlayLayers | null, [overlaysJson])
   const canGoBack = useOperatorStore((s) => s.liveHistory.length > 0)
   const [error, setError] = useState<string | null>(null)
 
@@ -57,6 +62,7 @@ export function LivePreview() {
       </header>
       <div className="preview-screen live">
         <ThemedSlide theme={liveTheme} text={liveSlide?.text ?? ''} caption={liveSlide?.caption} mode={live.mode} logoUrl={logoUrl} />
+        {overlays && <Overlays overlays={overlays} />}
         <AlertBand alert={alert} />
         <SlideBadge index={live.slideIndex} count={live.slides.length} />
       </div>

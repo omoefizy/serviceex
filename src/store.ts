@@ -8,12 +8,14 @@ import type {
   MediaItem,
   OutputMode,
   OutputState,
+  OverlayLayers,
   ServiceItemPayload,
   ServiceItem,
   ServiceItemType,
   ServiceWithItems,
   Song,
   StageState,
+  StreamState,
   Theme,
   ThemeBackground,
   ThemeDefaults,
@@ -147,6 +149,12 @@ interface OperatorState {
   stageOpen: boolean
   /** Whether the projector output window is open; kept in step by App from the main process. */
   outputOpen: boolean
+  /** Whether the Stream output window is open; kept in step by App from the main process. */
+  streamOpen: boolean
+  /** The test pattern on the Stream output, for lining up the key. Not saved. */
+  streamTestPattern: boolean
+  /** The Stream panel (preview, logos and stream settings) in the centre column. */
+  streamPanelOpen: boolean
   /** The service open in the schedule panel. */
   service: ServiceWithItems | null
   /** The song open in the editor, which takes the slide grid's place. */
@@ -226,6 +234,10 @@ interface OperatorState {
   toggleStage(): Promise<void>
   setOutputOpen(open: boolean): void
   toggleOutput(): Promise<void>
+  setStreamOpen(open: boolean): void
+  toggleStream(): Promise<void>
+  setStreamTestPattern(on: boolean): void
+  openStreamPanel(open: boolean): void
   /** Closes the song editor, theme editor and settings so the slide grid shows. */
   showGrid(): void
   mediaChanged(): void
@@ -264,6 +276,14 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     alertKeepOnClear: true,
     fadeMs: 400,
     outputDisplay: 'auto',
+    streamDisplay: 'window',
+    streamResolution: '1920x1080',
+    streamKeyMode: 'chroma',
+    streamKeyColor: '#00ff00',
+    streamSlideContent: 'full',
+    logoItems: [],
+    logoLayerVisible: true,
+    overlaysOnChurchScreen: false,
     logoUrl: null,
     appearance: 'system',
     autosaveDrafts: true,
@@ -293,6 +313,9 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   paletteOpen: false,
   stageOpen: false,
   outputOpen: true,
+  streamOpen: false,
+  streamTestPattern: false,
+  streamPanelOpen: false,
   service: null,
   editingSongId: null,
   songsVersion: 0,
@@ -535,9 +558,9 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     if ((await get().loadItem(next)) && get().settings.autoGoLiveOnNext && get().slides.length > 0) get().goLive(0)
   },
 
-  // The song editor, theme editor and settings share the centre panel, so opening one closes the others.
+  // The song editor, theme editor, settings and the Stream panel share the centre panel, so opening one closes the others.
   editSong(id) {
-    set(id === null ? { editingSongId: null } : { editingSongId: id, themeEditorOpen: false, settingsOpen: false })
+    set(id === null ? { editingSongId: null } : { editingSongId: id, themeEditorOpen: false, settingsOpen: false, streamPanelOpen: false })
   },
 
   async loadThemes() {
@@ -577,11 +600,15 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   openThemeEditor(open) {
-    set(open ? { themeEditorOpen: true, editingSongId: null, settingsOpen: false } : { themeEditorOpen: false })
+    set(open ? { themeEditorOpen: true, editingSongId: null, settingsOpen: false, streamPanelOpen: false } : { themeEditorOpen: false })
   },
 
   openSettings(open) {
-    set(open ? { settingsOpen: true, editingSongId: null, themeEditorOpen: false } : { settingsOpen: false })
+    set(open ? { settingsOpen: true, editingSongId: null, themeEditorOpen: false, streamPanelOpen: false } : { settingsOpen: false })
+  },
+
+  openStreamPanel(open) {
+    set(open ? { streamPanelOpen: true, editingSongId: null, themeEditorOpen: false, settingsOpen: false } : { streamPanelOpen: false })
   },
 
   setPaletteOpen(open) {
@@ -604,8 +631,20 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     await window.api.output.setOpen(!get().outputOpen)
   },
 
+  setStreamOpen(open) {
+    set({ streamOpen: open })
+  },
+
+  async toggleStream() {
+    await window.api.stream.setOpen(!get().streamOpen)
+  },
+
+  setStreamTestPattern(on) {
+    set({ streamTestPattern: on })
+  },
+
   showGrid() {
-    set({ editingSongId: null, themeEditorOpen: false, settingsOpen: false })
+    set({ editingSongId: null, themeEditorOpen: false, settingsOpen: false, streamPanelOpen: false })
   },
 
   mediaChanged() {
@@ -855,6 +894,38 @@ export function selectOutputState(s: OperatorState): OutputState {
     fadeMs: s.settings.fadeMs,
     logoUrl: s.settings.logoUrl,
     alert: selectAlertDisplay(s),
+    // Black turns everything off; otherwise the overlays reach the projector only when the setting says so.
+    overlays: s.settings.overlaysOnChurchScreen && s.live.mode !== 'black' ? selectOverlayLayers(s) : null,
+  }
+}
+
+/** The overlay layers as the Stream output draws them: the logos that are on, unless the logo layer is hidden. */
+export function selectOverlayLayers(s: OperatorState): OverlayLayers {
+  return { logos: s.settings.logoLayerVisible ? s.settings.logoItems.filter((logo) => logo.enabled) : [] }
+}
+
+/**
+ * What the Stream output renders, from the live snapshot. Black blacks out the whole stream. Clear, or slide content
+ * set to Hide, empties the slide layer so only the key color and the overlays show; otherwise the live slide covers
+ * them with its own background.
+ */
+export function selectStreamState(s: OperatorState): StreamState {
+  const { mode, text, caption, theme, fadeMs, logoUrl } = selectOutputState(s)
+  const { streamKeyMode, streamKeyColor, streamResolution, streamSlideContent } = s.settings
+  const [width, height] = streamResolution.split('x').map(Number)
+  return {
+    mode: mode === 'black' ? 'black' : streamSlideContent === 'hide' ? 'clear' : mode,
+    text,
+    caption,
+    theme,
+    fadeMs,
+    logoUrl,
+    keyMode: streamKeyMode,
+    keyColor: streamKeyColor,
+    width,
+    height,
+    overlays: selectOverlayLayers(s),
+    testPattern: s.streamTestPattern,
   }
 }
 

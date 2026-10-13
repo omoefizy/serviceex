@@ -1,10 +1,11 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { DEFAULT_THEME_STYLE, normalizeTheme } from '../../shared/themes'
-import type { AlertDisplay, OutputMode, OutputState } from '../../shared/types'
+import type { AlertDisplay, OutputMode, OutputState, OverlayLayers } from '../../shared/types'
+import { cleanLogoItems } from '../db/settings'
 
 const MODES: OutputMode[] = ['show', 'black', 'clear', 'logo']
 
-let lastState: OutputState = { mode: 'black', text: '', caption: '', theme: DEFAULT_THEME_STYLE, fadeMs: 400, logoUrl: null, alert: null }
+let lastState: OutputState = { mode: 'black', text: '', caption: '', theme: DEFAULT_THEME_STYLE, fadeMs: 400, logoUrl: null, alert: null, overlays: null }
 
 const clampNumber = (value: unknown, min: number, max: number, fallback: number) =>
   typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback
@@ -41,7 +42,14 @@ export function alertDisplayOf(value: unknown): AlertDisplay | null {
   }
 }
 
-function assertOutputState(value: unknown): OutputState {
+/** The overlay layers of a state; anything malformed draws none. */
+export function overlayLayersOf(value: unknown): OverlayLayers | null {
+  const overlays = value as Partial<OverlayLayers> | null
+  if (typeof overlays !== 'object' || overlays === null) return null
+  return { logos: cleanLogoItems(overlays.logos) ?? [] }
+}
+
+export function assertOutputState(value: unknown): OutputState {
   const state = value as Partial<OutputState> | null
   if (
     typeof state !== 'object' ||
@@ -64,6 +72,7 @@ function assertOutputState(value: unknown): OutputState {
     fadeMs: Math.min(1500, Math.max(0, state.fadeMs)),
     logoUrl: state.logoUrl,
     alert: alertDisplayOf(state.alert),
+    overlays: overlayLayersOf(state.overlays),
   }
 }
 

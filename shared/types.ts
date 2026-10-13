@@ -154,6 +154,63 @@ export interface OutputState extends SlideContent {
   theme: ThemeStyle
   /** The alert band over the slide, independent of it. */
   alert: AlertDisplay | null
+  /** The overlay layers over the slide, or null: they show on the projector only with `overlaysOnChurchScreen`. */
+  overlays: OverlayLayers | null
+}
+
+// ---------- Stream output and overlays ----------
+
+/** Where a logo sits: a corner of the action safe area, or anywhere (`x` and `y`). */
+export type LogoAnchor = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'free'
+
+/** One logo on the logo layer, such as a church logo in a corner of the livestream. */
+export interface LogoItem {
+  id: string
+  /** The file name it was added from, for the list. */
+  name: string
+  /** wd-media:// URL of the copy in the app data folder. PNGs keep their transparency. */
+  url: string
+  anchor: LogoAnchor
+  /** For a free logo: where its centre sits, in percent of the screen's width and height. */
+  x: number
+  y: number
+  /** Height in percent of screen height; the width follows the image. */
+  size: number
+  /** Distance in from the corner of the action safe area, in percent of screen height. */
+  margin: number
+  /** 0 to 1. */
+  opacity: number
+  /** Off keeps the logo in the list without showing it. */
+  enabled: boolean
+}
+
+/** What the overlay layers draw, bottom to top: logos, then the lower third (to come). */
+export interface OverlayLayers {
+  /** The logos that are on, or none while the logo layer is hidden. */
+  logos: LogoItem[]
+}
+
+/** chroma: the background is `streamKeyColor` for a chroma key. luma: the background is black for a luma key. */
+export type StreamKeyMode = 'chroma' | 'luma'
+
+export type StreamResolution = '1280x720' | '1920x1080' | '2560x1440' | '3840x2160'
+
+/** Which screen the Stream output uses: a window, or fullscreen on one display. */
+export type StreamDisplay = 'window' | number
+
+/**
+ * What the operator sends to the Stream output, drawn bottom to top: the key color, the logo layer, the lower third
+ * slot and the live slide. `mode` is already worked out for the stream: 'clear' means the slide layer is empty.
+ */
+export interface StreamState extends Omit<OutputState, 'alert' | 'overlays'> {
+  keyMode: StreamKeyMode
+  /** The chroma key color; luma keys on black. */
+  keyColor: string
+  width: number
+  height: number
+  overlays: OverlayLayers
+  /** Fills the output with the key color, a border and corner markers, over everything else. */
+  testPattern: boolean
 }
 
 // ---------- Themes ----------
@@ -301,6 +358,19 @@ export interface AppSettings {
   /** Crossfade between slides and backgrounds on the output, 0 to 1500 ms. */
   fadeMs: number
   outputDisplay: OutputDisplay
+  streamDisplay: StreamDisplay
+  streamResolution: StreamResolution
+  streamKeyMode: StreamKeyMode
+  /** The chroma key color, #00ff00 by default. */
+  streamKeyColor: string
+  /** full: the live slide fills the stream with its own background. hide: the stream shows only the key and overlays. */
+  streamSlideContent: 'full' | 'hide'
+  /** The logo layer's logos, bottom to top. */
+  logoItems: LogoItem[]
+  /** The logo layer's Show and Hide toggle. */
+  logoLayerVisible: boolean
+  /** Also draws the overlays (logo layer, lower third) on the projector, over the slide. */
+  overlaysOnChurchScreen: boolean
   /** wd-media:// URL of the logo shown in logo mode, or null for the placeholder. */
   logoUrl: string | null
   appearance: 'system' | 'dark' | 'light'
@@ -348,6 +418,8 @@ export interface DisplayInfo {
   label: string
   width: number
   height: number
+  /** Device pixels per point, so width × scaleFactor is the display's width in pixels. */
+  scaleFactor: number
   primary: boolean
 }
 
@@ -578,6 +650,19 @@ export interface SongFilesApi {
   export(songIds: number[] | null, format: ExportFormat): Promise<ExportResult | null>
 }
 
+export interface StreamApi {
+  /** Sends the operator's stream state to the Stream output window. */
+  send(state: StreamState): void
+  onState(listener: (state: StreamState) => void): () => void
+  /** Opens the Stream output window, or closes it. */
+  setOpen(open: boolean): Promise<void>
+  isOpen(): Promise<boolean>
+  /** Called when the Stream window opens or closes, including by its own close button. */
+  onOpenChange(listener: (open: boolean) => void): () => void
+  /** Picks an image and copies it into the app data folder. Resolves to its URL and file name, or null if cancelled. */
+  pickLogo(): Promise<{ url: string; name: string } | null>
+}
+
 /** The API the preload script exposes to the renderer as `window.api`. */
 export interface WorshipDeckApi {
   songs: SongsApi
@@ -590,6 +675,7 @@ export interface WorshipDeckApi {
   stage: StageApi
   ai: AiApi
   speech: SpeechApi
+  stream: StreamApi
   output: {
     /** Sends the operator's output state to the output window. */
     send(state: OutputState): void

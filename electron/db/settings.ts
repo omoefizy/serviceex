@@ -1,4 +1,4 @@
-import type { AlertMessage, AppSettings, WhisperModelId } from '../../shared/types'
+import type { AlertMessage, AppSettings, LogoAnchor, LogoItem, StreamResolution, WhisperModelId } from '../../shared/types'
 import { db } from './index'
 
 const DEFAULTS: AppSettings = {
@@ -15,6 +15,14 @@ const DEFAULTS: AppSettings = {
   alertKeepOnClear: true,
   fadeMs: 400,
   outputDisplay: 'auto',
+  streamDisplay: 'window',
+  streamResolution: '1920x1080',
+  streamKeyMode: 'chroma',
+  streamKeyColor: '#00ff00',
+  streamSlideContent: 'full',
+  logoItems: [],
+  logoLayerVisible: true,
+  overlaysOnChurchScreen: false,
   logoUrl: null,
   appearance: 'system',
   autosaveDrafts: true,
@@ -57,6 +65,14 @@ const KEYS: Record<keyof AppSettings, string> = {
   alertKeepOnClear: 'alerts.keepOnClear',
   fadeMs: 'output.fadeMs',
   outputDisplay: 'output.display',
+  streamDisplay: 'stream.display',
+  streamResolution: 'stream.resolution',
+  streamKeyMode: 'stream.keyMode',
+  streamKeyColor: 'stream.keyColor',
+  streamSlideContent: 'stream.slideContent',
+  logoItems: 'overlays.logos',
+  logoLayerVisible: 'overlays.logosVisible',
+  overlaysOnChurchScreen: 'overlays.onChurchScreen',
   logoUrl: 'output.logoUrl',
   appearance: 'ui.appearance',
   autosaveDrafts: 'editor.autosaveDrafts',
@@ -106,6 +122,38 @@ function cleanAlertMessages(value: unknown): AlertMessage[] | undefined {
   return messages
 }
 
+export const STREAM_RESOLUTIONS: StreamResolution[] = ['1280x720', '1920x1080', '2560x1440', '3840x2160']
+
+export const LOGO_LIMITS = { items: 20, size: [2, 60], margin: [0, 20] } as const
+
+const LOGO_ANCHORS: LogoAnchor[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'free']
+
+/** Logos with a usable shape and their numbers in range; anything else in the list is dropped. */
+export function cleanLogoItems(value: unknown): LogoItem[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const items: LogoItem[] = []
+  for (const item of value.slice(0, LOGO_LIMITS.items)) {
+    const l = item as Partial<LogoItem> | null
+    if (typeof l !== 'object' || l === null || typeof l.id !== 'string' || !l.id || l.id.length > 64) continue
+    if (typeof l.url !== 'string' || !l.url.startsWith('wd-media://')) continue
+    items.push({
+      id: l.id,
+      name: typeof l.name === 'string' ? l.name.slice(0, 120) : '',
+      url: l.url,
+      anchor: LOGO_ANCHORS.includes(l.anchor as LogoAnchor) ? (l.anchor as LogoAnchor) : 'top-right',
+      x: ranged(l.x, [0, 100], 0.1) ?? 50,
+      y: ranged(l.y, [0, 100], 0.1) ?? 50,
+      size: ranged(l.size, LOGO_LIMITS.size, 0.5) ?? 12,
+      margin: ranged(l.margin, LOGO_LIMITS.margin, 0.5) ?? 0,
+      opacity: ranged(l.opacity, [0, 1], 0.05) ?? 1,
+      enabled: l.enabled !== false,
+    })
+  }
+  return items
+}
+
+const hexColor = (value: unknown) => (typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : undefined)
+
 /** Checks one value, returning undefined for anything unusable so the default applies. */
 function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings[K] | undefined {
   const v = value as never
@@ -126,7 +174,8 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
       return ranged(value, ALERT_LIMITS.loops, 1) as never
     case 'alertTextColor':
     case 'alertBandColor':
-      return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? (value.toLowerCase() as never) : undefined
+    case 'streamKeyColor':
+      return hexColor(value) as never
     case 'alertLayout':
       return value === 'divider' || value === 'sequence' ? v : undefined
     case 'fadeMs':
@@ -135,11 +184,23 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
         : undefined
     case 'outputDisplay':
       return value === 'auto' || value === 'window' || (Number.isInteger(value) && (value as number) >= 0) ? v : undefined
+    case 'streamDisplay':
+      return value === 'window' || (Number.isInteger(value) && (value as number) >= 0) ? v : undefined
+    case 'streamResolution':
+      return STREAM_RESOLUTIONS.includes(value as StreamResolution) ? v : undefined
+    case 'streamKeyMode':
+      return value === 'chroma' || value === 'luma' ? v : undefined
+    case 'streamSlideContent':
+      return value === 'full' || value === 'hide' ? v : undefined
+    case 'logoItems':
+      return cleanLogoItems(value) as never
     case 'logoUrl':
       return value === null || (typeof value === 'string' && value.startsWith('wd-media://')) ? v : undefined
     case 'appearance':
       return ['system', 'dark', 'light'].includes(value as string) ? v : undefined
     case 'alertKeepOnClear':
+    case 'logoLayerVisible':
+    case 'overlaysOnChurchScreen':
     case 'autosaveDrafts':
     case 'aiEnabled':
     case 'autoGoLiveOnNext':

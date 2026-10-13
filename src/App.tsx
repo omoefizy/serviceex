@@ -9,12 +9,13 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { SlideGrid } from './components/SlideGrid'
 import { SongEditor } from './components/SongEditor'
 import { SongList } from './components/SongList'
+import { StreamPanel } from './components/StreamPanel'
 import { Splitter } from './components/Splitter'
 import { ThemeEditor } from './components/ThemeEditor'
 import { Toolbar } from './components/Toolbar'
 import { isTyping, MODE_KEYS } from './lib/shortcuts'
 import { usePersistentState } from './lib/usePersistentState'
-import { selectBrowsingLive, selectOutputState, selectStageState, useOperatorStore } from './store'
+import { selectBrowsingLive, selectOutputState, selectStageState, selectStreamState, useOperatorStore } from './store'
 
 type PanelSizes = { library: number; preview: number; schedule: number }
 
@@ -40,6 +41,7 @@ function App() {
   const editingSongId = useOperatorStore((s) => s.editingSongId)
   const themeEditorOpen = useOperatorStore((s) => s.themeEditorOpen)
   const settingsOpen = useOperatorStore((s) => s.settingsOpen)
+  const streamPanelOpen = useOperatorStore((s) => s.streamPanelOpen)
   const paletteOpen = useOperatorStore((s) => s.paletteOpen)
   const appearance = useOperatorStore((s) => s.settings.appearance)
 
@@ -51,11 +53,14 @@ function App() {
     st.loadSettings().catch(console.error)
     window.api.stage.isOpen().then(st.setStageOpen, console.error)
     window.api.output.isOpen().then(st.setOutputOpen, console.error)
+    window.api.stream.isOpen().then(st.setStreamOpen, console.error)
     const offStage = window.api.stage.onOpenChange(st.setStageOpen)
     const offOutput = window.api.output.onOpenChange(st.setOutputOpen)
+    const offStream = window.api.stream.onOpenChange(st.setStreamOpen)
     return () => {
       offStage()
       offOutput()
+      offStream()
     }
   }, [])
 
@@ -66,10 +71,11 @@ function App() {
     else root.dataset.theme = appearance
   }, [appearance])
 
-  // Mirror the operator state to the output and stage windows, sending only what changed.
+  // Mirror the operator state to the output, stage and Stream windows, sending only what changed.
   useEffect(() => {
     let lastOutput = ''
     let lastStage = ''
+    let lastStream = ''
     const send = () => {
       const s = useOperatorStore.getState()
       const output = selectOutputState(s)
@@ -83,6 +89,12 @@ function App() {
       if (stageJson !== lastStage) {
         lastStage = stageJson
         window.api.stage.send(stage)
+      }
+      const stream = selectStreamState(s)
+      const streamJson = JSON.stringify(stream)
+      if (streamJson !== lastStream) {
+        lastStream = streamJson
+        window.api.stream.send(stream)
       }
     }
     send()
@@ -197,6 +209,8 @@ function App() {
           <ThemeEditor />
         ) : settingsOpen ? (
           <SettingsPanel />
+        ) : streamPanelOpen ? (
+          <StreamPanel />
         ) : (
           <SlideGrid />
         )}

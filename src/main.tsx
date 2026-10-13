@@ -3,11 +3,20 @@ import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import { OutputView } from './components/OutputView'
 import { StageView } from './components/StageView'
+import { StreamView } from './components/StreamView'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {window.location.hash === '#/output' ? <OutputView /> : window.location.hash === '#/stage' ? <StageView /> : <App />}
+    {window.location.hash === '#/output' ? (
+      <OutputView />
+    ) : window.location.hash === '#/stage' ? (
+      <StageView />
+    ) : window.location.hash === '#/stream' ? (
+      <StreamView />
+    ) : (
+      <App />
+    )}
   </React.StrictMode>,
 )
 
