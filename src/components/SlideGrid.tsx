@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
-import { CornerUpLeft, ImageOff, LayoutGrid, List, MonitorUp, RefreshCw, ZoomIn } from 'lucide-react'
+import { Clapperboard, CornerUpLeft, ImageOff, LayoutGrid, List, MonitorUp, RefreshCw, StickyNote, ZoomIn } from 'lucide-react'
 import { MEDIA_DRAG_TYPE } from '../lib/media'
 import { sectionColor } from '../lib/sections'
 import { slideLines } from '../lib/slides'
@@ -10,6 +10,17 @@ import { SuggestionTray } from './SuggestionTray'
 import { ThemedSlide } from './ThemedSlide'
 
 type SlideView = 'grid' | 'list'
+
+const ANIMATED_HINT = 'Animated in PowerPoint, shown as a still image'
+
+/** Marks a presentation slide that has animations or a transition in PowerPoint. */
+function AnimatedMark() {
+  return (
+    <span className="slide-animated" title={ANIMATED_HINT} aria-label={ANIMATED_HINT} role="img">
+      <Clapperboard size={12} aria-hidden="true" />
+    </span>
+  )
+}
 
 export function SlideGrid() {
   const song = useOperatorStore((s) => s.selectedSong)
@@ -83,6 +94,8 @@ export function SlideGrid() {
 
   /** The grid shows the live item, but its theme or content changed since it went live. */
   const liveDiffers = browsingLive && (live.stale || JSON.stringify(theme) !== JSON.stringify(live.theme))
+  /** The highlighted presentation slide's speaker notes. */
+  const notes = deckType === 'presentation' && highlightIndex !== null ? slides[highlightIndex]?.notes?.trim() : undefined
 
   return (
     <section className="panel slide-panel">
@@ -166,7 +179,7 @@ export function SlideGrid() {
 
       {view === 'list' ? (
         <div className="slide-list" ref={gridRef}>
-          {slides.map(({ text, caption, label, page }, index) => (
+          {slides.map(({ text, caption, label, page, pageText, animated }, index) => (
             <div
               key={index}
               className={`slide-cell${dropIndex === index ? ' drop' : ''}`}
@@ -186,7 +199,7 @@ export function SlideGrid() {
                   {label && <span className="slide-row-label">{label}</span>}
                   <span className="slide-row-text">
                     {page ? (
-                      <span className="slide-row-line hint">Presentation page</span>
+                      <span className={`slide-row-line${pageText ? '' : ' hint'}`}>{pageText?.split('\n')[0] || 'Presentation page'}</span>
                     ) : (
                       slideLines(text).map((line, i) => (
                         <span key={i} className={`slide-row-line ${line.kind}`}>
@@ -198,13 +211,14 @@ export function SlideGrid() {
                   {/* A scripture slide's reference; a song's only caption is its copyright, which is left out. */}
                   {caption && deckType !== 'song' && <span className="slide-row-caption">{caption}</span>}
                 </span>
+                {animated && <AnimatedMark />}
               </button>
             </div>
           ))}
         </div>
       ) : (
         <div className="slide-grid" ref={gridRef} style={{ '--thumb-width': `${thumbWidth}px` } as CSSProperties}>
-          {slides.map(({ text, caption, label, background, page }, index) => (
+          {slides.map(({ text, caption, label, background, page, animated }, index) => (
             <div
               key={index}
               className={`slide-cell${dropIndex === index ? ' drop' : ''}`}
@@ -221,6 +235,7 @@ export function SlideGrid() {
                 <ThemedSlide theme={slideThemes[index]} text={text} caption={caption} still />
                 <span className="slide-number">{index + 1}</span>
                 {label && <span className="slide-caption section-label">{label}</span>}
+                {animated && <AnimatedMark />}
               </button>
               {background && !page && (
                 <button
@@ -235,6 +250,14 @@ export function SlideGrid() {
             </div>
           ))}
         </div>
+      )}
+      {notes && (
+        <aside className="speaker-notes" aria-label={`Speaker notes for slide ${(highlightIndex ?? 0) + 1}`}>
+          <h3>
+            <StickyNote size={13} aria-hidden="true" /> Notes · slide {(highlightIndex ?? 0) + 1}
+          </h3>
+          <p>{notes}</p>
+        </aside>
       )}
     </section>
   )

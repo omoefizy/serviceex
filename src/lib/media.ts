@@ -15,8 +15,9 @@ export function matchesSearch(item: MediaItem, search: string): boolean {
 }
 
 const THUMB_WIDTH = 320
-/** PDF pages are drawn this wide, enough for a 1080p screen. */
-const PAGE_WIDTH = 1920
+/** Presentation slides are drawn this size, a 1080p screen. */
+const SLIDE_WIDTH = 1920
+const SLIDE_HEIGHT = 1080
 export const MAX_PDF_PAGES = 500
 
 function canvasBytes(canvas: HTMLCanvasElement, type: 'image/jpeg' | 'image/png'): Promise<Uint8Array> {
@@ -86,33 +87,74 @@ export async function ensureThumbnails(items: MediaItem[], onUpdate: (item: Medi
   }
 }
 
-/** Draws each page of a PDF as a PNG, stores it in the media folder and resolves to the page URLs in order. */
-export async function renderPdfPages(data: Uint8Array, onProgress: (page: number, total: number) => void): Promise<string[]> {
+/** A black 1920x1080 slide to draw on. */
+function slideCanvas(): [HTMLCanvasElement, CanvasRenderingContext2D] {
+  const canvas = document.createElement('canvas')
+  canvas.width = SLIDE_WIDTH
+  canvas.height = SLIDE_HEIGHT
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Canvas is not available')
+  context.fillStyle = '#000000'
+  context.fillRect(0, 0, SLIDE_WIDTH, SLIDE_HEIGHT)
+  return [canvas, context]
+}
+
+/** Where a picture of this shape sits on the slide: scaled to fit, centred. */
+function fitBox(width: number, height: number) {
+  const scale = Math.min(SLIDE_WIDTH / width, SLIDE_HEIGHT / height)
+  const w = Math.round(width * scale)
+  const h = Math.round(height * scale)
+  return { x: Math.round((SLIDE_WIDTH - w) / 2), y: Math.round((SLIDE_HEIGHT - h) / 2), w, h, scale }
+}
+
+/**
+ * Draws each page of a PDF fitted onto a black 1920x1080 slide and calls back with its PNG and text, in order.
+ */
+export async function drawPdfSlides(
+  data: Uint8Array,
+  onPage: (index: number, total: number, png: Uint8Array, text: string) => void,
+): Promise<void> {
   const task = getDocument({ data })
   try {
     const pdf = await task.promise
     if (pdf.numPages > MAX_PDF_PAGES) throw new Error(`The PDF has ${pdf.numPages} pages; the limit is ${MAX_PDF_PAGES}`)
-    const pages: string[] = []
     for (let n = 1; n <= pdf.numPages; n++) {
-      onProgress(n, pdf.numPages)
       const page = await pdf.getPage(n)
-      const viewport = page.getViewport({ scale: PAGE_WIDTH / page.getViewport({ scale: 1 }).width })
-      const canvas = document.createElement('canvas')
-      canvas.width = Math.round(viewport.width)
-      canvas.height = Math.round(viewport.height)
-      const context = canvas.getContext('2d')
-      if (!context) throw new Error('Canvas is not available')
+      const base = page.getViewport({ scale: 1 })
+      const box = fitBox(base.width, base.height)
+      const viewport = page.getViewport({ scale: box.scale, offsetX: box.x, offsetY: box.y })
+      const [canvas, context] = slideCanvas()
       // Pages without a background are transparent; slides need white paper behind them.
       context.fillStyle = '#ffffff'
-      context.fillRect(0, 0, canvas.width, canvas.height)
-      // The print intent draws in one go; the display intent waits on requestAnimationFrame, which stalls
-      // while the window is hidden (say the operator switches away during a long PDF).
+      context.fillRect(box.x, box.y, box.w, box.h)
+      // The print intent draws in one go; the display intent waits on requestAnimationFrame, which stalls in a
+      // hidden window.
       await page.render({ canvas, canvasContext: context, viewport, intent: 'print' }).promise
-      pages.push(await window.api.media.saveImage(await canvasBytes(canvas, 'image/png')))
+      const content = await page.getTextContent()
+      const text = content.items
+        .map((item) => ('str' in item ? item.str + (item.hasEOL ? '\n' : ' ') : ''))
+        .join('')
+        .replace(/[ \t]+/g, ' ')
+        .replace(/ *\n */g, '\n')
+        .trim()
+      onPage(n - 1, pdf.numPages, await canvasBytes(canvas, 'image/png'), text)
       page.cleanup()
     }
-    return pages
   } finally {
     await task.destroy()
+  }
+}
+
+/** Fits an image onto a black 1920x1080 slide and returns the PNG. */
+export async function fitImageSlide(bytes: Uint8Array): Promise<Uint8Array> {
+  const bitmap = await createImageBitmap(new Blob([bytes as BlobPart]))
+  try {
+    const [canvas, context] = slideCanvas()
+    const box = fitBox(bitmap.width, bitmap.height)
+    context.imageSmoothingQuality = 'high'
+    context.drawImage(bitmap, box.x, box.y, box.w, box.h)
+    return await canvasBytes(canvas, 'image/png')
+  } finally {
+    bitmap.close()
   }
 }

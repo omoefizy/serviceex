@@ -65,6 +65,11 @@ export interface PresentationPayload {
   title: string
   /** wd-media:// URLs, in order. */
   pages: string[]
+  /**
+   * The library presentation this came from. Its pages follow the presentation when the original file is saved
+   * again; absent for items made before the Presentations library.
+   */
+  presentationId?: number
 }
 
 export type ServiceItemPayload = ScripturePayload | AnnouncementPayload | PresentationPayload
@@ -447,11 +452,6 @@ export interface MediaItem {
   tags: string[]
 }
 
-/** What the presentation picker found: images already copied in, or a PDF for the renderer to draw page by page. */
-export type PresentationSource =
-  | { kind: 'images'; title: string; pages: string[] }
-  | { kind: 'pdf'; title: string; data: Uint8Array }
-
 export interface MediaApi {
   list(): Promise<MediaItem[]>
   /** Shows a file picker and copies the chosen images and videos into the library. Resolves to the new items. */
@@ -464,10 +464,96 @@ export interface MediaApi {
   /** Per-slide background overrides for a deck (see deckKey in the store), by slide index. */
   getSlideBackgrounds(deckKey: string): Promise<Record<number, MediaItem>>
   setSlideBackground(deckKey: string, slideIndex: number, mediaId: number | null): Promise<void>
-  /** Picks images or one PDF for a presentation. Resolves to null if cancelled. */
-  pickPresentation(): Promise<PresentationSource | null>
-  /** Stores a PNG the renderer drew (a PDF page) and resolves to its URL. */
-  saveImage(png: Uint8Array): Promise<string>
+}
+
+// ---------- Presentations ----------
+
+export type PresentationKind = 'pptx' | 'ppt' | 'pdf' | 'images'
+
+/** Which program draws PowerPoint files: the first available in Auto, or the one chosen in Settings. */
+export type PresentationEngineSetting = 'auto' | 'powerpoint' | 'libreoffice'
+
+/** PowerPoint through COM on Windows, through AppleScript on macOS, or LibreOffice headless. */
+export type PresentationEngineId = 'powerpoint-windows' | 'powerpoint-mac' | 'libreoffice'
+
+export interface PresentationSlide {
+  /** wd-media:// URL of the 1920x1080 PNG. */
+  image: string
+  title: string
+  text: string
+  notes: string
+  /** Has animations or a transition in PowerPoint; shown as a still image all the same. */
+  animated: boolean
+}
+
+/** A presentation in the library: rendered slide pictures, linked to the original file. */
+export interface Presentation {
+  id: number
+  title: string
+  kind: PresentationKind
+  /** The original file, or the folder of images. */
+  sourcePath: string
+  /** SHA-256 of the original the pictures were made from; the pictures are cached under it. */
+  hash: string
+  /** What drew the pictures: an engine, or 'pdf' / 'images' for files that need none. */
+  engine: PresentationEngineId | 'pdf' | 'images'
+  slides: PresentationSlide[]
+  /** ISO time of the last render. */
+  updatedAt: string
+}
+
+/** A conversion in progress, for the progress chip. `key` is the original's path. */
+export interface PresentationProgress {
+  key: string
+  title: string
+  message: string
+  /** Pages done and the page count, once known. */
+  done: number
+  total: number
+  finished: boolean
+  /** Set when the conversion failed. */
+  error?: string
+}
+
+export interface PresentationEngineStatus {
+  setting: PresentationEngineSetting
+  /** The engine PowerPoint files would use now, or null with `message` saying what to install. */
+  active: PresentationEngineId | null
+  powerPoint: boolean
+  /** Where soffice is, or null. */
+  libreOffice: string | null
+  message: string | null
+}
+
+export interface PresentationsApi {
+  list(): Promise<Presentation[]>
+  /** Shows a file picker for .pptx, .ppt, .pdf and images, or a folder picker. Resolves to the chosen paths. */
+  pick(kind: 'files' | 'folder'): Promise<string[]>
+  /** The path of a dropped file or folder. */
+  pathForFile(file: File): string
+  /** Imports each file (or image folder) as a presentation; loose images together make one. Progress comes as events. */
+  import(paths: string[]): Promise<Presentation[]>
+  delete(id: number): Promise<boolean>
+  /** Opens the original in its default app (PowerPoint for .pptx); saving there refreshes the slides. */
+  openOriginal(id: number): Promise<void>
+  engineStatus(): Promise<PresentationEngineStatus>
+  /** Converts a small generated presentation with the active engine. Resolves to what it used and how long it took. */
+  testConversion(): Promise<{ engine: PresentationEngineId; slides: number; ms: number }>
+  onProgress(listener: (progress: PresentationProgress) => void): () => void
+  /** A presentation was re-rendered after its original was saved. */
+  onUpdated(listener: (presentation: Presentation) => void): () => void
+}
+
+/** The hidden window that draws PDF pages and fits images into 1920x1080 slides with pdf.js and a canvas. */
+export type RasterJob = { id: number; kind: 'pdf'; data: Uint8Array } | { id: number; kind: 'images'; images: Uint8Array[] }
+
+export interface RasterizerApi {
+  onJob(listener: (job: RasterJob) => void): () => void
+  /** Called once the job listener is in place. */
+  ready(): void
+  page(jobId: number, index: number, total: number, png: Uint8Array, text: string): void
+  done(jobId: number): void
+  fail(jobId: number, message: string): void
 }
 
 /**
@@ -583,6 +669,10 @@ export interface AppSettings {
   quoteSpeakerName: string
   /** Asks the AI every 30 seconds for quotable statements in the new transcript text. Off by default; needs AI on. */
   statementPicking: boolean
+  /** Which program draws PowerPoint files; Auto uses PowerPoint when installed, else LibreOffice. */
+  presentationEngine: PresentationEngineSetting
+  /** Sends a re-rendered presentation straight to the output when it is live. Off (the default) asks for a resend. */
+  presentationAutoRefreshLive: boolean
 }
 
 export interface DisplayInfo {
@@ -849,6 +939,8 @@ export interface WorshipDeckApi {
   speech: SpeechApi
   stream: StreamApi
   lowerThirds: LowerThirdsApi
+  presentations: PresentationsApi
+  rasterizer: RasterizerApi
   output: {
     /** Sends the operator's output state to the output window. */
     send(state: OutputState): void

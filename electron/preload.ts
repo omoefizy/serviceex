@@ -5,6 +5,11 @@ import type {
   LowerThirdsApi,
   MediaApi,
   OutputState,
+  Presentation,
+  PresentationProgress,
+  PresentationsApi,
+  RasterizerApi,
+  RasterJob,
   ServicesApi,
   SpeechApi,
   SpeechEvent,
@@ -103,8 +108,40 @@ const media: MediaApi = {
   getSlideBackgrounds: (deckKey) => ipcRenderer.invoke('media:getSlideBackgrounds', deckKey),
   setSlideBackground: (deckKey, slideIndex, mediaId) =>
     ipcRenderer.invoke('media:setSlideBackground', deckKey, slideIndex, mediaId),
-  pickPresentation: () => ipcRenderer.invoke('media:pickPresentation'),
-  saveImage: (png) => ipcRenderer.invoke('media:saveImage', png),
+}
+
+const presentations: PresentationsApi = {
+  list: () => ipcRenderer.invoke('presentations:list'),
+  pick: (kind) => ipcRenderer.invoke('presentations:pick', kind),
+  pathForFile: (file) => webUtils.getPathForFile(file),
+  import: (paths) => ipcRenderer.invoke('presentations:import', paths),
+  delete: (id) => ipcRenderer.invoke('presentations:delete', id),
+  openOriginal: (id) => ipcRenderer.invoke('presentations:openOriginal', id),
+  engineStatus: () => ipcRenderer.invoke('presentations:engineStatus'),
+  testConversion: () => ipcRenderer.invoke('presentations:testConversion'),
+  onProgress(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, progress: PresentationProgress) => listener(progress)
+    ipcRenderer.on('presentations:progress', handler)
+    return () => ipcRenderer.off('presentations:progress', handler)
+  },
+  onUpdated(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, presentation: Presentation) => listener(presentation)
+    ipcRenderer.on('presentations:updated', handler)
+    return () => ipcRenderer.off('presentations:updated', handler)
+  },
+}
+
+// Used only by the hidden window that draws slides.
+const rasterizer: RasterizerApi = {
+  onJob(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, job: RasterJob) => listener(job)
+    ipcRenderer.on('rasterize:job', handler)
+    return () => ipcRenderer.off('rasterize:job', handler)
+  },
+  ready: () => ipcRenderer.send('rasterize:ready'),
+  page: (jobId, index, total, png, text) => ipcRenderer.send('rasterize:page', jobId, index, total, png, text),
+  done: (jobId) => ipcRenderer.send('rasterize:done', jobId),
+  fail: (jobId, message) => ipcRenderer.send('rasterize:fail', jobId, message),
 }
 
 const settings: SettingsApi = {
@@ -211,5 +248,21 @@ const speech: SpeechApi = {
   },
 }
 
-const api: WorshipDeckApi = { songs, bible, services, songFiles, themes, media, settings, stage, ai, speech, stream, lowerThirds, output }
+const api: WorshipDeckApi = {
+  songs,
+  bible,
+  services,
+  songFiles,
+  themes,
+  media,
+  settings,
+  stage,
+  ai,
+  speech,
+  stream,
+  lowerThirds,
+  presentations,
+  rasterizer,
+  output,
+}
 contextBridge.exposeInMainWorld('api', api)

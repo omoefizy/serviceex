@@ -36,6 +36,12 @@
     {
       "from": "vendor/bible/bible.db",
       "to": "bible/bible.db"
+    },
+    // The scripts the PowerPoint import runs: COM through PowerShell on Windows, AppleScript on macOS.
+    {
+      "from": "resources",
+      "to": "presentations",
+      "filter": ["powerpoint-export.ps1", "powerpoint-export.applescript"]
     }
   ],
   "mac": {
@@ -50,9 +56,11 @@
     ],
     // macOS shows this when asking for the microphone; without it the request fails silently.
     "extendInfo": {
-      "NSMicrophoneUsageDescription": "WorshipDeck listens to the sermon to show a live transcript."
+      "NSMicrophoneUsageDescription": "WorshipDeck listens to the sermon to show a live transcript.",
+      // Shown when the PowerPoint import first asks to control Microsoft PowerPoint through AppleScript.
+      "NSAppleEventsUsageDescription": "ServiceEx uses PowerPoint to render your slides."
     },
-    // Signed builds use the hardened runtime, which also needs the audio-input entitlement.
+    // Signed builds use the hardened runtime, which also needs the audio-input and Apple Events entitlements.
     "entitlements": "build/entitlements.mac.plist",
     "entitlementsInherit": "build/entitlements.mac.plist",
     "artifactName": "${productName}-Mac-${version}-${arch}.${ext}"

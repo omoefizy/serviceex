@@ -13,6 +13,8 @@ import type {
   OutputMode,
   OutputState,
   OverlayLayers,
+  Presentation,
+  PresentationProgress,
   ServiceItemPayload,
   ServiceItem,
   ServiceItemType,
@@ -45,6 +47,11 @@ export interface DeckSlide {
   background?: ThemeBackground
   /** A presentation page: the image is the whole slide, so the theme's darkening is not applied. */
   page?: boolean
+  /** A presentation page's text and speaker notes, from the original. */
+  pageText?: string
+  notes?: string
+  /** Animated or has a transition in PowerPoint; shown as a still image. */
+  animated?: boolean
 }
 
 /** What the grid holds: a schedule item type, or a quote (a sermon statement, with the Quote theme default). */
@@ -197,6 +204,10 @@ interface OperatorState {
   songsVersion: number
   /** Bumped when the media library changes, so every view of it reloads. */
   mediaVersion: number
+  /** The Presentations library, newest first. */
+  presentations: Presentation[]
+  /** Conversions running or just finished, for the progress chips. */
+  presentationJobs: PresentationProgress[]
 
   /** Shows a song in the grid and preview. Never touches what is live. */
   selectSong(song: Song | null): void
@@ -204,6 +215,8 @@ interface OperatorState {
   selectScripture(title: string, slides: DeckSlide[]): void
   /** Shows a sermon statement as a quote slide in the grid and preview. Never touches what is live. */
   selectQuote(text: string, speaker: string): void
+  /** Shows a library presentation's slides in the grid and preview. Never touches what is live. */
+  selectPresentation(presentation: Presentation): void
   /** Copies the grid's item into the live snapshot with this slide on screen, and shows it. */
   goLive(index: number): void
   /** Sends the highlighted preview slide live (Enter, the Go Live button). */
@@ -291,6 +304,19 @@ interface OperatorState {
   /** Refreshes the grid and schedule after the editor saves a song; marks the live copy out of date if it is that song. */
   songSaved(song: Song): Promise<void>
   songDeleted(id: number): Promise<void>
+  loadPresentations(): Promise<void>
+  /** Imports files or image folders into the Presentations library; resolves to what was imported. */
+  importPresentations(paths: string[]): Promise<Presentation[]>
+  addPresentationToSchedule(presentation: Presentation): Promise<void>
+  /** Shows conversion progress; a finished job without an error clears itself after a moment. */
+  presentationProgress(progress: PresentationProgress): void
+  dismissPresentationJob(key: string): void
+  /**
+   * A presentation was re-rendered after its original was saved. The grid, the schedule and the library take the
+   * new slides, keeping the highlighted position. The live output changes only with "Auto refresh live" on;
+   * otherwise the live copy is marked out of date for a resend.
+   */
+  presentationUpdated(presentation: Presentation): void
 }
 
 /** Bumped by every grid load, so a slow song fetch for an old item cannot overwrite a newer selection. */
@@ -361,6 +387,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     aiScriptureFallback: false,
     quoteSpeakerName: '',
     statementPicking: false,
+    presentationEngine: 'auto',
+    presentationAutoRefreshLive: false,
   },
   themes: [],
   themeDefaults: null,
@@ -381,6 +409,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   editingSongId: null,
   songsVersion: 0,
   mediaVersion: 0,
+  presentations: [],
+  presentationJobs: [],
 
   selectSong(song) {
     const token = ++loadToken
@@ -430,6 +460,21 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
       activeItemId: null,
     })
     applySlideBackgrounds(token, deckKey)
+  },
+
+  selectPresentation(presentation) {
+    loadToken++
+    const slides = presentationSlides(presentation)
+    set({
+      selectedSong: null,
+      deckType: 'presentation',
+      deckKey: `presentation:${presentation.id}`,
+      deckThemeId: null,
+      deckTitle: presentation.title,
+      slides,
+      highlightIndex: slides.length > 0 ? 0 : null,
+      activeItemId: null,
+    })
   },
 
   goLive(index) {
@@ -542,6 +587,9 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
       slides = songSlides(song)
       const themeId = song.themeId ?? s.themeDefaults?.song
       theme = s.themes.find((t) => t.id === themeId)?.style ?? theme
+    } else if (live.itemType === 'presentation') {
+      const presentation = linkedPresentation(s, live.deckKey)
+      if (presentation) slides = presentationSlides(presentation)
     }
     slides = withBackgrounds(slides, await window.api.media.getSlideBackgrounds(live.deckKey))
     const current = get().live
@@ -594,7 +642,11 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     } else if (item.type === 'scripture') {
       slides = item.payload.verses
     } else if (item.type === 'presentation') {
-      slides = item.payload.pages.map((src) => ({ text: '', caption: '', background: { kind: 'image', src, fit: 'contain' }, page: true }))
+      // Linked to the library, it has the notes and animation marks too; older items have only their pages.
+      const linked = get().presentations.find((p) => p.id === item.payload.presentationId)
+      slides = linked
+        ? presentationSlides(linked)
+        : item.payload.pages.map((src) => ({ text: '', caption: '', background: { kind: 'image', src, fit: 'contain' }, page: true }))
     } else {
       slides = announcementSlides(item.payload)
     }
@@ -773,6 +825,72 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
 
   songsChanged() {
     set({ songsVersion: get().songsVersion + 1 })
+  },
+
+  async loadPresentations() {
+    set({ presentations: await window.api.presentations.list() })
+  },
+
+  async importPresentations(paths) {
+    const imported = await window.api.presentations.import(paths)
+    await get().loadPresentations()
+    return imported
+  },
+
+  async addPresentationToSchedule(presentation) {
+    await get().addToSchedule('presentation', null, {
+      title: presentation.title,
+      pages: presentation.slides.map((slide) => slide.image),
+      presentationId: presentation.id,
+    })
+  },
+
+  presentationProgress(progress) {
+    set({ presentationJobs: [...get().presentationJobs.filter((job) => job.key !== progress.key), progress] })
+    if (progress.finished && !progress.error) {
+      setTimeout(() => {
+        const jobs = get().presentationJobs
+        if (jobs.some((job) => job === progress)) set({ presentationJobs: jobs.filter((job) => job !== progress) })
+      }, 3000)
+    }
+  },
+
+  dismissPresentationJob(key) {
+    set({ presentationJobs: get().presentationJobs.filter((job) => job.key !== key) })
+  },
+
+  presentationUpdated(presentation) {
+    const s = get()
+    const exists = s.presentations.some((p) => p.id === presentation.id)
+    set({ presentations: exists ? s.presentations.map((p) => (p.id === presentation.id ? presentation : p)) : [presentation, ...s.presentations] })
+    const slides = presentationSlides(presentation)
+    const shows = (deckKey: string | null) => linkedPresentation(get(), deckKey)?.id === presentation.id
+    // Slide positions stay where they were, by index, or on the last slide when the deck got shorter.
+    const clamp = (index: number | null) => (index === null || slides.length === 0 ? null : Math.min(index, slides.length - 1))
+
+    if (shows(s.deckKey)) {
+      loadToken++
+      set({ slides, highlightIndex: clamp(get().highlightIndex) })
+    }
+    const { live, settings } = get()
+    if (shows(live.deckKey)) {
+      if (settings.presentationAutoRefreshLive) {
+        set({
+          live: {
+            ...live,
+            slides,
+            slideIndex: clamp(live.slideIndex),
+            stale: false,
+            source: live.source && { ...live.source, slides },
+          },
+        })
+      } else if (live.deckKey) markLiveStale(live.deckKey)
+    }
+    // The main process gave linked schedule items the new pages.
+    const { service } = get()
+    if (service?.items.some((item) => item.type === 'presentation' && item.payload.presentationId === presentation.id)) {
+      refreshService(service.id).catch(console.error)
+    }
   },
 
   async songSaved(song) {
@@ -967,6 +1085,30 @@ const mediaBackground = (item: MediaItem): ThemeBackground =>
   item.kind === 'video' ? { kind: 'video', src: item.url } : { kind: 'image', src: item.url }
 
 /** Slides with their stored per-slide backgrounds applied (presentation pages keep their own). */
+/** One full-slide picture per page, with the original's text, notes and animation marks. */
+export function presentationSlides(presentation: Presentation): DeckSlide[] {
+  return presentation.slides.map((slide) => ({
+    text: '',
+    caption: '',
+    background: { kind: 'image', src: slide.image, fit: 'contain' },
+    page: true,
+    pageText: slide.text,
+    notes: slide.notes,
+    animated: slide.animated,
+  }))
+}
+
+/** The library presentation a deck shows: 'presentation:<id>', or a schedule item made from one. */
+function linkedPresentation(s: OperatorState, deckKey: string | null): Presentation | undefined {
+  let id: number | undefined
+  if (deckKey?.startsWith('presentation:')) id = Number(deckKey.slice('presentation:'.length))
+  else if (deckKey?.startsWith('item:')) {
+    const item = s.service?.items.find((i) => `item:${i.id}` === deckKey)
+    if (item?.type === 'presentation') id = item.payload.presentationId
+  }
+  return id === undefined ? undefined : s.presentations.find((p) => p.id === id)
+}
+
 function withBackgrounds(slides: DeckSlide[], overrides: Record<number, MediaItem>): DeckSlide[] {
   return slides.map((slide, index) => {
     if (slide.page) return slide

@@ -89,6 +89,19 @@ export function initSchema(db: Database.Database): void {
       PRIMARY KEY (deck_key, slide_index)
     );
 
+    -- Imported presentations. The slide pictures live in <userData>/presentations/<hash>/, cached by the SHA-256
+    -- of the original at source_path; slides is a JSON array of { file, title, text, notes, animated }.
+    CREATE TABLE IF NOT EXISTS presentations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      source_path TEXT NOT NULL,
+      hash TEXT NOT NULL,
+      engine TEXT NOT NULL,
+      slides TEXT NOT NULL DEFAULT '[]',
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- Full-text index over verses.text for keyword search. It reads its text from verses (external content),
     -- so it must be rebuilt after verses change: the Bible import does that, and ensureVerseIndex catches up.
     CREATE VIRTUAL TABLE IF NOT EXISTS verses_fts USING fts5(

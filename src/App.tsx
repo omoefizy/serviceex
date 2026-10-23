@@ -4,6 +4,7 @@ import { LivePreview } from './components/LivePreview'
 import { LowerThirdPanel } from './components/LowerThirdPanel'
 import { ListenerPanel } from './components/ListenerPanel'
 import { MediaPanel } from './components/MediaPanel'
+import { PresentationsPanel } from './components/PresentationsPanel'
 import { SchedulePanel } from './components/SchedulePanel'
 import { ScripturePanel } from './components/ScripturePanel'
 import { SettingsPanel } from './components/SettingsPanel'
@@ -32,6 +33,7 @@ const isBoolean = (value: unknown): value is boolean => typeof value === 'boolea
 const LIBRARY_TABS = [
   { id: 'songs', label: 'Songs' },
   { id: 'scripture', label: 'Scripture' },
+  { id: 'presentations', label: 'Presentations' },
   { id: 'media', label: 'Media' },
 ] as const
 
@@ -53,16 +55,21 @@ function App() {
     st.loadThemes().catch(console.error)
     st.loadSettings().catch(console.error)
     st.loadLowerThirdTemplates().catch(console.error)
+    st.loadPresentations().catch(console.error)
     window.api.stage.isOpen().then(st.setStageOpen, console.error)
     window.api.output.isOpen().then(st.setOutputOpen, console.error)
     window.api.stream.isOpen().then(st.setStreamOpen, console.error)
     const offStage = window.api.stage.onOpenChange(st.setStageOpen)
     const offOutput = window.api.output.onOpenChange(st.setOutputOpen)
     const offStream = window.api.stream.onOpenChange(st.setStreamOpen)
+    const offProgress = window.api.presentations.onProgress(st.presentationProgress)
+    const offUpdated = window.api.presentations.onUpdated(st.presentationUpdated)
     return () => {
       offStage()
       offOutput()
       offStream()
+      offProgress()
+      offUpdated()
     }
   }, [])
 
@@ -205,6 +212,9 @@ function App() {
           </div>
           <div className="library-page" hidden={libraryTab !== 'scripture'}>
             <ScripturePanel />
+          </div>
+          <div className="library-page" hidden={libraryTab !== 'presentations'}>
+            <PresentationsPanel />
           </div>
           <div className="library-page" hidden={libraryTab !== 'media'}>
             <MediaPanel />

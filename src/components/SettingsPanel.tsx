@@ -13,6 +13,7 @@ import {
   Moon,
   Palette,
   PlugZap,
+  Presentation,
   Quote,
   RefreshCw,
   Save,
@@ -29,6 +30,9 @@ import type {
   AppSettings,
   DisplayInfo,
   OutputDisplay,
+  PresentationEngineId,
+  PresentationEngineSetting,
+  PresentationEngineStatus,
   SpeechEngineId,
   SpeechKeyStatus,
   WhisperModelId,
@@ -593,6 +597,94 @@ function DetectionSection() {
 }
 
 /** Quote slides from the sermon: the default speaker line, and AI statement suggestions (off by default). */
+const PRESENTATION_ENGINES: { value: PresentationEngineSetting; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'powerpoint', label: 'PowerPoint' },
+  { value: 'libreoffice', label: 'LibreOffice' },
+]
+
+const ENGINE_LABELS: Record<PresentationEngineId, string> = {
+  'powerpoint-windows': 'Microsoft PowerPoint (through COM)',
+  'powerpoint-mac': 'Microsoft PowerPoint (through AppleScript)',
+  libreoffice: 'LibreOffice (headless)',
+}
+
+function PresentationsSection() {
+  const settings = useOperatorStore((s) => s.settings)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const [status, setStatus] = useState<PresentationEngineStatus | null>(null)
+  const [testing, setTesting] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    window.api.presentations.engineStatus().then(setStatus, console.error)
+  }, [settings.presentationEngine])
+
+  async function test() {
+    setTesting(true)
+    setResult(null)
+    setError(null)
+    try {
+      const done = await window.api.presentations.testConversion()
+      setResult(`${ENGINE_LABELS[done.engine]} converted ${done.slides} slides in ${(done.ms / 1000).toFixed(1)} s.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(err))
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <Section icon={<Presentation size={16} aria-hidden="true" />} title="Presentations">
+      <div className="field">
+        <span>PowerPoint engine</span>
+        <div className="segmented" role="radiogroup" aria-label="PowerPoint engine">
+          {PRESENTATION_ENGINES.map((engine) => (
+            <button
+              key={engine.value}
+              type="button"
+              role="radio"
+              aria-checked={settings.presentationEngine === engine.value}
+              className={settings.presentationEngine === engine.value ? 'active' : ''}
+              onClick={() => updateSettings({ presentationEngine: engine.value })}
+            >
+              {engine.label}
+            </button>
+          ))}
+        </div>
+        <span className="hint">Auto uses desktop PowerPoint when it is installed, otherwise LibreOffice. PDFs and images need neither.</span>
+      </div>
+      {status && (status.active ? <p className="hint">Active: {ENGINE_LABELS[status.active]}</p> : <p className="error">{status.message}</p>)}
+      <div className="settings-row">
+        <button type="button" className="button" disabled={testing || !status?.active} onClick={test}>
+          <RefreshCw size={15} aria-hidden="true" /> {testing ? 'Converting…' : 'Test conversion'}
+        </button>
+        {result && <span className="hint">{result}</span>}
+      </div>
+      {error && <p className="error">{error}</p>}
+      {status?.active === 'powerpoint-mac' && (
+        <p className="hint">
+          The first conversion asks to let WorshipDeck control PowerPoint. If it was turned down, allow it in System Settings, Privacy and
+          Security, Automation.
+        </p>
+      )}
+      <label className="inline-check">
+        <input
+          type="checkbox"
+          checked={settings.presentationAutoRefreshLive}
+          onChange={(e) => updateSettings({ presentationAutoRefreshLive: e.target.checked })}
+        />
+        Auto refresh live
+      </label>
+      <p className="hint">
+        When a presentation is saved again in PowerPoint, its slides here update. Off: if it is live, the output keeps the older slides
+        until you press Resend. On: the output changes straight away.
+      </p>
+    </Section>
+  )
+}
+
 function QuotesSection() {
   const settings = useOperatorStore((s) => s.settings)
   const updateSettings = useOperatorStore((s) => s.updateSettings)
@@ -765,6 +857,8 @@ export function SettingsPanel() {
 
       <DetectionSection />
       <QuotesSection />
+
+      <PresentationsSection />
 
       <Section icon={<Save size={16} aria-hidden="true" />} title="Autosave and backups">
         <label className="inline-check">

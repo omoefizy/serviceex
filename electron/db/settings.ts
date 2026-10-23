@@ -58,6 +58,8 @@ const DEFAULTS: AppSettings = {
   aiScriptureFallback: false,
   quoteSpeakerName: '',
   statementPicking: false,
+  presentationEngine: 'auto',
+  presentationAutoRefreshLive: false,
 }
 
 export const FADE_LIMITS = { min: 0, max: 1500 }
@@ -119,6 +121,8 @@ const KEYS: Record<keyof AppSettings, string> = {
   aiScriptureFallback: 'detection.aiFallback',
   quoteSpeakerName: 'quote.speakerName',
   statementPicking: 'detection.statements',
+  presentationEngine: 'presentations.engine',
+  presentationAutoRefreshLive: 'presentations.autoRefreshLive',
 }
 
 export const ALERT_LIMITS = {
@@ -300,7 +304,10 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'scriptureDetection':
     case 'statementPicking':
     case 'aiScriptureFallback':
+    case 'presentationAutoRefreshLive':
       return typeof value === 'boolean' ? v : undefined
+    case 'presentationEngine':
+      return value === 'auto' || value === 'powerpoint' || value === 'libreoffice' ? v : undefined
     case 'quoteSpeakerName':
       return typeof value === 'string' && value.length <= 100 ? (value.trim() as never) : undefined
     case 'aiModel':

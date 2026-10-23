@@ -74,11 +74,20 @@ export function LivePreview() {
         {(live.slideIndex !== null && live.title) || 'Nothing live'}
         {live.mode !== 'show' && <span className="screen-mode"> · {live.mode.toUpperCase()}</span>}
       </p>
-      {live.stale && (
-        <button type="button" className="stale-chip" onClick={resend} title="The live item was edited after it went live">
-          <RefreshCw size={13} aria-hidden="true" /> Live version is older, resend
-        </button>
-      )}
+      {live.stale &&
+        (live.itemType === 'presentation' ? (
+          // The original was saved again; the output keeps the older slides until resent (see Auto refresh live).
+          <span className="stale-chip" title="The presentation was saved again after it went live">
+            <RefreshCw size={13} aria-hidden="true" /> Updated
+            <button type="button" className="stale-chip-action" onClick={resend}>
+              Resend
+            </button>
+          </span>
+        ) : (
+          <button type="button" className="stale-chip" onClick={resend} title="The live item was edited after it went live">
+            <RefreshCw size={13} aria-hidden="true" /> Live version is older, resend
+          </button>
+        ))}
       {error && <p className="error">{error}</p>}
 
       <label className="fade-control">

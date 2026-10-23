@@ -12,11 +12,12 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useState, type DragEvent } from 'react'
 import type { AnnouncementPayload, Service, ServiceItemType } from '../../shared/types'
-import { renderPdfPages } from '../lib/media'
+import { droppedPaths, isFileDrag } from '../lib/presentations'
 import { MOD } from '../lib/shortcuts'
 import { useOperatorStore } from '../store'
 import { AnnouncementModal } from './AnnouncementModal'
 import { NewServiceModal } from './NewServiceModal'
+import { PresentationJobs } from './PresentationsPanel'
 import { SermonModal } from './SermonModal'
 
 const TYPE_LABELS: Record<ServiceItemType, string> = {
@@ -50,8 +51,10 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
   const [announcing, setAnnouncing] = useState(false)
   const [sermonOpen, setSermonOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  /** Progress while a presentation is imported, such as "Rendering page 3 of 12…". */
-  const [progress, setProgress] = useState<string | null>(null)
+  /** Presentations being imported for the schedule; progress shows in the chips. */
+  const [importing, setImporting] = useState(false)
+  /** Files are being dragged over the schedule. */
+  const [fileOver, setFileOver] = useState(false)
   const [dragId, setDragId] = useState<number | null>(null)
   /** Where the dragged item would land, as an index into the items before the move. */
   const [dropIndex, setDropIndex] = useState<number | null>(null)
@@ -96,27 +99,22 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
     setAnnouncing(false)
   }
 
-  /** Images become pages as they are; a PDF is drawn page by page here, then saved. */
-  function handlePresentation() {
+  /** Imports into the Presentations library, then adds each to the end of the schedule. */
+  function importPresentations(paths: string[]) {
+    if (paths.length === 0) return
     run(async () => {
       try {
-        setProgress('Choosing files…')
-        const source = await window.api.media.pickPresentation()
-        if (!source) return
-        const pages =
-          source.kind === 'images'
-            ? source.pages
-            : await renderPdfPages(source.data, (page, total) => setProgress(`Rendering page ${page} of ${total}…`))
-        setProgress('Adding to the schedule…')
-        await addToSchedule('presentation', null, { title: source.title, pages })
+        setImporting(true)
+        const { importPresentations, addPresentationToSchedule } = useOperatorStore.getState()
+        for (const presentation of await importPresentations(paths)) await addPresentationToSchedule(presentation)
       } finally {
-        setProgress(null)
+        setImporting(false)
       }
     })
   }
 
   function handleDragOver(e: DragEvent<HTMLLIElement>, index: number) {
-    if (dragId === null) return
+    if (dragId === null || isFileDrag(e)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     const box = e.currentTarget.getBoundingClientRect()
@@ -124,6 +122,7 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
   }
 
   function handleDrop(e: DragEvent) {
+    if (isFileDrag(e)) return
     e.preventDefault()
     const from = items.findIndex((item) => item.id === dragId)
     if (from !== -1 && dropIndex !== null) {
@@ -148,7 +147,24 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
   }
 
   return (
-    <aside className="panel schedule">
+    <aside
+      className={`panel schedule${fileOver ? ' drag-over' : ''}`}
+      onDragOver={(e) => {
+        if (!isFileDrag(e) || !service) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+        setFileOver(true)
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFileOver(false)
+      }}
+      onDrop={(e) => {
+        if (!isFileDrag(e) || !service) return
+        e.preventDefault()
+        setFileOver(false)
+        importPresentations(droppedPaths(e))
+      }}
+    >
       <header className="panel-header">
         <h2>Schedule</h2>
         <button
@@ -221,7 +237,12 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
                 })
               }
             >
-              <ItemIcon type={item.type} />
+              {item.type === 'presentation' && item.payload.pages[0] ? (
+                // Its first slide; the picture changes when the original is saved again.
+                <img className="schedule-item-thumb" src={item.payload.pages[0]} alt="Presentation" />
+              ) : (
+                <ItemIcon type={item.type} />
+              )}
               <span className="schedule-item-title">{item.title}</span>
             </button>
             <button
@@ -244,7 +265,12 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
         <button className="button" disabled={!service} onClick={() => setAnnouncing(true)}>
           <Megaphone size={15} aria-hidden="true" /> Announcement
         </button>
-        <button className="button" disabled={!service || progress !== null} onClick={handlePresentation} title="Images or a PDF, one slide per page">
+        <button
+          className="button"
+          disabled={!service || importing}
+          onClick={() => window.api.presentations.pick('files').then(importPresentations, console.error)}
+          title="PowerPoint, PDF or images, one slide per page; or drop files and folders on the schedule"
+        >
           <Presentation size={15} aria-hidden="true" /> Presentation
         </button>
         <button className="button" disabled={!service} onClick={() => setSermonOpen(true)} title="Turn a sermon outline into points and scripture">
@@ -252,7 +278,7 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
         </button>
         <span className="hint">{MOD}↓ next item</span>
       </footer>
-      {progress && <p className="hint">{progress}</p>}
+      <PresentationJobs />
 
       {creating && <NewServiceModal onSave={handleCreate} onCancel={() => setCreating(false)} />}
       {announcing && <AnnouncementModal onSave={handleAnnouncement} onCancel={() => setAnnouncing(false)} />}

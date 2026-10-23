@@ -20,6 +20,7 @@ import { getAppSettings } from './db/settings'
 import { registerMediaProtocol, registerMediaScheme } from './media'
 import { registerOutputIpc, sendLastOutputState } from './ipc/output'
 import { registerStreamIpc, sendLastStreamState } from './ipc/stream'
+import { registerPresentationIpc } from './ipc/presentations'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -48,6 +49,9 @@ let win: BrowserWindow | null
 let outputWin: BrowserWindow | null = null
 let stageWin: BrowserWindow | null = null
 let streamWin: BrowserWindow | null = null
+/** Draws presentation slides out of sight (see ipc/presentations); made when first needed. */
+let rasterWin: BrowserWindow | null = null
+let stopPresentations: (() => Promise<void>) | null = null
 
 /** Loads the renderer, optionally at a hash route such as /output. */
 function loadRenderer(target: BrowserWindow, route?: string) {
@@ -86,7 +90,28 @@ function createWindow() {
     outputWin?.close()
     stageWin?.close()
     streamWin?.close()
+    rasterWin?.destroy()
   })
+}
+
+/** The hidden renderer that draws PDF pages and fits slide pictures; it never shows. */
+function createRasterWindow(): BrowserWindow {
+  const raster = new BrowserWindow({
+    show: false,
+    width: 640,
+    height: 360,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.mjs'),
+      // It works while hidden, which is always.
+      backgroundThrottling: false,
+    },
+  })
+  rasterWin = raster
+  raster.on('closed', () => {
+    if (rasterWin === raster) rasterWin = null
+  })
+  loadRenderer(raster, '/rasterize')
+  return raster
 }
 
 /** The display chosen in Settings; 'auto' is the first display that is not the primary one. Null means a window. */
@@ -224,6 +249,11 @@ app.on('window-all-closed', () => {
   }
 })
 
+app.on('will-quit', () => {
+  stopPresentations?.().catch(console.error)
+  stopPresentations = null
+})
+
 app.on('activate', () => {
   // On OS X it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
@@ -265,6 +295,12 @@ app.whenReady().then(() => {
   registerSpeechIpc()
   registerOutputIpc(() => outputWin, setOutputOpen)
   registerStreamIpc(() => streamWin, setStreamOpen)
+  stopPresentations = registerPresentationIpc({
+    createRasterWindow,
+    getOperatorWindow: () => win,
+    // The PowerShell and AppleScript the PowerPoint engines run.
+    resourcesDir: app.isPackaged ? path.join(process.resourcesPath, 'presentations') : path.join(process.env.APP_ROOT, 'resources'),
+  })
   createWindow()
   createOutputWindow()
 })

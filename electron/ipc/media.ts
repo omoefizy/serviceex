@@ -1,7 +1,5 @@
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
-import type { PresentationSource } from '../../shared/types'
 import {
   deleteMedia,
   getMedia,
@@ -12,13 +10,12 @@ import {
   setSlideBackground,
   updateMedia,
 } from '../db/media'
-import { copyIntoMedia, mediaUrl, removeMedia, writeMedia } from '../media'
+import { copyIntoMedia, removeMedia, writeMedia } from '../media'
 
 // Arguments arrive from the renderer, so check their shape before they reach the disk or the database.
 
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif']
 const VIDEO_EXTENSIONS = ['mp4', 'webm']
-const MAX_PDF_BYTES = 200 * 1024 * 1024
 const MAX_GENERATED_BYTES = 20 * 1024 * 1024
 
 async function openDialog(event: IpcMainInvokeEvent, options: Electron.OpenDialogOptions): Promise<string[]> {
@@ -35,8 +32,8 @@ function assertId(value: unknown, name = 'Media id'): number {
 }
 
 function assertDeckKey(value: unknown): string {
-  if (typeof value !== 'string' || !/^(song|item|scripture):.+/.test(value) || value.length > 300) {
-    throw new TypeError('Deck key must look like song:<id>, item:<id> or scripture:<reference>')
+  if (typeof value !== 'string' || !/^(song|item|scripture|presentation):.+/.test(value) || value.length > 300) {
+    throw new TypeError('Deck key must look like song:<id>, item:<id>, presentation:<id> or scripture:<reference>')
   }
   return value
 }
@@ -100,33 +97,4 @@ export function registerMediaIpc(): void {
     if (!Number.isInteger(slideIndex) || (slideIndex as number) < 0) throw new TypeError('Slide index must be 0 or more')
     setSlideBackground(assertDeckKey(deckKey), slideIndex as number, mediaId === null ? null : assertId(mediaId))
   })
-
-  ipcMain.handle('media:pickPresentation', async (event): Promise<PresentationSource | null> => {
-    const files = await openDialog(event, {
-      title: 'Choose images or a PDF',
-      properties: ['openFile', 'multiSelections'],
-      filters: [
-        { name: 'Images or PDF', extensions: [...IMAGE_EXTENSIONS, 'pdf'] },
-        { name: 'PDF', extensions: ['pdf'] },
-        { name: 'Images', extensions: IMAGE_EXTENSIONS },
-      ],
-    })
-    if (files.length === 0) return null
-
-    // One PDF goes to the renderer to be drawn page by page; images are copied in as they are.
-    const pdf = files.find((file) => extensionOf(file) === 'pdf')
-    if (pdf) {
-      if (files.length > 1) throw new Error('Choose one PDF, or images only')
-      if ((await stat(pdf)).size > MAX_PDF_BYTES) throw new Error('The PDF is larger than 200 MB')
-      return { kind: 'pdf', title: path.basename(pdf, path.extname(pdf)), data: new Uint8Array(await readFile(pdf)) }
-    }
-    const images = files.filter((file) => IMAGE_EXTENSIONS.includes(extensionOf(file))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-    if (images.length === 0) throw new Error('Choose images or a PDF')
-    const pages = []
-    for (const image of images) pages.push(mediaUrl(await copyIntoMedia(image)))
-    const title = images.length === 1 ? path.basename(images[0], path.extname(images[0])) : path.basename(path.dirname(images[0]))
-    return { kind: 'images', title, pages }
-  })
-
-  ipcMain.handle('media:saveImage', async (_event, png: unknown) => mediaUrl(await writeMedia(assertBytes(png), 'page', '.png')))
 }
