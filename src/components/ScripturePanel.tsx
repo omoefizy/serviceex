@@ -2,7 +2,7 @@ import { BookPlus, History, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { BOOK_NAMES, formatReference, NEW_TESTAMENT_BOOKS, OLD_TESTAMENT_BOOKS, parseReference } from '../../shared/parseReference'
 import type { AiError, BibleVersion, BibleVersionCode, Testament, Verse } from '../../shared/types'
-import { passageOf, previewPassage, type ResultItem } from '../lib/scripture'
+import { itemTitle, passageOf, previewPassage, type ResultItem } from '../lib/scripture'
 import { parseVerseCaption } from '../lib/slides'
 import {
   isVersionFilter,
@@ -19,7 +19,7 @@ import { useVerseSearch } from '../lib/useVerseSearch'
 import { selectLiveSlide, useOperatorStore } from '../store'
 import { AiButton } from './AiButton'
 import { BibleImportModal } from './BibleImportModal'
-import { VerseResults, type VerseResultsHandle } from './VerseResults'
+import { VerseResults, VerseText, type VerseResultsHandle } from './VerseResults'
 
 const DEBOUNCE_MS = 60
 const MAX_RECENT = 8
@@ -549,6 +549,16 @@ export function ScripturePanel() {
               />
             )}
           </div>
+
+          {/* The row Up and Down are on, in full, to read before previewing it. */}
+          {showList && items[active] && (
+            <div className="verse-strip" aria-live="polite">
+              <div className="verse-strip-ref">{itemTitle(items[active])}</div>
+              <p className="verse-strip-text">
+                <VerseText item={items[active]} />
+              </p>
+            </div>
+          )}
         </div>
       </div>
 

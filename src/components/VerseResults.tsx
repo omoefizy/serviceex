@@ -1,7 +1,7 @@
 import { Eye, ListPlus } from 'lucide-react'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
 import { formatReference } from '../../shared/parseReference'
-import { canMakeRange, passageOf, previewPassage, type ResultItem } from '../lib/scripture'
+import { canMakeRange, passageOf, previewPassage, resultSegments, type ResultItem } from '../lib/scripture'
 import { verseCaption } from '../lib/slides'
 import { selectLiveSlide, selectPreviewSlide, useOperatorStore } from '../store'
 
@@ -32,6 +32,11 @@ interface Props {
   onLoadMore?(): void
   /** Called when a result is previewed or scheduled, to remember the search. */
   onUse?(): void
+}
+
+/** A result's verse text, the keyword matches highlighted. */
+export function VerseText({ item }: { item: ResultItem }) {
+  return <>{resultSegments(item).map((s, i) => (s.match ? <mark key={i}>{s.text}</mark> : <span key={i}>{s.text}</span>))}</>
 }
 
 /**
@@ -197,10 +202,11 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
                   </td>
                   <td className="verse-table-version">{item.version}</td>
                   <td className="verse-table-ref">{reference}</td>
-                  <td className="verse-table-text">
-                    {item.segments
-                      ? item.segments.map((s, i) => (s.match ? <mark key={i}>{s.text}</mark> : <span key={i}>{s.text}</span>))
-                      : item.verses.map((v) => v.text).join(' ')}
+                  <td className="verse-table-text" title={item.verses.map((v) => v.text).join(' ')}>
+                    {/* At most 3 lines; the whole verse is in the tooltip and the strip under the list. */}
+                    <div className="verse-table-clamp">
+                      <VerseText item={item} />
+                    </div>
                   </td>
                   <td onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
                     <button

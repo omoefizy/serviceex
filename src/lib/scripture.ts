@@ -16,6 +16,15 @@ export interface ResultItem {
   segments?: { text: string; match: boolean }[]
 }
 
+/**
+ * A result's text as highlight segments: the keyword matches when there are any, otherwise the whole text unmarked,
+ * so a row never shows empty when the search could not mark it.
+ */
+export function resultSegments(item: ResultItem): { text: string; match: boolean }[] {
+  if (item.segments?.some((s) => s.text.trim())) return item.segments
+  return [{ text: item.verses.map((v) => v.text).join(' '), match: false }]
+}
+
 export const itemTitle = (item: ResultItem) =>
   `${formatReference({ book: item.book, chapter: item.chapter, verseStart: item.verseStart, verseEnd: item.verseEnd })} ${item.version}`
 
