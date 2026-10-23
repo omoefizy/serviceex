@@ -1,10 +1,14 @@
 import { create } from 'zustand'
 import { buildSongSlides } from '../shared/lyrics'
-import { DEFAULT_THEME_STYLE } from '../shared/themes'
+import { DEFAULT_LOWER_THIRD_STYLE } from '../shared/lowerThirds'
+import { DEFAULT_FONT, DEFAULT_THEME_STYLE } from '../shared/themes'
 import type {
   AlertDisplay,
   AlertMessage,
   AppSettings,
+  LowerThirdDisplay,
+  LowerThirdStyle,
+  LowerThirdTemplate,
   MediaItem,
   OutputMode,
   OutputState,
@@ -18,6 +22,7 @@ import type {
   StreamState,
   Theme,
   ThemeBackground,
+  ThemeContentType,
   ThemeDefaults,
   ThemeStyle,
   Verse,
@@ -27,8 +32,13 @@ import { PRIORITY_BAND_COLOR, PRIORITY_PASSES, runDurationMs } from './lib/ticke
 
 export interface DeckSlide {
   text: string
-  /** Small line under the text on the output: a scripture reference, or a song's copyright on its first slide. */
+  /**
+   * What the theme's Reference box shows: a scripture reference, a song's title and author on its first slide, an
+   * announcement's title or a quote's speaker.
+   */
   caption: string
+  /** What the theme's Copyright box shows: a song's copyright line, on its first slide. */
+  copyright?: string
   /** Song section shown on the slide card only, such as "Chorus". */
   label?: string
   /** Replaces the theme's background for this slide: a library item dropped on it, or a presentation page. */
@@ -68,6 +78,18 @@ export interface LiveTicker {
   hidden: boolean
 }
 
+/** A line of the lower third: a headline and a body, either of which may be empty. */
+export interface LowerThirdLine {
+  headline: string
+  body: string
+}
+
+/** The lower third on the Stream output. */
+export interface LiveLowerThird extends LowerThirdLine {
+  /** Changes each time a line is shown; an update keeps it. */
+  runId: number
+}
+
 /**
  * What the projector shows: a full copy taken when something goes live. Browsing, editing songs, changing themes
  * or deleting things never changes it; only going live, the arrow keys and the output mode buttons do.
@@ -96,6 +118,8 @@ export interface LiveState {
    * changing slides or loading anything else keeps it running.
    */
   alert: LiveTicker | null
+  /** The lower third, or null when hidden. Like the ticker, it belongs to the output and outlives slide changes. */
+  lowerThird: LiveLowerThird | null
 }
 
 const NOTHING_LIVE: LiveState = {
@@ -111,6 +135,7 @@ const NOTHING_LIVE: LiveState = {
   stale: false,
   source: null,
   alert: null,
+  lowerThird: null,
 }
 
 interface OperatorState {
@@ -153,8 +178,17 @@ interface OperatorState {
   streamOpen: boolean
   /** The test pattern on the Stream output, for lining up the key. Not saved. */
   streamTestPattern: boolean
+  /** The test pattern on the projector output, for lining it up (or a vision mixer fed from it). Not saved. */
+  outputTestPattern: boolean
   /** The Stream panel (preview, logos and stream settings) in the centre column. */
   streamPanelOpen: boolean
+  lowerThirdTemplates: LowerThirdTemplate[]
+  /** What is typed in the Lower Third panel; Enter shows it. */
+  lowerThirdDraft: LowerThirdLine
+  /** Lines shown during this service, newest first, at most 30, for Up and Down in the panel. */
+  lowerThirdHistory: LowerThirdLine[]
+  /** The sermon point last shown from the Points list, or -1 before the first. */
+  lowerThirdPointIndex: number
   /** The service open in the schedule panel. */
   service: ServiceWithItems | null
   /** The song open in the editor, which takes the slide grid's place. */
@@ -237,6 +271,17 @@ interface OperatorState {
   setStreamOpen(open: boolean): void
   toggleStream(): Promise<void>
   setStreamTestPattern(on: boolean): void
+  setOutputTestPattern(on: boolean): void
+  loadLowerThirdTemplates(): Promise<void>
+  setLowerThirdDraft(patch: Partial<LowerThirdLine>): void
+  /** Shows the draft on the Stream output, or changes the text in place if a lower third is already up. */
+  showLowerThird(): void
+  hideLowerThird(): void
+  /** Puts a sermon point in the draft and shows it; Next Point is the one after the last shown. */
+  showLowerThirdPoint(index: number): void
+  nextLowerThirdPoint(): void
+  /** Replaces the sermon's points (one per line); Next Point then starts from the first. */
+  queueLowerThirdPoints(points: string[]): Promise<void>
   openStreamPanel(open: boolean): void
   /** Closes the song editor, theme editor and settings so the slide grid shows. */
   showGrid(): void
@@ -276,6 +321,10 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     alertKeepOnClear: true,
     fadeMs: 400,
     outputDisplay: 'auto',
+    outputBounds: { left: 0, top: 0, width: 1920, height: 1080 },
+    screenMargins: { top: 0, right: 0, bottom: 0, left: 0 },
+    defaultFont: DEFAULT_FONT,
+    previewOutput: true,
     streamDisplay: 'window',
     streamResolution: '1920x1080',
     streamKeyMode: 'chroma',
@@ -284,6 +333,13 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     logoItems: [],
     logoLayerVisible: true,
     overlaysOnChurchScreen: false,
+    lowerThirdTemplateId: null,
+    lowerThirdAnimation: 'slide',
+    lowerThirdDurationMs: 500,
+    lowerThirdHoldSeconds: 0,
+    lowerThirdOverFullSlide: false,
+    lowerThirdSavedLines: [],
+    lowerThirdPoints: [],
     logoUrl: null,
     appearance: 'system',
     autosaveDrafts: true,
@@ -315,7 +371,12 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   outputOpen: true,
   streamOpen: false,
   streamTestPattern: false,
+  outputTestPattern: false,
   streamPanelOpen: false,
+  lowerThirdTemplates: [],
+  lowerThirdDraft: { headline: '', body: '' },
+  lowerThirdHistory: [],
+  lowerThirdPointIndex: -1,
   service: null,
   editingSongId: null,
   songsVersion: 0,
@@ -374,7 +435,14 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   goLive(index) {
     const s = get()
     if (index < 0 || index >= s.slides.length) return
-    const live: LiveState = { ...snapshotOf(s), slideIndex: index, mode: 'show', stale: false, alert: s.live.alert }
+    const live: LiveState = {
+      ...snapshotOf(s),
+      slideIndex: index,
+      mode: 'show',
+      stale: false,
+      alert: s.live.alert,
+      lowerThird: s.live.lowerThird,
+    }
     set({ live, liveHistory: historyBefore(s, live), highlightIndex: index })
   },
 
@@ -409,7 +477,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     const { liveHistory, live } = get()
     const previous = liveHistory[liveHistory.length - 1]
     if (!previous) return
-    set({ live: { ...previous, mode: 'show', alert: live.alert }, liveHistory: liveHistory.slice(0, -1) })
+    set({ live: { ...previous, mode: 'show', alert: live.alert, lowerThird: live.lowerThird }, liveHistory: liveHistory.slice(0, -1) })
   },
 
   startAlerts(messages) {
@@ -483,7 +551,9 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
 
   async openService(id) {
     const service = id === null ? null : ((await window.api.services.get(id)) ?? null)
-    set({ service, activeItemId: null })
+    // The lower third history is per service.
+    const history = service?.id === get().service?.id ? {} : { lowerThirdHistory: [] }
+    set({ service, activeItemId: null, ...history })
   },
 
   async addToSchedule(type, refId, payload) {
@@ -643,6 +713,56 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     set({ streamTestPattern: on })
   },
 
+  setOutputTestPattern(on) {
+    set({ outputTestPattern: on })
+  },
+
+  async loadLowerThirdTemplates() {
+    set({ lowerThirdTemplates: await window.api.lowerThirds.list() })
+  },
+
+  setLowerThirdDraft(patch) {
+    set({ lowerThirdDraft: { ...get().lowerThirdDraft, ...patch } })
+  },
+
+  showLowerThird() {
+    const { live, lowerThirdDraft, lowerThirdHistory, settings } = get()
+    const line = { headline: lowerThirdDraft.headline.trim(), body: lowerThirdDraft.body.trim() }
+    if (!line.headline && !line.body) return
+    const runId = live.lowerThird?.runId ?? ++lowerThirdRuns
+    const history = [line, ...lowerThirdHistory.filter((l) => l.headline !== line.headline || l.body !== line.body)].slice(0, LOWER_THIRD_HISTORY)
+    set({ live: { ...live, lowerThird: { runId, ...line } }, lowerThirdHistory: history })
+    // The hold timer counts from the latest show or update.
+    clearTimeout(lowerThirdTimer)
+    if (settings.lowerThirdHoldSeconds > 0) {
+      lowerThirdTimer = setTimeout(() => {
+        if (get().live.lowerThird?.runId === runId) get().hideLowerThird()
+      }, settings.lowerThirdHoldSeconds * 1000)
+    }
+  },
+
+  hideLowerThird() {
+    clearTimeout(lowerThirdTimer)
+    const { live } = get()
+    if (live.lowerThird) set({ live: { ...live, lowerThird: null } })
+  },
+
+  showLowerThirdPoint(index) {
+    const point = get().settings.lowerThirdPoints[index]
+    if (point === undefined) return
+    set({ lowerThirdPointIndex: index, lowerThirdDraft: { headline: point, body: '' } })
+    get().showLowerThird()
+  },
+
+  nextLowerThirdPoint() {
+    get().showLowerThirdPoint(get().lowerThirdPointIndex + 1)
+  },
+
+  async queueLowerThirdPoints(points) {
+    set({ lowerThirdPointIndex: -1 })
+    await get().updateSettings({ lowerThirdPoints: points.map((p) => p.trim()).filter(Boolean) })
+  },
+
   showGrid() {
     set({ editingSongId: null, themeEditorOpen: false, settingsOpen: false, streamPanelOpen: false })
   },
@@ -683,7 +803,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
 }))
 
 /** A copy of the grid's item, with its theme resolved, for going live. */
-function snapshotOf(s: OperatorState): Omit<LiveState, 'slideIndex' | 'mode' | 'stale' | 'alert'> {
+function snapshotOf(s: OperatorState): Omit<LiveState, 'slideIndex' | 'mode' | 'stale' | 'alert' | 'lowerThird'> {
   return {
     itemType: s.deckType,
     itemId: s.deckType === 'song' ? (s.selectedSong?.id ?? null) : s.activeItemId,
@@ -780,6 +900,10 @@ function stopTicker(): void {
   setTicker(null)
 }
 
+const LOWER_THIRD_HISTORY = 30
+let lowerThirdRuns = 0
+let lowerThirdTimer: ReturnType<typeof setTimeout> | undefined
+
 /** Calls `onEnd` once `run` has gone through its loops on the projector; endless runs have no end. */
 function scheduleRunEnd(run: TickerRun, onEnd: () => void): void {
   clearTimeout(tickerTimer)
@@ -828,11 +952,13 @@ function markLiveStale(deckKey: string): void {
   if (live.deckKey === deckKey && !live.stale) useOperatorStore.setState({ live: { ...live, stale: true } })
 }
 
-/** The copyright line shows under the first slide, styled by the theme's caption settings. */
+/** The title and author (the theme's Reference box) and the copyright line show on the first slide. */
 function songSlides(song: Song): DeckSlide[] {
+  const titleLine = [song.title, song.author].filter(Boolean).join(' · ')
   return buildSongSlides(song.lyrics, song.arrangement).map(({ text, label }, index) => ({
     text,
-    caption: index === 0 ? (song.copyright ?? '') : '',
+    caption: index === 0 ? titleLine : '',
+    copyright: index === 0 ? (song.copyright ?? '') : '',
     label: label ?? undefined,
   }))
 }
@@ -883,25 +1009,62 @@ export function selectBrowsingLive(s: OperatorState): boolean {
   return s.live.deckKey !== null && s.live.deckKey === s.deckKey
 }
 
-/** What the output window renders. Read only from the live snapshot, so browsing never changes it. */
+/** The default theme for a content type, or Classic Black before the themes load. */
+export function selectDefaultTheme(s: OperatorState, type: ThemeContentType): ThemeStyle {
+  const id = s.themeDefaults?.[type]
+  return s.themes.find((t) => t.id === id)?.style ?? DEFAULT_THEME_STYLE
+}
+
+/** What the output window renders. Read only from the live snapshot, so browsing never changes it. Logo shows the Logo theme. */
 export function selectOutputState(s: OperatorState): OutputState {
   const live = selectLiveSlide(s)
   return {
     mode: s.live.mode,
     text: live?.text ?? '',
     caption: live?.caption ?? '',
-    theme: slideTheme(s.live.theme, live),
+    copyright: live?.copyright ?? '',
+    theme: s.live.mode === 'logo' ? selectDefaultTheme(s, 'logo') : slideTheme(s.live.theme, live),
     fadeMs: s.settings.fadeMs,
     logoUrl: s.settings.logoUrl,
+    defaultFont: s.settings.defaultFont,
+    screenMargins: s.settings.screenMargins,
+    testPattern: s.outputTestPattern,
     alert: selectAlertDisplay(s),
     // Black turns everything off; otherwise the overlays reach the projector only when the setting says so.
-    overlays: s.settings.overlaysOnChurchScreen && s.live.mode !== 'black' ? selectOverlayLayers(s) : null,
+    overlays:
+      s.settings.overlaysOnChurchScreen && s.live.mode !== 'black' ? selectOverlayLayers(s, s.live.mode === 'show' || s.live.mode === 'logo') : null,
   }
 }
 
-/** The overlay layers as the Stream output draws them: the logos that are on, unless the logo layer is hidden. */
-export function selectOverlayLayers(s: OperatorState): OverlayLayers {
-  return { logos: s.settings.logoLayerVisible ? s.settings.logoItems.filter((logo) => logo.enabled) : [] }
+/** The lower third template in use: the chosen one, else the first built-in. */
+export function selectLowerThirdStyle(s: OperatorState): LowerThirdStyle {
+  const { lowerThirdTemplates: templates, settings } = s
+  return (templates.find((t) => t.id === settings.lowerThirdTemplateId) ?? templates[0])?.style ?? DEFAULT_LOWER_THIRD_STYLE
+}
+
+/**
+ * The lower third as the screens draw it, or null. Over a full screen slide (`overFullSlide`) it hides unless the
+ * setting keeps it on top.
+ */
+export function selectLowerThirdDisplay(s: OperatorState, overFullSlide: boolean): LowerThirdDisplay | null {
+  const lowerThird = s.live.lowerThird
+  if (!lowerThird || (overFullSlide && !s.settings.lowerThirdOverFullSlide)) return null
+  return {
+    runId: lowerThird.runId,
+    headline: lowerThird.headline,
+    body: lowerThird.body,
+    style: selectLowerThirdStyle(s),
+    animation: s.settings.lowerThirdAnimation,
+    durationMs: s.settings.lowerThirdDurationMs,
+  }
+}
+
+/** The overlay layers: the logos that are on (unless the logo layer is hidden), then the lower third. */
+export function selectOverlayLayers(s: OperatorState, overFullSlide: boolean): OverlayLayers {
+  return {
+    logos: s.settings.logoLayerVisible ? s.settings.logoItems.filter((logo) => logo.enabled) : [],
+    lowerThird: selectLowerThirdDisplay(s, overFullSlide),
+  }
 }
 
 /**
@@ -910,21 +1073,30 @@ export function selectOverlayLayers(s: OperatorState): OverlayLayers {
  * them with its own background.
  */
 export function selectStreamState(s: OperatorState): StreamState {
-  const { mode, text, caption, theme, fadeMs, logoUrl } = selectOutputState(s)
+  const { mode, text, caption, copyright, theme: slideLook, fadeMs, logoUrl, defaultFont } = selectOutputState(s)
   const { streamKeyMode, streamKeyColor, streamResolution, streamSlideContent } = s.settings
   const [width, height] = streamResolution.split('x').map(Number)
+  const streamMode = mode === 'black' ? 'black' : streamSlideContent === 'hide' ? 'clear' : mode
+  // Slides (not the Logo theme) can go to the stream in the default Lower Third theme instead of their own.
+  const lowerThird = streamSlideContent === 'lowerThird' && mode !== 'logo' && !selectLiveSlide(s)?.page
+  const theme = lowerThird ? selectDefaultTheme(s, 'lowerThird') : slideLook
+  const overlays = selectOverlayLayers(s, streamMode === 'show' || streamMode === 'logo')
   return {
-    mode: mode === 'black' ? 'black' : streamSlideContent === 'hide' ? 'clear' : mode,
+    mode: streamMode,
     text,
     caption,
+    copyright,
     theme,
     fadeMs,
     logoUrl,
+    defaultFont,
     keyMode: streamKeyMode,
     keyColor: streamKeyColor,
     width,
     height,
-    overlays: selectOverlayLayers(s),
+    // Black blacks out the whole stream, the lower third included.
+    overlays: streamMode === 'black' ? { ...overlays, lowerThird: null } : overlays,
+    lowerThirdOnTop: s.settings.lowerThirdOverFullSlide,
     testPattern: s.streamTestPattern,
   }
 }
@@ -949,7 +1121,14 @@ export function selectStageState(s: OperatorState): StageState {
 /** A slide's own background, if it has one, in place of the theme's. */
 export function slideTheme(theme: ThemeStyle, slide: DeckSlide | null | undefined): ThemeStyle {
   if (!slide?.background) return theme
-  return { ...theme, background: slide.background, overlay: slide.page ? 0 : theme.overlay }
+  // A presentation page is the whole slide, so the theme's shapes and images stay off it.
+  return {
+    ...theme,
+    background: slide.background,
+    overlay: slide.page ? 0 : theme.overlay,
+    keyTransparent: false,
+    elements: slide.page ? [] : theme.elements,
+  }
 }
 
 /** The theme the default for what is loaded would use, ignoring the picker: the song's own theme, else the content type's default. */

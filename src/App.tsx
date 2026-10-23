@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CommandPalette } from './components/CommandPalette'
 import { LivePreview } from './components/LivePreview'
+import { LowerThirdPanel } from './components/LowerThirdPanel'
 import { ListenerPanel } from './components/ListenerPanel'
 import { MediaPanel } from './components/MediaPanel'
 import { SchedulePanel } from './components/SchedulePanel'
@@ -13,7 +14,7 @@ import { StreamPanel } from './components/StreamPanel'
 import { Splitter } from './components/Splitter'
 import { ThemeEditor } from './components/ThemeEditor'
 import { Toolbar } from './components/Toolbar'
-import { isTyping, MODE_KEYS } from './lib/shortcuts'
+import { focusLowerThirdHeadline, isTyping, MODE_KEYS } from './lib/shortcuts'
 import { usePersistentState } from './lib/usePersistentState'
 import { selectBrowsingLive, selectOutputState, selectStageState, selectStreamState, useOperatorStore } from './store'
 
@@ -51,6 +52,7 @@ function App() {
     const st = useOperatorStore.getState()
     st.loadThemes().catch(console.error)
     st.loadSettings().catch(console.error)
+    st.loadLowerThirdTemplates().catch(console.error)
     window.api.stage.isOpen().then(st.setStageOpen, console.error)
     window.api.output.isOpen().then(st.setOutputOpen, console.error)
     window.api.stream.isOpen().then(st.setStreamOpen, console.error)
@@ -122,6 +124,12 @@ function App() {
       if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         st.setPaletteOpen(!st.paletteOpen)
+        return
+      }
+      // Cmd+L (Ctrl+L) jumps to the lower third headline from anywhere.
+      if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'l') {
+        e.preventDefault()
+        focusLowerThirdHeadline()
         return
       }
       // Cmd+Down (Ctrl+Down) runs the schedule: next item, first slide live.
@@ -217,6 +225,7 @@ function App() {
         <Splitter label="Resize live output" value={sizes.preview} min={LIMITS.preview[0]} max={LIMITS.preview[1]} direction={-1} onChange={resize('preview')} />
         <div className="preview-column">
           <LivePreview />
+          <LowerThirdPanel />
           <ListenerPanel />
         </div>
         {!scheduleCollapsed && (

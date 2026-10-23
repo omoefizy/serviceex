@@ -54,7 +54,7 @@ function actionCommands(): Command[] {
   return [
     { id: 'show', group: 'Actions', label: 'Show slide', shortcut: 'S', icon: Monitor, run: mode('show') },
     { id: 'black', group: 'Actions', label: 'Black screen', shortcut: 'B', icon: Square, run: mode('black') },
-    { id: 'clear', group: 'Actions', label: 'Clear text (background only)', shortcut: 'C', icon: Eraser, run: mode('clear') },
+    { id: 'clear', group: 'Actions', label: 'Clear text (keep background)', shortcut: 'C', icon: Eraser, run: mode('clear') },
     { id: 'logo', group: 'Actions', label: 'Show logo', shortcut: 'L', icon: Image, run: mode('logo') },
     { id: 'go-live', group: 'Actions', label: 'Go live with the preview slide', shortcut: '↵', icon: MonitorUp, run: () => st().goLiveHighlighted() },
     { id: 'next-slide', group: 'Actions', label: 'Next live slide', shortcut: '→', icon: ArrowRight, run: () => st().nextSlide() },

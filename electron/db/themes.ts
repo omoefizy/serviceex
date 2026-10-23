@@ -1,5 +1,5 @@
-import { BUILTIN_DEFAULTS, BUILTIN_THEMES, normalizeTheme, THEME_CONTENT_TYPES } from '../../shared/themes'
-import type { Theme, ThemeContentType, ThemeDefaults, ThemeStyle } from '../../shared/types'
+import { BUILTIN_DEFAULTS, BUILTIN_THEMES, CATEGORY_OF, isLegacyTheme, normalizeTheme, THEME_CONTENT_TYPES } from '../../shared/themes'
+import type { Theme, ThemeCategory, ThemeContentType, ThemeDefaults, ThemeStyle } from '../../shared/types'
 import { db } from './index'
 
 interface ThemeRow {
@@ -9,15 +9,28 @@ interface ThemeRow {
   json: string
 }
 
-function parseStyle(json: string): ThemeStyle {
+/**
+ * A stored theme in the element layout. One saved before the layout editor is migrated as it is read, and only
+ * written back in the new form when it is next saved; it is listed under the type it is a default for, else Song.
+ */
+function parseStyle(json: string, id?: number): ThemeStyle {
+  let value: unknown = null
   try {
-    return normalizeTheme(JSON.parse(json))
+    value = JSON.parse(json)
   } catch {
-    return normalizeTheme(null)
+    // Falls back to the default theme below.
   }
+  return normalizeTheme(value, id !== undefined && isLegacyTheme(value) ? legacyCategory(id) : 'song')
 }
 
-const toTheme = (row: ThemeRow): Theme => ({ id: row.id, name: row.name, type: row.type, style: parseStyle(row.json) })
+function legacyCategory(id: number): ThemeCategory {
+  const rows = db.prepare("SELECT key FROM settings WHERE key LIKE 'theme.default.%' AND value = ?").all(String(id)) as { key: string }[]
+  const types = rows.map((row) => row.key.slice('theme.default.'.length) as ThemeContentType).filter((type) => type in CATEGORY_OF)
+  const type = types.includes('song') ? 'song' : types[0]
+  return type ? CATEGORY_OF[type] : 'song'
+}
+
+const toTheme = (row: ThemeRow): Theme => ({ id: row.id, name: row.name, type: row.type, style: parseStyle(row.json, row.id) })
 
 /** Adds the built-in themes, and refreshes their styles so changes in shared/themes.ts reach existing installs. */
 export const seedBuiltinThemes = db.transaction(() => {

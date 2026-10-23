@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
-import type { OutputState } from '../../shared/types'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { DEFAULT_FONT } from '../../shared/themes'
+import type { OutputState, ScreenMargins } from '../../shared/types'
 import { AlertBand } from './AlertBand'
 import { Overlays } from './Overlays'
-import { ThemedSlide } from './ThemedSlide'
+import { TestPattern } from './StreamView'
+import { backgroundKey, DefaultFontContext, ThemedSlide } from './ThemedSlide'
 
 interface Frame {
   key: number
@@ -14,7 +16,7 @@ interface Frame {
 
 /** What the background layer shows: unchanged backgrounds (a playing video, say) are not redrawn between slides. */
 function backgroundOf(state: OutputState): string {
-  return state.mode === 'black' ? 'black' : JSON.stringify([state.theme.background, state.theme.overlay])
+  return state.mode === 'black' ? 'black' : backgroundKey(state.theme, state.logoUrl)
 }
 
 /** On a keyed output (the Stream), Clear empties the slide layer, background and all. */
@@ -25,8 +27,7 @@ function keyedBackgroundOf(state: OutputState): string {
 /** What the text layer shows, so identical states need no fade. */
 function contentOf(state: OutputState): string {
   if (state.mode === 'black' || state.mode === 'clear') return state.mode
-  if (state.mode === 'logo') return 'logo'
-  return JSON.stringify([state.text, state.caption, { ...state.theme, background: null, overlay: null }])
+  return JSON.stringify([state.mode, state.text, state.caption, state.copyright, state.defaultFont, state.logoUrl, state.theme.elements])
 }
 
 /**
@@ -83,7 +84,9 @@ export function SlideLayers({ state, keyed = false }: { state: OutputState | nul
     <>
       {backgrounds.map(({ key, state, leaving, fadeMs }) => (
         <div key={key} className={`output-frame${leaving ? ' leaving' : ''}`} style={{ animationDuration: `${fadeMs}ms` }}>
-          {!(keyed && state.mode === 'clear') && <ThemedSlide theme={state.theme} text="" mode={state.mode} layer="background" />}
+          {!(keyed && state.mode === 'clear') && (
+            <ThemedSlide theme={state.theme} text="" mode={state.mode} layer="background" logoUrl={state.logoUrl} keyed={keyed} />
+          )}
         </div>
       ))}
       {contents.map(({ key, state, leaving, fadeMs }) => (
@@ -92,9 +95,11 @@ export function SlideLayers({ state, keyed = false }: { state: OutputState | nul
             theme={state.theme}
             text={state.text}
             caption={state.caption}
+            copyright={state.copyright}
             mode={state.mode}
             layer="content"
             logoUrl={state.logoUrl}
+            keyed={keyed}
           />
         </div>
       ))}
@@ -102,18 +107,43 @@ export function SlideLayers({ state, keyed = false }: { state: OutputState | nul
   )
 }
 
-/** The projector screen: the live slide, the overlays if the setting allows them, and the alert ticker. */
+/** Live Options' screen margins: the area everything is drawn in, with black around it. */
+export const marginsStyle = (m: ScreenMargins): CSSProperties => ({ top: `${m.top}%`, right: `${m.right}%`, bottom: `${m.bottom}%`, left: `${m.left}%` })
+
+/**
+ * The projector picture inside the screen margins: the live slide, the overlays if the setting allows them, the alert
+ * ticker and the test pattern. The operator window's live screen draws the same.
+ */
+export function OutputScreen({ state, width = 1920, height = 1080 }: { state: OutputState | null; width?: number; height?: number }) {
+  return (
+    <DefaultFontContext.Provider value={state?.defaultFont ?? DEFAULT_FONT}>
+      <div className="output-area" style={state ? marginsStyle(state.screenMargins) : undefined}>
+        <SlideLayers state={state} />
+        {/* Above the slide layers and outside their crossfades, so changing slides never touches them. */}
+        {state?.overlays && <Overlays overlays={state.overlays} />}
+        <AlertBand alert={state?.alert ?? null} />
+      </div>
+      {state?.testPattern && <TestPattern width={width} height={height} fill="#000000" label={`Output ${width}×${height}`} />}
+    </DefaultFontContext.Provider>
+  )
+}
+
+/** The projector screen. */
 export function OutputView() {
   const [state, setState] = useState<OutputState | null>(null)
+  const [size, setSize] = useState(() => ({ width: window.screen.width * devicePixelRatio, height: window.screen.height * devicePixelRatio }))
 
   useEffect(() => window.api.output.onState(setState), [])
+  useEffect(() => {
+    const measure = () => setSize({ width: Math.round(window.innerWidth * devicePixelRatio), height: Math.round(window.innerHeight * devicePixelRatio) })
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
 
   return (
     <div className="output">
-      <SlideLayers state={state} />
-      {/* Above the slide layers and outside their crossfades, so changing slides never touches them. */}
-      {state?.overlays && <Overlays overlays={state.overlays} />}
-      <AlertBand alert={state?.alert ?? null} />
+      <OutputScreen state={state} width={size.width} height={size.height} />
     </div>
   )
 }

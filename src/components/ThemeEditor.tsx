@@ -70,7 +70,7 @@ function loadSystemFonts(): Promise<string[]> {
 /** "'Helvetica Neue', Inter, sans-serif" → "Helvetica Neue". */
 const familyName = (value: string) => value.split(',')[0].replace(/['"]/g, '').trim()
 
-function FontPicker({ value, onChange, emptyLabel }: { value: string; onChange(value: string): void; emptyLabel?: string }) {
+export function FontPicker({ value, onChange, emptyLabel }: { value: string; onChange(value: string): void; emptyLabel?: string }) {
   const [open, setOpen] = useState(false)
   const [fonts, setFonts] = useState<string[] | null>(null)
   const [query, setQuery] = useState('')

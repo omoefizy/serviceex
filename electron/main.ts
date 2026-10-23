@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import './db'
 import { seedBuiltinThemes } from './db/themes'
+import { seedBuiltinLowerThirds } from './db/lowerThirds'
+import { registerLowerThirdIpc } from './ipc/lowerThirds'
 import { registerSongIpc } from './ipc/songs'
 import { registerBibleIpc } from './ipc/bible'
 import { registerServiceIpc } from './ipc/services'
@@ -90,7 +92,7 @@ function createWindow() {
 /** The display chosen in Settings; 'auto' is the first display that is not the primary one. Null means a window. */
 function outputDisplay(): Electron.Display | null {
   const choice = getAppSettings().outputDisplay
-  if (choice === 'window') return null
+  if (choice === 'window' || choice === 'custom') return null
   const displays = screen.getAllDisplays()
   // A display that has been unplugged falls back to automatic.
   const chosen = typeof choice === 'number' ? displays.find((display) => display.id === choice) : undefined
@@ -99,16 +101,23 @@ function outputDisplay(): Electron.Display | null {
   return displays.find((display) => display.id !== primaryId) ?? null
 }
 
-/** Opens the projector output: fullscreen on the chosen display (see outputDisplay), otherwise a 16:9 window. */
+/**
+ * Opens the projector output: fullscreen on the chosen display (see outputDisplay), a frameless window at the
+ * Custom Position from Live Options, otherwise a 16:9 window.
+ */
 function createOutputWindow() {
+  const settings = getAppSettings()
   const external = outputDisplay()
+  const custom = settings.outputDisplay === 'custom' ? settings.outputBounds : null
 
   const output = new BrowserWindow({
     title: 'WorshipDeck Output',
     backgroundColor: '#000',
     ...(external
       ? { ...external.bounds, fullscreen: true, frame: false }
-      : { width: 960, height: 540, resizable: true }),
+      : custom
+        ? { x: custom.left, y: custom.top, width: custom.width, height: custom.height, frame: false, resizable: false, enableLargerThanScreen: true }
+        : { width: 960, height: 540, resizable: true }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
     },
@@ -226,18 +235,23 @@ app.on('activate', () => {
 
 app.whenReady().then(() => {
   seedBuiltinThemes()
+  seedBuiltinLowerThirds()
   registerMediaProtocol()
   registerSongIpc()
   registerBibleIpc()
   registerServiceIpc()
   registerSongFileIpc()
   registerThemeIpc()
+  registerLowerThirdIpc()
   registerMediaIpc()
   registerSettingsIpc((before, after) => {
     // Move the output by rebuilding its window; fullscreen and frame cannot change in place.
     if (before.outputDisplay !== after.outputDisplay) {
       outputWin?.destroy()
       createOutputWindow()
+    } else if (after.outputDisplay === 'custom' && JSON.stringify(before.outputBounds) !== JSON.stringify(after.outputBounds)) {
+      const { left, top, width, height } = after.outputBounds
+      outputWin?.setBounds({ x: left, y: top, width, height })
     }
     // The same for the Stream output; a new resolution resizes its window.
     if (streamWin && (before.streamDisplay !== after.streamDisplay || before.streamResolution !== after.streamResolution)) {

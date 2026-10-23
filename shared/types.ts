@@ -92,15 +92,20 @@ export interface ServiceWithItems extends Service {
 /** What the output window renders for a slide. */
 export interface SlideContent {
   text: string
-  /** Small line under the text, such as "John 3:16 KJV" or a song's copyright. Empty for none. */
+  /**
+   * What the theme's Reference box shows: a scripture reference such as "John 3:16 KJV", a song's title and author,
+   * an announcement's title or a quote's speaker. Empty for none.
+   */
   caption: string
+  /** What the theme's Copyright box shows: a song's copyright line on its first slide. */
+  copyright?: string
 }
 
 /**
  * - show:  slide text over its background
  * - black: everything off, pure black
- * - clear: background only, text hidden
- * - logo:  the church logo
+ * - clear: text hidden; the background, shapes and images stay
+ * - logo:  the default Logo theme
  */
 export type OutputMode = 'show' | 'black' | 'clear' | 'logo'
 
@@ -148,10 +153,17 @@ export interface OutputState extends SlideContent {
   mode: OutputMode
   /** Crossfade length for slide and background changes, in milliseconds. */
   fadeMs: number
-  /** The church logo for logo mode, or null for the placeholder. */
+  /** The church logo for image elements without their own picture, or null for the placeholder. */
   logoUrl: string | null
-  /** The resolved theme, sent whole so the output window needs no database access. */
+  /** The resolved theme (the Logo theme in logo mode), sent whole so the output window needs no database access. */
   theme: ThemeStyle
+  copyright: string
+  /** The font for text boxes that have none of their own (Live Options). */
+  defaultFont: string
+  /** Live Options' screen margins, in percent: everything on the projector is drawn inside them. */
+  screenMargins: ScreenMargins
+  /** A border, corner markers and safe areas over everything, for lining up the projector or a vision mixer. */
+  testPattern: boolean
   /** The alert band over the slide, independent of it. */
   alert: AlertDisplay | null
   /** The overlay layers over the slide, or null: they show on the projector only with `overlaysOnChurchScreen`. */
@@ -184,10 +196,94 @@ export interface LogoItem {
   enabled: boolean
 }
 
-/** What the overlay layers draw, bottom to top: logos, then the lower third (to come). */
+/** What the overlay layers draw, bottom to top: logos, then the lower third. */
 export interface OverlayLayers {
   /** The logos that are on, or none while the logo layer is hidden. */
   logos: LogoItem[]
+  /** The lower third on screen, or null. */
+  lowerThird: LowerThirdDisplay | null
+}
+
+// ---------- Lower thirds ----------
+
+/** A box in percent: of the screen for a lower third's frame, of the frame for the parts inside it. */
+export interface LowerThirdBox {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** One text field of a lower third template. */
+export interface LowerThirdTextStyle {
+  box: LowerThirdBox
+  /** Empty uses the template's default sans serif. */
+  fontFamily: string
+  fontWeight: number
+  /** The largest size, in percent of screen height; longer text shrinks to fit its box. */
+  size: number
+  color: string
+  textCase: TextCase
+  italic: boolean
+  /** The most lines the text wraps to before it shrinks. */
+  maxLines: number
+}
+
+/**
+ * A lower third template. Everything is solid with hard edges (no see-through fills, rounded corners or glows), so it
+ * keys cleanly; sizes are relative to the screen, like slide themes.
+ */
+export interface LowerThirdStyle {
+  /** Where it sits on screen. The bar fills it; the accent, logo and text are placed inside it. */
+  frame: LowerThirdBox
+  bar: { enabled: boolean; color: string }
+  /** A stripe along one edge of the bar; `size` is percent of the frame's width (left) or height (top, bottom). */
+  accent: { enabled: boolean; color: string; side: 'left' | 'top' | 'bottom'; size: number }
+  /** wd-media:// URL of a small logo in the app data folder, or null. */
+  logo: { enabled: boolean; url: string | null; box: LowerThirdBox }
+  headline: LowerThirdTextStyle
+  body: LowerThirdTextStyle
+  align: 'left' | 'center' | 'right'
+  /** A thin solid outline around the text; width in em. */
+  outline: { enabled: boolean; color: string; width: number }
+}
+
+export interface LowerThirdTemplate {
+  id: number
+  name: string
+  /** Built-in templates ship with the app and cannot be changed; save a copy instead. */
+  type: 'builtin' | 'custom'
+  style: LowerThirdStyle
+}
+
+export type LowerThirdAnimation = 'slide' | 'fade' | 'wipe'
+
+/** A reusable line in the Lower Third panel. Pinned lines stay at the top. */
+export interface SavedLowerThirdLine {
+  id: string
+  headline: string
+  body: string
+  pinned: boolean
+}
+
+/** The lower third as the Stream output (and the projector, when allowed) draws it. */
+export interface LowerThirdDisplay {
+  /** Changes each time a line is shown; an update keeps it, so the text changes in place. */
+  runId: number
+  headline: string
+  body: string
+  style: LowerThirdStyle
+  animation: LowerThirdAnimation
+  /** How long the animation in and out takes, 200 to 1000 ms. */
+  durationMs: number
+}
+
+export interface LowerThirdsApi {
+  list(): Promise<LowerThirdTemplate[]>
+  create(name: string, style: LowerThirdStyle): Promise<LowerThirdTemplate>
+  /** Custom templates only; resolves to false for a built-in one. */
+  update(id: number, name: string, style: LowerThirdStyle): Promise<boolean>
+  delete(id: number): Promise<boolean>
 }
 
 /** chroma: the background is `streamKeyColor` for a chroma key. luma: the background is black for a luma key. */
@@ -202,21 +298,30 @@ export type StreamDisplay = 'window' | number
  * What the operator sends to the Stream output, drawn bottom to top: the key color, the logo layer, the lower third
  * slot and the live slide. `mode` is already worked out for the stream: 'clear' means the slide layer is empty.
  */
-export interface StreamState extends Omit<OutputState, 'alert' | 'overlays'> {
+export interface StreamState extends Omit<OutputState, 'alert' | 'overlays' | 'screenMargins'> {
   keyMode: StreamKeyMode
   /** The chroma key color; luma keys on black. */
   keyColor: string
   width: number
   height: number
   overlays: OverlayLayers
+  /** Draws the lower third over the live slide instead of in its layer under it. */
+  lowerThirdOnTop: boolean
   /** Fills the output with the key color, a border and corner markers, over everything else. */
   testPattern: boolean
 }
 
 // ---------- Themes ----------
 
-/** 'quote' is a sermon statement shown as a slide (see AnnouncementPayload.quote). */
-export type ThemeContentType = 'song' | 'scripture' | 'announcement' | 'quote'
+/**
+ * What a theme is chosen as the default for. 'announcement' is the Presentation type, 'quote' a sermon statement shown
+ * as a slide (see AnnouncementPayload.quote), 'lowerThird' the slides the Stream output can show in place of the full
+ * theme, and 'logo' what the Logo button shows.
+ */
+export type ThemeContentType = 'song' | 'scripture' | 'announcement' | 'quote' | 'lowerThird' | 'logo'
+
+/** The groups themes are listed in. Quotes use Presentation themes. */
+export type ThemeCategory = 'song' | 'scripture' | 'presentation' | 'lowerThird' | 'logo'
 
 export type TextCase = 'normal' | 'upper' | 'lower'
 
@@ -226,52 +331,85 @@ export type ThemeBackground =
   | { kind: 'gradient'; from: string; to: string; angle: number }
   /** `contain` shows the whole image (presentation pages); the default `cover` fills the screen. */
   | { kind: 'image'; src: string; fit?: 'cover' | 'contain' }
+  /** A motion loop. */
   | { kind: 'video'; src: string }
   /** Slow drifting smoke over a solid color, drawn on the fly; no media file. */
   | { kind: 'smoke'; color: string; smoke: string }
+  /** Pure black. */
+  | { kind: 'none' }
 
-/** Style of the small line under the text: a scripture reference or a song's copyright. */
-export interface ThemeCaptionStyle {
-  /** Empty uses the main text's font. */
-  fontFamily: string
-  fontWeight: number
-  /** Percent of screen height. */
-  size: number
-  color: string
-  textCase: TextCase
-  italic: boolean
-  /** below: under the text. top: across the top of the safe area, with the text centred in the space below. */
-  position: 'below' | 'top'
+/** A box in percent of the screen: x and width of its width, y and height of its height. */
+export interface ThemeBox {
+  x: number
+  y: number
+  width: number
+  height: number
 }
 
-/**
- * Sizes scale with the screen, so a theme looks the same on the projector, the live preview and a thumbnail:
- * font sizes and vertical margins are percent of screen height, side margins percent of width, and shadow
- * and outline sizes are em (relative to the text).
- */
-export interface ThemeStyle {
-  /** A family name such as "Avenir Next", or a CSS font stack. */
+/** How a text, reference or copyright box draws its words. Sizes are percent of screen height; shadow and outline are em. */
+export interface ThemeTextProps {
+  /** A family name such as "Avenir Next", or a CSS font stack. Empty uses the Default Font from Live Options. */
   fontFamily: string
   fontWeight: number
-  /** auto: as large as fits the safe area. fixed: `fontSize`, shrunk only when the slide would overflow. */
+  italic: boolean
+  underline: boolean
+  /** auto: as large as fits the box. fixed: `fontSize`, shrunk only when the text would overflow. */
   sizeMode: 'auto' | 'fixed'
-  /** Percent of screen height; used in fixed mode. */
   fontSize: number
   color: string
+  textCase: TextCase
   align: 'left' | 'center' | 'right'
   verticalAlign: 'top' | 'middle' | 'bottom'
   lineHeight: number
-  textCase: TextCase
   shadow: { enabled: boolean; color: string; blur: number; offset: number }
   outline: { enabled: boolean; color: string; width: number }
-  /** Safe area: top and bottom in percent of height, left and right in percent of width. */
-  margins: { top: number; right: number; bottom: number; left: number }
-  /** A solid band filling the safe area behind the text, as lower thirds use. */
-  band: { enabled: boolean; color: string; opacity: number }
+  /** Space inside the box, in percent of screen height. */
+  padding: number
+}
+
+export type ThemeElementKind = 'text' | 'reference' | 'copyright' | 'image' | 'shape'
+
+interface ThemeElementBase {
+  /** Elements copied with "Apply to all themes" keep their id, so applying again replaces them. */
+  id: string
+  box: ThemeBox
+  /** Locked elements cannot be selected on the canvas, moved or resized. */
+  locked: boolean
+}
+
+/**
+ * One element of a theme's layout, drawn bottom to top in list order.
+ * - text: the slide's words.
+ * - reference: the scripture reference, a song's title and author, an announcement's title or a quote's speaker.
+ * - copyright: a song's copyright line.
+ * - image: a picture, such as a logo; `src` null uses the church logo from Settings.
+ * - shape: a solid rectangle, such as a bar behind the text.
+ */
+export type ThemeElement =
+  | (ThemeElementBase & { kind: 'text'; text: ThemeTextProps })
+  | (ThemeElementBase & {
+      kind: 'reference' | 'copyright'
+      text: ThemeTextProps
+      /** Drawn just under the main text, following it, instead of in its own box (how themes before the layout editor worked). */
+      attached: boolean
+    })
+  | (ThemeElementBase & { kind: 'image'; src: string | null; fit: 'contain' | 'cover'; opacity: number })
+  | (ThemeElementBase & { kind: 'shape'; color: string; opacity: number })
+
+export type ThemeTextElement = Extract<ThemeElement, { text: ThemeTextProps }>
+
+/** A theme: a background and a free layout of elements. Sizes scale with the screen, so it looks the same at any size. */
+export interface ThemeStyle {
+  category: ThemeCategory
   background: ThemeBackground
   /** Darkens the background: 0 leaves it, 1 makes it black. */
   overlay: number
-  caption: ThemeCaptionStyle
+  /**
+   * Transparent for keying: the background is pure black on the projector, for a luma key, and left out on the Stream
+   * output so its key color shows through.
+   */
+  keyTransparent: boolean
+  elements: ThemeElement[]
 }
 
 export interface Theme {
@@ -332,8 +470,19 @@ export interface MediaApi {
   saveImage(png: Uint8Array): Promise<string>
 }
 
-/** Which screen the output window uses: the first non-primary display, a windowed output, or one display. */
-export type OutputDisplay = 'auto' | 'window' | number
+/**
+ * Which screen the output window uses: the first non-primary display, a windowed output, a frameless window at
+ * `outputBounds` (Custom Position), or one display.
+ */
+export type OutputDisplay = 'auto' | 'window' | 'custom' | number
+
+/** In percent of the screen: top and bottom of its height, left and right of its width. */
+export interface ScreenMargins {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
 
 export interface AppSettings {
   /** Saved alert messages, for reuse, in play order. */
@@ -358,20 +507,43 @@ export interface AppSettings {
   /** Crossfade between slides and backgrounds on the output, 0 to 1500 ms. */
   fadeMs: number
   outputDisplay: OutputDisplay
+  /** The output window's position and size in screen points for Custom Position. */
+  outputBounds: { left: number; top: number; width: number; height: number }
+  /** Margins around everything on the projector, for a screen that cuts off its edges. */
+  screenMargins: ScreenMargins
+  /** The font for text boxes that have none of their own. */
+  defaultFont: string
+  /** Shows the Live screen in the operator window; off saves drawing it twice. */
+  previewOutput: boolean
   streamDisplay: StreamDisplay
   streamResolution: StreamResolution
   streamKeyMode: StreamKeyMode
   /** The chroma key color, #00ff00 by default. */
   streamKeyColor: string
-  /** full: the live slide fills the stream with its own background. hide: the stream shows only the key and overlays. */
-  streamSlideContent: 'full' | 'hide'
+  /**
+   * full: the live slide fills the stream with its own background. lowerThird: the live slide in the default Lower
+   * Third theme. hide: the stream shows only the key and overlays.
+   */
+  streamSlideContent: 'full' | 'lowerThird' | 'hide'
   /** The logo layer's logos, bottom to top. */
   logoItems: LogoItem[]
   /** The logo layer's Show and Hide toggle. */
   logoLayerVisible: boolean
   /** Also draws the overlays (logo layer, lower third) on the projector, over the slide. */
   overlaysOnChurchScreen: boolean
-  /** wd-media:// URL of the logo shown in logo mode, or null for the placeholder. */
+  /** The lower third template in use; null (or a deleted one) uses the first built-in template. */
+  lowerThirdTemplateId: number | null
+  lowerThirdAnimation: LowerThirdAnimation
+  /** 200 to 1000 ms. */
+  lowerThirdDurationMs: number
+  /** Hides the lower third this many seconds after it is shown; 0 (the default) keeps it up until hidden. */
+  lowerThirdHoldSeconds: number
+  /** Whether the lower third stays on top of a full screen slide; false (the default) hides it while one is live. */
+  lowerThirdOverFullSlide: boolean
+  lowerThirdSavedLines: SavedLowerThirdLine[]
+  /** The sermon's points, one per line, for Next Point. */
+  lowerThirdPoints: string[]
+  /** wd-media:// URL of the church logo, shown by Logo theme images without a picture of their own; null for the placeholder. */
   logoUrl: string | null
   appearance: 'system' | 'dark' | 'light'
   /** Whether the song editor keeps unsaved edits as drafts. */
@@ -676,6 +848,7 @@ export interface WorshipDeckApi {
   ai: AiApi
   speech: SpeechApi
   stream: StreamApi
+  lowerThirds: LowerThirdsApi
   output: {
     /** Sends the operator's output state to the output window. */
     send(state: OutputState): void

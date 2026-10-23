@@ -1,4 +1,11 @@
-import { formatReference, parseReference, readReferenceInput, type ScriptureReference } from '../../shared/parseReference'
+import {
+  BOOK_NAMES,
+  formatReference,
+  parseReference,
+  readReferenceInput,
+  wholeBookName,
+  type ScriptureReference,
+} from '../../shared/parseReference'
 import { BUNDLED_BIBLE_VERSIONS, type BibleVersionCode } from '../../shared/types'
 
 /** What the Scripture tab and the command palette offer while a reference is typed. */
@@ -69,6 +76,43 @@ export function suggestReferences(query: string, structures: BookStructures, lim
   }
   const parsed = parseReference(query)
   return parsed ? [{ kind: 'reference', label: formatReference(parsed), ref: parsed }] : []
+}
+
+/** What the Scripture tab's results list shows for what was typed. */
+export type ScriptureQuery =
+  | { kind: 'none' }
+  /** The start of a book name, or just a book number: one row per book, at its first verse, in Bible order. */
+  | { kind: 'books'; books: string[]; words: boolean }
+  /** A whole chapter, with the typed verse or range marked; verseStart is null when no verse was typed. */
+  | { kind: 'chapter'; ref: ScriptureReference; words: boolean }
+  /** Anything else, two characters or more: a keyword search. */
+  | { kind: 'text'; query: string }
+
+const inBibleOrder = (books: string[]) => [...books].sort((a, b) => BOOK_NAMES.indexOf(a) - BOOK_NAMES.indexOf(b))
+
+/**
+ * Reads the Scripture search box. `words` is set for single words such as "job", "mark" or "number", which are also
+ * book names or starts of one, so the list can offer to search the verses for them instead.
+ */
+export function readScriptureQuery(query: string): ScriptureQuery {
+  const trimmed = query.trim()
+  if (/^[123]$/.test(trimmed)) return { kind: 'books', books: BOOK_NAMES.filter((book) => book.startsWith(`${trimmed} `)), words: false }
+  const words = /^[a-z]{3,}$/i.test(trimmed)
+  const reading = readReferenceInput(query)
+  const chapterOf = (book: string, chapter: number, verseStart: number | null = null, verseEnd = verseStart): ScriptureQuery => ({
+    kind: 'chapter',
+    ref: { book, chapter, verseStart, verseEnd },
+    words,
+  })
+  if (reading?.stage === 'book') {
+    const book = wholeBookName(query)
+    return book ? chapterOf(book, 1) : { kind: 'books', books: inBibleOrder(reading.books), words }
+  }
+  if (reading?.stage === 'chapter') return chapterOf(reading.book, Number(reading.chapterPrefix || 1))
+  if (reading?.stage === 'verse') return chapterOf(reading.book, reading.chapter, reading.versePrefix ? Number(reading.versePrefix) : null)
+  const ref = parseReference(query)
+  if (ref) return chapterOf(ref.book, ref.chapter, ref.verseStart, ref.verseEnd)
+  return trimmed.length >= 2 ? { kind: 'text', query } : { kind: 'none' }
 }
 
 const structureCache = new Map<string, Promise<number[]>>()

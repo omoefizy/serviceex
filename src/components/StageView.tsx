@@ -1,24 +1,35 @@
 import { useEffect, useState } from 'react'
-import { DEFAULT_THEME_STYLE } from '../../shared/themes'
+import { DEFAULT_TEXT_PROPS } from '../../shared/themes'
 import type { StageState, ThemeStyle } from '../../shared/types'
 import { AlertBand } from './AlertBand'
 import { ThemedSlide } from './ThemedSlide'
 
-/** Plain, high-contrast text for reading at a glance; the audience's theme does not matter here. */
-const CURRENT_STYLE: ThemeStyle = {
-  ...DEFAULT_THEME_STYLE,
-  fontWeight: 700,
-  lineHeight: 1.2,
-  margins: { top: 4, right: 3, bottom: 4, left: 3 },
-  shadow: { ...DEFAULT_THEME_STYLE.shadow, enabled: false },
+const NO_SHADOW = { ...DEFAULT_TEXT_PROPS.shadow, enabled: false }
+
+/** Plain, high-contrast text for reading at a glance, with the reference under it; the audience's theme does not matter here. */
+const stageStyle = (color: string, fontWeight: number): ThemeStyle => ({
+  category: 'song',
   background: { kind: 'solid', color: '#000000' },
-  caption: { ...DEFAULT_THEME_STYLE.caption, color: '#9ca3af' },
-}
-const NEXT_STYLE: ThemeStyle = { ...CURRENT_STYLE, color: '#facc15', fontWeight: 600 }
+  overlay: 0,
+  keyTransparent: false,
+  elements: [
+    { id: 'text', kind: 'text', box: { x: 3, y: 4, width: 94, height: 92 }, locked: false, text: { ...DEFAULT_TEXT_PROPS, fontWeight, color, lineHeight: 1.2, shadow: NO_SHADOW } },
+    {
+      id: 'reference',
+      kind: 'reference',
+      box: { x: 3, y: 90, width: 94, height: 6 },
+      locked: false,
+      attached: true,
+      text: { ...DEFAULT_TEXT_PROPS, sizeMode: 'fixed', fontSize: 3.2, fontWeight: 500, color: '#9ca3af', lineHeight: 1.2, shadow: NO_SHADOW },
+    },
+  ],
+})
+const CURRENT_STYLE = stageStyle('#ffffff', 700)
+const NEXT_STYLE = stageStyle('#facc15', 600)
 
 const MODE_WARNINGS: Record<string, string> = {
   black: 'Output is BLACK',
-  clear: 'Output is CLEAR (background only)',
+  clear: 'Output is CLEAR (text hidden)',
   logo: 'Output is showing the LOGO',
 }
 

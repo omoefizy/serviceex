@@ -1,10 +1,8 @@
-import { RefreshCw, Undo2 } from 'lucide-react'
+import { Eye, EyeOff, RefreshCw, Undo2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { useShallow } from 'zustand/react/shallow'
-import type { OverlayLayers } from '../../shared/types'
-import { selectAlertDisplay, selectDeckTheme, selectLiveSlide, selectOutputState, selectPreviewSlide, slideTheme, useOperatorStore } from '../store'
-import { AlertBand } from './AlertBand'
-import { Overlays } from './Overlays'
+import type { OutputState } from '../../shared/types'
+import { selectDeckTheme, selectOutputState, selectPreviewSlide, slideTheme, useOperatorStore } from '../store'
+import { OutputScreen } from './OutputView'
 import { ThemedSlide } from './ThemedSlide'
 
 /** "Slide 2 of 5" across the corner of a screen, when it shows a slide. */
@@ -23,8 +21,6 @@ function SlideBadge({ index, count }: { index: number | null; count: number }) {
  */
 export function LivePreview() {
   const live = useOperatorStore((s) => s.live)
-  const liveSlide = useOperatorStore(selectLiveSlide)
-  const liveTheme = useMemo(() => slideTheme(live.theme, liveSlide), [live.theme, liveSlide])
   const previewSlide = useOperatorStore(selectPreviewSlide)
   const deckTheme = useOperatorStore(selectDeckTheme)
   const previewTheme = useMemo(() => slideTheme(deckTheme, previewSlide), [deckTheme, previewSlide])
@@ -36,10 +32,11 @@ export function LivePreview() {
   const setFadeMs = useOperatorStore((s) => s.setFadeMs)
   const resendLive = useOperatorStore((s) => s.resendLive)
   const goBack = useOperatorStore((s) => s.goBack)
-  const alert = useOperatorStore(useShallow(selectAlertDisplay))
-  // The overlays the projector shows (only with "Show overlays on the church screen"); a string compares by value.
-  const overlaysJson = useOperatorStore((s) => JSON.stringify(selectOutputState(s).overlays))
-  const overlays = useMemo(() => JSON.parse(overlaysJson) as OverlayLayers | null, [overlaysJson])
+  const previewOutput = useOperatorStore((s) => s.settings.previewOutput)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  // Exactly what the projector draws; a string compares by value, so the screen redraws only when it changes.
+  const outputJson = useOperatorStore((s) => (s.settings.previewOutput ? JSON.stringify(selectOutputState(s)) : null))
+  const output = useMemo(() => (outputJson ? (JSON.parse(outputJson) as OutputState) : null), [outputJson])
   const canGoBack = useOperatorStore((s) => s.liveHistory.length > 0)
   const [error, setError] = useState<string | null>(null)
 
@@ -56,14 +53,21 @@ export function LivePreview() {
     <section className="panel preview-panel">
       <header className="panel-header">
         <h2>Live</h2>
+        <button
+          type="button"
+          className={`button preview-output-toggle${previewOutput ? ' active' : ''}`}
+          aria-pressed={previewOutput}
+          onClick={() => updateSettings({ previewOutput: !previewOutput }).catch(console.error)}
+          title={previewOutput ? 'Stop drawing the output here' : 'Show what the output shows'}
+        >
+          {previewOutput ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />} Preview Output
+        </button>
         <button type="button" className="button go-back-button" disabled={!canGoBack} onClick={goBack} title="Put the previous live slide back on screen">
           <Undo2 size={14} aria-hidden="true" /> Go Back
         </button>
       </header>
       <div className="preview-screen live">
-        <ThemedSlide theme={liveTheme} text={liveSlide?.text ?? ''} caption={liveSlide?.caption} mode={live.mode} logoUrl={logoUrl} />
-        {overlays && <Overlays overlays={overlays} />}
-        <AlertBand alert={alert} />
+        {output ? <OutputScreen state={output} /> : <p className="empty">Preview Output is off</p>}
         <SlideBadge index={live.slideIndex} count={live.slides.length} />
       </div>
       <p className="screen-label">
@@ -93,7 +97,7 @@ export function LivePreview() {
       <h2 className="preview-subheading">Preview</h2>
       <div className="preview-screen preview">
         {previewSlide ? (
-          <ThemedSlide theme={previewTheme} text={previewSlide.text} caption={previewSlide.caption} />
+          <ThemedSlide theme={previewTheme} text={previewSlide.text} caption={previewSlide.caption} copyright={previewSlide.copyright} logoUrl={logoUrl} />
         ) : (
           <p className="empty">Select something to preview</p>
         )}

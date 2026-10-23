@@ -1,6 +1,7 @@
-import { BookOpen, Eye, ListPlus, Pencil, X } from 'lucide-react'
+import { BookOpen, Eye, ListPlus, Pencil, PanelBottom, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useSuggestions, type StatementSuggestion } from '../lib/scriptureDetection'
+import { focusLowerThirdHeadline } from '../lib/shortcuts'
 import { quotePayload } from '../lib/slides'
 import { useOperatorStore } from '../store'
 import { QuoteModal } from './QuoteModal'
@@ -23,6 +24,7 @@ export function SuggestionTray() {
   const service = useOperatorStore((s) => s.service)
   const speaker = useOperatorStore((s) => s.settings.quoteSpeakerName)
   const addToSchedule = useOperatorStore((s) => s.addToSchedule)
+  const setLowerThirdDraft = useOperatorStore((s) => s.setLowerThirdDraft)
   const [flashing, setFlashing] = useState(false)
   const [editing, setEditing] = useState<StatementSuggestion | null>(null)
   /** Statements saved to the schedule this session, so the button says so. */
@@ -138,6 +140,18 @@ export function SuggestionTray() {
                 </button>
                 <button type="button" className="button" title="Fix spelling or trim words first" onClick={() => setEditing(s)}>
                   <Pencil size={13} aria-hidden="true" /> Edit
+                </button>
+                <button
+                  type="button"
+                  className="button"
+                  title="Put it in the Lower Third fields; press Enter there to show it"
+                  onClick={() => {
+                    // Fills the fields only: it goes live when the operator presses Enter.
+                    setLowerThirdDraft({ headline: s.text, body: speaker })
+                    focusLowerThirdHeadline()
+                  }}
+                >
+                  <PanelBottom size={13} aria-hidden="true" /> Send to Lower Third
                 </button>
                 <span title={service ? `Save it to ${service.name} as a quote, to use again` : 'Create or pick a service first'}>
                   <button type="button" className="button" disabled={!service || scheduled.has(s.id)} onClick={() => schedule(s)}>

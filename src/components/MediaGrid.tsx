@@ -47,10 +47,12 @@ interface PickerProps {
   kind: 'image' | 'video'
   onPick(item: MediaItem): void
   onCancel(): void
+  /** The heading; "Choose a background image" (or video) by default. */
+  title?: string
 }
 
-/** Chooses a library image or video, for a theme background. */
-export function MediaPickerModal({ kind, onPick, onCancel }: PickerProps) {
+/** Chooses a library image or video, for a theme background or an image element. */
+export function MediaPickerModal({ kind, onPick, onCancel, title = `Choose a background ${kind}` }: PickerProps) {
   const { items, error, importFiles } = useMediaLibrary()
   const [search, setSearch] = useState('')
   const shown = items.filter((item) => item.kind === kind && matchesSearch(item, search))
@@ -70,8 +72,8 @@ export function MediaPickerModal({ kind, onPick, onCancel }: PickerProps) {
 
   return (
     <div className="modal-backdrop" onMouseDown={onCancel}>
-      <div className="modal media-picker" role="dialog" aria-label={`Choose a background ${kind}`} onMouseDown={(e) => e.stopPropagation()}>
-        <h2>Choose a background {kind}</h2>
+      <div className="modal media-picker" role="dialog" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
+        <h2>{title}</h2>
         <div className="media-toolbar">
           <input className="input" type="search" placeholder="Search name or tag" value={search} onChange={(e) => setSearch(e.target.value)} autoFocus />
           <button className="button" onClick={handleImport}>

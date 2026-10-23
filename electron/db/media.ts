@@ -63,7 +63,8 @@ export function setMediaThumb(id: number, thumb: string): string | null | undefi
 
 /**
  * Deletes a library item. Slide overrides using it go with it (ON DELETE CASCADE); custom themes using it as
- * their background go back to solid black. Returns the row so its files can be deleted.
+ * their background go back to solid black, and their image elements showing it are removed. Returns the row so its
+ * files can be deleted.
  */
 export const deleteMedia = db.transaction((id: number): MediaRow | undefined => {
   const row = getMediaRow(id)
@@ -74,8 +75,14 @@ export const deleteMedia = db.transaction((id: number): MediaRow | undefined => 
   for (const theme of themes) {
     try {
       const style = JSON.parse(theme.json)
-      if (style?.background?.src === url) {
-        update.run(JSON.stringify({ ...style, background: { kind: 'solid', color: '#000000' } }), theme.id)
+      const elements: unknown[] | undefined = Array.isArray(style?.elements) ? style.elements : undefined
+      const kept = elements?.filter((element) => (element as { src?: unknown } | null)?.src !== url)
+      const usesBackground = style?.background?.src === url
+      if (usesBackground || (elements && kept && kept.length !== elements.length)) {
+        update.run(
+          JSON.stringify({ ...style, ...(usesBackground ? { background: { kind: 'solid', color: '#000000' } } : {}), ...(kept ? { elements: kept } : {}) }),
+          theme.id,
+        )
       }
     } catch {
       // A theme that cannot be read cannot be using this item either.

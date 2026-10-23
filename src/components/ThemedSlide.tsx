@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react'
-import type { OutputMode, TextCase, ThemeBackground, ThemeStyle } from '../../shared/types'
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react'
+import { DEFAULT_FONT, isTextKind } from '../../shared/themes'
+import type { OutputMode, TextCase, ThemeBackground, ThemeBox, ThemeElement, ThemeStyle, ThemeTextElement, ThemeTextProps } from '../../shared/types'
 import { cssFontFamily } from '../lib/fonts'
 import { REFERENCE_LINE_COLOR, slideLines } from '../lib/slides'
 import { animateSmoke, drawStillSmoke, SMOKE_HEIGHT, SMOKE_WIDTH } from '../lib/smoke'
@@ -16,10 +17,10 @@ const TEXT_TRANSFORMS: Record<TextCase, CSSProperties['textTransform']> = {
 const JUSTIFY = { top: 'flex-start', middle: 'center', bottom: 'flex-end' } as const
 const ALIGN_ITEMS = { left: 'flex-start', center: 'center', right: 'flex-end' } as const
 
-function rgba(hex: string, alpha: number): string {
-  const n = parseInt(hex.slice(1), 16)
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`
-}
+/** The font for text boxes with none of their own: Live Options' Default Font, provided by each window. */
+export const DefaultFontContext = createContext(DEFAULT_FONT)
+
+export const boxStyle = (box: ThemeBox): CSSProperties => ({ left: `${box.x}%`, top: `${box.y}%`, width: `${box.width}%`, height: `${box.height}%` })
 
 export function LogoPlaceholder() {
   return (
@@ -73,57 +74,88 @@ function Background({ background, still }: { background: ThemeBackground; still:
       )
     case 'smoke':
       return <SmokeBackground color={background.color} smoke={background.smoke} still={still} />
+    case 'none':
+      return null
   }
 }
 
-interface Props {
-  theme: ThemeStyle
+/**
+ * Where the background layer ends: the shapes and images under the first text box are drawn with the background,
+ * so they hold still while the words crossfade between slides. Everything from the first text box up is content.
+ */
+export function backgroundSplit(theme: ThemeStyle): number {
+  const index = theme.elements.findIndex((element) => isTextKind(element.kind))
+  return index === -1 ? theme.elements.length : index
+}
+
+/** What the background layer draws, so an unchanged background (a playing video, say) is not redrawn between slides. */
+export function backgroundKey(theme: ThemeStyle, logoUrl: string | null): string {
+  const below = theme.elements.slice(0, backgroundSplit(theme))
+  const usesLogo = below.some((element) => element.kind === 'image' && element.src === null)
+  return JSON.stringify([theme.background, theme.overlay, theme.keyTransparent, below, usesLogo ? logoUrl : null])
+}
+
+export function textStyle(props: ThemeTextProps, defaultFont: string): CSSProperties {
+  const { shadow, outline } = props
+  return {
+    fontFamily: cssFontFamily(props.fontFamily || defaultFont),
+    fontWeight: props.fontWeight,
+    fontStyle: props.italic ? 'italic' : 'normal',
+    textDecoration: props.underline ? 'underline' : 'none',
+    color: props.color,
+    lineHeight: props.lineHeight,
+    textTransform: TEXT_TRANSFORMS[props.textCase],
+    textShadow: shadow.enabled ? `${shadow.offset}em ${shadow.offset}em ${shadow.blur}em ${shadow.color}` : 'none',
+    // The stroke is drawn under the fill, so double it to show the chosen width outside the letters.
+    WebkitTextStroke: outline.enabled ? `${outline.width * 2}em ${outline.color}` : undefined,
+    paintOrder: 'stroke fill',
+  }
+}
+
+function ImageElement({ element, logoUrl }: { element: Extract<ThemeElement, { kind: 'image' }>; logoUrl: string | null }) {
+  const src = element.src ?? logoUrl
+  return (
+    <div className="themed-element themed-image" style={{ ...boxStyle(element.box), opacity: element.opacity }}>
+      {src ? <img src={src} alt="" draggable={false} style={{ objectFit: element.fit }} /> : <LogoPlaceholder />}
+    </div>
+  )
+}
+
+/** A line drawn under the main text, following it: an attached Reference or Copyright box. */
+interface AttachedLine {
+  id: string
   text: string
-  /** The small reference or copyright line under the text. */
-  caption?: string
-  /** black: plain black. clear: background only. logo: the logo over the background. show: everything. */
-  mode?: OutputMode
-  /** Shows a video background's first frame instead of playing it, for thumbnails. */
-  still?: boolean
-  /** The output window draws the background and the text as separate layers so a video background keeps playing across slides. */
-  layer?: 'all' | 'background' | 'content'
-  /** The church logo for logo mode; the placeholder shows when null. */
-  logoUrl?: string | null
+  props: ThemeTextProps
 }
 
 /**
- * A slide drawn with a theme, filling its parent. Every size is relative to the slide's own height, so the
- * output window, the live preview, thumbnails and the theme editor all lay text out the same way.
+ * A text box: as large as fits (auto), or the fixed size unless that would overflow. Sizes are in cqh, so the result
+ * is the same at any slide size. Attached lines sit under the words and count towards what has to fit.
  */
-export function ThemedSlide({ theme, text, caption = '', mode = 'show', still = false, layer = 'all', logoUrl = null }: Props) {
+function TextBox({ element, content, attached = [], main }: { element: ThemeTextElement; content: string; attached?: AttachedLine[]; main: boolean }) {
+  const defaultFont = useContext(DefaultFontContext)
   const fitRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLParagraphElement>(null)
-  const captionRef = useRef<HTMLParagraphElement>(null)
-  const drawBackground = layer !== 'content' && mode !== 'black'
-  const drawContent = layer !== 'background' && mode !== 'black'
-  const showText = drawContent && mode === 'show' && text !== ''
-  /** The caption sits across the top of the safe area, outside the box the text is fitted into. */
-  const captionOnTop = theme.caption.position === 'top'
+  const attachedRef = useRef<HTMLDivElement>(null)
+  const props = element.text
+  const attachedKey = JSON.stringify(attached)
 
-  // Size the text: as large as fits (auto), or the fixed size unless that would overflow. Sizes are in cqh,
-  // so the result is the same at any slide size.
   useLayoutEffect(() => {
     const box = fitRef.current
     const el = textRef.current
-    if (!showText || !box || !el) return
+    if (!box || !el) return
 
     const fit = () => {
       if (box.clientHeight === 0) return
-      const captionEl = captionOnTop ? null : captionRef.current
-      const captionHeight = captionEl ? captionEl.offsetHeight + parseFloat(getComputedStyle(captionEl).marginTop) : 0
-      const height = box.clientHeight - captionHeight
+      const below = attachedRef.current
+      const height = box.clientHeight - (below ? below.offsetHeight : 0)
       const fits = (size: number) => {
         el.style.fontSize = `${size}cqh`
         return el.scrollWidth <= box.clientWidth && el.scrollHeight <= height
       }
-      if (theme.sizeMode === 'fixed' && fits(theme.fontSize)) return
+      if (props.sizeMode === 'fixed' && fits(props.fontSize)) return
       let low = MIN_SIZE
-      let high = theme.sizeMode === 'fixed' ? theme.fontSize : AUTO_FIT_MAX
+      let high = props.sizeMode === 'fixed' ? props.fontSize : AUTO_FIT_MAX
       while (high - low > 0.05) {
         const size = (low + high) / 2
         if (fits(size)) low = size
@@ -136,72 +168,18 @@ export function ThemedSlide({ theme, text, caption = '', mode = 'show', still = 
     const observer = new ResizeObserver(fit)
     observer.observe(box)
     return () => observer.disconnect()
-  }, [theme, text, caption, showText, captionOnTop])
-
-  const { margins, band, shadow, outline } = theme
-  const textStyle: CSSProperties = {
-    fontFamily: cssFontFamily(theme.fontFamily),
-    fontWeight: theme.fontWeight,
-    color: theme.color,
-    lineHeight: theme.lineHeight,
-    textTransform: TEXT_TRANSFORMS[theme.textCase],
-    textShadow: shadow.enabled ? `${shadow.offset}em ${shadow.offset}em ${shadow.blur}em ${shadow.color}` : 'none',
-    // The stroke is drawn under the fill, so double it to show the chosen width outside the letters.
-    WebkitTextStroke: outline.enabled ? `${outline.width * 2}em ${outline.color}` : undefined,
-    paintOrder: 'stroke fill',
-  }
-  const captionStyle: CSSProperties = {
-    fontFamily: cssFontFamily(theme.caption.fontFamily || theme.fontFamily),
-    fontWeight: theme.caption.fontWeight,
-    fontSize: `${theme.caption.size}cqh`,
-    fontStyle: theme.caption.italic ? 'italic' : 'normal',
-    color: theme.caption.color,
-    textTransform: TEXT_TRANSFORMS[theme.caption.textCase],
-    textShadow: textStyle.textShadow,
-  }
-  const captionLine = caption && (
-    <p
-      ref={captionRef}
-      className={`themed-caption${captionOnTop ? ' top' : ''}`}
-      style={captionOnTop ? { ...captionStyle, textAlign: theme.align } : captionStyle}
-    >
-      {caption}
-    </p>
-  )
+  }, [props, content, attachedKey, defaultFont])
 
   return (
-    <div className={`themed-slide${layer === 'content' ? ' transparent' : ''}`}>
-      {drawBackground && (
-        <>
-          <Background background={theme.background} still={still} />
-          {theme.overlay > 0 && <div className="themed-bg" style={{ background: `rgba(0, 0, 0, ${theme.overlay})` }} />}
-        </>
-      )}
-      {drawContent && mode === 'logo' && (
-        <div className="themed-logo">
-          {logoUrl ? <img className="themed-logo-image" src={logoUrl} alt="Logo" draggable={false} /> : <LogoPlaceholder />}
-        </div>
-      )}
-      {showText && (
-        <div
-          className={`themed-safe${captionOnTop ? ' caption-top' : ''}`}
-          style={{
-            top: `${margins.top}%`,
-            right: `${margins.right}%`,
-            bottom: `${margins.bottom}%`,
-            left: `${margins.left}%`,
-            background: band.enabled ? rgba(band.color, band.opacity) : undefined,
-            padding: band.enabled ? '3cqh 4cqw' : 0,
-          }}
-        >
-          {captionOnTop && captionLine}
-          <div
-            ref={fitRef}
-            className="themed-fit"
-            style={{ justifyContent: JUSTIFY[theme.verticalAlign], alignItems: ALIGN_ITEMS[theme.align], textAlign: theme.align }}
-          >
-            <p ref={textRef} className="themed-text" style={textStyle}>
-              {slideLines(text).map((line, index) => (
+    <div className="themed-element themed-box" style={{ ...boxStyle(element.box), padding: `${props.padding}cqh` }}>
+      <div
+        ref={fitRef}
+        className="themed-fit"
+        style={{ justifyContent: JUSTIFY[props.verticalAlign], alignItems: ALIGN_ITEMS[props.align], textAlign: props.align }}
+      >
+        <p ref={textRef} className="themed-text" style={textStyle(props, defaultFont)}>
+          {main
+            ? slideLines(content).map((line, index) => (
                 <span
                   key={index}
                   className={`themed-line ${line.kind}`}
@@ -209,12 +187,95 @@ export function ThemedSlide({ theme, text, caption = '', mode = 'show', still = 
                 >
                   {line.text}
                 </span>
-              ))}
-            </p>
-            {!captionOnTop && captionLine}
+              ))
+            : content}
+        </p>
+        {attached.length > 0 && (
+          <div ref={attachedRef} className="themed-attached">
+            {attached.map((line) => (
+              <p
+                key={line.id}
+                className="themed-caption"
+                style={{ ...textStyle(line.props, defaultFont), fontSize: `${line.props.fontSize}cqh`, textAlign: props.align }}
+              >
+                {line.text}
+              </p>
+            ))}
           </div>
-        </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+interface Props {
+  theme: ThemeStyle
+  text: string
+  /** What the Reference box shows. */
+  caption?: string
+  /** What the Copyright box shows. */
+  copyright?: string
+  /** black: plain black. clear: everything but the text. logo: the theme (the Logo theme) without text. show: everything. */
+  mode?: OutputMode
+  /** Shows a video background's first frame instead of playing it, for thumbnails. */
+  still?: boolean
+  /**
+   * The output window draws the background (with the shapes and images under the text) and the content as separate
+   * layers, so a video background keeps playing across slides.
+   */
+  layer?: 'all' | 'background' | 'content'
+  /** The church logo, for images without a picture of their own; the placeholder shows when null. */
+  logoUrl?: string | null
+  /** On the Stream output a theme that is transparent for keying draws no background, so the key color shows. */
+  keyed?: boolean
+}
+
+/**
+ * A slide drawn with a theme, filling its parent: the background, then the theme's elements bottom to top. Every
+ * size is relative to the slide's own height, so the output window, the live preview, thumbnails and the theme
+ * editor all lay text out the same way.
+ */
+export function ThemedSlide({ theme, text, caption = '', copyright = '', mode = 'show', still = false, layer = 'all', logoUrl = null, keyed = false }: Props) {
+  const transparentBackground = keyed && theme.keyTransparent && mode !== 'black'
+  const drawBackground = layer !== 'content' && mode !== 'black' && !transparentBackground
+  const split = backgroundSplit(theme)
+  const from = layer === 'content' ? split : 0
+  const to = layer === 'background' ? split : theme.elements.length
+  const showText = mode === 'show'
+
+  const contentOf = (element: ThemeTextElement) => (element.kind === 'text' ? text : element.kind === 'reference' ? caption : copyright)
+  const mainText = theme.elements.find((element) => element.kind === 'text')
+  // Attached boxes follow the main text when there is one to follow.
+  const followsText = (element: ThemeElement) => mainText !== undefined && (element.kind === 'reference' || element.kind === 'copyright') && element.attached
+  const attached: AttachedLine[] = []
+  for (const element of theme.elements) {
+    if (followsText(element) && 'text' in element && contentOf(element)) attached.push({ id: element.id, text: contentOf(element), props: element.text })
+  }
+
+  const drawn: ReactNode[] = []
+  if (mode !== 'black') {
+    for (const element of theme.elements.slice(from, to)) {
+      if (element.kind === 'shape') {
+        drawn.push(<div key={element.id} className="themed-element" style={{ ...boxStyle(element.box), background: element.color, opacity: element.opacity }} />)
+      } else if (element.kind === 'image') {
+        drawn.push(<ImageElement key={element.id} element={element} logoUrl={logoUrl} />)
+      } else if (showText && !followsText(element)) {
+        const content = contentOf(element)
+        // The main text carries the attached lines, so they go with it (and like before, only under words).
+        if (content) drawn.push(<TextBox key={element.id} element={element} content={content} attached={element === mainText ? attached : undefined} main={element.kind === 'text'} />)
+      }
+    }
+  }
+
+  return (
+    <div className={`themed-slide${layer === 'content' || transparentBackground ? ' transparent' : ''}`}>
+      {drawBackground && (
+        <>
+          {theme.keyTransparent ? null : <Background background={theme.background} still={still} />}
+          {theme.overlay > 0 && !theme.keyTransparent && <div className="themed-bg" style={{ background: `rgba(0, 0, 0, ${theme.overlay})` }} />}
+        </>
       )}
+      {drawn}
     </div>
   )
 }

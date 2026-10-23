@@ -941,17 +941,6 @@ button {
   opacity: 1;
 }
 
-.scripture-result {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-2-5);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--panel-raised);
-}
-
 /* ---------- Slide grid ---------- */
 
 /* List view: numbered compact rows of slide text, with each section's color as a bar. */
@@ -1321,7 +1310,7 @@ button {
   border: 2px solid var(--next);
 }
 
-.preview-screen.preview .empty {
+.preview-screen .empty {
   padding: var(--space-3);
   color: #9ca3af;
 }
@@ -1351,7 +1340,12 @@ button {
   pointer-events: none;
 }
 
-.go-back-button {
+.preview-output-toggle {
+  margin-left: auto;
+}
+
+.go-back-button,
+.preview-output-toggle {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -1975,12 +1969,6 @@ button {
   cursor: pointer;
 }
 
-.themed-logo-image {
-  max-width: 60%;
-  max-height: 60%;
-  object-fit: contain;
-}
-
 .fade-control {
   display: flex;
   align-items: center;
@@ -2024,6 +2012,13 @@ button {
   background: #000;
   overflow: hidden;
   cursor: none;
+}
+
+/* Inside Live Options' screen margins; the black around it is the output itself. */
+.output-area {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
 }
 
 .output-frame {
@@ -2080,16 +2075,24 @@ button {
   object-fit: cover;
 }
 
-.themed-logo {
+/* A theme element, placed by its box in percent of the slide. */
+.themed-element {
   position: absolute;
-  inset: 0;
+  box-sizing: border-box;
+}
+
+.themed-image {
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.themed-safe {
-  position: absolute;
+.themed-image img {
+  width: 100%;
+  height: 100%;
+}
+
+.themed-box {
   display: flex;
 }
 
@@ -2116,13 +2119,11 @@ button {
   letter-spacing: 0.02em;
 }
 
-/* The caption across the top of the safe area (the Blue Smoke theme's yellow reference), above the fitted text. */
-.themed-safe.caption-top {
-  flex-direction: column;
-}
-
-.themed-caption.top {
-  margin: 0 0 0.4em;
+/* Reference and copyright lines attached under the main text. flow-root keeps the first margin inside, so it is measured. */
+.themed-attached {
+  display: flow-root;
+  flex-shrink: 0;
+  max-width: 100%;
 }
 
 .themed-line {
@@ -3054,8 +3055,10 @@ button {
 /* The version list down the side, with the results beside it. */
 .scripture-body {
   display: flex;
+  flex: 1;
   align-items: flex-start;
   gap: var(--space-2);
+  min-height: 160px;
 }
 
 .version-list {
@@ -3102,23 +3105,55 @@ button {
   display: flex;
   flex: 1;
   flex-direction: column;
+  align-self: stretch;
   gap: var(--space-2);
   min-width: 0;
+  min-height: 0;
 }
 
-.passage-table-wrap {
+.scripture-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.chapter-buttons {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  max-height: 64px;
+  overflow-y: auto;
+}
+
+.chapter-button {
+  min-width: 28px;
+  padding: var(--space-0-5) var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-raised);
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.chapter-button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* The results table: Translation, Reference and Scripture, with the keyboard row, the typed verses and the live verse marked. */
+.verse-table {
+  width: 100%;
   border: 1px solid var(--border);
   border-radius: 6px;
-  overflow: hidden;
-}
-
-.passage-table {
-  width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 12px;
 }
 
-.passage-table th {
+.verse-table th {
   padding: var(--space-1) var(--space-1-5);
   border-bottom: 1px solid var(--border);
   background: var(--panel-raised);
@@ -3128,57 +3163,81 @@ button {
   text-align: left;
 }
 
-.passage-table td {
+.verse-table td {
   padding: var(--space-1) var(--space-1-5);
   border-bottom: 1px solid var(--border);
   vertical-align: top;
 }
 
-.passage-table tr:last-child td {
+.verse-table tr:last-child td {
   border-bottom: 0;
 }
 
-.passage-table tbody tr {
+.verse-table tbody tr {
   cursor: pointer;
 }
 
-.passage-table tbody tr:hover {
+.verse-table tbody tr:hover {
   background: var(--panel-raised);
 }
 
-/* Verses after the looked-up passage: what is coming. */
-.passage-table tr.upcoming td {
-  color: var(--text-muted);
+.verse-table tr.marked td {
+  background: var(--accent-soft);
 }
 
-.passage-table tr.preview td:first-child {
+.verse-table tr.selected td {
+  background: var(--panel-raised);
+}
+
+.verse-table tr.active td {
+  box-shadow: inset 0 1px var(--accent), inset 0 -1px var(--accent);
+}
+
+.verse-table tr.preview td:first-child {
   box-shadow: inset 3px 0 var(--next);
 }
 
-.passage-table tr.live td {
+.verse-table tr.live td {
   background: var(--live-soft);
   color: var(--text);
 }
 
-.passage-table tr.live td:first-child {
+.verse-table tr.live td:first-child {
   box-shadow: inset 3px 0 var(--live);
 }
 
-.passage-ref,
-.passage-version {
+.verse-table-tick {
+  width: 1px;
+}
+
+.verse-table-version,
+.verse-table-ref {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
-.passage-version {
+.verse-table-version {
   color: var(--text-muted);
 }
 
-.passage-text > div {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+.verse-table-ref {
+  font-weight: 600;
+}
+
+.verse-table-text {
+  width: 100%;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.verse-table-text mark {
+  border-radius: 2px;
+  background: rgba(250, 204, 21, 0.35);
+  color: inherit;
+}
+
+.verse-table-footer td {
+  color: var(--text-muted);
 }
 
 .bible-import-fields {
@@ -3250,44 +3309,9 @@ button {
   gap: var(--space-1-5);
 }
 
-.scripture-combobox {
-  position: relative;
+.scripture-input {
   flex: 1;
   min-width: 0;
-}
-
-.search-suggest {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  left: 0;
-  z-index: 6;
-  max-height: 320px;
-  margin: 0;
-  padding: var(--space-1);
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
-  list-style: none;
-}
-
-.search-suggest-item {
-  padding: var(--space-1-5) var(--space-2);
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.search-suggest-item.active {
-  background: var(--accent-soft);
-}
-
-.search-suggest-item.text {
-  margin-top: var(--space-1);
-  border-top: 1px solid var(--border);
-  border-radius: 0 0 4px 4px;
-  color: var(--text-muted);
 }
 
 .scripture-filters {
@@ -3323,7 +3347,7 @@ button {
   list-style: none;
 }
 
-/* Results: verse cards with highlighted matches, and a bar for what is ticked. */
+/* Results: the verse table, and a bar for what is ticked. */
 .verse-results {
   display: flex;
   flex-direction: column;
@@ -3352,64 +3376,6 @@ button {
 .selection-bar .button {
   padding: var(--space-1) var(--space-2);
   font-size: 12px;
-}
-
-.verse-cards {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1-5);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.verse-card {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-1-5);
-}
-
-.verse-card > input[type='checkbox'] {
-  margin-top: var(--space-2-5);
-}
-
-.verse-card-main {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: var(--space-0-5);
-  min-width: 0;
-  padding: var(--space-2) var(--space-2-5);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--panel-raised);
-  text-align: left;
-  cursor: pointer;
-}
-
-.verse-card-main:hover {
-  border-color: var(--text-muted);
-}
-
-.verse-card.selected .verse-card-main {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.verse-card-ref {
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.verse-card-text {
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.verse-card-text mark {
-  border-radius: 2px;
-  background: rgba(250, 204, 21, 0.35);
-  color: inherit;
 }
 
 .verse-results-more {
@@ -3850,6 +3816,361 @@ button {
 .stream-slider .input {
   grid-column: span 2;
   padding: var(--space-1) var(--space-1-5);
+}
+
+/* ---------- Lower thirds ---------- */
+
+/* Solid fills and hard edges only, so the key stays clean. Sizes are cqh of the screen (.overlay-layers). */
+.lt-frame {
+  position: absolute;
+}
+
+.lt-fill,
+.lt-accent,
+.lt-logo,
+.lt-text-box {
+  position: absolute;
+}
+
+.lt-fill {
+  inset: 0;
+}
+
+.lt-logo {
+  object-fit: contain;
+}
+
+.lt-text-box {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* LINE_HEIGHT in LowerThird.tsx must match. */
+.lt-text {
+  display: -webkit-box;
+  max-width: 100%;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.lt-slide-in,
+.lt-slide-out,
+.lt-fade-in,
+.lt-fade-out,
+.lt-wipe-in,
+.lt-wipe-out {
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+
+.lt-slide-in {
+  animation-name: lt-slide-in;
+}
+
+.lt-slide-out {
+  animation-name: lt-slide-out;
+  animation-timing-function: ease-in;
+}
+
+.lt-fade-in {
+  animation-name: lt-fade-in;
+}
+
+.lt-fade-out {
+  animation-name: lt-fade-out;
+}
+
+.lt-wipe-in {
+  animation-name: lt-wipe-in;
+}
+
+.lt-wipe-out {
+  animation-name: lt-wipe-out;
+  animation-timing-function: ease-in;
+}
+
+/* --lt-offset moves the frame just off the left edge of the screen. */
+@keyframes lt-slide-in {
+  from {
+    transform: translateX(var(--lt-offset));
+  }
+}
+
+@keyframes lt-slide-out {
+  to {
+    transform: translateX(var(--lt-offset));
+  }
+}
+
+@keyframes lt-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes lt-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* The margins beyond the frame keep text outlines whole once the wipe is done. */
+@keyframes lt-wipe-in {
+  from {
+    clip-path: inset(-20% 120% -20% -20%);
+  }
+  to {
+    clip-path: inset(-20% -20% -20% -20%);
+  }
+}
+
+@keyframes lt-wipe-out {
+  from {
+    clip-path: inset(-20% -20% -20% -20%);
+  }
+  to {
+    clip-path: inset(-20% 120% -20% -20%);
+  }
+}
+
+.lower-third-panel {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+}
+
+.lower-third-panel .panel-header {
+  gap: var(--space-2);
+}
+
+.lower-third-status {
+  padding: 0 var(--space-1-5);
+  border-radius: 4px;
+  background: var(--panel-raised);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.lower-third-status.live {
+  background: var(--live);
+  color: #fff;
+}
+
+.lower-third-template {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-1) var(--space-1-5);
+}
+
+.lower-third-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+.lower-third-section > summary {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lower-third-section > * + * {
+  margin-top: var(--space-2);
+}
+
+.lower-third-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.lower-third-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.lower-third-list li.pinned {
+  border-color: var(--accent);
+}
+
+.lower-third-list li.current {
+  border-color: var(--live);
+  background: color-mix(in srgb, var(--live) 12%, transparent);
+}
+
+.lower-third-line {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--space-1-5) var(--space-2);
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lower-third-line strong,
+.lower-third-line span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lower-third-line span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.lower-third-next {
+  max-width: 180px;
+  overflow: hidden;
+  font-weight: 400;
+  opacity: 0.85;
+  text-overflow: ellipsis;
+}
+
+.lt-editor {
+  width: min(980px, 100%);
+}
+
+.lt-editor-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.lt-editor-header h2 {
+  margin: 0;
+  margin-right: auto;
+}
+
+.lt-editor-stage {
+  position: relative;
+  flex-shrink: 0;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  user-select: none;
+}
+
+.lt-handles {
+  position: absolute;
+  inset: 0;
+}
+
+.lt-handle {
+  position: absolute;
+  outline: 1px dashed rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  cursor: move;
+  touch-action: none;
+}
+
+.lt-handle.headline,
+.lt-handle.body {
+  outline-color: rgba(250, 204, 21, 0.95);
+}
+
+.lt-handle.logo {
+  outline-color: rgba(96, 165, 250, 0.95);
+}
+
+.lt-handle:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.lt-handle-label {
+  position: absolute;
+  top: -16px;
+  left: 0;
+  padding: 0 3px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.lt-handle.headline .lt-handle-label,
+.lt-handle.body .lt-handle-label,
+.lt-handle.logo .lt-handle-label {
+  top: 0;
+  left: auto;
+  right: 0;
+}
+
+.lt-handle-resize {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  border: 1px solid #000;
+  background: #fff;
+  cursor: nwse-resize;
+}
+
+.lt-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-3);
+}
+
+.lt-editor-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2-5) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.lt-editor-group legend {
+  padding: 0 var(--space-1);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lt-editor-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.lt-editor-row > .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.lt-editor-actions {
+  flex-wrap: wrap;
+}
+
+.lt-editor-actions > .input {
+  flex: 1;
+  min-width: 160px;
 }
 
 /* ---------- Stage display ---------- */

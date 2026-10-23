@@ -61,6 +61,14 @@ export function initSchema(db: Database.Database): void {
       json TEXT NOT NULL
     );
 
+    -- Lower third templates for the Stream output, kept like themes: 'builtin' or 'custom'; json is a LowerThirdStyle.
+    CREATE TABLE IF NOT EXISTS lower_third_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      json TEXT NOT NULL
+    );
+
     -- Background library. file and thumb are names in <userData>/media; tags is a JSON array.
     CREATE TABLE IF NOT EXISTS media (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

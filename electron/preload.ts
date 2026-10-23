@@ -2,6 +2,7 @@ import { ipcRenderer, contextBridge, webUtils } from 'electron'
 import type {
   AiApi,
   BibleApi,
+  LowerThirdsApi,
   MediaApi,
   OutputState,
   ServicesApi,
@@ -149,6 +150,13 @@ const stream: StreamApi = {
   pickLogo: () => ipcRenderer.invoke('stream:pickLogo'),
 }
 
+const lowerThirds: LowerThirdsApi = {
+  list: () => ipcRenderer.invoke('lowerThirds:list'),
+  create: (name, style) => ipcRenderer.invoke('lowerThirds:create', name, style),
+  update: (id, name, style) => ipcRenderer.invoke('lowerThirds:update', id, name, style),
+  delete: (id) => ipcRenderer.invoke('lowerThirds:delete', id),
+}
+
 const output: WorshipDeckApi['output'] = {
   send: (state) => ipcRenderer.send('output:send', state),
   onState(listener) {
@@ -203,5 +211,5 @@ const speech: SpeechApi = {
   },
 }
 
-const api: WorshipDeckApi = { songs, bible, services, songFiles, themes, media, settings, stage, ai, speech, stream, output }
+const api: WorshipDeckApi = { songs, bible, services, songFiles, themes, media, settings, stage, ai, speech, stream, lowerThirds, output }
 contextBridge.exposeInMainWorld('api', api)

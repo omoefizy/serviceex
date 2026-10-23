@@ -178,6 +178,20 @@ export function bookPrefixMatches(input: string): string[] {
   return [...unnumbered, ...numbered]
 }
 
+/**
+ * The book whose whole name was typed, such as "1 peter", "john" or "job", or a long alias such as "psalm". Null for
+ * a start or short abbreviation ("1 pe", "ps", "rev"), which still lists the books it could be.
+ */
+export function wholeBookName(input: string): string | null {
+  const text = input.toLowerCase().replace(/(?<=[a-z])\./g, ' ').replace(/\s+/g, ' ').trim()
+  const named = BOOK_PREFIX.exec(text)
+  if (!named) return null
+  const number = named[1] ?? (named[2] ? ORDINALS[named[2]] : '')
+  const name = named[3].replace(/\s+/g, '')
+  const book = ALIASES.get(number + name)
+  return book && (toKey(book) === number + name || name.length >= 5) ? book : null
+}
+
 /** How far a partly typed reference has got, for suggesting what comes next. */
 export type ReferenceInput =
   /** A start of a book name: suggest books. */

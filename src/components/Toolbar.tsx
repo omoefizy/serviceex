@@ -3,6 +3,7 @@ import {
   Check,
   ChevronDown,
   Eraser,
+  EyeOff,
   Image,
   Layers,
   Megaphone,
@@ -20,7 +21,7 @@ import {
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { OutputMode } from '../../shared/types'
 import { MOD, MODE_KEYS } from '../lib/shortcuts'
-import { useOperatorStore } from '../store'
+import { selectStreamState, useOperatorStore } from '../store'
 import { AlertsPanel } from './AlertsPanel'
 
 const MODE_ICONS: Record<OutputMode, LucideIcon> = { show: Monitor, black: Square, clear: Eraser, logo: Image }
@@ -85,6 +86,28 @@ function AlertRunningChip() {
       Alert running{hidden ? ' (hidden)' : ''}
       <button type="button" className="alert-chip-stop" onClick={stopAlerts} title="Stop the alert ticker">
         <Square size={11} aria-hidden="true" /> Stop
+      </button>
+    </span>
+  )
+}
+
+/** Shown while a lower third is up on the Stream output, with a one-click Hide. */
+function LowerThirdChip() {
+  const live = useOperatorStore((s) => s.live.lowerThird !== null)
+  // Up, but held back while the stream is black or a full screen slide covers it.
+  const held = useOperatorStore((s) => {
+    if (s.live.lowerThird === null) return null
+    const stream = selectStreamState(s)
+    return stream.overlays.lowerThird !== null ? null : stream.mode === 'black' ? 'stream is black' : 'behind slide'
+  })
+  const hide = useOperatorStore((s) => s.hideLowerThird)
+  if (!live) return null
+  return (
+    <span className="alert-chip" role="status">
+      <span className="live-dot" aria-hidden="true" />
+      Lower third live{held ? ` (${held})` : ''}
+      <button type="button" className="alert-chip-stop" onClick={hide} title="Hide the lower third">
+        <EyeOff size={11} aria-hidden="true" /> Hide
       </button>
     </span>
   )
@@ -220,6 +243,7 @@ export function Toolbar() {
       </div>
 
       <AlertRunningChip />
+      <LowerThirdChip />
 
       <LiveMenu />
 

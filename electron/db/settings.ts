@@ -1,5 +1,8 @@
-import type { AlertMessage, AppSettings, LogoAnchor, LogoItem, StreamResolution, WhisperModelId } from '../../shared/types'
+import { DEFAULT_FONT } from '../../shared/themes'
+import type { AlertMessage, AppSettings, LogoAnchor, LogoItem, SavedLowerThirdLine, ScreenMargins, StreamResolution, WhisperModelId } from '../../shared/types'
 import { db } from './index'
+
+export const NO_MARGINS: ScreenMargins = { top: 0, right: 0, bottom: 0, left: 0 }
 
 const DEFAULTS: AppSettings = {
   alertMessages: [],
@@ -15,6 +18,10 @@ const DEFAULTS: AppSettings = {
   alertKeepOnClear: true,
   fadeMs: 400,
   outputDisplay: 'auto',
+  outputBounds: { left: 0, top: 0, width: 1920, height: 1080 },
+  screenMargins: NO_MARGINS,
+  defaultFont: DEFAULT_FONT,
+  previewOutput: true,
   streamDisplay: 'window',
   streamResolution: '1920x1080',
   streamKeyMode: 'chroma',
@@ -23,6 +30,13 @@ const DEFAULTS: AppSettings = {
   logoItems: [],
   logoLayerVisible: true,
   overlaysOnChurchScreen: false,
+  lowerThirdTemplateId: null,
+  lowerThirdAnimation: 'slide',
+  lowerThirdDurationMs: 500,
+  lowerThirdHoldSeconds: 0,
+  lowerThirdOverFullSlide: false,
+  lowerThirdSavedLines: [],
+  lowerThirdPoints: [],
   logoUrl: null,
   appearance: 'system',
   autosaveDrafts: true,
@@ -65,6 +79,10 @@ const KEYS: Record<keyof AppSettings, string> = {
   alertKeepOnClear: 'alerts.keepOnClear',
   fadeMs: 'output.fadeMs',
   outputDisplay: 'output.display',
+  outputBounds: 'output.bounds',
+  screenMargins: 'output.screenMargins',
+  defaultFont: 'output.defaultFont',
+  previewOutput: 'output.preview',
   streamDisplay: 'stream.display',
   streamResolution: 'stream.resolution',
   streamKeyMode: 'stream.keyMode',
@@ -73,6 +91,13 @@ const KEYS: Record<keyof AppSettings, string> = {
   logoItems: 'overlays.logos',
   logoLayerVisible: 'overlays.logosVisible',
   overlaysOnChurchScreen: 'overlays.onChurchScreen',
+  lowerThirdTemplateId: 'lowerThird.templateId',
+  lowerThirdAnimation: 'lowerThird.animation',
+  lowerThirdDurationMs: 'lowerThird.durationMs',
+  lowerThirdHoldSeconds: 'lowerThird.holdSeconds',
+  lowerThirdOverFullSlide: 'lowerThird.overFullSlide',
+  lowerThirdSavedLines: 'lowerThird.savedLines',
+  lowerThirdPoints: 'lowerThird.points',
   logoUrl: 'output.logoUrl',
   appearance: 'ui.appearance',
   autosaveDrafts: 'editor.autosaveDrafts',
@@ -152,6 +177,47 @@ export function cleanLogoItems(value: unknown): LogoItem[] | undefined {
   return items
 }
 
+export const LOWER_THIRD_LIMITS = { lines: 200, points: 100, text: 300, durationMs: [200, 1000], holdSeconds: [0, 600] } as const
+
+/** Saved lines with a usable shape; anything else in the list is dropped. */
+function cleanSavedLines(value: unknown): SavedLowerThirdLine[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const lines: SavedLowerThirdLine[] = []
+  for (const item of value.slice(0, LOWER_THIRD_LIMITS.lines)) {
+    const l = item as Partial<SavedLowerThirdLine> | null
+    if (typeof l !== 'object' || l === null || typeof l.id !== 'string' || !l.id || l.id.length > 64) continue
+    const headline = typeof l.headline === 'string' ? l.headline.trim().slice(0, LOWER_THIRD_LIMITS.text) : ''
+    const body = typeof l.body === 'string' ? l.body.trim().slice(0, LOWER_THIRD_LIMITS.text) : ''
+    if (!headline && !body) continue
+    lines.push({ id: l.id, headline, body, pinned: l.pinned === true })
+  }
+  return lines
+}
+
+/** Each side 0 to 25 percent of the screen. */
+export function cleanScreenMargins(value: unknown): ScreenMargins | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const m = value as Partial<ScreenMargins>
+  const side = (v: unknown) => ranged(v, [0, 25], 0.1) ?? 0
+  return { top: side(m.top), right: side(m.right), bottom: side(m.bottom), left: side(m.left) }
+}
+
+/** A family name or a CSS font stack, without anything that could end the declaration. */
+export const cleanDefaultFont = (value: unknown) =>
+  typeof value === 'string' && value.trim() !== '' && value.length <= 200 && !/[;{}<>]/.test(value) ? value.trim() : undefined
+
+/** Custom Position: whole screen points, at least 160 × 90. */
+function cleanOutputBounds(value: unknown): AppSettings['outputBounds'] | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const b = value as Partial<AppSettings['outputBounds']>
+  const whole = (v: unknown, min: number, max: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(Math.min(max, Math.max(min, v))) : undefined)
+  const left = whole(b.left, -20000, 20000)
+  const top = whole(b.top, -20000, 20000)
+  const width = whole(b.width, 160, 16000)
+  const height = whole(b.height, 90, 16000)
+  return left === undefined || top === undefined || width === undefined || height === undefined ? undefined : { left, top, width, height }
+}
+
 const hexColor = (value: unknown) => (typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : undefined)
 
 /** Checks one value, returning undefined for anything unusable so the default applies. */
@@ -183,7 +249,13 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
         ? (Math.round(Math.min(FADE_LIMITS.max, Math.max(FADE_LIMITS.min, value))) as never)
         : undefined
     case 'outputDisplay':
-      return value === 'auto' || value === 'window' || (Number.isInteger(value) && (value as number) >= 0) ? v : undefined
+      return value === 'auto' || value === 'window' || value === 'custom' || (Number.isInteger(value) && (value as number) >= 0) ? v : undefined
+    case 'outputBounds':
+      return cleanOutputBounds(value) as never
+    case 'screenMargins':
+      return cleanScreenMargins(value) as never
+    case 'defaultFont':
+      return cleanDefaultFont(value) as never
     case 'streamDisplay':
       return value === 'window' || (Number.isInteger(value) && (value as number) >= 0) ? v : undefined
     case 'streamResolution':
@@ -191,9 +263,26 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'streamKeyMode':
       return value === 'chroma' || value === 'luma' ? v : undefined
     case 'streamSlideContent':
-      return value === 'full' || value === 'hide' ? v : undefined
+      return value === 'full' || value === 'lowerThird' || value === 'hide' ? v : undefined
     case 'logoItems':
       return cleanLogoItems(value) as never
+    case 'lowerThirdTemplateId':
+      return value === null || (Number.isInteger(value) && (value as number) > 0) ? v : undefined
+    case 'lowerThirdAnimation':
+      return value === 'slide' || value === 'fade' || value === 'wipe' ? v : undefined
+    case 'lowerThirdDurationMs':
+      return ranged(value, LOWER_THIRD_LIMITS.durationMs, 50) as never
+    case 'lowerThirdHoldSeconds':
+      return ranged(value, LOWER_THIRD_LIMITS.holdSeconds, 1) as never
+    case 'lowerThirdSavedLines':
+      return cleanSavedLines(value) as never
+    case 'lowerThirdPoints':
+      return Array.isArray(value)
+        ? (value
+            .filter((point): point is string => typeof point === 'string' && point.trim() !== '')
+            .slice(0, LOWER_THIRD_LIMITS.points)
+            .map((point) => point.trim().slice(0, LOWER_THIRD_LIMITS.text)) as never)
+        : undefined
     case 'logoUrl':
       return value === null || (typeof value === 'string' && value.startsWith('wd-media://')) ? v : undefined
     case 'appearance':
@@ -201,6 +290,8 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'alertKeepOnClear':
     case 'logoLayerVisible':
     case 'overlaysOnChurchScreen':
+    case 'lowerThirdOverFullSlide':
+    case 'previewOutput':
     case 'autosaveDrafts':
     case 'aiEnabled':
     case 'autoGoLiveOnNext':

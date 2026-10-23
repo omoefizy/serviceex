@@ -22,3 +22,14 @@ export function isTyping(target: EventTarget | null): boolean {
     !!target.closest('.modal, .palette')
   )
 }
+
+/** The Lower Third panel's headline field, focused by Cmd+L (Ctrl+L) and by Send to Lower Third. */
+export const LOWER_THIRD_HEADLINE_ID = 'lower-third-headline'
+
+export function focusLowerThirdHeadline(): void {
+  const field = document.getElementById(LOWER_THIRD_HEADLINE_ID)
+  if (!(field instanceof HTMLInputElement)) return
+  field.scrollIntoView({ block: 'nearest' })
+  field.focus()
+  field.select()
+}

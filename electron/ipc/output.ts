@@ -1,11 +1,25 @@
 import { BrowserWindow, ipcMain } from 'electron'
-import { DEFAULT_THEME_STYLE, normalizeTheme } from '../../shared/themes'
-import type { AlertDisplay, OutputMode, OutputState, OverlayLayers } from '../../shared/types'
-import { cleanLogoItems } from '../db/settings'
+import { normalizeLowerThirdStyle } from '../../shared/lowerThirds'
+import { DEFAULT_FONT, DEFAULT_THEME_STYLE, normalizeTheme } from '../../shared/themes'
+import type { AlertDisplay, LowerThirdDisplay, OutputMode, OutputState, OverlayLayers } from '../../shared/types'
+import { cleanDefaultFont, cleanLogoItems, cleanScreenMargins, NO_MARGINS } from '../db/settings'
 
 const MODES: OutputMode[] = ['show', 'black', 'clear', 'logo']
 
-let lastState: OutputState = { mode: 'black', text: '', caption: '', theme: DEFAULT_THEME_STYLE, fadeMs: 400, logoUrl: null, alert: null, overlays: null }
+let lastState: OutputState = {
+  mode: 'black',
+  text: '',
+  caption: '',
+  copyright: '',
+  theme: DEFAULT_THEME_STYLE,
+  fadeMs: 400,
+  logoUrl: null,
+  defaultFont: DEFAULT_FONT,
+  screenMargins: NO_MARGINS,
+  testPattern: false,
+  alert: null,
+  overlays: null,
+}
 
 const clampNumber = (value: unknown, min: number, max: number, fallback: number) =>
   typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback
@@ -42,11 +56,33 @@ export function alertDisplayOf(value: unknown): AlertDisplay | null {
   }
 }
 
+/** The lower third of an overlay state; anything malformed shows none. */
+function lowerThirdDisplayOf(value: unknown): LowerThirdDisplay | null {
+  const lowerThird = value as Partial<LowerThirdDisplay> | null
+  if (
+    typeof lowerThird !== 'object' ||
+    lowerThird === null ||
+    !Number.isFinite(lowerThird.runId) ||
+    typeof lowerThird.headline !== 'string' ||
+    typeof lowerThird.body !== 'string'
+  ) {
+    return null
+  }
+  return {
+    runId: lowerThird.runId as number,
+    headline: lowerThird.headline.slice(0, 300),
+    body: lowerThird.body.slice(0, 300),
+    style: normalizeLowerThirdStyle(lowerThird.style),
+    animation: lowerThird.animation === 'fade' || lowerThird.animation === 'wipe' ? lowerThird.animation : 'slide',
+    durationMs: clampNumber(lowerThird.durationMs, 200, 1000, 500),
+  }
+}
+
 /** The overlay layers of a state; anything malformed draws none. */
 export function overlayLayersOf(value: unknown): OverlayLayers | null {
   const overlays = value as Partial<OverlayLayers> | null
   if (typeof overlays !== 'object' || overlays === null) return null
-  return { logos: cleanLogoItems(overlays.logos) ?? [] }
+  return { logos: cleanLogoItems(overlays.logos) ?? [], lowerThird: lowerThirdDisplayOf(overlays.lowerThird) }
 }
 
 export function assertOutputState(value: unknown): OutputState {
@@ -68,9 +104,13 @@ export function assertOutputState(value: unknown): OutputState {
     mode: state.mode as OutputMode,
     text: state.text,
     caption: state.caption,
+    copyright: typeof state.copyright === 'string' ? state.copyright : '',
     theme: normalizeTheme(state.theme),
     fadeMs: Math.min(1500, Math.max(0, state.fadeMs)),
     logoUrl: state.logoUrl,
+    defaultFont: cleanDefaultFont(state.defaultFont) ?? DEFAULT_FONT,
+    screenMargins: cleanScreenMargins(state.screenMargins) ?? NO_MARGINS,
+    testPattern: state.testPattern === true,
     alert: alertDisplayOf(state.alert),
     overlays: overlayLayersOf(state.overlays),
   }
