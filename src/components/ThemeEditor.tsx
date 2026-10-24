@@ -1,8 +1,9 @@
 import { useEffect, useState, type FocusEvent, type ReactNode } from 'react'
 import { THEME_CONTENT_TYPES } from '../../shared/themes'
-import type { TextCase, Theme, ThemeBackground, ThemeContentType, ThemeStyle } from '../../shared/types'
+import type { TextCase, Theme, ThemeBackground, ThemeBox, ThemeContentType, ThemeElement, ThemeStyle, ThemeTextElement, ThemeTextProps } from '../../shared/types'
 import { selectBaseThemeId, useOperatorStore } from '../store'
 import { cssFontFamily } from '../lib/fonts'
+import { clampBox } from '../lib/themeLayout'
 import { MediaPickerModal } from './MediaGrid'
 import { ThemedSlide } from './ThemedSlide'
 
@@ -24,7 +25,7 @@ const SAMPLES = {
   },
 }
 
-const CONTENT_LABELS: Record<ThemeContentType, string> = { song: 'Songs', scripture: 'Scripture', announcement: 'Announcements', quote: 'Quotes' }
+const CONTENT_LABELS: Record<ThemeContentType, string> = { song: 'Songs', scripture: 'Scripture', announcement: 'Announcements', quote: 'Quotes', lowerThird: 'Lower thirds', logo: 'Logos' }
 const WEIGHTS = [300, 400, 500, 600, 700, 800, 900]
 const CASES: { value: TextCase; label: string }[] = [
   { value: 'normal', label: 'As typed' },
@@ -295,8 +296,28 @@ export function ThemeEditor() {
   }
 
   const update = (patch: Partial<ThemeStyle>) => setStyle((s) => s && { ...s, ...patch })
-  const updateIn = <K extends 'shadow' | 'outline' | 'margins' | 'band' | 'caption'>(key: K, patch: Partial<ThemeStyle[K]>) =>
-    setStyle((s) => s && { ...s, [key]: { ...s[key], ...patch } })
+
+  // The form edits the main text box, and the Reference and Copyright boxes together as the caption line.
+  const isCaption = (e: ThemeElement) => e.kind === 'reference' || e.kind === 'copyright'
+  const mainText = style?.elements.find((e): e is ThemeTextElement => e.kind === 'text')
+  const caption = style?.elements.find((e): e is Extract<ThemeElement, { attached: boolean }> => isCaption(e))
+  const updateElements = (match: (e: ThemeElement) => boolean, change: (e: ThemeTextElement) => ThemeTextElement) =>
+    setStyle((s) => s && { ...s, elements: s.elements.map((e) => (match(e) && 'text' in e ? change(e) : e)) })
+  const updateText = (patch: Partial<ThemeTextProps>) => updateElements((e) => e.kind === 'text', (e) => ({ ...e, text: { ...e.text, ...patch } }))
+  const updateCaption = (patch: Partial<ThemeTextProps>) => updateElements(isCaption, (e) => ({ ...e, text: { ...e.text, ...patch } }))
+  const setCaptionAttached = (attached: boolean) => updateElements(isCaption, (e) => (e.kind === 'text' ? e : { ...e, attached }))
+
+  /** The text box as margins from each side of the screen. */
+  const marginsOf = (b: ThemeBox) => ({ top: b.y, right: 100 - b.x - b.width, bottom: 100 - b.y - b.height, left: b.x })
+  function setMargin(side: 'top' | 'right' | 'bottom' | 'left', value: number) {
+    updateElements(
+      (e) => e.kind === 'text',
+      (e) => {
+        const m = { ...marginsOf(e.box), [side]: value }
+        return { ...e, box: clampBox({ x: m.left, y: m.top, width: 100 - m.left - m.right, height: 100 - m.top - m.bottom }) }
+      },
+    )
+  }
 
   function setBackgroundKind(kind: ThemeBackground['kind']) {
     if (!style || style.background.kind === kind) return
@@ -305,6 +326,7 @@ export function ThemeEditor() {
     if (kind === 'solid') update({ background: { kind, color } })
     else if (kind === 'gradient') update({ background: { kind, from: color, to: '#333333', angle: 160 } })
     else if (kind === 'smoke') update({ background: { kind, color, smoke: '#5a7bc4' } })
+    else if (kind === 'none') update({ background: { kind } })
     else setPicking(kind)
   }
 
@@ -418,104 +440,107 @@ export function ThemeEditor() {
             {message && <p className="hint">{message}</p>}
             {error && <p className="error">{error}</p>}
 
-            <fieldset>
-              <legend>Text</legend>
-              <Row label="Font">
-                <FontPicker value={style.fontFamily} onChange={(fontFamily) => fontFamily && update({ fontFamily })} />
-                <select className="input" value={style.fontWeight} onChange={(e) => update({ fontWeight: Number(e.target.value) })}>
-                  {WEIGHTS.map((w) => (
-                    <option key={w} value={w}>
-                      {w}
-                    </option>
-                  ))}
-                </select>
-              </Row>
-              <Row label="Size">
-                <Segmented
-                  value={style.sizeMode}
-                  options={[
-                    { value: 'auto', label: 'Auto fit' },
-                    { value: 'fixed', label: 'Fixed' },
-                  ]}
-                  onChange={(sizeMode) => update({ sizeMode })}
-                />
-                {style.sizeMode === 'fixed' && (
-                  <NumberInput value={style.fontSize} min={1} max={30} step={0.5} suffix="% of height" onChange={(fontSize) => update({ fontSize })} />
-                )}
-              </Row>
-              <Row label="Color">
-                <Color value={style.color} onChange={(color) => update({ color })} />
-              </Row>
-              <Row label="Align">
-                <Segmented
-                  value={style.align}
-                  options={[
-                    { value: 'left', label: 'Left' },
-                    { value: 'center', label: 'Center' },
-                    { value: 'right', label: 'Right' },
-                  ]}
-                  onChange={(align) => update({ align })}
-                />
-                <Segmented
-                  value={style.verticalAlign}
-                  options={[
-                    { value: 'top', label: 'Top' },
-                    { value: 'middle', label: 'Middle' },
-                    { value: 'bottom', label: 'Bottom' },
-                  ]}
-                  onChange={(verticalAlign) => update({ verticalAlign })}
-                />
-              </Row>
-              <Row label="Line spacing">
-                <Range value={style.lineHeight} min={0.8} max={2.5} step={0.05} format={(v) => v.toFixed(2)} onChange={(lineHeight) => update({ lineHeight })} />
-              </Row>
-              <Row label="Case">
-                <select className="input" value={style.textCase} onChange={(e) => update({ textCase: e.target.value as TextCase })}>
-                  {CASES.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </Row>
-              <Row label="Shadow">
-                <input type="checkbox" checked={style.shadow.enabled} onChange={(e) => updateIn('shadow', { enabled: e.target.checked })} />
-                <Color value={style.shadow.color} onChange={(color) => updateIn('shadow', { color })} />
-                <small>Blur</small>
-                <NumberInput value={style.shadow.blur} min={0} max={1} step={0.02} suffix="em" onChange={(blur) => updateIn('shadow', { blur })} />
-                <small>Offset</small>
-                <NumberInput value={style.shadow.offset} min={0} max={0.5} step={0.01} suffix="em" onChange={(offset) => updateIn('shadow', { offset })} />
-              </Row>
-              <Row label="Outline">
-                <input type="checkbox" checked={style.outline.enabled} onChange={(e) => updateIn('outline', { enabled: e.target.checked })} />
-                <Color value={style.outline.color} onChange={(color) => updateIn('outline', { color })} />
-                <NumberInput value={style.outline.width} min={0} max={0.2} step={0.005} suffix="em" onChange={(width) => updateIn('outline', { width })} />
-              </Row>
-            </fieldset>
+            {mainText &&
+              (() => {
+                const t = mainText.text
+                return (
+                  <fieldset>
+                    <legend>Text</legend>
+                    <Row label="Font">
+                      <FontPicker value={t.fontFamily} onChange={(fontFamily) => fontFamily && updateText({ fontFamily })} />
+                      <select className="input" value={t.fontWeight} onChange={(e) => updateText({ fontWeight: Number(e.target.value) })}>
+                        {WEIGHTS.map((w) => (
+                          <option key={w} value={w}>
+                            {w}
+                          </option>
+                        ))}
+                      </select>
+                    </Row>
+                    <Row label="Size">
+                      <Segmented
+                        value={t.sizeMode}
+                        options={[
+                          { value: 'auto', label: 'Auto fit' },
+                          { value: 'fixed', label: 'Fixed' },
+                        ]}
+                        onChange={(sizeMode) => updateText({ sizeMode })}
+                      />
+                      {t.sizeMode === 'fixed' && (
+                        <NumberInput value={t.fontSize} min={1} max={30} step={0.5} suffix="% of height" onChange={(fontSize) => updateText({ fontSize })} />
+                      )}
+                    </Row>
+                    <Row label="Color">
+                      <Color value={t.color} onChange={(color) => updateText({ color })} />
+                    </Row>
+                    <Row label="Align">
+                      <Segmented
+                        value={t.align}
+                        options={[
+                          { value: 'left', label: 'Left' },
+                          { value: 'center', label: 'Center' },
+                          { value: 'right', label: 'Right' },
+                        ]}
+                        onChange={(align) => updateText({ align })}
+                      />
+                      <Segmented
+                        value={t.verticalAlign}
+                        options={[
+                          { value: 'top', label: 'Top' },
+                          { value: 'middle', label: 'Middle' },
+                          { value: 'bottom', label: 'Bottom' },
+                        ]}
+                        onChange={(verticalAlign) => updateText({ verticalAlign })}
+                      />
+                    </Row>
+                    <Row label="Line spacing">
+                      <Range value={t.lineHeight} min={0.8} max={2.5} step={0.05} format={(v) => v.toFixed(2)} onChange={(lineHeight) => updateText({ lineHeight })} />
+                    </Row>
+                    <Row label="Case">
+                      <select className="input" value={t.textCase} onChange={(e) => updateText({ textCase: e.target.value as TextCase })}>
+                        {CASES.map((c) => (
+                          <option key={c.value} value={c.value}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Row>
+                    <Row label="Shadow">
+                      <input type="checkbox" checked={t.shadow.enabled} onChange={(e) => updateText({ shadow: { ...t.shadow, enabled: e.target.checked } })} />
+                      <Color value={t.shadow.color} onChange={(color) => updateText({ shadow: { ...t.shadow, color } })} />
+                      <small>Blur</small>
+                      <NumberInput value={t.shadow.blur} min={0} max={1} step={0.02} suffix="em" onChange={(blur) => updateText({ shadow: { ...t.shadow, blur } })} />
+                      <small>Offset</small>
+                      <NumberInput value={t.shadow.offset} min={0} max={0.5} step={0.01} suffix="em" onChange={(offset) => updateText({ shadow: { ...t.shadow, offset } })} />
+                    </Row>
+                    <Row label="Outline">
+                      <input type="checkbox" checked={t.outline.enabled} onChange={(e) => updateText({ outline: { ...t.outline, enabled: e.target.checked } })} />
+                      <Color value={t.outline.color} onChange={(color) => updateText({ outline: { ...t.outline, color } })} />
+                      <NumberInput value={t.outline.width} min={0} max={0.2} step={0.005} suffix="em" onChange={(width) => updateText({ outline: { ...t.outline, width } })} />
+                    </Row>
+                  </fieldset>
+                )
+              })()}
 
-            <fieldset>
-              <legend>Safe area</legend>
-              <Row label="Margins">
-                {(['top', 'right', 'bottom', 'left'] as const).map((side) => (
-                  <span key={side} className="margin-input">
-                    <small>{side[0].toUpperCase() + side.slice(1)}</small>
-                    <NumberInput
-                      value={style.margins[side]}
-                      min={0}
-                      max={side === 'top' || side === 'bottom' ? 90 : 45}
-                      step={1}
-                      suffix="%"
-                      onChange={(v) => updateIn('margins', { [side]: v })}
-                    />
-                  </span>
-                ))}
-              </Row>
-              <Row label="Text band">
-                <input type="checkbox" checked={style.band.enabled} onChange={(e) => updateIn('band', { enabled: e.target.checked })} />
-                <Color value={style.band.color} onChange={(color) => updateIn('band', { color })} />
-                <Range value={style.band.opacity} min={0} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(opacity) => updateIn('band', { opacity })} />
-              </Row>
-            </fieldset>
+            {mainText && (
+              <fieldset>
+                <legend>Safe area</legend>
+                <Row label="Margins">
+                  {(['top', 'right', 'bottom', 'left'] as const).map((side) => (
+                    <span key={side} className="margin-input">
+                      <small>{side[0].toUpperCase() + side.slice(1)}</small>
+                      <NumberInput
+                        value={marginsOf(mainText.box)[side]}
+                        min={0}
+                        max={side === 'top' || side === 'bottom' ? 90 : 45}
+                        step={1}
+                        suffix="%"
+                        onChange={(v) => setMargin(side, v)}
+                      />
+                    </span>
+                  ))}
+                </Row>
+              </fieldset>
+            )}
 
             <fieldset>
               <legend>Background</legend>
@@ -575,52 +600,58 @@ export function ThemeEditor() {
               </Row>
             </fieldset>
 
-            <fieldset>
-              <legend>Reference and copyright line</legend>
-              <Row label="Font">
-                <FontPicker
-                  value={style.caption.fontFamily}
-                  emptyLabel="Same as text"
-                  onChange={(fontFamily) => updateIn('caption', { fontFamily })}
-                />
-                <select className="input" value={style.caption.fontWeight} onChange={(e) => updateIn('caption', { fontWeight: Number(e.target.value) })}>
-                  {WEIGHTS.map((w) => (
-                    <option key={w} value={w}>
-                      {w}
-                    </option>
-                  ))}
-                </select>
-              </Row>
-              <Row label="Size">
-                <NumberInput value={style.caption.size} min={1} max={15} step={0.2} suffix="% of height" onChange={(size) => updateIn('caption', { size })} />
-              </Row>
-              <Row label="Color">
-                <Color value={style.caption.color} onChange={(color) => updateIn('caption', { color })} />
-                <label className="inline-check">
-                  <input type="checkbox" checked={style.caption.italic} onChange={(e) => updateIn('caption', { italic: e.target.checked })} />
-                  Italic
-                </label>
-              </Row>
-              <Row label="Position">
-                <Segmented
-                  value={style.caption.position}
-                  options={[
-                    { value: 'below', label: 'Under the text' },
-                    { value: 'top', label: 'Top' },
-                  ]}
-                  onChange={(position) => updateIn('caption', { position })}
-                />
-              </Row>
-              <Row label="Case">
-                <select className="input" value={style.caption.textCase} onChange={(e) => updateIn('caption', { textCase: e.target.value as TextCase })}>
-                  {CASES.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </Row>
-            </fieldset>
+            {caption &&
+              (() => {
+                const c = caption.text
+                return (
+                  <fieldset>
+                    <legend>Reference and copyright line</legend>
+                    <Row label="Font">
+                      <FontPicker
+                        value={c.fontFamily}
+                        emptyLabel="Same as text"
+                        onChange={(fontFamily) => updateCaption({ fontFamily })}
+                      />
+                      <select className="input" value={c.fontWeight} onChange={(e) => updateCaption({ fontWeight: Number(e.target.value) })}>
+                        {WEIGHTS.map((w) => (
+                          <option key={w} value={w}>
+                            {w}
+                          </option>
+                        ))}
+                      </select>
+                    </Row>
+                    <Row label="Size">
+                      <NumberInput value={c.fontSize} min={1} max={15} step={0.2} suffix="% of height" onChange={(size) => updateCaption({ fontSize: size })} />
+                    </Row>
+                    <Row label="Color">
+                      <Color value={c.color} onChange={(color) => updateCaption({ color })} />
+                      <label className="inline-check">
+                        <input type="checkbox" checked={c.italic} onChange={(e) => updateCaption({ italic: e.target.checked })} />
+                        Italic
+                      </label>
+                    </Row>
+                    <Row label="Position">
+                      <Segmented
+                        value={caption.attached ? 'below' : 'box'}
+                        options={[
+                          { value: 'below', label: 'Under the text' },
+                          { value: 'box', label: 'Own box' },
+                        ]}
+                        onChange={(position) => setCaptionAttached(position === 'below')}
+                      />
+                    </Row>
+                    <Row label="Case">
+                      <select className="input" value={c.textCase} onChange={(e) => updateCaption({ textCase: e.target.value as TextCase })}>
+                        {CASES.map((c) => (
+                          <option key={c.value} value={c.value}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Row>
+                  </fieldset>
+                )
+              })()}
           </div>
         )}
       </div>

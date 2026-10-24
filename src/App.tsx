@@ -4,6 +4,7 @@ import { LivePreview } from './components/LivePreview'
 import { LowerThirdPanel } from './components/LowerThirdPanel'
 import { ListenerPanel } from './components/ListenerPanel'
 import { MediaPanel } from './components/MediaPanel'
+import { PanelBoundary } from './components/PanelBoundary'
 import { PresentationsPanel } from './components/PresentationsPanel'
 import { SchedulePanel } from './components/SchedulePanel'
 import { ScripturePanel } from './components/ScripturePanel'
@@ -208,7 +209,9 @@ function App() {
 
   return (
     <div className="app">
-      <Toolbar />
+      <PanelBoundary name="Toolbar">
+        <Toolbar />
+      </PanelBoundary>
       <main className="operator" style={{ gridTemplateColumns: columns }}>
         <div className="library">
           <div className="library-tabs" role="tablist">
@@ -226,40 +229,66 @@ function App() {
           </div>
           {/* All stay mounted so each keeps its search text when switching tabs. */}
           <div className="library-page" hidden={libraryTab !== 'songs'}>
-            <SongList />
+            <PanelBoundary name="Songs">
+              <SongList />
+            </PanelBoundary>
           </div>
           <div className="library-page" hidden={libraryTab !== 'scripture'}>
-            <ScripturePanel />
+            <PanelBoundary name="Scripture">
+              <ScripturePanel />
+            </PanelBoundary>
           </div>
           <div className="library-page" hidden={libraryTab !== 'presentations'}>
-            <PresentationsPanel />
+            <PanelBoundary name="Presentations">
+              <PresentationsPanel />
+            </PanelBoundary>
           </div>
           <div className="library-page" hidden={libraryTab !== 'media'}>
-            <MediaPanel />
+            <PanelBoundary name="Media">
+              <MediaPanel />
+            </PanelBoundary>
           </div>
         </div>
         <Splitter label="Resize library" value={sizes.library} min={LIMITS.library[0]} max={LIMITS.library[1]} direction={1} onChange={resize('library')} />
         {editingSongId !== null ? (
-          <SongEditor key={editingSongId} songId={editingSongId} />
+          <PanelBoundary key="songEditor" name="Song editor">
+            <SongEditor key={editingSongId} songId={editingSongId} />
+          </PanelBoundary>
         ) : themeEditorOpen ? (
-          <ThemeEditor />
+          <PanelBoundary key="themes" name="Themes">
+            <ThemeEditor />
+          </PanelBoundary>
         ) : settingsOpen ? (
-          <SettingsPanel />
+          <PanelBoundary key="settings" name="Settings">
+            <SettingsPanel />
+          </PanelBoundary>
         ) : streamPanelOpen ? (
-          <StreamPanel />
+          <PanelBoundary key="stream" name="Stream">
+            <StreamPanel />
+          </PanelBoundary>
         ) : (
-          <SlideGrid />
+          <PanelBoundary key="slides" name="Slides">
+            <SlideGrid />
+          </PanelBoundary>
         )}
         <Splitter label="Resize live output" value={sizes.preview} min={LIMITS.preview[0]} max={LIMITS.preview[1]} direction={-1} onChange={resize('preview')} />
         <div className="preview-column">
-          <LivePreview />
-          <LowerThirdPanel />
-          <ListenerPanel />
+          <PanelBoundary name="Output controls">
+            <LivePreview />
+          </PanelBoundary>
+          <PanelBoundary name="Lower third">
+            <LowerThirdPanel />
+          </PanelBoundary>
+          <PanelBoundary name="Listener">
+            <ListenerPanel />
+          </PanelBoundary>
         </div>
         {!scheduleCollapsed && (
           <Splitter label="Resize schedule" value={sizes.schedule} min={LIMITS.schedule[0]} max={LIMITS.schedule[1]} direction={-1} onChange={resize('schedule')} />
         )}
-        <SchedulePanel collapsed={scheduleCollapsed} onCollapsedChange={setScheduleCollapsed} />
+        <PanelBoundary name="Schedule">
+          <SchedulePanel collapsed={scheduleCollapsed} onCollapsedChange={setScheduleCollapsed} />
+        </PanelBoundary>
       </main>
       {paletteOpen && <CommandPalette />}
     </div>

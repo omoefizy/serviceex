@@ -1020,6 +1020,7 @@ export interface WorshipDeckApi {
   presentations: PresentationsApi
   livePowerPoint: LivePowerPointApi
   rasterizer: RasterizerApi
+  log: LogApi
   output: {
     /** Sends the operator's output state to the output window. */
     send(state: OutputState): void
@@ -1031,6 +1032,19 @@ export interface WorshipDeckApi {
     /** Called when the output window opens or closes, including by its own close button. */
     onOpenChange(listener: (open: boolean) => void): () => void
   }
+}
+
+/** A panel that threw while rendering, as its error boundary caught it. */
+export interface PanelErrorReport {
+  panel: string
+  message: string
+  stack: string
+  componentStack: string
+}
+
+export interface LogApi {
+  /** Appends the report to logs/panel-errors.log in the app data folder. */
+  panelError(report: PanelErrorReport): Promise<void>
 }
 
 // ---------- AI ----------

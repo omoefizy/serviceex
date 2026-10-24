@@ -4,6 +4,7 @@ import type {
   BibleApi,
   LivePowerPointApi,
   LivePowerPointStatus,
+  LogApi,
   LowerThirdsApi,
   MediaApi,
   OutputState,
@@ -270,6 +271,10 @@ const speech: SpeechApi = {
   },
 }
 
+const log: LogApi = {
+  panelError: (report) => ipcRenderer.invoke('log:panelError', report),
+}
+
 const api: WorshipDeckApi = {
   songs,
   bible,
@@ -286,6 +291,7 @@ const api: WorshipDeckApi = {
   presentations,
   livePowerPoint,
   rasterizer,
+  log,
   output,
 }
 contextBridge.exposeInMainWorld('api', api)
