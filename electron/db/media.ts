@@ -44,9 +44,16 @@ export function getMedia(id: number): MediaItem | undefined {
   return row && toItem(row)
 }
 
-export function insertMedia(name: string, kind: 'image' | 'video', file: string): MediaItem {
-  const result = db.prepare('INSERT INTO media (name, kind, file) VALUES (?, ?, ?)').run(name, kind, file)
+/** `hash` is the SHA-256 of a clip taken from a .pptx, which findMediaByHash looks up. */
+export function insertMedia(name: string, kind: 'image' | 'video', file: string, hash: string | null = null): MediaItem {
+  const result = db.prepare('INSERT INTO media (name, kind, file, hash) VALUES (?, ?, ?, ?)').run(name, kind, file, hash)
   return getMedia(Number(result.lastInsertRowid)) as MediaItem
+}
+
+/** The library item made from a clip with this SHA-256, if it is still there. */
+export function findMediaByHash(hash: string): MediaItem | undefined {
+  const row = db.prepare(`${SELECT} WHERE hash = ? ORDER BY id LIMIT 1`).get(hash) as MediaRow | undefined
+  return row && toItem(row)
 }
 
 export function updateMedia(id: number, name: string, tags: string[]): boolean {

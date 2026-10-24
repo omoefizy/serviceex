@@ -4,7 +4,7 @@ import type { OutputState, ScreenMargins } from '../../shared/types'
 import { AlertBand } from './AlertBand'
 import { Overlays } from './Overlays'
 import { TestPattern } from './StreamView'
-import { backgroundKey, DefaultFontContext, ThemedSlide } from './ThemedSlide'
+import { backdropKey, DefaultFontContext, ThemedSlide, underKey } from './ThemedSlide'
 
 interface Frame {
   key: number
@@ -14,14 +14,23 @@ interface Frame {
   fadeMs: number
 }
 
-/** What the background layer shows: unchanged backgrounds (a playing video, say) are not redrawn between slides. */
+/** What the backdrop layer shows: an unchanged background (a playing video, say) is not redrawn between slides. */
 function backgroundOf(state: OutputState): string {
-  return state.mode === 'black' ? 'black' : backgroundKey(state.theme, state.logoUrl)
+  return state.mode === 'black' ? 'black' : backdropKey(state.theme)
+}
+
+/** What the layer of shapes and images under the text shows, so unchanged ones hold still. */
+function underOf(state: OutputState): string {
+  return state.mode === 'black' ? 'black' : underKey(state.theme, state.logoUrl)
 }
 
 /** On a keyed output (the Stream), Clear empties the slide layer, background and all. */
 function keyedBackgroundOf(state: OutputState): string {
   return state.mode === 'clear' ? 'clear' : backgroundOf(state)
+}
+
+function keyedUnderOf(state: OutputState): string {
+  return state.mode === 'clear' ? 'clear' : underOf(state)
 }
 
 /** What the text layer shows, so identical states need no fade. */
@@ -73,11 +82,13 @@ const always = () => true
 const isClear = (state: OutputState) => state.mode === 'clear'
 
 /**
- * The live slide: a background layer and a text layer, each crossfading on its own over the chosen fade length.
+ * The live slide: a backdrop layer, a layer of the shapes and images under the text, and a text layer, each
+ * crossfading on its own over the chosen fade length. Slides sharing a video background share one playing video.
  * `keyed` (the Stream output) leaves the layer empty in Clear, fading the slide out so the layers below show.
  */
 export function SlideLayers({ state, keyed = false }: { state: OutputState | null; keyed?: boolean }) {
   const backgrounds = useFrames(state, keyed ? keyedBackgroundOf : backgroundOf, keyed ? isClear : never)
+  const unders = useFrames(state, keyed ? keyedUnderOf : underOf, always)
   const contents = useFrames(state, contentOf, always)
 
   return (
@@ -85,7 +96,14 @@ export function SlideLayers({ state, keyed = false }: { state: OutputState | nul
       {backgrounds.map(({ key, state, leaving, fadeMs }) => (
         <div key={key} className={`output-frame${leaving ? ' leaving' : ''}`} style={{ animationDuration: `${fadeMs}ms` }}>
           {!(keyed && state.mode === 'clear') && (
-            <ThemedSlide theme={state.theme} text="" mode={state.mode} layer="background" logoUrl={state.logoUrl} keyed={keyed} />
+            <ThemedSlide theme={state.theme} text="" mode={state.mode} layer="backdrop" logoUrl={state.logoUrl} keyed={keyed} />
+          )}
+        </div>
+      ))}
+      {unders.map(({ key, state, leaving, fadeMs }) => (
+        <div key={key} className={`output-frame${leaving ? ' leaving' : ''}`} style={{ animationDuration: `${fadeMs}ms` }}>
+          {!(keyed && state.mode === 'clear') && (
+            <ThemedSlide theme={state.theme} text="" mode={state.mode} layer="under" logoUrl={state.logoUrl} keyed={keyed} />
           )}
         </div>
       ))}

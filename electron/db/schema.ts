@@ -133,6 +133,10 @@ export function initSchema(db: Database.Database): void {
   addColumnIfMissing(db, 'songs', 'theme_id', 'INTEGER') // themes.id; null uses the default song theme
   addColumnIfMissing(db, 'presentations', 'live_powerpoint', 'INTEGER NOT NULL DEFAULT 1')
   addColumnIfMissing(db, 'presentations', 'use_timings', 'INTEGER NOT NULL DEFAULT 0')
+  addColumnIfMissing(db, 'presentations', 'mode', "TEXT NOT NULL DEFAULT 'image'") // 'image' or 'native'
+  addColumnIfMissing(db, 'presentations', 'linked', 'INTEGER NOT NULL DEFAULT 1') // 0 once detached from the original
+  addColumnIfMissing(db, 'presentations', 'native', 'TEXT') // JSON NativeSlide[], once Native mode was used
+  addColumnIfMissing(db, 'media', 'hash', 'TEXT') // SHA-256 of a clip taken from a .pptx, so it goes in once
 }
 
 /** Rebuilds the verse search index from the verses table. Takes a second or two for both Bibles. */

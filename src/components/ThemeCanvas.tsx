@@ -9,6 +9,7 @@ export const KIND_LABELS: Record<ThemeElement['kind'], string> = {
   copyright: 'Copyright box',
   image: 'Image',
   shape: 'Shape',
+  video: 'Video',
 }
 
 /** Attached Reference and Copyright boxes follow the main text, so they have no frame of their own on the canvas. */

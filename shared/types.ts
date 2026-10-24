@@ -372,7 +372,28 @@ export interface ThemeTextProps {
   padding: number
 }
 
-export type ThemeElementKind = 'text' | 'reference' | 'copyright' | 'image' | 'shape'
+/** A run of words with its own look, inside an imported PowerPoint text box. Fields left out use the box's. */
+export interface ThemeTextRun {
+  text: string
+  fontFamily?: string
+  /** Percent of screen height. */
+  fontSize?: number
+  color?: string
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+}
+
+/** A paragraph of an imported PowerPoint text box. */
+export interface ThemeTextParagraph {
+  runs: ThemeTextRun[]
+  align?: 'left' | 'center' | 'right'
+  lineHeight?: number
+  /** Drawn before the words, such as "•". */
+  bullet?: string
+}
+
+export type ThemeElementKind = 'text' | 'reference' | 'copyright' | 'image' | 'shape' | 'video'
 
 interface ThemeElementBase {
   /** Elements copied with "Apply to all themes" keep their id, so applying again replaces them. */
@@ -389,9 +410,15 @@ interface ThemeElementBase {
  * - copyright: a song's copyright line.
  * - image: a picture, such as a logo; `src` null uses the church logo from Settings.
  * - shape: a solid rectangle, such as a bar behind the text.
+ * - video: a looping clip.
  */
 export type ThemeElement =
-  | (ThemeElementBase & { kind: 'text'; text: ThemeTextProps })
+  | (ThemeElementBase & {
+      kind: 'text'
+      text: ThemeTextProps
+      /** Fixed words (an imported PowerPoint text box), shown in place of the slide's text. */
+      paragraphs?: ThemeTextParagraph[]
+    })
   | (ThemeElementBase & {
       kind: 'reference' | 'copyright'
       text: ThemeTextProps
@@ -400,6 +427,8 @@ export type ThemeElement =
     })
   | (ThemeElementBase & { kind: 'image'; src: string | null; fit: 'contain' | 'cover'; opacity: number })
   | (ThemeElementBase & { kind: 'shape'; color: string; opacity: number })
+  /** A video playing looped and muted in its box, such as a clip on an imported PowerPoint slide. */
+  | (ThemeElementBase & { kind: 'video'; src: string; fit: 'contain' | 'cover'; opacity: number })
 
 export type ThemeTextElement = Extract<ThemeElement, { text: ThemeTextProps }>
 
@@ -484,6 +513,24 @@ export interface PresentationSlide {
   notes: string
   /** Has animations or a transition in PowerPoint; shown as a still image unless Live PowerPoint plays it. */
   animated: boolean
+  /** The slide rebuilt from the .pptx, for Native mode; absent until the presentation is first switched to it. */
+  native?: NativeSlide
+}
+
+/**
+ * How a presentation shows: Image mode shows each slide as the picture PowerPoint drew (the exact look), Native mode
+ * rebuilds the slides from the .pptx as themed slides, with motion backgrounds that keep playing between slides.
+ */
+export type PresentationMode = 'image' | 'native'
+
+/** A slide of a .pptx rebuilt as a theme. */
+export interface NativeSlide {
+  /** The slide as a theme; null when it holds something Native mode cannot draw, so its picture shows instead. */
+  style: ThemeStyle | null
+  /** What could not be drawn, or a video that cannot play, shown on the slide's warning icon. */
+  warnings: string[]
+  /** Chosen in the compare view: this slide shows its picture even in Native mode. */
+  useImage: boolean
 }
 
 /** A presentation in the library: rendered slide pictures, linked to the original file. */
@@ -504,6 +551,13 @@ export interface Presentation {
   livePowerPoint: boolean
   /** Live PowerPoint follows the slide timings saved in the file; off (the default) advances only by hand. */
   useTimings: boolean
+  /** Image mode (the default) or Native mode; only .pptx files can use Native mode. */
+  mode: PresentationMode
+  /**
+   * Linked to the original file: saving it there re-imports the slides, replacing edits made here. Detach stops that,
+   * so the native slides can be edited freely.
+   */
+  linked: boolean
 }
 
 /** A conversion in progress, for the progress chip. `key` is the original's path. */
@@ -536,7 +590,15 @@ export interface PresentationsApi {
   /** The path of a dropped file or folder. */
   pathForFile(file: File): string
   /** Imports each file (or image folder) as a presentation; loose images together make one. Progress comes as events. */
-  import(paths: string[]): Promise<Presentation[]>
+  import(paths: string[], mode?: PresentationMode): Promise<Presentation[]>
+  /** Switches a .pptx between Image and Native mode, building the native slides the first time. */
+  setMode(id: number, mode: PresentationMode): Promise<Presentation>
+  /** Shows one slide as its picture in Native mode (the compare view's Use Image mode for this slide), or not. */
+  setSlideUseImage(id: number, index: number, useImage: boolean): Promise<Presentation>
+  /** Saves an edited native slide. A refresh from a linked original replaces it. */
+  updateNativeSlide(id: number, index: number, style: ThemeStyle): Promise<Presentation>
+  /** Stops following the original file, so saving it no longer replaces the slides. */
+  detach(id: number): Promise<Presentation>
   delete(id: number): Promise<boolean>
   /** Opens the original in its default app (PowerPoint for .pptx); saving there refreshes the slides. */
   openOriginal(id: number): Promise<void>

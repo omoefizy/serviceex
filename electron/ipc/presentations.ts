@@ -1,16 +1,21 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { createHash, randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import PptxGenJS from 'pptxgenjs'
-import type { Presentation, PresentationEngineId } from '../../shared/types'
+import { normalizeTheme } from '../../shared/themes'
+import type { NativeSlide, Presentation, PresentationEngineId, PresentationMode } from '../../shared/types'
+import { findMediaByHash, insertMedia } from '../db/media'
 import { presentationStore, scheduleUsesHash, setLinkedPages, setLiveOptions } from '../db/presentations'
 import { getAppSettings } from '../db/settings'
-import { presentationImageUrl, presentationsDir } from '../media'
+import { copyIntoMedia, presentationImageUrl, presentationsDir } from '../media'
 import { createConverter } from '../presentations/convert'
 import { engineStatus } from '../presentations/engines'
-import { IMAGE_EXTENSIONS, PRESENTATION_EXTENSIONS, PresentationLibrary, type PresentationRecord } from '../presentations/library'
+import { findFfmpeg } from '../presentations/ffmpeg'
+import { IMAGE_EXTENSIONS, PRESENTATION_EXTENSIONS, PresentationLibrary, type PresentationRecord, type PresentationSource } from '../presentations/library'
+import { readNativeSlides, resolveNativeMedia } from '../presentations/native'
 import { createWindowRasterizer } from '../presentations/rasterizer'
 
 // Arguments arrive from the renderer, so check their shape before they reach the disk or the database.
@@ -29,6 +34,42 @@ function assertPaths(value: unknown): string[] {
   return value
 }
 
+function assertIndex(value: unknown): number {
+  if (!Number.isInteger(value) || (value as number) < 0) throw new TypeError('Slide index must be a whole number from 0')
+  return value as number
+}
+
+const assertMode = (value: unknown): PresentationMode => {
+  if (value !== 'image' && value !== 'native') throw new TypeError("Mode must be 'image' or 'native'")
+  return value
+}
+
+/**
+ * Reads a .pptx into native slides. Its pictures go into the presentation's cache folder (native/<sha256>.<ext>, so
+ * the same picture is stored once); its clips go into the media library, once per clip by hash.
+ */
+async function buildNative(source: PresentationSource, hash: string): Promise<NativeSlide[]> {
+  const deck = await readNativeSlides(new Uint8Array(await readFile(source.sourcePath)), source.sourcePath)
+  const folder = path.join(presentationsDir(), hash, 'native')
+  return resolveNativeMedia(deck, {
+    store: {
+      async image(bytes, extension) {
+        const name = `${createHash('sha256').update(bytes).digest('hex')}.${extension}`
+        await mkdir(folder, { recursive: true })
+        if (!existsSync(path.join(folder, name))) await writeFile(path.join(folder, name), bytes)
+        return presentationImageUrl(hash, `native/${name}`)
+      },
+      findVideo: (clipHash) => findMediaByHash(clipHash)?.url ?? null,
+      async addVideo(clipHash, file, name) {
+        return insertMedia(name, 'video', await copyIntoMedia(file), clipHash).url
+      },
+    },
+    ffmpeg: findFfmpeg(),
+    workDir: path.join(os.tmpdir(), `worshipdeck-native-${randomBytes(4).toString('hex')}`),
+    title: source.title,
+  })
+}
+
 export function toPresentation(record: PresentationRecord): Presentation {
   return {
     id: record.id,
@@ -40,13 +81,19 @@ export function toPresentation(record: PresentationRecord): Presentation {
     updatedAt: record.updatedAt,
     livePowerPoint: record.livePowerPoint ?? true,
     useTimings: record.useTimings ?? false,
-    slides: record.slides.map((slide) => ({
-      image: presentationImageUrl(record.hash, slide.file),
-      title: slide.title,
-      text: slide.text,
-      notes: slide.notes,
-      animated: slide.animated,
-    })),
+    mode: record.mode ?? 'image',
+    linked: record.linked ?? true,
+    slides: record.slides.map((slide, index) => {
+      const native = record.native?.[index]
+      return {
+        image: presentationImageUrl(record.hash, slide.file),
+        title: slide.title,
+        text: slide.text,
+        notes: slide.notes,
+        animated: slide.animated,
+        ...(native ? { native } : {}),
+      }
+    }),
   }
 }
 
@@ -97,6 +144,7 @@ export function registerPresentationIpc({ createRasterWindow, getOperatorWindow,
     cacheDir: presentationsDir(),
     store: presentationStore,
     convert,
+    buildNative,
     onProgress: (progress) => send('presentations:progress', progress),
     onUpdated: (record) => {
       const presentation = toPresentation(record)
@@ -132,7 +180,21 @@ export function registerPresentationIpc({ createRasterWindow, getOperatorWindow,
     return canceled ? [] : filePaths
   })
 
-  ipcMain.handle('presentations:import', async (_event, paths: unknown) => (await library.import(assertPaths(paths))).map(toPresentation))
+  ipcMain.handle('presentations:import', async (_event, paths: unknown, mode: unknown) =>
+    (await library.import(assertPaths(paths), mode === undefined ? 'image' : assertMode(mode))).map(toPresentation),
+  )
+
+  ipcMain.handle('presentations:setMode', async (_event, id: unknown, mode: unknown) => toPresentation(await library.setMode(assertId(id), assertMode(mode))))
+
+  ipcMain.handle('presentations:setSlideUseImage', (_event, id: unknown, index: unknown, useImage: unknown) =>
+    toPresentation(library.setSlideUseImage(assertId(id), assertIndex(index), useImage === true)),
+  )
+
+  ipcMain.handle('presentations:updateNativeSlide', (_event, id: unknown, index: unknown, style: unknown) =>
+    toPresentation(library.updateNativeSlide(assertId(id), assertIndex(index), { ...normalizeTheme(style), category: 'presentation' })),
+  )
+
+  ipcMain.handle('presentations:detach', (_event, id: unknown) => toPresentation(library.detach(assertId(id))))
 
   ipcMain.handle('presentations:delete', (_event, id: unknown) => library.remove(assertId(id)))
 

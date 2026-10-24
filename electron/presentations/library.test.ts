@@ -7,7 +7,9 @@ import os from 'node:os'
 import path from 'node:path'
 import PptxGenJS from 'pptxgenjs'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { ThemeElement } from '../../shared/types'
 import { PresentationLibrary, type Converter, type PresentationRecord, type PresentationStore } from './library'
+import { readNativeSlides, resolveNativeMedia } from './native'
 import { readPptx } from './pptx'
 
 /** A deck with one slide per title, with invented text and notes. */
@@ -83,6 +85,14 @@ describe('PresentationLibrary', () => {
       cacheDir: path.join(root, 'cache'),
       store: memoryStore(),
       convert,
+      // Native slides from the real reader; these decks have no pictures or clips to store.
+      buildNative: async (source) =>
+        resolveNativeMedia(await readNativeSlides(new Uint8Array(await readFile(source.sourcePath)), source.sourcePath), {
+          store: { image: async () => 'wd-media://deck/test/native/x.png', findVideo: () => null, addVideo: async () => 'wd-media://local/x.mp4' },
+          ffmpeg: null,
+          workDir: path.join(root, 'native-work'),
+          title: source.title,
+        }),
       onUpdated: (record) => updates.push(record),
       debounceMs: 300,
     })
@@ -140,6 +150,48 @@ describe('PresentationLibrary', () => {
     await sleep(1200)
     expect(conversions).toBe(2)
     expect(updates).toHaveLength(1)
+  }, 20_000)
+
+  it('rebuilds native slides on save, replacing edits but keeping slides set to their picture, until detached', async () => {
+    const file = path.join(root, 'Notices.pptx')
+    await writeFile(file, await makeDeck(['Choir practice moved to Thursday', 'Bring a friend']))
+    const words = (record: PresentationRecord, index: number) =>
+      (record.native?.[index]?.style?.elements ?? [])
+        .flatMap((e: ThemeElement) => (e.kind === 'text' ? (e.paragraphs ?? []) : []))
+        .map((p) => p.runs.map((r) => r.text).join(''))
+
+    const [imported] = await library.import([file], 'native')
+    expect(imported.mode).toBe('native')
+    expect(words(imported, 0)).toEqual(['Choir practice moved to Thursday'])
+
+    const style = imported.native![0].style!
+    const edited = {
+      ...style,
+      elements: style.elements.map((e) => (e.kind === 'text' ? { ...e, paragraphs: [{ runs: [{ text: 'Edited here' }] }] } : e)),
+    }
+    expect(words(library.updateNativeSlide(imported.id, 0, edited), 0)).toEqual(['Edited here'])
+    expect(library.setSlideUseImage(imported.id, 1, true).native?.[1].useImage).toBe(true)
+
+    library.start()
+    await sleep(500)
+    await writeFile(file, await makeDeck(['Choir practice moved to Friday', 'Bring a friend', 'Tea at four']))
+    await until(() => updates.length === 1)
+    const [refreshed] = updates
+    expect(refreshed.native).toHaveLength(3)
+    expect(words(refreshed, 0)).toEqual(['Choir practice moved to Friday'])
+    expect(refreshed.native?.map((slide) => slide.useImage)).toEqual([false, true, false])
+
+    // Detached, a save changes nothing, so edits stay.
+    expect(library.detach(imported.id).linked).toBe(false)
+    library.updateNativeSlide(imported.id, 0, edited)
+    await writeFile(file, await makeDeck(['Choir practice cancelled']))
+    await sleep(1200)
+    expect(updates).toHaveLength(1)
+    expect(words(library.list()[0], 0)).toEqual(['Edited here'])
+    // Image mode keeps the native slides for switching back.
+    const image = await library.setMode(imported.id, 'image')
+    expect(image.mode).toBe('image')
+    expect(image.native).toHaveLength(3)
   }, 20_000)
 
   it('imports the same original once', async () => {

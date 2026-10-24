@@ -1,4 +1,4 @@
-import type { PresentationKind, PresentationPayload } from '../../shared/types'
+import type { NativeSlide, PresentationKind, PresentationMode, PresentationPayload } from '../../shared/types'
 import type { PresentationRecord, PresentationStore, SlideMeta } from '../presentations/library'
 import { db } from './index'
 
@@ -13,15 +13,24 @@ interface PresentationRow {
   updated_at: string
   live_powerpoint: number
   use_timings: number
+  mode: string
+  linked: number
+  native: string | null
+}
+
+function parseJson(value: string | null): unknown {
+  if (value === null) return null
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
 }
 
 function toRecord(row: PresentationRow): PresentationRecord {
-  let slides: unknown = []
-  try {
-    slides = JSON.parse(row.slides)
-  } catch {
-    // Treat unreadable slides as none.
-  }
+  // Unreadable slides count as none.
+  const slides = parseJson(row.slides)
+  const native = parseJson(row.native)
   return {
     id: row.id,
     title: row.title,
@@ -33,10 +42,14 @@ function toRecord(row: PresentationRow): PresentationRecord {
     updatedAt: row.updated_at,
     livePowerPoint: row.live_powerpoint !== 0,
     useTimings: row.use_timings !== 0,
+    mode: (row.mode === 'native' ? 'native' : 'image') as PresentationMode,
+    linked: row.linked !== 0,
+    native: Array.isArray(native) ? (native as NativeSlide[]) : null,
   }
 }
 
-const SELECT = 'SELECT id, title, kind, source_path, hash, engine, slides, updated_at, live_powerpoint, use_timings FROM presentations'
+const SELECT = 'SELECT id, title, kind, source_path, hash, engine, slides, updated_at, live_powerpoint, use_timings, mode, linked, native FROM presentations'
+const json = (value: unknown) => (value === null || value === undefined ? null : JSON.stringify(value))
 
 export const presentationStore: PresentationStore = {
   /** Newest first. */
@@ -49,18 +62,35 @@ export const presentationStore: PresentationStore = {
 
   insert(record) {
     const result = db
-      .prepare('INSERT INTO presentations (title, kind, source_path, hash, engine, slides) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(record.title, record.kind, record.sourcePath, record.hash, record.engine, JSON.stringify(record.slides))
+      .prepare('INSERT INTO presentations (title, kind, source_path, hash, engine, slides, mode, linked, native) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(
+        record.title,
+        record.kind,
+        record.sourcePath,
+        record.hash,
+        record.engine,
+        JSON.stringify(record.slides),
+        record.mode ?? 'image',
+        record.linked === false ? 0 : 1,
+        json(record.native),
+      )
     return presentationStore.get(Number(result.lastInsertRowid)) as PresentationRecord
   },
 
+  /** Changes the fields given; a new render (hash) also updates the time. */
   update(id, patch) {
-    db.prepare("UPDATE presentations SET hash = ?, engine = ?, slides = ?, updated_at = datetime('now') WHERE id = ?").run(
-      patch.hash,
-      patch.engine,
-      JSON.stringify(patch.slides),
-      id,
-    )
+    const columns: [string, unknown][] = []
+    if (patch.hash !== undefined) columns.push(['hash', patch.hash], ['updated_at', null])
+    if (patch.engine !== undefined) columns.push(['engine', patch.engine])
+    if (patch.slides !== undefined) columns.push(['slides', JSON.stringify(patch.slides)])
+    if (patch.mode !== undefined) columns.push(['mode', patch.mode])
+    if (patch.linked !== undefined) columns.push(['linked', patch.linked ? 1 : 0])
+    if (patch.native !== undefined) columns.push(['native', json(patch.native)])
+    if (columns.length > 0) {
+      const sets = columns.map(([column]) => (column === 'updated_at' ? "updated_at = datetime('now')" : `${column} = ?`))
+      const values = columns.filter(([column]) => column !== 'updated_at').map(([, value]) => value)
+      db.prepare(`UPDATE presentations SET ${sets.join(', ')} WHERE id = ?`).run(...values, id)
+    }
     return presentationStore.get(id) as PresentationRecord
   },
 

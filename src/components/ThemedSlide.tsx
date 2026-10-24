@@ -1,6 +1,17 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import { DEFAULT_FONT, isTextKind } from '../../shared/themes'
-import type { OutputMode, TextCase, ThemeBackground, ThemeBox, ThemeElement, ThemeStyle, ThemeTextElement, ThemeTextProps } from '../../shared/types'
+import type {
+  OutputMode,
+  TextCase,
+  ThemeBackground,
+  ThemeBox,
+  ThemeElement,
+  ThemeStyle,
+  ThemeTextElement,
+  ThemeTextParagraph,
+  ThemeTextProps,
+  ThemeTextRun,
+} from '../../shared/types'
 import { cssFontFamily } from '../lib/fonts'
 import { REFERENCE_LINE_COLOR, slideLines } from '../lib/slides'
 import { animateSmoke, drawStillSmoke, SMOKE_HEIGHT, SMOKE_WIDTH } from '../lib/smoke'
@@ -88,11 +99,16 @@ export function backgroundSplit(theme: ThemeStyle): number {
   return index === -1 ? theme.elements.length : index
 }
 
-/** What the background layer draws, so an unchanged background (a playing video, say) is not redrawn between slides. */
-export function backgroundKey(theme: ThemeStyle, logoUrl: string | null): string {
+/** What the backdrop layer draws, so an unchanged background (a playing video, say) is not redrawn between slides. */
+export function backdropKey(theme: ThemeStyle): string {
+  return JSON.stringify([theme.background, theme.overlay, theme.keyTransparent])
+}
+
+/** What the layer of shapes and images under the text draws, so unchanged ones hold still between slides. */
+export function underKey(theme: ThemeStyle, logoUrl: string | null): string {
   const below = theme.elements.slice(0, backgroundSplit(theme))
   const usesLogo = below.some((element) => element.kind === 'image' && element.src === null)
-  return JSON.stringify([theme.background, theme.overlay, theme.keyTransparent, below, usesLogo ? logoUrl : null])
+  return JSON.stringify([below, usesLogo ? logoUrl : null])
 }
 
 export function textStyle(props: ThemeTextProps, defaultFont: string): CSSProperties {
@@ -110,6 +126,44 @@ export function textStyle(props: ThemeTextProps, defaultFont: string): CSSProper
     WebkitTextStroke: outline.enabled ? `${outline.width * 2}em ${outline.color}` : undefined,
     paintOrder: 'stroke fill',
   }
+}
+
+/** A clip playing looped and muted; thumbnails show a frame. */
+function VideoElement({ element, still }: { element: Extract<ThemeElement, { kind: 'video' }>; still: boolean }) {
+  return (
+    <div className="themed-element themed-image" style={{ ...boxStyle(element.box), opacity: element.opacity }}>
+      {still ? (
+        <video src={`${element.src}#t=0.1`} muted preload="metadata" style={{ objectFit: element.fit }} />
+      ) : (
+        <video src={element.src} autoPlay loop muted playsInline style={{ objectFit: element.fit }} />
+      )}
+    </div>
+  )
+}
+
+/** A run of an imported text box: sizes are relative to the box's size, so shrinking to fit keeps their proportions. */
+function runStyle(run: ThemeTextRun, props: ThemeTextProps): CSSProperties {
+  return {
+    fontFamily: run.fontFamily ? cssFontFamily(run.fontFamily) : undefined,
+    fontSize: run.fontSize !== undefined ? `${run.fontSize / props.fontSize}em` : undefined,
+    color: run.color,
+    fontWeight: run.bold === undefined ? undefined : run.bold ? 700 : 400,
+    fontStyle: run.italic === undefined ? undefined : run.italic ? 'italic' : 'normal',
+    textDecoration: run.underline === undefined ? undefined : run.underline ? 'underline' : 'none',
+  }
+}
+
+function Paragraphs({ paragraphs, props }: { paragraphs: ThemeTextParagraph[]; props: ThemeTextProps }) {
+  return paragraphs.map((paragraph, index) => (
+    <span key={index} className="themed-line" style={{ textAlign: paragraph.align ?? props.align, lineHeight: paragraph.lineHeight }}>
+      {paragraph.bullet && <span className="themed-bullet">{paragraph.bullet}</span>}
+      {paragraph.runs.map((run, i) => (
+        <span key={i} style={runStyle(run, props)}>
+          {run.text}
+        </span>
+      ))}
+    </span>
+  ))
 }
 
 function ImageElement({ element, logoUrl }: { element: Extract<ThemeElement, { kind: 'image' }>; logoUrl: string | null }) {
@@ -138,6 +192,7 @@ function TextBox({ element, content, attached = [], main }: { element: ThemeText
   const textRef = useRef<HTMLParagraphElement>(null)
   const attachedRef = useRef<HTMLDivElement>(null)
   const props = element.text
+  const paragraphs = element.kind === 'text' ? element.paragraphs : undefined
   const attachedKey = JSON.stringify(attached)
 
   useLayoutEffect(() => {
@@ -168,7 +223,7 @@ function TextBox({ element, content, attached = [], main }: { element: ThemeText
     const observer = new ResizeObserver(fit)
     observer.observe(box)
     return () => observer.disconnect()
-  }, [props, content, attachedKey, defaultFont])
+  }, [props, content, paragraphs, attachedKey, defaultFont])
 
   return (
     <div className="themed-element themed-box" style={{ ...boxStyle(element.box), padding: `${props.padding}cqh` }}>
@@ -177,8 +232,10 @@ function TextBox({ element, content, attached = [], main }: { element: ThemeText
         className="themed-fit"
         style={{ justifyContent: JUSTIFY[props.verticalAlign], alignItems: ALIGN_ITEMS[props.align], textAlign: props.align }}
       >
-        <p ref={textRef} className="themed-text" style={textStyle(props, defaultFont)}>
-          {main
+        <p ref={textRef} className={`themed-text${paragraphs ? ' fixed' : ''}`} style={textStyle(props, defaultFont)}>
+          {paragraphs ? (
+            <Paragraphs paragraphs={paragraphs} props={props} />
+          ) : main
             ? slideLines(content).map((line, index) => (
                 <span
                   key={index}
@@ -220,10 +277,11 @@ interface Props {
   /** Shows a video background's first frame instead of playing it, for thumbnails. */
   still?: boolean
   /**
-   * The output window draws the background (with the shapes and images under the text) and the content as separate
-   * layers, so a video background keeps playing across slides.
+   * The output window draws the backdrop (the background and its darkening), the shapes and images under the text
+   * ('under') and the content as separate layers, so a video background keeps playing across slides whatever else
+   * changes. 'background' is the backdrop and the layer under the text together.
    */
-  layer?: 'all' | 'background' | 'content'
+  layer?: 'all' | 'background' | 'backdrop' | 'under' | 'content'
   /** The church logo, for images without a picture of their own; the placeholder shows when null. */
   logoUrl?: string | null
   /** On the Stream output a theme that is transparent for keying draws no background, so the key color shows. */
@@ -237,10 +295,10 @@ interface Props {
  */
 export function ThemedSlide({ theme, text, caption = '', copyright = '', mode = 'show', still = false, layer = 'all', logoUrl = null, keyed = false }: Props) {
   const transparentBackground = keyed && theme.keyTransparent && mode !== 'black'
-  const drawBackground = layer !== 'content' && mode !== 'black' && !transparentBackground
+  const drawBackground = (layer === 'all' || layer === 'background' || layer === 'backdrop') && mode !== 'black' && !transparentBackground
   const split = backgroundSplit(theme)
   const from = layer === 'content' ? split : 0
-  const to = layer === 'background' ? split : theme.elements.length
+  const to = layer === 'background' || layer === 'under' ? split : layer === 'backdrop' ? 0 : theme.elements.length
   const showText = mode === 'show'
 
   const contentOf = (element: ThemeTextElement) => (element.kind === 'text' ? text : element.kind === 'reference' ? caption : copyright)
@@ -259,16 +317,19 @@ export function ThemedSlide({ theme, text, caption = '', copyright = '', mode = 
         drawn.push(<div key={element.id} className="themed-element" style={{ ...boxStyle(element.box), background: element.color, opacity: element.opacity }} />)
       } else if (element.kind === 'image') {
         drawn.push(<ImageElement key={element.id} element={element} logoUrl={logoUrl} />)
+      } else if (element.kind === 'video') {
+        drawn.push(<VideoElement key={element.id} element={element} still={still} />)
       } else if (showText && !followsText(element)) {
         const content = contentOf(element)
         // The main text carries the attached lines, so they go with it (and like before, only under words).
-        if (content) drawn.push(<TextBox key={element.id} element={element} content={content} attached={element === mainText ? attached : undefined} main={element.kind === 'text'} />)
+        if (element.kind === 'text' && element.paragraphs) drawn.push(<TextBox key={element.id} element={element} content="" main={false} />)
+        else if (content) drawn.push(<TextBox key={element.id} element={element} content={content} attached={element === mainText ? attached : undefined} main={element.kind === 'text'} />)
       }
     }
   }
 
   return (
-    <div className={`themed-slide${layer === 'content' || transparentBackground ? ' transparent' : ''}`}>
+    <div className={`themed-slide${layer === 'content' || layer === 'under' || transparentBackground ? ' transparent' : ''}`}>
       {drawBackground && (
         <>
           {theme.keyTransparent ? null : <Background background={theme.background} still={still} />}

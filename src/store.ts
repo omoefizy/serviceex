@@ -16,6 +16,7 @@ import type {
   OverlayLayers,
   PowerPointTarget,
   Presentation,
+  PresentationMode,
   PresentationProgress,
   ServiceItemPayload,
   ServiceItem,
@@ -54,6 +55,10 @@ export interface DeckSlide {
   notes?: string
   /** Animated or has a transition in PowerPoint; a still image, unless Live PowerPoint plays it. */
   animated?: boolean
+  /** A Native mode slide: drawn with its own theme, in place of the deck's theme and the page picture. */
+  native?: ThemeStyle
+  /** What Native mode could not draw on this slide (it may show its picture instead), for the warning icon. */
+  warnings?: string[]
 }
 
 /** What the grid holds: a schedule item type, or a quote (a sermon statement, with the Quote theme default). */
@@ -322,8 +327,8 @@ interface OperatorState {
   songSaved(song: Song): Promise<void>
   songDeleted(id: number): Promise<void>
   loadPresentations(): Promise<void>
-  /** Imports files or image folders into the Presentations library; resolves to what was imported. */
-  importPresentations(paths: string[]): Promise<Presentation[]>
+  /** Imports files or image folders into the Presentations library, .pptx files in `mode`; resolves to what was imported. */
+  importPresentations(paths: string[], mode?: PresentationMode): Promise<Presentation[]>
   addPresentationToSchedule(presentation: Presentation): Promise<void>
   /** Shows conversion progress; a finished job without an error clears itself after a moment. */
   presentationProgress(progress: PresentationProgress): void
@@ -340,6 +345,14 @@ interface OperatorState {
    */
   presentationChanged(presentationId: number): void
   setPresentationLiveOptions(id: number, options: Partial<Pick<Presentation, 'livePowerPoint' | 'useTimings'>>): Promise<void>
+  /** Switches a .pptx between Image and Native mode. */
+  setPresentationMode(id: number, mode: PresentationMode): Promise<void>
+  /** Shows one slide of a Native mode presentation as its picture, or natively again. */
+  setPresentationSlideUseImage(id: number, index: number, useImage: boolean): Promise<void>
+  /** Saves an edited native slide. */
+  updateNativeSlide(id: number, index: number, style: ThemeStyle): Promise<void>
+  /** Stops a presentation following its original file. */
+  detachPresentation(id: number): Promise<void>
   /**
    * Live PowerPoint moved on (next, previous, slide timings) or failed. The live slide follows it; after a failure
    * the live slide shows as a still image.
@@ -878,8 +891,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     set({ presentations: await window.api.presentations.list() })
   },
 
-  async importPresentations(paths) {
-    const imported = await window.api.presentations.import(paths)
+  async importPresentations(paths, mode) {
+    const imported = await window.api.presentations.import(paths, mode)
     await get().loadPresentations()
     return imported
   },
@@ -953,6 +966,22 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     const presentation = await window.api.presentations.setLiveOptions(id, options)
     set({ presentations: get().presentations.map((p) => (p.id === id ? presentation : p)) })
     if (options.livePowerPoint) prepareLivePowerPoint()
+  },
+
+  async setPresentationMode(id, mode) {
+    get().presentationUpdated(await window.api.presentations.setMode(id, mode))
+  },
+
+  async setPresentationSlideUseImage(id, index, useImage) {
+    get().presentationUpdated(await window.api.presentations.setSlideUseImage(id, index, useImage))
+  },
+
+  async updateNativeSlide(id, index, style) {
+    get().presentationUpdated(await window.api.presentations.updateNativeSlide(id, index, style))
+  },
+
+  async detachPresentation(id) {
+    get().presentationUpdated(await window.api.presentations.detach(id))
   },
 
   livePowerPointStatus(status) {
@@ -1163,7 +1192,8 @@ let powerPointCues = 0
 
 /** Whether sending this slide hands it to PowerPoint: an animated slide of a PowerPoint file, with Live PowerPoint on for it. */
 function playsInPowerPoint(s: OperatorState, deckKey: string | null, slide: DeckSlide | undefined): boolean {
-  if (!s.settings.presentationLivePowerPoint || !slide?.animated) return false
+  // A Native mode slide draws itself, so a motion background shared with its neighbours keeps playing.
+  if (!s.settings.presentationLivePowerPoint || !slide?.animated || slide.native) return false
   const presentation = linkedPresentation(s, deckKey)
   return !!presentation && presentation.livePowerPoint && (presentation.kind === 'pptx' || presentation.kind === 'ppt')
 }
@@ -1211,18 +1241,29 @@ const mediaBackground = (item: MediaItem): ThemeBackground =>
   item.kind === 'video' ? { kind: 'video', src: item.url } : { kind: 'image', src: item.url }
 
 /** Slides with their stored per-slide backgrounds applied (presentation pages keep their own). */
-/** One full-slide picture per page, with the original's text, notes and animation marks. */
+/**
+ * One full-slide picture per page, with the original's text, notes and animation marks. In Native mode each slide
+ * draws its own theme instead, unless Native mode cannot draw it or it was set to show its picture.
+ */
 export function presentationSlides(presentation: Presentation): DeckSlide[] {
-  return presentation.slides.map((slide) => ({
-    text: '',
-    caption: '',
-    background: { kind: 'image', src: slide.image, fit: 'contain' },
-    page: true,
-    pageText: slide.text,
-    notes: slide.notes,
-    animated: slide.animated,
-  }))
+  return presentation.slides.map((slide) => {
+    const native = presentation.mode === 'native' ? slide.native : undefined
+    return {
+      text: '',
+      caption: '',
+      background: { kind: 'image', src: slide.image, fit: 'contain' },
+      page: true,
+      pageText: slide.text,
+      notes: slide.notes,
+      animated: slide.animated,
+      ...(native?.style && !native.useImage ? { native: native.style } : {}),
+      ...(native && native.warnings.length > 0 ? { warnings: native.warnings } : {}),
+    }
+  })
 }
+
+/** The library presentation the grid shows, directly or through a schedule item. */
+export const selectDeckPresentation = (s: OperatorState) => linkedPresentation(s, s.deckKey)
 
 /** The library presentation a deck shows: 'presentation:<id>', or a schedule item made from one. */
 function linkedPresentation(s: OperatorState, deckKey: string | null): Presentation | undefined {
@@ -1386,8 +1427,9 @@ export function selectStageState(s: OperatorState): StageState {
   }
 }
 
-/** A slide's own background, if it has one, in place of the theme's. */
+/** A Native mode slide's own theme, or a slide's own background in place of the theme's. */
 export function slideTheme(theme: ThemeStyle, slide: DeckSlide | null | undefined): ThemeStyle {
+  if (slide?.native) return slide.native
   if (!slide?.background) return theme
   // A presentation page is the whole slide, so the theme's shapes and images stay off it.
   return {

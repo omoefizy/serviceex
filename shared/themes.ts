@@ -9,7 +9,9 @@ import type {
   ThemeContentType,
   ThemeElement,
   ThemeStyle,
+  ThemeTextParagraph,
   ThemeTextProps,
+  ThemeTextRun,
 } from './types'
 
 /** The Default Font until Live Options picks another. Text boxes with no font of their own use it. */
@@ -108,6 +110,8 @@ export function newElement(kind: ThemeElement['kind'], id: string): ThemeElement
       return { id, kind, box: { x: 82, y: 6, width: 12, height: 14 }, locked: false, src: null, fit: 'contain', opacity: 1 }
     case 'shape':
       return { id, kind, box: { x: 0, y: 75, width: 100, height: 18 }, locked: false, color: '#2563eb', opacity: 1 }
+    case 'video':
+      return { id, kind, box: { x: 25, y: 25, width: 50, height: 50 }, locked: false, src: '', fit: 'contain', opacity: 1 }
   }
 }
 
@@ -507,8 +511,34 @@ function normalizeTextProps(value: unknown, fallback: ThemeTextProps): ThemeText
   }
 }
 
+const MAX_PARAGRAPHS = 100
+const MAX_RUNS = 100
+
+function normalizeRun(value: unknown): ThemeTextRun {
+  const v = fieldsOf(value)
+  const run: ThemeTextRun = { text: text(v.text, '').slice(0, 5000) }
+  if (typeof v.fontFamily === 'string' && v.fontFamily.trim()) run.fontFamily = v.fontFamily.trim().slice(0, 200)
+  if (typeof v.fontSize === 'number') run.fontSize = number(v.fontSize, 4, 0.5, 30)
+  if (typeof v.color === 'string') run.color = hex(v.color, '#ffffff')
+  for (const key of ['bold', 'italic', 'underline'] as const) if (typeof v[key] === 'boolean') run[key] = v[key] as boolean
+  return run
+}
+
+/** The fixed paragraphs of an imported text box, or undefined when it has none (it shows the slide's text). */
+function normalizeParagraphs(value: unknown): ThemeTextParagraph[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  return value.slice(0, MAX_PARAGRAPHS).map((item) => {
+    const v = fieldsOf(item)
+    const paragraph: ThemeTextParagraph = { runs: Array.isArray(v.runs) ? v.runs.slice(0, MAX_RUNS).map(normalizeRun) : [] }
+    if (typeof v.align === 'string') paragraph.align = oneOf(v.align, ['left', 'center', 'right'] as const, 'left')
+    if (typeof v.lineHeight === 'number') paragraph.lineHeight = number(v.lineHeight, 1.2, 0.5, 4)
+    if (typeof v.bullet === 'string' && v.bullet) paragraph.bullet = v.bullet.slice(0, 4)
+    return paragraph
+  })
+}
+
 const MAX_ELEMENTS = 50
-const ELEMENT_KINDS: ThemeElement['kind'][] = ['text', 'reference', 'copyright', 'image', 'shape']
+const ELEMENT_KINDS: ThemeElement['kind'][] = ['text', 'reference', 'copyright', 'image', 'shape', 'video']
 
 /** An element with every field checked, or null for one of no known kind. */
 function normalizeElement(value: unknown, id: string): ThemeElement | null {
@@ -519,8 +549,10 @@ function normalizeElement(value: unknown, id: string): ThemeElement | null {
   const box = normalizeBox(v.box, d.box)
   const locked = flag(v.locked, false)
   switch (d.kind) {
-    case 'text':
-      return { id, kind: d.kind, box, locked, text: normalizeTextProps(v.text, d.text) }
+    case 'text': {
+      const paragraphs = normalizeParagraphs(v.paragraphs)
+      return { id, kind: d.kind, box, locked, text: normalizeTextProps(v.text, d.text), ...(paragraphs ? { paragraphs } : {}) }
+    }
     case 'reference':
     case 'copyright':
       return { id, kind: d.kind, box, locked, attached: flag(v.attached, false), text: normalizeTextProps(v.text, d.text) }
@@ -536,6 +568,9 @@ function normalizeElement(value: unknown, id: string): ThemeElement | null {
       }
     case 'shape':
       return { id, kind: d.kind, box, locked, color: hex(v.color, d.color), opacity: number(v.opacity, 1, 0, 1) }
+    case 'video':
+      if (typeof v.src !== 'string' || !v.src.startsWith('wd-media://')) return null
+      return { id, kind: d.kind, box, locked, src: v.src, fit: oneOf(v.fit, ['contain', 'cover'], d.fit), opacity: number(v.opacity, 1, 0, 1) }
   }
 }
 

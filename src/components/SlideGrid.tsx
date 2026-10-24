@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
-import { Clapperboard, CornerUpLeft, ImageOff, LayoutGrid, List, MonitorUp, RefreshCw, StickyNote, ZoomIn } from 'lucide-react'
+import { AlertTriangle, Clapperboard, Columns2, CornerUpLeft, ImageOff, LayoutGrid, List, MonitorUp, RefreshCw, StickyNote, ZoomIn } from 'lucide-react'
 import { MEDIA_DRAG_TYPE } from '../lib/media'
 import { sectionColor } from '../lib/sections'
 import { slideLines } from '../lib/slides'
 import { MOD } from '../lib/shortcuts'
 import { usePersistentState } from '../lib/usePersistentState'
-import { selectBaseThemeId, selectBrowsingLive, selectDeckTheme, slideTheme, useOperatorStore } from '../store'
+import { selectBaseThemeId, selectBrowsingLive, selectDeckPresentation, selectDeckTheme, slideTheme, useOperatorStore } from '../store'
+import { NativeSlideEditor } from './NativeSlideEditor'
 import { SuggestionTray } from './SuggestionTray'
 import { ThemedSlide } from './ThemedSlide'
 
@@ -18,6 +19,16 @@ function AnimatedMark() {
   return (
     <span className="slide-animated" title={ANIMATED_HINT} aria-label={ANIMATED_HINT} role="img">
       <Clapperboard size={12} aria-hidden="true" />
+    </span>
+  )
+}
+
+/** Marks a Native mode slide with something it could not draw; the tooltip says what. */
+function WarningMark({ warnings }: { warnings: string[] }) {
+  const hint = warnings.join('\n')
+  return (
+    <span className="slide-warning" title={hint} aria-label={hint} role="img">
+      <AlertTriangle size={12} aria-hidden="true" />
     </span>
   )
 }
@@ -44,6 +55,13 @@ export function SlideGrid() {
   const deckKey = useOperatorStore((s) => s.deckKey)
   const deckType = useOperatorStore((s) => s.deckType)
   const setSlideBackground = useOperatorStore((s) => s.setSlideBackground)
+  /** A Native mode presentation in the grid, whose slides open in the compare view. */
+  const nativePresentation = useOperatorStore((s) => {
+    const presentation = selectDeckPresentation(s)
+    return presentation?.mode === 'native' ? presentation : undefined
+  })
+  /** The slide open in the compare view. */
+  const [comparing, setComparing] = useState<number | null>(null)
   /** Thumbnail width in pixels, from the zoom slider. */
   const [thumbWidth, setThumbWidth] = usePersistentState(
     'worshipdeck.thumbWidth',
@@ -179,7 +197,7 @@ export function SlideGrid() {
 
       {view === 'list' ? (
         <div className="slide-list" ref={gridRef}>
-          {slides.map(({ text, caption, label, page, pageText, animated }, index) => (
+          {slides.map(({ text, caption, label, page, pageText, animated, warnings }, index) => (
             <div
               key={index}
               className={`slide-cell${dropIndex === index ? ' drop' : ''}`}
@@ -212,13 +230,14 @@ export function SlideGrid() {
                   {caption && deckType !== 'song' && <span className="slide-row-caption">{caption}</span>}
                 </span>
                 {animated && <AnimatedMark />}
+                {warnings && <WarningMark warnings={warnings} />}
               </button>
             </div>
           ))}
         </div>
       ) : (
         <div className="slide-grid" ref={gridRef} style={{ '--thumb-width': `${thumbWidth}px` } as CSSProperties}>
-          {slides.map(({ text, caption, label, background, page, animated }, index) => (
+          {slides.map(({ text, caption, label, background, page, animated, warnings }, index) => (
             <div
               key={index}
               className={`slide-cell${dropIndex === index ? ' drop' : ''}`}
@@ -236,7 +255,18 @@ export function SlideGrid() {
                 <span className="slide-number">{index + 1}</span>
                 {label && <span className="slide-caption section-label">{label}</span>}
                 {animated && <AnimatedMark />}
+                {warnings && <WarningMark warnings={warnings} />}
               </button>
+              {nativePresentation && (
+                <button
+                  className="slide-bg-clear"
+                  aria-label={`Compare slide ${index + 1} with PowerPoint`}
+                  title="Compare with PowerPoint"
+                  onClick={() => setComparing(index)}
+                >
+                  <Columns2 size={12} aria-hidden="true" />
+                </button>
+              )}
               {background && !page && (
                 <button
                   className="slide-bg-clear"
@@ -250,6 +280,9 @@ export function SlideGrid() {
             </div>
           ))}
         </div>
+      )}
+      {nativePresentation && comparing !== null && (
+        <NativeSlideEditor presentationId={nativePresentation.id} index={comparing} onClose={() => setComparing(null)} />
       )}
       {notes && (
         <aside className="speaker-notes" aria-label={`Speaker notes for slide ${(highlightIndex ?? 0) + 1}`}>

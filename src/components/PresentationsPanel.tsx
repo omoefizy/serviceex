@@ -1,8 +1,10 @@
-import { AlertTriangle, FilePen, FolderOpen, Loader2, Plus, Trash2, Upload, X } from 'lucide-react'
+import { AlertTriangle, Columns2, FilePen, FolderOpen, Loader2, Plus, Trash2, Upload, X } from 'lucide-react'
 import { useState } from 'react'
-import type { Presentation } from '../../shared/types'
+import type { Presentation, PresentationMode } from '../../shared/types'
 import { droppedPaths, isFileDrag } from '../lib/presentations'
+import { usePersistentState } from '../lib/usePersistentState'
 import { useOperatorStore } from '../store'
+import { NativeSlideEditor } from './NativeSlideEditor'
 
 /** The progress chips of running conversions, and the error of a failed one until dismissed. */
 export function PresentationJobs() {
@@ -39,8 +41,13 @@ function PresentationCard({ presentation, onError }: { presentation: Presentatio
   const hasService = useOperatorStore((s) => s.service !== null)
   const livePowerPointOn = useOperatorStore((s) => s.settings.presentationLivePowerPoint)
   const setLiveOptions = useOperatorStore((s) => s.setPresentationLiveOptions)
+  const setMode = useOperatorStore((s) => s.setPresentationMode)
+  const [switching, setSwitching] = useState(false)
+  const [comparing, setComparing] = useState(false)
   const animated = presentation.slides.filter((slide) => slide.animated).length
   const first = presentation.slides[0]
+  const native = presentation.mode === 'native'
+  const fallbacks = native ? presentation.slides.filter((slide) => !slide.native?.style).length : 0
 
   async function run(action: () => Promise<unknown>) {
     try {
@@ -60,6 +67,8 @@ function PresentationCard({ presentation, onError }: { presentation: Presentatio
           <span className="presentation-title">{presentation.title}</span>
           <span className="hint">
             {presentation.slides.length} slide{presentation.slides.length === 1 ? '' : 's'} · {presentation.kind.toUpperCase()}
+            {native && ' · Native'}
+            {!presentation.linked && ' · Detached'}
           </span>
         </span>
       </button>
@@ -106,7 +115,47 @@ function PresentationCard({ presentation, onError }: { presentation: Presentatio
           </button>
         )}
       </div>
-      {livePowerPointOn && EDITABLE.includes(presentation.kind) && animated > 0 && (
+      {presentation.kind === 'pptx' && (
+        <div className="presentation-mode">
+          <span
+            className="segmented"
+            role="radiogroup"
+            aria-label={`How ${presentation.title} shows`}
+          >
+            {(['image', 'native'] as PresentationMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                role="radio"
+                aria-checked={presentation.mode === mode}
+                className={presentation.mode === mode ? 'active' : ''}
+                disabled={switching}
+                title={mode === 'image' ? 'Each slide as the picture PowerPoint draws: the exact look' : 'Slides rebuilt from the file, with motion backgrounds that keep playing between slides'}
+                onClick={() => {
+                  if (presentation.mode === mode) return
+                  setSwitching(true)
+                  run(() => setMode(presentation.id, mode)).finally(() => setSwitching(false))
+                }}
+              >
+                {mode === 'image' ? 'Image' : 'Native'}
+              </button>
+            ))}
+          </span>
+          {switching && <Loader2 size={13} className="spin" aria-label="Building native slides" />}
+          {native && fallbacks > 0 && (
+            <span className="hint" title="These slides hold something Native mode cannot draw, so they show their PowerPoint picture">
+              <AlertTriangle size={12} aria-hidden="true" /> {fallbacks} as picture
+            </span>
+          )}
+          {native && (
+            <button className="icon-button" aria-label={`Compare ${presentation.title} with PowerPoint`} title="Compare with PowerPoint and edit" onClick={() => setComparing(true)}>
+              <Columns2 size={15} />
+            </button>
+          )}
+        </div>
+      )}
+      {comparing && <NativeSlideEditor presentationId={presentation.id} index={0} onClose={() => setComparing(false)} />}
+      {livePowerPointOn && EDITABLE.includes(presentation.kind) && animated > 0 && !native && (
         // Live PowerPoint for this presentation; the setting itself is in Settings, Presentations.
         <div className="presentation-live-options">
           <label className="inline-check" title={`${animated} of ${presentation.slides.length} slides have animations or transitions`}>
@@ -137,6 +186,12 @@ function PresentationCard({ presentation, onError }: { presentation: Presentatio
 export function PresentationsPanel() {
   const presentations = useOperatorStore((s) => s.presentations)
   const importPresentations = useOperatorStore((s) => s.importPresentations)
+  /** How .pptx files import: Image mode unless Native mode was chosen. */
+  const [importMode, setImportMode] = usePersistentState<PresentationMode>(
+    'worshipdeck.pptxImportMode',
+    'image',
+    (v): v is PresentationMode => v === 'image' || v === 'native',
+  )
   const [search, setSearch] = useState('')
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -145,7 +200,7 @@ export function PresentationsPanel() {
     if (paths.length === 0) return
     try {
       setError(null)
-      await importPresentations(paths)
+      await importPresentations(paths, importMode)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -176,6 +231,16 @@ export function PresentationsPanel() {
       <header className="panel-header">
         <h2>Presentations</h2>
         <div className="panel-header-actions">
+          <select
+            className="input import-mode"
+            aria-label="Import PowerPoint files in"
+            title="How PowerPoint .pptx files import; each presentation can be switched later"
+            value={importMode}
+            onChange={(e) => setImportMode(e.target.value as PresentationMode)}
+          >
+            <option value="image">Image mode</option>
+            <option value="native">Native mode</option>
+          </select>
           <button className="icon-button" aria-label="Import a folder of images" title="Import a folder of images" onClick={() => window.api.presentations.pick('folder').then(importPaths)}>
             <FolderOpen size={16} />
           </button>

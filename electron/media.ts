@@ -1,7 +1,7 @@
 // Media files: library backgrounds, their thumbnails and presentation pages. Files live in <userData>/media,
 // so they keep working when the originals move, and are served to both windows as wd-media://local/<name>.
 // Imported presentations' slide pictures live in <userData>/presentations/<hash>/, served as
-// wd-media://deck/<hash>/<name>.
+// wd-media://deck/<hash>/<name>, and the pictures Native mode takes out of a .pptx in its native/ folder.
 // The dev renderer runs on http://localhost, which may not load file:// URLs.
 
 import { app, net, protocol } from 'electron'
@@ -26,10 +26,10 @@ export function registerMediaProtocol(): void {
     const name = decodeURIComponent(url.pathname.replace(/^\//, ''))
     let file: string
     if (url.host === 'deck') {
-      // Only a slide picture inside a presentation's cache folder.
-      const match = /^([0-9a-f]{64})\/(slide-\d{3}\.png)$/.exec(name)
+      // Only a slide picture, or a native slide's picture, inside a presentation's cache folder.
+      const match = /^([0-9a-f]{64})\/(slide-\d{3}\.png|native\/[0-9a-f]{64}\.(?:png|jpe?g|gif|webp|svg|bmp))$/.exec(name)
       if (!match) return new Response('Not found', { status: 404 })
-      file = path.join(presentationsDir(), match[1], match[2])
+      file = path.join(presentationsDir(), match[1], ...match[2].split('/'))
     } else {
       // Only plain file names inside the media folder.
       if (!name || name !== path.basename(name) || name.startsWith('.')) return new Response('Not found', { status: 404 })
@@ -46,7 +46,7 @@ export function registerMediaProtocol(): void {
 
 export const mediaUrl = (name: string) => `${SCHEME}://local/${encodeURIComponent(name)}`
 
-/** A presentation's slide picture, by the hash of its cache folder and its file name. */
+/** A presentation's slide picture, by the hash of its cache folder and its file name (native/<name> for Native mode's). */
 export const presentationImageUrl = (hash: string, file: string) => `${SCHEME}://deck/${hash}/${file}`
 
 /** The file name behind a wd-media:// URL, or null for anything else. */
