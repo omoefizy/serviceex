@@ -37,6 +37,9 @@ function PresentationCard({ presentation, onError }: { presentation: Presentatio
   const loadPresentations = useOperatorStore((s) => s.loadPresentations)
   const active = useOperatorStore((s) => s.deckKey === `presentation:${presentation.id}`)
   const hasService = useOperatorStore((s) => s.service !== null)
+  const livePowerPointOn = useOperatorStore((s) => s.settings.presentationLivePowerPoint)
+  const setLiveOptions = useOperatorStore((s) => s.setPresentationLiveOptions)
+  const animated = presentation.slides.filter((slide) => slide.animated).length
   const first = presentation.slides[0]
 
   async function run(action: () => Promise<unknown>) {
@@ -103,6 +106,29 @@ function PresentationCard({ presentation, onError }: { presentation: Presentatio
           </button>
         )}
       </div>
+      {livePowerPointOn && EDITABLE.includes(presentation.kind) && animated > 0 && (
+        // Live PowerPoint for this presentation; the setting itself is in Settings, Presentations.
+        <div className="presentation-live-options">
+          <label className="inline-check" title={`${animated} of ${presentation.slides.length} slides have animations or transitions`}>
+            <input
+              type="checkbox"
+              checked={presentation.livePowerPoint}
+              onChange={(e) => run(() => setLiveOptions(presentation.id, { livePowerPoint: e.target.checked }))}
+            />
+            Play animations with PowerPoint
+          </label>
+          {presentation.livePowerPoint && (
+            <label className="inline-check" title="Off: PowerPoint moves on only with the arrow keys or Next">
+              <input
+                type="checkbox"
+                checked={presentation.useTimings}
+                onChange={(e) => run(() => setLiveOptions(presentation.id, { useTimings: e.target.checked }))}
+              />
+              Use slide timings
+            </label>
+          )}
+        </div>
+      )}
     </li>
   )
 }

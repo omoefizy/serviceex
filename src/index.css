@@ -1376,6 +1376,58 @@ button {
   background: rgba(245, 158, 11, 0.24);
 }
 
+/* Live PowerPoint: the slide and build step PowerPoint is on, and why it fell back to the still slide. */
+.powerpoint-status {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.powerpoint-failure {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.14);
+  font-size: 12px;
+}
+
+.powerpoint-failure > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.powerpoint-failure > span {
+  flex: 1;
+}
+
+.powerpoint-test-steps {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--space-0-5) var(--space-2);
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  list-style: none;
+}
+
+.powerpoint-test-steps li {
+  display: contents;
+}
+
+.powerpoint-test-steps .failed {
+  color: var(--live);
+}
+
 .preview-subheading {
   margin-top: var(--space-2);
 }
@@ -4432,6 +4484,7 @@ button {
 
 .presentation-card {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-1);
@@ -4442,6 +4495,17 @@ button {
 
 .presentation-card.active {
   border-color: var(--accent);
+}
+
+/* Live PowerPoint options under a presentation with animated slides. */
+.presentation-live-options {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  padding: 0 var(--space-1);
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .presentation-main {

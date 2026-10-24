@@ -92,7 +92,9 @@ function assertPresentation(value: unknown): PresentationPayload {
   ) {
     throw new TypeError(`A presentation needs a title and 1 to ${MAX_PRESENTATION_PAGES} page images`)
   }
-  return { title: assertTitle(payload.title), pages: payload.pages }
+  // The library presentation it came from, so the item follows saves of the original (and Live PowerPoint finds it).
+  const linked = Number.isInteger(payload.presentationId) && (payload.presentationId as number) > 0 ? { presentationId: payload.presentationId } : {}
+  return { title: assertTitle(payload.title), pages: payload.pages, ...linked }
 }
 
 /** Songs take a song id and no payload; scripture and announcements take a payload and no id. */

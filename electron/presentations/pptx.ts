@@ -10,6 +10,10 @@ export interface PptxSlideInfo {
   text: string
   notes: string
   animated: boolean
+  /** Clicks the main animation sequence takes before the slide show moves on (0 for none). */
+  steps: number
+  /** Roughly how long the effects of each click play, in milliseconds. */
+  clickMs: number[]
   /** Hidden in the slide show; PDF exports leave these out. */
   hidden: boolean
 }
@@ -63,6 +67,23 @@ function hasAnimations(slideXml: string): boolean {
   return /nodeType="mainSeq"/.test(timing) && /presetClass="/.test(timing)
 }
 
+/**
+ * The clicks of the main sequence, each with roughly how long its effects play (the latest start plus the longest
+ * effect, at most 5 s). Each click group waits on a condition with delay="indefinite"; triggered (interactive)
+ * sequences are not clicks of the show.
+ */
+function clicks(slideXml: string): number[] {
+  const mainSeq = /<p:seq\b[^>]*>\s*<p:cTn\b[^>]*nodeType="mainSeq"[\s\S]*?<\/p:seq>/.exec(slideXml)?.[0]
+  if (!mainSeq) return []
+  return mainSeq
+    .split(/<p:cond\b[^>]*\bdelay="indefinite"/)
+    .slice(1)
+    .map((group) => {
+      const longest = (pattern: RegExp) => Math.max(0, ...[...group.matchAll(pattern)].map((m) => Number(m[1])))
+      return Math.min(5000, longest(/\bdelay="(\d+)"/g) + longest(/\bdur="(\d+)"/g))
+    })
+}
+
 /** p:transition, plain or inside mc:AlternateContent (newer effects carry a fallback there). */
 const hasTransition = (slideXml: string) => /<p:transition[\s>/]/.test(slideXml)
 
@@ -91,6 +112,7 @@ export function readPptx(bytes: Uint8Array): PptxSlideInfo[] {
       .join('\n')
 
     const hidden = /<p:sld\b[^>]*\bshow="(?:0|false)"/.test(xml)
-    return [{ title, text, notes, animated: hasAnimations(xml) || hasTransition(xml), hidden }]
+    const clickMs = clicks(xml)
+    return [{ title, text, notes, animated: hasAnimations(xml) || hasTransition(xml), steps: clickMs.length, clickMs, hidden }]
   })
 }

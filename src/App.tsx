@@ -17,7 +17,7 @@ import { ThemeEditor } from './components/ThemeEditor'
 import { Toolbar } from './components/Toolbar'
 import { focusLowerThirdHeadline, isTyping, MODE_KEYS } from './lib/shortcuts'
 import { usePersistentState } from './lib/usePersistentState'
-import { selectBrowsingLive, selectOutputState, selectStageState, selectStreamState, useOperatorStore } from './store'
+import { selectBrowsingLive, selectOutputState, selectPowerPointTarget, selectStageState, selectStreamState, useOperatorStore } from './store'
 
 type PanelSizes = { library: number; preview: number; schedule: number }
 
@@ -64,12 +64,16 @@ function App() {
     const offStream = window.api.stream.onOpenChange(st.setStreamOpen)
     const offProgress = window.api.presentations.onProgress(st.presentationProgress)
     const offUpdated = window.api.presentations.onUpdated(st.presentationUpdated)
+    const offChanged = window.api.presentations.onChanged(st.presentationChanged)
+    const offPowerPoint = window.api.livePowerPoint.onStatus(st.livePowerPointStatus)
     return () => {
       offStage()
       offOutput()
       offStream()
       offProgress()
       offUpdated()
+      offChanged()
+      offPowerPoint()
     }
   }, [])
 
@@ -80,11 +84,12 @@ function App() {
     else root.dataset.theme = appearance
   }, [appearance])
 
-  // Mirror the operator state to the output, stage and Stream windows, sending only what changed.
+  // Mirror the operator state to the output, stage and Stream windows, and to Live PowerPoint, sending only what changed.
   useEffect(() => {
     let lastOutput = ''
     let lastStage = ''
     let lastStream = ''
+    let lastPowerPoint = ''
     const send = () => {
       const s = useOperatorStore.getState()
       const output = selectOutputState(s)
@@ -104,6 +109,12 @@ function App() {
       if (streamJson !== lastStream) {
         lastStream = streamJson
         window.api.stream.send(stream)
+      }
+      const powerPoint = selectPowerPointTarget(s)
+      const powerPointJson = JSON.stringify(powerPoint)
+      if (powerPointJson !== lastPowerPoint) {
+        lastPowerPoint = powerPointJson
+        window.api.livePowerPoint.sync(powerPoint)
       }
     }
     send()
@@ -127,6 +138,13 @@ function App() {
     const onKeyDown = (e: KeyboardEvent) => {
       const st = useOperatorStore.getState()
       const mod = e.metaKey || e.ctrlKey
+      // Cmd+Shift+K (Ctrl+Shift+K) ends a PowerPoint slide show and brings the output back; the main process also
+      // catches it while PowerPoint has the keyboard.
+      if (mod && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        st.panicPowerPoint()
+        return
+      }
       // Cmd+K (Ctrl+K) opens the command palette from anywhere.
       if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
         e.preventDefault()

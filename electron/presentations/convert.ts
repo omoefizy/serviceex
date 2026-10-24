@@ -35,7 +35,7 @@ const ENGINE_NAMES: Record<PresentationEngineId, string> = {
 }
 
 /** Pairs pictures with what the .pptx says about the visible slides, by position. */
-function describe(pages: RasterPage[], info: Omit<PptxSlideInfo, 'hidden'>[] | null): SlideMeta[] {
+function describe(pages: RasterPage[], info: Omit<PptxSlideInfo, 'hidden' | 'steps' | 'clickMs'>[] | null): SlideMeta[] {
   return pages.map((page, index) => {
     const slide = info?.[index]
     return {

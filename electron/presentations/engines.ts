@@ -13,7 +13,7 @@ import type { PresentationEngineId, PresentationEngineSetting, PresentationEngin
 
 export const MAC_POWERPOINT = '/Applications/Microsoft PowerPoint.app'
 /** PowerPoint for Mac is sandboxed; a copy inside its own container opens without a "Grant File Access" prompt. */
-const MAC_POWERPOINT_TMP = path.join(os.homedir(), 'Library', 'Containers', 'com.microsoft.Powerpoint', 'Data', 'tmp')
+export const MAC_POWERPOINT_TMP = path.join(os.homedir(), 'Library', 'Containers', 'com.microsoft.Powerpoint', 'Data', 'tmp')
 const MAC_TIMEOUT_MS = 120_000
 const CONVERT_TIMEOUT_MS = 300_000
 

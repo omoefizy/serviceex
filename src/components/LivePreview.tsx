@@ -1,6 +1,6 @@
-import { Eye, EyeOff, RefreshCw, Undo2 } from 'lucide-react'
+import { AlertTriangle, Eye, EyeOff, Presentation, RefreshCw, Undo2, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import type { OutputState } from '../../shared/types'
+import type { LivePowerPointStatus, OutputState } from '../../shared/types'
 import { selectDeckTheme, selectOutputState, selectPreviewSlide, slideTheme, useOperatorStore } from '../store'
 import { OutputScreen } from './OutputView'
 import { ThemedSlide } from './ThemedSlide'
@@ -13,6 +13,14 @@ function SlideBadge({ index, count }: { index: number | null; count: number }) {
       Slide {index + 1} of {count}
     </span>
   )
+}
+
+/** "Slide 3, step 2 of 4" while PowerPoint plays the live slide, when it can tell the step. */
+function powerPointText(status: LivePowerPointStatus): string {
+  if (status.phase === 'starting') return 'Starting…'
+  if (status.slideIndex === null) return 'Waiting'
+  const step = status.steps ? `, step ${status.step ?? '?'} of ${status.steps}` : ''
+  return `Slide ${status.slideIndex + 1}${step}${status.phase === 'covered' ? ' (under the output)' : ''}`
 }
 
 /**
@@ -38,6 +46,9 @@ export function LivePreview() {
   const outputJson = useOperatorStore((s) => (s.settings.previewOutput ? JSON.stringify(selectOutputState(s)) : null))
   const output = useMemo(() => (outputJson ? (JSON.parse(outputJson) as OutputState) : null), [outputJson])
   const canGoBack = useOperatorStore((s) => s.liveHistory.length > 0)
+  const powerPoint = useOperatorStore((s) => s.live.powerPoint && s.settings.presentationLivePowerPoint)
+  const powerPointStatus = useOperatorStore((s) => s.livePowerPoint)
+  const [dismissedFailure, setDismissedFailure] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
   async function resend() {
@@ -74,6 +85,21 @@ export function LivePreview() {
         {(live.slideIndex !== null && live.title) || 'Nothing live'}
         {live.mode !== 'show' && <span className="screen-mode"> · {live.mode.toUpperCase()}</span>}
       </p>
+      {powerPoint && (
+        // The output shows PowerPoint's own slide show; the screen above shows the still slide.
+        <p className="powerpoint-status" aria-live="polite">
+          <Presentation size={13} aria-hidden="true" /> PowerPoint · {powerPointText(powerPointStatus)}
+        </p>
+      )}
+      {powerPointStatus.phase === 'failed' && powerPointStatus.message && powerPointStatus.failures !== dismissedFailure && (
+        <p className="powerpoint-failure" role="alert">
+          <AlertTriangle size={13} aria-hidden="true" />
+          <span>{powerPointStatus.message}</span>
+          <button type="button" className="icon-button" aria-label="Dismiss" onClick={() => setDismissedFailure(powerPointStatus.failures)}>
+            <X size={12} aria-hidden="true" />
+          </button>
+        </p>
+      )}
       {live.stale &&
         (live.itemType === 'presentation' ? (
           // The original was saved again; the output keeps the older slides until resent (see Auto refresh live).

@@ -482,7 +482,7 @@ export interface PresentationSlide {
   title: string
   text: string
   notes: string
-  /** Has animations or a transition in PowerPoint; shown as a still image all the same. */
+  /** Has animations or a transition in PowerPoint; shown as a still image unless Live PowerPoint plays it. */
   animated: boolean
 }
 
@@ -500,6 +500,10 @@ export interface Presentation {
   slides: PresentationSlide[]
   /** ISO time of the last render. */
   updatedAt: string
+  /** Its animated slides go live through PowerPoint when the Live PowerPoint setting is on (the default). */
+  livePowerPoint: boolean
+  /** Live PowerPoint follows the slide timings saved in the file; off (the default) advances only by hand. */
+  useTimings: boolean
 }
 
 /** A conversion in progress, for the progress chip. `key` is the original's path. */
@@ -542,6 +546,78 @@ export interface PresentationsApi {
   onProgress(listener: (progress: PresentationProgress) => void): () => void
   /** A presentation was re-rendered after its original was saved. */
   onUpdated(listener: (presentation: Presentation) => void): () => void
+  /** A presentation's original was saved with new content; onUpdated follows once it is re-rendered. */
+  onChanged(listener: (presentationId: number) => void): () => void
+  /** Changes a presentation's Live PowerPoint options. Resolves to the presentation as stored. */
+  setLiveOptions(id: number, options: Partial<Pick<Presentation, 'livePowerPoint' | 'useTimings'>>): Promise<Presentation>
+}
+
+// ---------- Live PowerPoint ----------
+
+/**
+ * What the operator window wants the slide show to do. The main process makes PowerPoint match it: starts the
+ * show, moves to the slide, or covers it with the output window.
+ */
+export interface PowerPointTarget {
+  presentationId: number
+  /** Index into the presentation's slides (the shown slides, from 0). */
+  slideIndex: number
+  /** False while anything else is on the output (Black, Clear, Logo, an alert, a lower third); the show waits under it. */
+  visible: boolean
+  /** Bumped by Resend, to start the show again from a fresh copy of the original. */
+  generation: number
+  /**
+   * Changes each time the operator sends a slide (Go Live, Go Back). The show moves to `slideIndex` only then;
+   * PowerPoint's own moves (next, previous, slide timings) come back in the status and keep the cue.
+   */
+  cue: number
+}
+
+export type LivePowerPointPhase = 'idle' | 'starting' | 'showing' | 'covered' | 'failed'
+
+export interface LivePowerPointStatus {
+  phase: LivePowerPointPhase
+  presentationId: number | null
+  /** The slide PowerPoint is on, as an index into the presentation's slides; null when no show is running. */
+  slideIndex: number | null
+  /** Build steps played on that slide and how many it has, when the controller can tell. */
+  step: number | null
+  steps: number | null
+  /** What went wrong, for the operator; the output shows the still slide instead. */
+  message: string | null
+  /** Bumped with each failure, so the operator window falls back once per failure. */
+  failures: number
+}
+
+export interface LivePowerPointTestStep {
+  label: string
+  ms: number
+  ok: boolean
+  detail: string
+}
+
+export interface LivePowerPointTestResult {
+  ok: boolean
+  /** The display the show ran on, such as "Built-in Retina Display, 1680 × 1050 at 0, 0". */
+  display: string
+  /** The kind of show window used on this platform. */
+  mode: string
+  steps: LivePowerPointTestStep[]
+  totalMs: number
+}
+
+export interface LivePowerPointApi {
+  /** Opens these presentations in PowerPoint in the background, so going live is quick. */
+  prepare(presentationIds: number[]): void
+  sync(target: PowerPointTarget | null): void
+  /** The next build step or slide of the running show. */
+  next(): Promise<void>
+  previous(): Promise<void>
+  /** Ends the slide show and brings the output back (also Ctrl+Shift+K or Cmd+Shift+K anywhere). */
+  panic(): void
+  /** Plays a generated animated deck on the output display and reports each step. */
+  test(): Promise<LivePowerPointTestResult>
+  onStatus(listener: (status: LivePowerPointStatus) => void): () => void
 }
 
 /** The hidden window that draws PDF pages and fits images into 1920x1080 slides with pdf.js and a canvas. */
@@ -673,6 +749,8 @@ export interface AppSettings {
   presentationEngine: PresentationEngineSetting
   /** Sends a re-rendered presentation straight to the output when it is live. Off (the default) asks for a resend. */
   presentationAutoRefreshLive: boolean
+  /** Plays animated PowerPoint slides with PowerPoint itself, over the output display. Off (the default) shows still images. */
+  presentationLivePowerPoint: boolean
 }
 
 export interface DisplayInfo {
@@ -940,6 +1018,7 @@ export interface WorshipDeckApi {
   stream: StreamApi
   lowerThirds: LowerThirdsApi
   presentations: PresentationsApi
+  livePowerPoint: LivePowerPointApi
   rasterizer: RasterizerApi
   output: {
     /** Sends the operator's output state to the output window. */

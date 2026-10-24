@@ -13,6 +13,7 @@ import {
   Moon,
   Palette,
   PlugZap,
+  Play,
   Presentation,
   Quote,
   RefreshCw,
@@ -29,6 +30,7 @@ import type {
   AiStatus,
   AppSettings,
   DisplayInfo,
+  LivePowerPointTestResult,
   OutputDisplay,
   PresentationEngineId,
   PresentationEngineSetting,
@@ -40,7 +42,7 @@ import type {
 } from '../../shared/types'
 import { useOperatorStore } from '../store'
 import { listMicrophones, meterFraction, startMic, type MicCapture } from '../lib/mic'
-import { MOD } from '../lib/shortcuts'
+import { IS_MAC, MOD } from '../lib/shortcuts'
 import { ThemeDefaultsForm } from './ThemeEditor'
 
 function Section({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
@@ -681,6 +683,76 @@ function PresentationsSection() {
         When a presentation is saved again in PowerPoint, its slides here update. Off: if it is live, the output keeps the older slides
         until you press Resend. On: the output changes straight away.
       </p>
+      <label className="inline-check">
+        <input
+          type="checkbox"
+          checked={settings.presentationLivePowerPoint}
+          onChange={(e) => updateSettings({ presentationLivePowerPoint: e.target.checked })}
+        />
+        Play animations with PowerPoint
+      </label>
+      <p className="hint">
+        Slides with animations or transitions go live through PowerPoint itself, over the output display; every other slide stays a still
+        image. Right arrow plays the next animation step, Left goes back. Sending anything else brings the output back at once, with the
+        slide show waiting under it. If PowerPoint is missing or slow to start, the still slide shows instead. {IS_MAC ? '⌘⇧K' : 'Ctrl+Shift+K'}{' '}
+        ends the slide show. Each presentation can be left out in the Presentations library.
+      </p>
+    </Section>
+  )
+}
+
+/** Plays a generated animated deck with PowerPoint on the output display, and lists each step with its time. */
+function LivePowerPointSection() {
+  const enabled = useOperatorStore((s) => s.settings.presentationLivePowerPoint)
+  const [testing, setTesting] = useState(false)
+  const [result, setResult] = useState<LivePowerPointTestResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function test() {
+    setTesting(true)
+    setResult(null)
+    setError(null)
+    try {
+      setResult(await window.api.livePowerPoint.test())
+    } catch (err) {
+      setError(err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(err))
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <Section icon={<Play size={16} aria-hidden="true" />} title="Live PowerPoint diagnostics">
+      <p className="hint">
+        Plays a three slide sample deck with click animations and a fade transition in PowerPoint, over the output, and steps through it.
+        The output shows the slide show for about ten seconds.{enabled ? '' : ' Play animations with PowerPoint is off; the test runs all the same.'}
+      </p>
+      <div className="settings-row">
+        <button type="button" className="button" disabled={testing} onClick={test}>
+          <Play size={15} aria-hidden="true" /> {testing ? 'Testing…' : 'Test Live PowerPoint'}
+        </button>
+        {result && (
+          <span className={result.ok ? 'hint' : 'error'}>
+            {result.ok ? 'Passed' : 'Failed'} in {(result.totalMs / 1000).toFixed(1)} s
+          </span>
+        )}
+      </div>
+      {error && <p className="error">{error}</p>}
+      {result && (
+        <>
+          <p className="hint">Display: {result.display}</p>
+          <p className="hint">Show window: {result.mode}</p>
+          <ol className="powerpoint-test-steps">
+            {result.steps.map((step, index) => (
+              <li key={index} className={step.ok ? undefined : 'failed'}>
+                <span>{step.label}</span>
+                <span>{step.detail}</span>
+                <span>{step.ms} ms</span>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
     </Section>
   )
 }
@@ -859,6 +931,7 @@ export function SettingsPanel() {
       <QuotesSection />
 
       <PresentationsSection />
+      <LivePowerPointSection />
 
       <Section icon={<Save size={16} aria-hidden="true" />} title="Autosave and backups">
         <label className="inline-check">

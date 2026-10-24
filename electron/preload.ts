@@ -2,6 +2,8 @@ import { ipcRenderer, contextBridge, webUtils } from 'electron'
 import type {
   AiApi,
   BibleApi,
+  LivePowerPointApi,
+  LivePowerPointStatus,
   LowerThirdsApi,
   MediaApi,
   OutputState,
@@ -128,6 +130,26 @@ const presentations: PresentationsApi = {
     const handler = (_event: Electron.IpcRendererEvent, presentation: Presentation) => listener(presentation)
     ipcRenderer.on('presentations:updated', handler)
     return () => ipcRenderer.off('presentations:updated', handler)
+  },
+  onChanged(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, presentationId: number) => listener(presentationId)
+    ipcRenderer.on('presentations:changed', handler)
+    return () => ipcRenderer.off('presentations:changed', handler)
+  },
+  setLiveOptions: (id, options) => ipcRenderer.invoke('presentations:setLiveOptions', id, options),
+}
+
+const livePowerPoint: LivePowerPointApi = {
+  prepare: (presentationIds) => ipcRenderer.send('livePowerPoint:prepare', presentationIds),
+  sync: (target) => ipcRenderer.send('livePowerPoint:sync', target),
+  next: () => ipcRenderer.invoke('livePowerPoint:next'),
+  previous: () => ipcRenderer.invoke('livePowerPoint:previous'),
+  panic: () => ipcRenderer.send('livePowerPoint:panic'),
+  test: () => ipcRenderer.invoke('livePowerPoint:test'),
+  onStatus(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, status: LivePowerPointStatus) => listener(status)
+    ipcRenderer.on('livePowerPoint:status', handler)
+    return () => ipcRenderer.off('livePowerPoint:status', handler)
   },
 }
 
@@ -262,6 +284,7 @@ const api: WorshipDeckApi = {
   stream,
   lowerThirds,
   presentations,
+  livePowerPoint,
   rasterizer,
   output,
 }

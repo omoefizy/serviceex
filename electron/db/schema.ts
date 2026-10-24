@@ -99,7 +99,10 @@ export function initSchema(db: Database.Database): void {
       hash TEXT NOT NULL,
       engine TEXT NOT NULL,
       slides TEXT NOT NULL DEFAULT '[]',
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      -- Live PowerPoint options: play animated slides with PowerPoint (with the setting on), follow slide timings.
+      live_powerpoint INTEGER NOT NULL DEFAULT 1,
+      use_timings INTEGER NOT NULL DEFAULT 0
     );
 
     -- Full-text index over verses.text for keyword search. It reads its text from verses (external content),
@@ -128,6 +131,8 @@ export function initSchema(db: Database.Database): void {
   addColumnIfMissing(db, 'songs', 'tags', 'TEXT') // JSON array of strings
   addColumnIfMissing(db, 'songs', 'arrangement', 'TEXT') // JSON SongArrangement
   addColumnIfMissing(db, 'songs', 'theme_id', 'INTEGER') // themes.id; null uses the default song theme
+  addColumnIfMissing(db, 'presentations', 'live_powerpoint', 'INTEGER NOT NULL DEFAULT 1')
+  addColumnIfMissing(db, 'presentations', 'use_timings', 'INTEGER NOT NULL DEFAULT 0')
 }
 
 /** Rebuilds the verse search index from the verses table. Takes a second or two for both Bibles. */

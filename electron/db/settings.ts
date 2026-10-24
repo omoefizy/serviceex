@@ -60,6 +60,7 @@ const DEFAULTS: AppSettings = {
   statementPicking: false,
   presentationEngine: 'auto',
   presentationAutoRefreshLive: false,
+  presentationLivePowerPoint: false,
 }
 
 export const FADE_LIMITS = { min: 0, max: 1500 }
@@ -123,6 +124,7 @@ const KEYS: Record<keyof AppSettings, string> = {
   statementPicking: 'detection.statements',
   presentationEngine: 'presentations.engine',
   presentationAutoRefreshLive: 'presentations.autoRefreshLive',
+  presentationLivePowerPoint: 'presentations.livePowerPoint',
 }
 
 export const ALERT_LIMITS = {
@@ -305,6 +307,7 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'statementPicking':
     case 'aiScriptureFallback':
     case 'presentationAutoRefreshLive':
+    case 'presentationLivePowerPoint':
       return typeof value === 'boolean' ? v : undefined
     case 'presentationEngine':
       return value === 'auto' || value === 'powerpoint' || value === 'libreoffice' ? v : undefined

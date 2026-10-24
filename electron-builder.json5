@@ -37,11 +37,11 @@
       "from": "vendor/bible/bible.db",
       "to": "bible/bible.db"
     },
-    // The scripts the PowerPoint import runs: COM through PowerShell on Windows, AppleScript on macOS.
+    // The scripts the PowerPoint import and Live PowerPoint run: COM through PowerShell on Windows, AppleScript on macOS.
     {
       "from": "resources",
       "to": "presentations",
-      "filter": ["powerpoint-export.ps1", "powerpoint-export.applescript"]
+      "filter": ["powerpoint-export.ps1", "powerpoint-export.applescript", "powerpoint-live.ps1", "powerpoint-live.applescript"]
     }
   ],
   "mac": {

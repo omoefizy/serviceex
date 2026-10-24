@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import PptxGenJS from 'pptxgenjs'
 import type { Presentation, PresentationEngineId } from '../../shared/types'
-import { presentationStore, scheduleUsesHash, setLinkedPages } from '../db/presentations'
+import { presentationStore, scheduleUsesHash, setLinkedPages, setLiveOptions } from '../db/presentations'
 import { getAppSettings } from '../db/settings'
 import { presentationImageUrl, presentationsDir } from '../media'
 import { createConverter } from '../presentations/convert'
@@ -38,6 +38,8 @@ export function toPresentation(record: PresentationRecord): Presentation {
     hash: record.hash,
     engine: record.engine as Presentation['engine'],
     updatedAt: record.updatedAt,
+    livePowerPoint: record.livePowerPoint ?? true,
+    useTimings: record.useTimings ?? false,
     slides: record.slides.map((slide) => ({
       image: presentationImageUrl(record.hash, slide.file),
       title: slide.title,
@@ -70,16 +72,23 @@ interface Options {
   getOperatorWindow(): BrowserWindow | null
   /** Where the bundled PowerShell and AppleScript files are. */
   resourcesDir: string
+  /** A linked original was saved with new content (Live PowerPoint replaces its copy). */
+  onSourceChanged?(presentationId: number): void
+  /** Runs PowerPoint work only while Live PowerPoint's show is covered, since PowerPoint's windows can show over it. */
+  whileShowCovered?<T>(task: () => Promise<T>): Promise<T>
 }
 
 /** Registers the Presentations IPC and starts watching linked originals. Returns a function that stops it. */
-export function registerPresentationIpc({ createRasterWindow, getOperatorWindow, resourcesDir }: Options): () => Promise<void> {
+export function registerPresentationIpc({ createRasterWindow, getOperatorWindow, resourcesDir, onSourceChanged, whileShowCovered }: Options): () => Promise<void> {
   const rasterizer = createWindowRasterizer(createRasterWindow)
-  const convert = createConverter({
+  const converter = createConverter({
     rasterizer,
     engineSetting: () => getAppSettings().presentationEngine,
     script: (name) => path.join(resourcesDir, name),
   })
+  // PowerPoint files may be converted by PowerPoint, which opens windows; never over a live slide show.
+  const convert: typeof converter = (source, outDir, report) =>
+    whileShowCovered && (source.kind === 'pptx' || source.kind === 'ppt') ? whileShowCovered(() => converter(source, outDir, report)) : converter(source, outDir, report)
   const send = (channel: string, value: unknown) => {
     const win = getOperatorWindow()
     if (win && !win.isDestroyed()) win.webContents.send(channel, value)
@@ -93,6 +102,10 @@ export function registerPresentationIpc({ createRasterWindow, getOperatorWindow,
       const presentation = toPresentation(record)
       setLinkedPages(record.id, presentation.slides.map((slide) => slide.image))
       send('presentations:updated', presentation)
+    },
+    onSourceChanged: (record) => {
+      send('presentations:changed', record.id)
+      onSourceChanged?.(record.id)
     },
     hashInUse: scheduleUsesHash,
   })
@@ -129,6 +142,14 @@ export function registerPresentationIpc({ createRasterWindow, getOperatorWindow,
     if (!existsSync(record.sourcePath)) throw new Error(`The original is no longer at ${record.sourcePath}`)
     const failure = await shell.openPath(record.sourcePath)
     if (failure) throw new Error(failure)
+  })
+
+  ipcMain.handle('presentations:setLiveOptions', (_event, id: unknown, options: unknown) => {
+    const o = (typeof options === 'object' && options !== null ? options : {}) as Record<string, unknown>
+    const flag = (value: unknown) => (typeof value === 'boolean' ? value : undefined)
+    const record = setLiveOptions(assertId(id), { livePowerPoint: flag(o.livePowerPoint), useTimings: flag(o.useTimings) })
+    if (!record) throw new Error('That presentation is no longer in the library')
+    return toPresentation(record)
   })
 
   ipcMain.handle('presentations:engineStatus', () => engineStatus(getAppSettings().presentationEngine))

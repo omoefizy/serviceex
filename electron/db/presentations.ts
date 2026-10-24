@@ -11,6 +11,8 @@ interface PresentationRow {
   engine: string
   slides: string
   updated_at: string
+  live_powerpoint: number
+  use_timings: number
 }
 
 function toRecord(row: PresentationRow): PresentationRecord {
@@ -29,10 +31,12 @@ function toRecord(row: PresentationRow): PresentationRecord {
     engine: row.engine,
     slides: Array.isArray(slides) ? (slides as SlideMeta[]) : [],
     updatedAt: row.updated_at,
+    livePowerPoint: row.live_powerpoint !== 0,
+    useTimings: row.use_timings !== 0,
   }
 }
 
-const SELECT = 'SELECT id, title, kind, source_path, hash, engine, slides, updated_at FROM presentations'
+const SELECT = 'SELECT id, title, kind, source_path, hash, engine, slides, updated_at, live_powerpoint, use_timings FROM presentations'
 
 export const presentationStore: PresentationStore = {
   /** Newest first. */
@@ -61,6 +65,17 @@ export const presentationStore: PresentationStore = {
   },
 
   delete: (id) => db.prepare('DELETE FROM presentations WHERE id = ?').run(id).changes > 0,
+}
+
+/** Saves a presentation's Live PowerPoint options; fields left out keep their value. */
+export function setLiveOptions(id: number, options: { livePowerPoint?: boolean; useTimings?: boolean }): PresentationRecord | undefined {
+  const flag = (value: boolean | undefined) => (value === undefined ? null : value ? 1 : 0)
+  db.prepare('UPDATE presentations SET live_powerpoint = coalesce(?, live_powerpoint), use_timings = coalesce(?, use_timings) WHERE id = ?').run(
+    flag(options.livePowerPoint),
+    flag(options.useTimings),
+    id,
+  )
+  return presentationStore.get(id)
 }
 
 /** Gives schedule items made from a presentation its new pages. Returns the ids of the services changed. */

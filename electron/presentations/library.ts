@@ -27,6 +27,9 @@ export interface PresentationRecord {
   engine: string
   slides: SlideMeta[]
   updatedAt: string
+  /** Live PowerPoint options (see Presentation); stores without them use the defaults. */
+  livePowerPoint?: boolean
+  useTimings?: boolean
 }
 
 /** What to convert: one presentation file, or images in order. */
@@ -66,6 +69,8 @@ export interface LibraryOptions {
   onProgress?(progress: PresentationProgress): void
   /** A linked original was saved and the presentation re-rendered. */
   onUpdated?(record: PresentationRecord): void
+  /** A linked original was saved with new content; called before it is re-rendered. */
+  onSourceChanged?(record: PresentationRecord): void
   /** Whether something besides the library (an older schedule item) still shows pictures from this hash. */
   hashInUse?(hash: string): boolean
   debounceMs?: number
@@ -222,6 +227,7 @@ export class PresentationLibrary {
     await waitUntilReadable(record.sourcePath)
     const hash = await hashFiles([record.sourcePath])
     if (hash === record.hash) return null
+    this.options.onSourceChanged?.(record)
     const source: PresentationSource = { kind: record.kind, title: record.title, sourcePath: record.sourcePath, files: [record.sourcePath] }
     const result = await this.render(source, hash)
     // Deleted while rendering.

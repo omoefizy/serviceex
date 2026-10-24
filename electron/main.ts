@@ -21,6 +21,7 @@ import { registerMediaProtocol, registerMediaScheme } from './media'
 import { registerOutputIpc, sendLastOutputState } from './ipc/output'
 import { registerStreamIpc, sendLastStreamState } from './ipc/stream'
 import { registerPresentationIpc } from './ipc/presentations'
+import { registerLivePowerPointIpc, type LivePowerPoint } from './ipc/livePowerPoint'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -52,6 +53,8 @@ let streamWin: BrowserWindow | null = null
 /** Draws presentation slides out of sight (see ipc/presentations); made when first needed. */
 let rasterWin: BrowserWindow | null = null
 let stopPresentations: (() => Promise<void>) | null = null
+/** Plays animated slides with PowerPoint over the output (see ipc/livePowerPoint). */
+let livePowerPoint: LivePowerPoint | null = null
 
 /** Loads the renderer, optionally at a hash route such as /output. */
 function loadRenderer(target: BrowserWindow, route?: string) {
@@ -91,6 +94,7 @@ function createWindow() {
     stageWin?.close()
     streamWin?.close()
     rasterWin?.destroy()
+    livePowerPoint?.stop().catch(console.error)
   })
 }
 
@@ -127,6 +131,14 @@ function outputDisplay(): Electron.Display | null {
 }
 
 /**
+ * With Live PowerPoint on macOS, the output on a display is a borderless window above everything rather than a
+ * full screen space, so it can step aside for PowerPoint's show and come back over it at once.
+ */
+function outputOverShow(): boolean {
+  return process.platform === 'darwin' && getAppSettings().presentationLivePowerPoint && outputDisplay() !== null
+}
+
+/**
  * Opens the projector output: fullscreen on the chosen display (see outputDisplay), a frameless window at the
  * Custom Position from Live Options, otherwise a 16:9 window.
  */
@@ -134,12 +146,15 @@ function createOutputWindow() {
   const settings = getAppSettings()
   const external = outputDisplay()
   const custom = settings.outputDisplay === 'custom' ? settings.outputBounds : null
+  const overShow = outputOverShow()
 
   const output = new BrowserWindow({
     title: 'WorshipDeck Output',
     backgroundColor: '#000',
     ...(external
-      ? { ...external.bounds, fullscreen: true, frame: false }
+      ? overShow
+        ? { ...external.bounds, frame: false, fullscreenable: false, enableLargerThanScreen: true, hasShadow: false }
+        : { ...external.bounds, fullscreen: true, frame: false }
       : custom
         ? { x: custom.left, y: custom.top, width: custom.width, height: custom.height, frame: false, resizable: false, enableLargerThanScreen: true }
         : { width: 960, height: 540, resizable: true }),
@@ -149,6 +164,10 @@ function createOutputWindow() {
   })
 
   outputWin = output
+  if (overShow) {
+    output.setAlwaysOnTop(true, 'screen-saver')
+    output.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  }
   output.webContents.on('did-finish-load', () => sendLastOutputState(output))
   output.on('closed', () => {
     // A replacement may already be open when the display setting changes.
@@ -249,6 +268,18 @@ app.on('window-all-closed', () => {
   }
 })
 
+// PowerPoint's slide show and copies end before quitting, giving it a few seconds at most.
+let livePowerPointClosed = false
+app.on('before-quit', (event) => {
+  if (livePowerPointClosed || !livePowerPoint) return
+  event.preventDefault()
+  livePowerPointClosed = true
+  const timeout = new Promise((resolve) => setTimeout(resolve, 6000))
+  Promise.race([livePowerPoint.close(), timeout])
+    .catch(console.error)
+    .finally(() => app.quit())
+})
+
 app.on('will-quit', () => {
   stopPresentations?.().catch(console.error)
   stopPresentations = null
@@ -275,8 +306,12 @@ app.whenReady().then(() => {
   registerLowerThirdIpc()
   registerMediaIpc()
   registerSettingsIpc((before, after) => {
-    // Move the output by rebuilding its window; fullscreen and frame cannot change in place.
-    if (before.outputDisplay !== after.outputDisplay) {
+    // Live PowerPoint off: the slide show ends and PowerPoint lets go of the copies.
+    if (before.presentationLivePowerPoint && !after.presentationLivePowerPoint) livePowerPoint?.stop().catch(console.error)
+    // Move the output by rebuilding its window; fullscreen and frame cannot change in place. On macOS, Live
+    // PowerPoint changes the kind of window too (see outputOverShow).
+    const overShowChanged = process.platform === 'darwin' && before.presentationLivePowerPoint !== after.presentationLivePowerPoint && outputDisplay() !== null
+    if (before.outputDisplay !== after.outputDisplay || overShowChanged) {
       outputWin?.destroy()
       createOutputWindow()
     } else if (after.outputDisplay === 'custom' && JSON.stringify(before.outputBounds) !== JSON.stringify(after.outputBounds)) {
@@ -295,11 +330,20 @@ app.whenReady().then(() => {
   registerSpeechIpc()
   registerOutputIpc(() => outputWin, setOutputOpen)
   registerStreamIpc(() => streamWin, setStreamOpen)
+  // The PowerShell and AppleScript the PowerPoint engines and Live PowerPoint run.
+  const resourcesDir = app.isPackaged ? path.join(process.resourcesPath, 'presentations') : path.join(process.env.APP_ROOT, 'resources')
+  livePowerPoint = registerLivePowerPointIpc({
+    getOutputWindow: () => outputWin,
+    getOperatorWindow: () => win,
+    outputKeepsOnTop: outputOverShow,
+    resourcesDir,
+  })
   stopPresentations = registerPresentationIpc({
     createRasterWindow,
     getOperatorWindow: () => win,
-    // The PowerShell and AppleScript the PowerPoint engines run.
-    resourcesDir: app.isPackaged ? path.join(process.resourcesPath, 'presentations') : path.join(process.env.APP_ROOT, 'resources'),
+    resourcesDir,
+    onSourceChanged: (id) => livePowerPoint?.sourceUpdated(id),
+    whileShowCovered: (task) => (livePowerPoint ? livePowerPoint.whileShowCovered(task) : task()),
   })
   createWindow()
   createOutputWindow()

@@ -6,6 +6,7 @@ import type {
   AlertDisplay,
   AlertMessage,
   AppSettings,
+  LivePowerPointStatus,
   LowerThirdDisplay,
   LowerThirdStyle,
   LowerThirdTemplate,
@@ -13,6 +14,7 @@ import type {
   OutputMode,
   OutputState,
   OverlayLayers,
+  PowerPointTarget,
   Presentation,
   PresentationProgress,
   ServiceItemPayload,
@@ -50,7 +52,7 @@ export interface DeckSlide {
   /** A presentation page's text and speaker notes, from the original. */
   pageText?: string
   notes?: string
-  /** Animated or has a transition in PowerPoint; shown as a still image. */
+  /** Animated or has a transition in PowerPoint; a still image, unless Live PowerPoint plays it. */
   animated?: boolean
 }
 
@@ -127,6 +129,13 @@ export interface LiveState {
   alert: LiveTicker | null
   /** The lower third, or null when hidden. Like the ticker, it belongs to the output and outlives slide changes. */
   lowerThird: LiveLowerThird | null
+  /**
+   * Played by PowerPoint (Live PowerPoint): an animated slide of a PowerPoint presentation was sent. The arrow
+   * keys then step PowerPoint's animations, and `slideIndex` follows PowerPoint.
+   */
+  powerPoint: boolean
+  /** Changes each time a slide is sent; PowerPoint moves to `slideIndex` only then (see PowerPointTarget). */
+  powerPointCue: number
 }
 
 const NOTHING_LIVE: LiveState = {
@@ -143,7 +152,11 @@ const NOTHING_LIVE: LiveState = {
   source: null,
   alert: null,
   lowerThird: null,
+  powerPoint: false,
+  powerPointCue: 0,
 }
+
+const POWERPOINT_IDLE: LivePowerPointStatus = { phase: 'idle', presentationId: null, slideIndex: null, step: null, steps: null, message: null, failures: 0 }
 
 interface OperatorState {
   // ---------- Browse: what the grid and the preview show ----------
@@ -208,6 +221,10 @@ interface OperatorState {
   presentations: Presentation[]
   /** Conversions running or just finished, for the progress chips. */
   presentationJobs: PresentationProgress[]
+  /** What Live PowerPoint reports: the slide and build step on screen, or why it fell back to the still slide. */
+  livePowerPoint: LivePowerPointStatus
+  /** Bumped by Resend while PowerPoint plays the live slide, to restart it from a fresh copy. */
+  powerPointGeneration: number
 
   /** Shows a song in the grid and preview. Never touches what is live. */
   selectSong(song: Song | null): void
@@ -317,6 +334,19 @@ interface OperatorState {
    * otherwise the live copy is marked out of date for a resend.
    */
   presentationUpdated(presentation: Presentation): void
+  /**
+   * A presentation's original was saved with new content. If PowerPoint is playing it live, the live copy is marked
+   * out of date at once (Resend restarts PowerPoint from the saved file), before the slides are re-rendered.
+   */
+  presentationChanged(presentationId: number): void
+  setPresentationLiveOptions(id: number, options: Partial<Pick<Presentation, 'livePowerPoint' | 'useTimings'>>): Promise<void>
+  /**
+   * Live PowerPoint moved on (next, previous, slide timings) or failed. The live slide follows it; after a failure
+   * the live slide shows as a still image.
+   */
+  livePowerPointStatus(status: LivePowerPointStatus): void
+  /** Ends PowerPoint's slide show and puts the still slide on the output (Ctrl+Shift+K or Cmd+Shift+K). */
+  panicPowerPoint(): void
 }
 
 /** Bumped by every grid load, so a slow song fetch for an old item cannot overwrite a newer selection. */
@@ -389,6 +419,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     statementPicking: false,
     presentationEngine: 'auto',
     presentationAutoRefreshLive: false,
+    presentationLivePowerPoint: false,
   },
   themes: [],
   themeDefaults: null,
@@ -411,6 +442,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   mediaVersion: 0,
   presentations: [],
   presentationJobs: [],
+  livePowerPoint: POWERPOINT_IDLE,
+  powerPointGeneration: 0,
 
   selectSong(song) {
     const token = ++loadToken
@@ -480,6 +513,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   goLive(index) {
     const s = get()
     if (index < 0 || index >= s.slides.length) return
+    const powerPoint = playsInPowerPoint(s, s.deckKey, s.slides[index])
     const live: LiveState = {
       ...snapshotOf(s),
       slideIndex: index,
@@ -487,6 +521,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
       stale: false,
       alert: s.live.alert,
       lowerThird: s.live.lowerThird,
+      powerPoint,
+      powerPointCue: powerPoint ? ++powerPointCues : 0,
     }
     set({ live, liveHistory: historyBefore(s, live), highlightIndex: index })
   },
@@ -573,6 +609,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     const s = get()
     const { live } = s
     if (live.deckKey === null) return
+    // PowerPoint starts the show again from a fresh copy of the saved original, at the same slide.
+    if (live.powerPoint) set({ powerPointGeneration: s.powerPointGeneration + 1 })
     const clamp = (count: number) => (live.slideIndex === null ? null : Math.min(live.slideIndex, count - 1))
     if (s.deckKey === live.deckKey && s.slides.length > 0) {
       set({ live: { ...live, ...snapshotOf(s), slideIndex: clamp(s.slides.length), stale: false } })
@@ -602,6 +640,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     // The lower third history is per service.
     const history = service?.id === get().service?.id ? {} : { lowerThirdHistory: [] }
     set({ service, activeItemId: null, ...history })
+    prepareLivePowerPoint()
   },
 
   async addToSchedule(type, refId, payload) {
@@ -609,6 +648,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     if (!service) throw new Error('Create or pick a service first')
     await window.api.services.addItem(service.id, type, refId, payload)
     await refreshService(service.id)
+    prepareLivePowerPoint()
   },
 
   async removeFromSchedule(itemId) {
@@ -703,6 +743,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   async updateSettings(patch) {
     set({ settings: { ...get().settings, ...patch } })
     set({ settings: await window.api.settings.set(patch) })
+    if (patch.presentationLivePowerPoint) prepareLivePowerPoint()
   },
 
   async setFadeMs(fadeMs) {
@@ -874,7 +915,11 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     }
     const { live, settings } = get()
     if (shows(live.deckKey)) {
-      if (settings.presentationAutoRefreshLive) {
+      if (live.powerPoint) {
+        // PowerPoint plays its own copy, so saving never changes the output (presentationChanged marked it out of
+        // date). Once Resend has taken the saved file, the still slides under the show catch up with it.
+        if (!live.stale) set({ live: { ...live, slides, slideIndex: clamp(live.slideIndex), source: live.source && { ...live.source, slides } } })
+      } else if (settings.presentationAutoRefreshLive) {
         set({
           live: {
             ...live,
@@ -891,6 +936,40 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     if (service?.items.some((item) => item.type === 'presentation' && item.payload.presentationId === presentation.id)) {
       refreshService(service.id).catch(console.error)
     }
+  },
+
+  presentationChanged(presentationId) {
+    const s = get()
+    if (s.live.powerPoint && s.live.deckKey && linkedPresentation(s, s.live.deckKey)?.id === presentationId) markLiveStale(s.live.deckKey)
+  },
+
+  async setPresentationLiveOptions(id, options) {
+    const presentation = await window.api.presentations.setLiveOptions(id, options)
+    set({ presentations: get().presentations.map((p) => (p.id === id ? presentation : p)) })
+    if (options.livePowerPoint) prepareLivePowerPoint()
+  },
+
+  livePowerPointStatus(status) {
+    const s = get()
+    const failed = status.failures !== s.livePowerPoint.failures
+    set({ livePowerPoint: status })
+    const { live } = s
+    if (!live.powerPoint) return
+    const livePresentationId = linkedPresentation(s, live.deckKey)?.id
+    if (failed) {
+      // The still slide goes on the output in its place (unless it was another presentation that failed).
+      if (status.presentationId === null || status.presentationId === livePresentationId) set({ live: { ...live, powerPoint: false } })
+      return
+    }
+    if (status.slideIndex === null || status.slideIndex === live.slideIndex || livePresentationId !== status.presentationId) return
+    if (status.phase !== 'showing' && status.phase !== 'covered') return
+    // PowerPoint moved on: the live slide follows (no Go Back step for each), and so does the grid when it shows it.
+    const slideIndex = Math.min(status.slideIndex, live.slides.length - 1)
+    set({ live: { ...live, slideIndex }, ...(selectBrowsingLive(s) ? { highlightIndex: slideIndex } : {}) })
+  },
+
+  panicPowerPoint() {
+    window.api.livePowerPoint.panic()
   },
 
   async songSaved(song) {
@@ -921,7 +1000,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
 }))
 
 /** A copy of the grid's item, with its theme resolved, for going live. */
-function snapshotOf(s: OperatorState): Omit<LiveState, 'slideIndex' | 'mode' | 'stale' | 'alert' | 'lowerThird'> {
+function snapshotOf(s: OperatorState): Omit<LiveState, 'slideIndex' | 'mode' | 'stale' | 'alert' | 'lowerThird' | 'powerPoint' | 'powerPointCue'> {
   return {
     itemType: s.deckType,
     itemId: s.deckType === 'song' ? (s.selectedSong?.id ?? null) : s.activeItemId,
@@ -956,7 +1035,9 @@ function historyBefore(s: OperatorState, next: LiveState): LiveState[] {
 /** Puts slide `index` of `slides` (the live item's, perhaps with a verse added) on screen. Scripture in the grid follows along. */
 function showLiveSlide(slides: DeckSlide[], index: number): void {
   const s = useOperatorStore.getState()
-  const live: LiveState = { ...s.live, slides, slideIndex: index }
+  // Stepping onto an animated slide hands it to PowerPoint.
+  const powerPoint = playsInPowerPoint(s, s.live.deckKey, slides[index])
+  const live: LiveState = { ...s.live, slides, slideIndex: index, powerPoint, powerPointCue: powerPoint ? ++powerPointCues : 0 }
   const follow = s.live.itemType === 'scripture' && selectBrowsingLive(s)
   useOperatorStore.setState({ live, liveHistory: historyBefore(s, live), ...(follow ? { slides, highlightIndex: index } : {}) })
 }
@@ -967,6 +1048,12 @@ let stepping = false
 function stepLive(delta: 1 | -1): void {
   const { live } = useOperatorStore.getState()
   if (live.slides.length === 0 || stepping) return
+  // PowerPoint plays the build steps, then moves to the next slide; the live slide follows its status.
+  if (live.powerPoint) {
+    const step = delta > 0 ? window.api.livePowerPoint.next() : window.api.livePowerPoint.previous()
+    step.catch(console.error)
+    return
+  }
   const target = live.slideIndex === null ? 0 : live.slideIndex + delta
   if (target >= 0 && target < live.slides.length) return showLiveSlide(live.slides, target)
   if (live.itemType !== 'scripture' || live.slideIndex === null) return
@@ -1062,6 +1149,39 @@ export function selectAlertDisplay(s: OperatorState): AlertDisplay | null {
     bandOpacity: ticker.priority ? Math.max(settings.alertBandOpacity, 0.9) : settings.alertBandOpacity,
     bandHeight: settings.alertBandHeight,
   }
+}
+
+// ---------- Live PowerPoint ----------
+
+let powerPointCues = 0
+
+/** Whether sending this slide hands it to PowerPoint: an animated slide of a PowerPoint file, with Live PowerPoint on for it. */
+function playsInPowerPoint(s: OperatorState, deckKey: string | null, slide: DeckSlide | undefined): boolean {
+  if (!s.settings.presentationLivePowerPoint || !slide?.animated) return false
+  const presentation = linkedPresentation(s, deckKey)
+  return !!presentation && presentation.livePowerPoint && (presentation.kind === 'pptx' || presentation.kind === 'ppt')
+}
+
+/** Opens the schedule's presentations in PowerPoint in the background (the main process picks the animated ones). */
+function prepareLivePowerPoint(): void {
+  const { service, settings } = useOperatorStore.getState()
+  if (!settings.presentationLivePowerPoint || !service) return
+  const ids = service.items.flatMap((item) => (item.type === 'presentation' && item.payload.presentationId !== undefined ? [item.payload.presentationId] : []))
+  if (ids.length > 0) window.api.livePowerPoint.prepare(ids)
+}
+
+/**
+ * What PowerPoint should do, or null when it plays nothing. It is covered (not visible) whenever the output shows
+ * anything else over the slide: Black, Clear, Logo, the test pattern, an alert or a lower third.
+ */
+export function selectPowerPointTarget(s: OperatorState): PowerPointTarget | null {
+  const { live } = s
+  if (!s.settings.presentationLivePowerPoint || !live.powerPoint || live.slideIndex === null) return null
+  const presentation = linkedPresentation(s, live.deckKey)
+  if (!presentation?.livePowerPoint) return null
+  const output = selectOutputState(s)
+  const visible = live.mode === 'show' && !output.testPattern && !output.alert && !output.overlays?.lowerThird
+  return { presentationId: presentation.id, slideIndex: live.slideIndex, visible, generation: s.powerPointGeneration, cue: live.powerPointCue }
 }
 
 /** Notes that the live item changed after it went live, without touching what is on screen. */
