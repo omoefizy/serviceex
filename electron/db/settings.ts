@@ -47,6 +47,12 @@ const DEFAULTS: AppSettings = {
   aiModel: 'claude-sonnet-5-5',
   autoGoLiveOnNext: false,
   micDeviceId: null,
+  micDeviceName: null,
+  micChannel: 'mono',
+  micGainDb: 0,
+  micHighPass: true,
+  micNoiseGate: false,
+  micGateThresholdDb: -60,
   micProcessing: false,
   saveTranscripts: false,
   speechEngine: 'auto',
@@ -111,6 +117,12 @@ const KEYS: Record<keyof AppSettings, string> = {
   aiModel: 'ai.model',
   autoGoLiveOnNext: 'schedule.autoGoLiveOnNext',
   micDeviceId: 'speech.micDeviceId',
+  micDeviceName: 'speech.micDeviceName',
+  micChannel: 'speech.micChannel',
+  micGainDb: 'speech.micGainDb',
+  micHighPass: 'speech.micHighPass',
+  micNoiseGate: 'speech.micNoiseGate',
+  micGateThresholdDb: 'speech.micGateThresholdDb',
   micProcessing: 'speech.micProcessing',
   saveTranscripts: 'speech.saveTranscripts',
   speechEngine: 'speech.engine',
@@ -134,6 +146,12 @@ export const ALERT_LIMITS = {
   fontSize: [2, 15],
   bandHeight: [4, 25],
   loops: [0, 99],
+} as const
+
+/** Input gain and noise gate threshold for the listener's microphone, in dB. */
+export const MIC_LIMITS = {
+  gainDb: [-24, 12],
+  gateThresholdDb: [-80, -30],
 } as const
 
 /** A number in [min, max], rounded to `step`; undefined for anything else. */
@@ -303,6 +321,8 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'autoGoLiveOnNext':
     case 'saveTranscripts':
     case 'micProcessing':
+    case 'micHighPass':
+    case 'micNoiseGate':
     case 'scriptureDetection':
     case 'statementPicking':
     case 'aiScriptureFallback':
@@ -319,7 +339,16 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'lastBackupAt':
       return value === null || (typeof value === 'string' && value !== '') ? v : undefined
     case 'micDeviceId':
+    case 'micDeviceName':
       return value === null || (typeof value === 'string' && value !== '' && value.length <= 512) ? v : undefined
+    case 'micChannel':
+      return value === 'mono' || value === 'left' || value === 'right' || (Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 64)
+        ? v
+        : undefined
+    case 'micGainDb':
+      return ranged(value, MIC_LIMITS.gainDb, 0.5) as never
+    case 'micGateThresholdDb':
+      return ranged(value, MIC_LIMITS.gateThresholdDb, 1) as never
     case 'detectionMinConfidence':
       return typeof value === 'number' && Number.isFinite(value)
         ? ((Math.round(Math.min(0.95, Math.max(0.3, value)) * 100) / 100) as never)

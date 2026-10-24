@@ -2,9 +2,10 @@ import { Eraser, Mic, Quote, Square, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SpeechEngineId, SpeechMode } from '../../shared/types'
 import { useListener, type ListenerStatus } from '../lib/listener'
-import { meterFraction } from '../lib/mic'
+import type { MicDevice, MicState, SignalAdvice } from '../lib/mic'
 import { useDetectionDebug } from '../lib/scriptureDetection'
 import { useOperatorStore } from '../store'
+import { LevelMeter } from './LevelMeter'
 import { QuoteModal } from './QuoteModal'
 
 const MODE_LABELS: Record<SpeechMode, string> = { cloud: 'Cloud', offline: 'Offline', reconnecting: 'Reconnecting' }
@@ -43,6 +44,23 @@ function chipOf(status: ListenerStatus, mode: SpeechMode | null, reason: string,
 
 const ENGINE_LABELS: Record<SpeechEngineId, string> = { auto: 'Auto', deepgram: 'Cloud only', whisper: 'Offline only' }
 
+const INPUT_STATES: Record<Exclude<MicState, 'open'>, { label: string; why: string }> = {
+  muted: { label: 'Muted', why: 'The system muted the input; silence is sent in its place until it is back.' },
+  reopening: { label: 'Reconnecting', why: 'Opening the input again; silence is sent meanwhile.' },
+  waiting: { label: 'Unplugged', why: 'The chosen input is not connected. Silence is sent until it is plugged back in, then it is used again.' },
+}
+
+/** The input's health: its connection first, then the most serious problem with the signal. */
+function inputHealth(state: MicState | null, advice: SignalAdvice[]): { label: string; tone: string; why: string } {
+  if (state && state !== 'open') return { ...INPUT_STATES[state], tone: state === 'waiting' ? 'error' : 'warning' }
+  const worst = advice.find((a) => a.level !== 'info')
+  if (worst) return { label: worst.level === 'error' ? 'Problem' : 'Check', tone: worst.level, why: worst.text }
+  return { label: 'Good', tone: 'ok', why: advice[0]?.text ?? 'The signal looks healthy.' }
+}
+
+const inputSummary = (input: MicDevice, channel: string) =>
+  `${input.label} · ${channel} · ${input.sampleRate >= 1000 ? `${input.sampleRate / 1000} kHz` : `${input.sampleRate} Hz`}`
+
 /** What scripture detection did with the last stretch of transcript, and how fast the last card came. */
 function DetectionDebugView() {
   const { run, card } = useDetectionDebug()
@@ -68,12 +86,75 @@ function DetectionDebugView() {
   )
 }
 
+/** The active input's name and health, with what is wrong (if anything) as the tooltip and beneath. */
+function InputLine({
+  input,
+  state,
+  advice,
+  channel,
+  waitingFor,
+}: {
+  input: MicDevice | null
+  state: MicState | null
+  advice: SignalAdvice[]
+  channel: string | number
+  waitingFor: string | null
+}) {
+  const health = inputHealth(state, advice)
+  const channelText = typeof channel === 'number' ? `channel ${channel}` : channel
+  const name = state === 'waiting' ? (waitingFor ?? input?.label ?? 'The chosen input') : input ? inputSummary(input, channelText) : 'Opening the input'
+  const shown = state && state !== 'open' ? [] : advice.filter((a) => a.level !== 'info')
+  return (
+    <div className="listener-input">
+      <p>
+        <span className="listener-input-name" title={name}>
+          Input: {name}
+        </span>
+        <span className={`input-health ${health.tone}`} role="status" title={health.why} aria-label={`Input ${health.label}: ${health.why}`}>
+          {health.label}
+        </span>
+      </p>
+      {shown.length > 0 && (
+        <ul className="mic-advice">
+          {shown.map((item) => (
+            <li key={item.text} className={item.level}>
+              {item.text}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 const clockTime = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
 /** Start and stop the sermon listener, and watch the live transcript: settled text in white, words still forming in grey. */
 export function ListenerPanel() {
-  const { status, error, finals, partial, level, performance, mode, modeReason, warning, restarting, notice, log, dropouts, start, stop, clear, dismissNotice } =
-    useListener()
+  const {
+    status,
+    error,
+    finals,
+    partial,
+    performance,
+    mode,
+    modeReason,
+    warning,
+    restarting,
+    notice,
+    log,
+    dropouts,
+    input,
+    inputState,
+    reading,
+    advice,
+    start,
+    stop,
+    clear,
+    dismissNotice,
+  } = useListener()
+  const micChannel = useOperatorStore((s) => s.settings.micChannel)
+  const micDeviceName = useOperatorStore((s) => s.settings.micDeviceName)
   const openSettings = useOperatorStore((s) => s.openSettings)
   const saving = useOperatorStore((s) => s.settings.saveTranscripts)
   const speechEngine = useOperatorStore((s) => s.settings.speechEngine)
@@ -150,11 +231,7 @@ export function ListenerPanel() {
             <Mic size={15} aria-hidden="true" /> Start Listening
           </button>
         )}
-        {running && (
-          <span className="level-meter small" aria-hidden="true">
-            <span style={{ width: `${(1 - meterFraction(level)) * 100}%` }} />
-          </span>
-        )}
+        {running && <LevelMeter reading={reading} small />}
         {(running || dropouts > 0) && (
           <span
             className={`mic-dropouts${dropouts > 0 ? ' some' : ''}`}
@@ -169,6 +246,9 @@ export function ListenerPanel() {
           </button>
         )}
       </div>
+      {running && (input || inputState) && (
+        <InputLine input={input} state={inputState} advice={advice} channel={micChannel} waitingFor={micDeviceName} />
+      )}
       {notReady && !running && (
         <p className="hint">
           {notReady}{' '}

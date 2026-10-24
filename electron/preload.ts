@@ -257,6 +257,7 @@ const speech: SpeechApi = {
   stop: () => ipcRenderer.invoke('speech:stop'),
   pushAudio: (chunk) => ipcRenderer.send('speech:audio', new Uint8Array(chunk)),
   setMicMuted: (muted) => ipcRenderer.send('speech:micMuted', muted === true),
+  transcribeTest: (pcm) => ipcRenderer.invoke('speech:transcribeTest', new Uint8Array(pcm)),
   onEvent(listener) {
     const handler = (_event: Electron.IpcRendererEvent, message: SpeechEvent) => listener(message)
     ipcRenderer.on('speech:event', handler)

@@ -37,6 +37,13 @@ const HELD_MAX_CHUNKS = 1200
 const RECENT_MAX_CHUNKS = 600
 /** How long a stalled engine gets to finish its last lines before it is replaced anyway. */
 const RETIRE_TIMEOUT_MS = 6000
+/** The longest recording the transcript test takes: 30 seconds of 16 kHz 16-bit audio. */
+const TEST_MAX_BYTES = 30 * 32_000
+/** The test sends its recording at four times real time, which both engines accept. */
+const TEST_CHUNK_BYTES = 3200
+const TEST_CHUNK_GAP_MS = 25
+/** Includes loading the offline model. */
+const TEST_TIMEOUT_MS = 120_000
 
 /** One listening session, from Start to Stop. It outlives its engine, which the watchdog may replace. */
 interface Session {
@@ -74,6 +81,8 @@ interface Session {
 
 /** The session listening, if any. One at a time. */
 let session: Session | null = null
+/** A transcript test is running; it and listening do not run together. */
+let testRunning = false
 
 const transcriptsFolder = () => path.join(app.getPath('userData'), 'transcripts')
 
@@ -285,6 +294,61 @@ function check(s: Session) {
   }
 }
 
+/**
+ * Transcribes a short recording with the engine Settings chooses (Auto: the cloud when there is a key and a
+ * connection, else offline) and returns everything it heard.
+ */
+async function transcribeTest(pcm: Uint8Array): Promise<SpeechResult<{ text: string; engine: string }>> {
+  const problem = notReadyReason()
+  if (problem) return { ok: false, error: speechError('engine', problem) }
+  const { speechEngine, whisperModel } = getAppSettings()
+  const key = await readSecret('deepgram-key')
+  const binary = whisperServerPath()
+  const cloud = speechEngine === 'deepgram' || (speechEngine === 'auto' && key !== null && (net.isOnline() || offlineProblem() !== null))
+  let engine: SpeechEngine
+  let name: string
+  if (cloud) {
+    if (!key) return { ok: false, error: speechError('no_key', 'Add a Deepgram API key in Settings first.') }
+    engine = new DeepgramEngine(key)
+    name = `Deepgram ${DEEPGRAM_MODEL}`
+  } else {
+    if (!binary) return { ok: false, error: speechError('engine', offlineProblem() ?? 'The offline engine is missing.') }
+    engine = new WhisperEngine(binary, modelPath(whisperModel), whisperModel)
+    name = `whisper.cpp ${whisperModel}`
+  }
+  const finals: string[] = []
+  let partial = ''
+  engine.onFinal((text) => {
+    finals.push(text)
+    partial = ''
+  })
+  engine.onPartial((text) => (partial = /[\p{L}\p{N}]/u.test(text) ? text : partial))
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const run = async () => {
+    await engine.start()
+    for (let at = 0; at < pcm.byteLength; at += TEST_CHUNK_BYTES) {
+      engine.pushAudio(pcm.subarray(at, at + TEST_CHUNK_BYTES))
+      await delay(TEST_CHUNK_GAP_MS)
+    }
+    await engine.stop()
+  }
+  try {
+    await Promise.race([
+      run(),
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(speechError('engine', 'The speech engine took too long to answer.')), TEST_TIMEOUT_MS)
+      }),
+    ])
+  } catch (error) {
+    if (engine.abort) engine.abort()
+    else void engine.stop().catch(() => undefined)
+    return failed(error)
+  } finally {
+    clearTimeout(timer)
+  }
+  return { ok: true, value: { text: [...finals, partial].join(' ').replace(/\s+/g, ' ').trim(), engine: name } }
+}
+
 /** Every handler returns plain data; nothing here ever sends the key back to the renderer. */
 export function registerSpeechIpc(): void {
   ipcMain.handle('speech:status', () => status())
@@ -334,6 +398,7 @@ export function registerSpeechIpc(): void {
     // The same window asking again means it reloaded and lost track of the old session; replace it.
     if (session && session.sender === event.sender) await stopEngine()
     if (session) return { ok: false, error: speechError('busy', 'The listener is already running.') }
+    if (testRunning) return { ok: false, error: speechError('busy', 'A transcript test is running; try again when it finishes.') }
     const sender = event.sender
     const send = (message: SpeechEvent) => {
       if (!sender.isDestroyed()) sender.send('speech:event', message)
@@ -426,6 +491,22 @@ export function registerSpeechIpc(): void {
   })
 
   ipcMain.handle('speech:stop', () => stopEngine())
+
+  ipcMain.handle('speech:transcribeTest', async (_event, pcm: unknown): Promise<SpeechResult<{ text: string; engine: string }>> => {
+    // The offline engine runs one server at a time, and a test should not compete with the service.
+    if (session) return { ok: false, error: speechError('busy', 'Stop listening before testing the transcript.') }
+    if (testRunning) return { ok: false, error: speechError('busy', 'A transcript test is already running.') }
+    const data = pcm instanceof Uint8Array ? pcm : null
+    if (!data || data.byteLength === 0 || data.byteLength > TEST_MAX_BYTES) {
+      return { ok: false, error: speechError('engine', 'Record a test of up to 30 seconds first.') }
+    }
+    testRunning = true
+    try {
+      return await transcribeTest(data)
+    } finally {
+      testRunning = false
+    }
+  })
 
   ipcMain.handle('whisper:status', () => whisperStatus())
 

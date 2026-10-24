@@ -785,6 +785,18 @@ export interface AppSettings {
   autoGoLiveOnNext: boolean
   /** The microphone the sermon listener uses (a MediaDeviceInfo deviceId), or null for the system default. */
   micDeviceId: string | null
+  /** The chosen input's name, to find it again when its deviceId changes (another USB port, a restart) and to show it while unplugged. */
+  micDeviceName: string | null
+  /** Which channel of the input the speech engine hears; a feed from the desk often uses one side of a stereo interface. */
+  micChannel: MicChannel
+  /** Input gain in dB, -24 to +12. */
+  micGainDb: number
+  /** An 80 Hz high-pass filter, removing rumble and handling noise below speech. */
+  micHighPass: boolean
+  /** A gentle noise gate that lowers (not mutes) the signal below the threshold. */
+  micNoiseGate: boolean
+  /** The gate's threshold in dBFS, -80 to -30. */
+  micGateThresholdDb: number
   /** Echo cancellation, noise suppression and automatic gain on the microphone. Off (the default) sends the plain signal. */
   micProcessing: boolean
   /** Writes each finished line of the live transcript to a file; off keeps the transcript in memory only. */
@@ -1262,9 +1274,17 @@ export interface SpeechApi {
   pushAudio(chunk: ArrayBuffer): void
   /** The microphone track went quiet (silence is being sent in its place) or came back; the watchdog discounts that time. */
   setMicMuted(muted: boolean): void
+  /**
+   * Transcribes a short recording (16 kHz mono 16-bit PCM, up to 30 seconds) with the engine chosen in Settings and
+   * returns what it heard. Not while listening.
+   */
+  transcribeTest(pcm: ArrayBuffer): Promise<SpeechResult<{ text: string; engine: string }>>
   onEvent(listener: (event: SpeechEvent) => void): () => void
   whisper: WhisperApi
 }
+
+/** Both channels mixed, one side of a stereo input, or a channel number from 1 on a multichannel interface. */
+export type MicChannel = 'mono' | 'left' | 'right' | number
 
 /** Auto uses Deepgram and falls back to whisper.cpp; the others use only one. */
 export type SpeechEngineId = 'auto' | 'deepgram' | 'whisper'

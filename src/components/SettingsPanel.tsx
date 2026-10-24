@@ -19,12 +19,13 @@ import {
   RefreshCw,
   Save,
   Sparkles,
+  Square,
   Sun,
   SunMoon,
   Trash2,
   X,
 } from 'lucide-react'
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import type {
   AiModel,
   AiStatus,
@@ -41,8 +42,22 @@ import type {
   WhisperStatus,
 } from '../../shared/types'
 import { useOperatorStore } from '../store'
-import { listMicrophones, meterFraction, startMic, type MicCapture } from '../lib/mic'
+import { dspOf, rememberDevice } from '../lib/listener'
+import {
+  capabilitiesOf,
+  listMicrophones,
+  SignalWatch,
+  startMic,
+  TARGET_PEAK_DB,
+  TARGET_RMS_DB,
+  type MicCapture,
+  type MicDevice,
+  type MicReading,
+  type MicState,
+  type SignalAdvice,
+} from '../lib/mic'
 import { IS_MAC, MOD } from '../lib/shortcuts'
+import { LevelMeter } from './LevelMeter'
 import { ThemeDefaultsForm } from './ThemeEditor'
 
 function Section({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
@@ -330,8 +345,20 @@ function WhisperModels() {
   )
 }
 
+const MIC_STATES: Record<MicState, string> = {
+  open: 'Connected',
+  muted: 'Muted by the system; sending silence until it is back',
+  reopening: 'Reconnecting',
+  waiting: 'Not connected; it is opened as soon as it is plugged back in',
+}
+
+/** The audio test records this long. */
+const TEST_SECONDS = 10
+
+const formatDb = (db: number) => `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`
+
 /**
- * Microphone, Deepgram key and transcript saving for the sermon listener. The key is typed here once and goes to the
+ * Input, Deepgram key and transcript saving for the sermon listener. The key is typed here once and goes to the
  * main process; it is never shown again.
  */
 function ListenerSection() {
@@ -340,8 +367,20 @@ function ListenerSection() {
   const [status, setStatus] = useState<SpeechKeyStatus | null>(null)
   const [mics, setMics] = useState<MediaDeviceInfo[]>([])
   const [testing, setTesting] = useState(false)
-  const [level, setLevel] = useState(0)
+  const [reading, setReading] = useState<MicReading | null>(null)
+  const [advice, setAdvice] = useState<SignalAdvice[]>([])
+  const [opened, setOpened] = useState<MicDevice | null>(null)
+  const [micState, setMicState] = useState<MicState | null>(null)
   const [micError, setMicError] = useState<string | null>(null)
+  /** 100 ms chunks recorded so far while the audio test records; null when not recording. */
+  const [recordedChunks, setRecordedChunks] = useState<number | null>(null)
+  const [recording, setRecording] = useState<ArrayBuffer | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [heard, setHeard] = useState<{ ok: boolean; text: string } | null>(null)
+  const [transcribing, setTranscribing] = useState(false)
+  const capture = useRef<MicCapture | null>(null)
+  const chunks = useRef<ArrayBuffer[] | null>(null)
+  const player = useRef<AudioContext | null>(null)
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
@@ -354,16 +393,54 @@ function ListenerSection() {
     return () => navigator.mediaDevices.removeEventListener('devicechange', refresh)
   }, [])
 
-  // The level meter runs on the chosen microphone while testing, and restarts when the choice changes.
+  // Stop playing when Settings closes.
+  useEffect(() => () => void player.current?.close().catch(() => undefined), [])
+
+  const active = testing || recordedChunks !== null
+  // The meter (and the audio test's recording) runs on the chosen input, and restarts when the choice changes.
   useEffect(() => {
-    if (!testing) return
-    let capture: MicCapture | null = null
+    if (!active) return
+    let started: MicCapture | null = null
     let cancelled = false
+    const watch = new SignalWatch()
     setMicError(null)
-    startMic({ deviceId: settings.micDeviceId, processing: settings.micProcessing, onLevel: setLevel }).then(
-      (started) => {
-        if (cancelled) return started.stop()
-        capture = started
+    startMic({
+      deviceId: settings.micDeviceId,
+      deviceName: settings.micDeviceName,
+      processing: settings.micProcessing,
+      dsp: dspOf(useOperatorStore.getState().settings),
+      onReading(next) {
+        watch.push(next)
+        setReading(next)
+        setAdvice(watch.advice(useOperatorStore.getState().settings.micChannel))
+      },
+      onChunk(pcm) {
+        const list = chunks.current
+        if (!list) return
+        list.push(pcm)
+        setRecordedChunks(list.length)
+        if (list.length < TEST_SECONDS * 10) return
+        // Ten seconds: join the chunks into one recording.
+        const joined = new Uint8Array(list.reduce((sum, c) => sum + c.byteLength, 0))
+        let at = 0
+        for (const c of list) {
+          joined.set(new Uint8Array(c), at)
+          at += c.byteLength
+        }
+        chunks.current = null
+        setRecording(joined.buffer)
+        setRecordedChunks(null)
+      },
+      onDevice(device) {
+        setOpened(device)
+        rememberDevice(device)
+      },
+      onState: setMicState,
+    }).then(
+      (capturing) => {
+        if (cancelled) return capturing.stop()
+        started = capturing
+        capture.current = capturing
         // Names are only listed once the microphone is allowed.
         listMicrophones().then(setMics, console.error)
       },
@@ -371,14 +448,79 @@ function ListenerSection() {
         if (cancelled) return
         setMicError(error instanceof Error ? error.message : String(error))
         setTesting(false)
+        chunks.current = null
+        setRecordedChunks(null)
       },
     )
     return () => {
       cancelled = true
-      capture?.stop()
-      setLevel(0)
+      started?.stop()
+      capture.current = null
+      setReading(null)
+      setAdvice([])
+      setMicState(null)
     }
-  }, [testing, settings.micDeviceId, settings.micProcessing])
+  }, [active, settings.micDeviceId, settings.micDeviceName, settings.micProcessing])
+
+  // Channel, gain, filter and gate changes are heard at once.
+  const dsp = dspOf(settings)
+  useEffect(() => {
+    capture.current?.configure(dsp)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dsp.channel, dsp.gainDb, dsp.highPass, dsp.noiseGate, dsp.gateThresholdDb])
+
+  function startRecording() {
+    void player.current?.close().catch(() => undefined)
+    player.current = null
+    setPlaying(false)
+    setRecording(null)
+    setHeard(null)
+    chunks.current = []
+    setRecordedChunks(0)
+  }
+
+  function stopRecording() {
+    chunks.current = null
+    setRecordedChunks(null)
+  }
+
+  function play() {
+    if (!recording) return
+    void player.current?.close().catch(() => undefined)
+    const samples = new Int16Array(recording)
+    const context = new AudioContext()
+    const buffer = context.createBuffer(1, samples.length, 16000)
+    const channel = buffer.getChannelData(0)
+    for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 32768
+    const source = context.createBufferSource()
+    source.buffer = buffer
+    source.connect(context.destination)
+    source.onended = () => {
+      if (player.current !== context) return
+      player.current = null
+      setPlaying(false)
+      context.close().catch(() => undefined)
+    }
+    player.current = context
+    setPlaying(true)
+    source.start()
+  }
+
+  function stopPlaying() {
+    void player.current?.close().catch(() => undefined)
+    player.current = null
+    setPlaying(false)
+  }
+
+  async function transcribe() {
+    if (!recording) return
+    setTranscribing(true)
+    setHeard(null)
+    const answer = await window.api.speech.transcribeTest(recording)
+    setTranscribing(false)
+    if (!answer.ok) setHeard({ ok: false, text: answer.error.message })
+    else setHeard({ ok: true, text: answer.value.text ? `${answer.value.engine} heard: “${answer.value.text}”` : `${answer.value.engine} heard nothing.` })
+  }
 
   async function handleSave(e: FormEvent) {
     e.preventDefault()
@@ -409,43 +551,164 @@ function ListenerSection() {
     setResult(tested.ok ? { ok: true, text: `Connected. Deepgram ${tested.value.model} is ready.` } : { ok: false, text: tested.error.message })
   }
 
-  const chosenMissing = settings.micDeviceId !== null && mics.length > 0 && !mics.some((m) => m.deviceId === settings.micDeviceId)
+  // The saved device, found by id or, when its id has changed, by name.
+  const selected = mics.find((m) => m.deviceId === settings.micDeviceId) ?? mics.find((m) => settings.micDeviceName !== null && m.label === settings.micDeviceName)
+  const chosenMissing = settings.micDeviceId !== null && mics.length > 0 && !selected
+  const caps = capabilitiesOf(selected)
+  const shown = opened && (!selected || opened.deviceId === selected.deviceId) ? opened : null
+  const channels = shown?.channels ?? caps.channels
+  const sampleRate = shown?.sampleRate ?? caps.sampleRate
+  const channelCount = Math.max(2, channels ?? 2, typeof settings.micChannel === 'number' ? settings.micChannel : 0)
 
   return (
     <Section icon={<Mic size={16} aria-hidden="true" />} title="Sermon listener">
       <label className="field">
-        <span>Microphone</span>
+        <span>Audio input</span>
         <select
           className="input"
-          value={settings.micDeviceId ?? ''}
-          onChange={(e) => updateSettings({ micDeviceId: e.target.value || null })}
+          value={selected?.deviceId ?? settings.micDeviceId ?? ''}
+          onChange={(e) => {
+            const id = e.target.value || null
+            const label = mics.find((m) => m.deviceId === id)?.label || null
+            updateSettings({ micDeviceId: id, micDeviceName: id ? label : null })
+          }}
         >
           <option value="">System default</option>
           {mics.map((m, i) => (
             <option key={m.deviceId} value={m.deviceId}>
-              {m.label || `Microphone ${i + 1}`}
+              {m.label || `Input ${i + 1}`}
             </option>
           ))}
-          {chosenMissing && <option value={settings.micDeviceId ?? ''}>Not connected</option>}
+          {chosenMissing && <option value={settings.micDeviceId ?? ''}>{settings.micDeviceName ?? 'Chosen input'} (not connected)</option>}
         </select>
+        <span className="hint">
+          {chosenMissing
+            ? 'Not connected. Listening waits for it, sending silence, and picks it up as soon as it is plugged back in.'
+            : [
+                channels ? `${channels} channel${channels === 1 ? '' : 's'}` : null,
+                sampleRate ? `${sampleRate} Hz` : null,
+                shown?.bluetooth ? 'Bluetooth' : null,
+                micState && micState !== 'open' ? MIC_STATES[micState] : null,
+              ]
+                .filter(Boolean)
+                .join(' · ') || 'Includes USB audio interfaces and mixers.'}
+        </span>
       </label>
+
+      <label className="field">
+        <span>Channel</span>
+        <select
+          className="input"
+          value={String(settings.micChannel)}
+          onChange={(e) => {
+            const value = e.target.value
+            updateSettings({ micChannel: value === 'mono' || value === 'left' || value === 'right' ? value : Number(value) })
+          }}
+        >
+          <option value="mono">Mono (left and right mixed)</option>
+          <option value="left">Left (channel 1)</option>
+          <option value="right">Right (channel 2)</option>
+          {Array.from({ length: channelCount - 2 }, (_, i) => i + 3).map((n) => (
+            <option key={n} value={n}>
+              Channel {n}
+            </option>
+          ))}
+        </select>
+        <span className="hint">
+          {settings.micProcessing
+            ? 'Processing for room microphones mixes the input to mono, so the channel choice has no effect.'
+            : 'A feed from the desk often arrives on one side of a stereo interface, or on its own channel of a multichannel one.'}
+        </span>
+      </label>
+
+      <label className="field">
+        <span>Input gain: {formatDb(settings.micGainDb)}</span>
+        <input
+          type="range"
+          min={-24}
+          max={12}
+          step={0.5}
+          value={settings.micGainDb}
+          onChange={(e) => updateSettings({ micGainDb: Number(e.target.value) })}
+          onDoubleClick={() => updateSettings({ micGainDb: 0 })}
+        />
+      </label>
+      <label className="inline-check">
+        <input type="checkbox" checked={settings.micHighPass} onChange={(e) => updateSettings({ micHighPass: e.target.checked })} />
+        High-pass filter at 80 Hz (removes rumble)
+      </label>
+      <label className="inline-check">
+        <input type="checkbox" checked={settings.micNoiseGate} onChange={(e) => updateSettings({ micNoiseGate: e.target.checked })} />
+        Noise gate
+      </label>
+      <label className="field">
+        <span>Gate threshold: {settings.micGateThresholdDb} dBFS</span>
+        <input
+          type="range"
+          min={-80}
+          max={-30}
+          step={1}
+          value={settings.micGateThresholdDb}
+          disabled={!settings.micNoiseGate}
+          onChange={(e) => updateSettings({ micGateThresholdDb: Number(e.target.value) })}
+        />
+        <span className="hint">Below the threshold the signal is lowered by 18 dB, not muted. A limiter always stops the signal clipping.</span>
+      </label>
+
       <div className="settings-row">
         <button type="button" className="button" onClick={() => setTesting(!testing)}>
           {testing ? <MicOff size={15} aria-hidden="true" /> : <Mic size={15} aria-hidden="true" />}
-          {testing ? 'Stop test' : 'Test microphone'}
+          {testing ? 'Stop meter' : 'Test input level'}
         </button>
-        <span className="level-meter" role="meter" aria-label="Microphone level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(meterFraction(level) * 100)}>
-          <span style={{ width: `${(1 - meterFraction(level)) * 100}%` }} />
-        </span>
+        <LevelMeter reading={reading} />
       </div>
+      <p className="hint">
+        Aim for an average around {TARGET_RMS_DB} dBFS (where green turns amber) with peaks below {TARGET_PEAK_DB} dBFS (where amber
+        turns red). Gain and cleanup changes are heard at once, also while listening.
+      </p>
+      {active && advice.length > 0 && (
+        <ul className="mic-advice">
+          {advice.map((item) => (
+            <li key={item.text} className={item.level}>
+              {item.text}
+            </li>
+          ))}
+        </ul>
+      )}
       {micError && <p className="error">{micError}</p>}
+
+      <div className="settings-row">
+        {recordedChunks === null ? (
+          <button type="button" className="button" onClick={startRecording} disabled={transcribing}>
+            <Mic size={15} aria-hidden="true" /> Record {TEST_SECONDS} s test
+          </button>
+        ) : (
+          <button type="button" className="button" onClick={stopRecording}>
+            <Square size={14} aria-hidden="true" /> Recording… {Math.ceil(TEST_SECONDS - recordedChunks / 10)} s
+          </button>
+        )}
+        <button type="button" className="button" disabled={!recording} onClick={playing ? stopPlaying : play}>
+          {playing ? <Square size={14} aria-hidden="true" /> : <Play size={15} aria-hidden="true" />}
+          {playing ? 'Stop' : 'Play back'}
+        </button>
+        <button type="button" className="button" disabled={!recording || transcribing} onClick={() => transcribe().catch(console.error)}>
+          <Quote size={15} aria-hidden="true" /> {transcribing ? 'Transcribing…' : 'Transcribe test'}
+        </button>
+      </div>
+      <p className="hint">Records what the speech engine hears (after the channel, gain and cleanup), then plays it back or sends it to the engine.</p>
+      {heard && (
+        <p className={heard.ok ? 'mic-heard' : 'error'} role="status">
+          {heard.text}
+        </p>
+      )}
+
       <label className="inline-check">
         <input type="checkbox" checked={settings.micProcessing} onChange={(e) => updateSettings({ micProcessing: e.target.checked })} />
         Processing for room microphones
       </label>
       <p className="hint">
-        Echo cancellation, noise suppression and automatic gain. Off sends the plain signal, which suits a feed from the sound desk or
-        a lectern microphone; turn it on for a laptop or room microphone. Applies the next time listening starts.
+        Echo cancellation, noise suppression and automatic gain. Off (the default) sends the raw signal, which suits a line feed from
+        the sound desk or a lectern microphone; turn it on for a laptop or room microphone. Applies the next time the input opens.
       </p>
 
       <div className="field">

@@ -1668,6 +1668,143 @@ button {
   max-width: 140px;
 }
 
+/* The meter with its clip light and readout. */
+.level-meter-group {
+  display: inline-flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: 0;
+}
+
+.level-meter-group.small {
+  flex: 0 1 190px;
+  flex-wrap: nowrap;
+}
+
+/* The peak (white) and the highest recent peak (outlined), over the average bar. */
+.level-meter-peak,
+.level-meter-hold {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text);
+  opacity: 0.8;
+}
+
+.level-meter-hold {
+  background: none;
+  border-left: 2px solid var(--live);
+}
+
+.clip-light {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  opacity: 0.5;
+}
+
+.clip-light.on {
+  border-color: var(--live);
+  background: var(--live);
+  color: #fff;
+  opacity: 1;
+}
+
+.meter-readout {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* What is wrong with the input signal. */
+.mic-advice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.mic-advice li {
+  padding: var(--space-1) var(--space-2);
+  border-left: 3px solid var(--border);
+  border-radius: 2px;
+}
+
+.mic-advice li.error {
+  border-left-color: var(--live);
+}
+
+.mic-advice li.warning {
+  border-left-color: #f59e0b;
+}
+
+.mic-advice li.info {
+  border-left-color: var(--next);
+}
+
+/* What the transcript test heard. */
+.mic-heard {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* The listener's input and its health. */
+.listener-input p {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 12px;
+}
+
+.listener-input .mic-advice {
+  margin-top: var(--space-1);
+}
+
+.listener-input-name {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.input-health {
+  flex-shrink: 0;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.input-health.ok {
+  border-color: var(--mode-show);
+  color: var(--mode-show);
+}
+
+.input-health.warning {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.input-health.error {
+  border-color: var(--live);
+  color: var(--live);
+}
+
 /* Scripture detection debug: the segment read, each stage and its time, and the last card's latency. */
 .listener-debug-toggle {
   font-size: 12px;

@@ -2,9 +2,9 @@
 // the main process writes it to a file just when "Save transcripts" is on.
 
 import { create } from 'zustand'
-import type { SpeechMode, SpeechPerformance, SpeechStatus } from '../../shared/types'
+import type { AppSettings, SpeechMode, SpeechPerformance, SpeechStatus } from '../../shared/types'
 import { useOperatorStore } from '../store'
-import { startMic, type MicCapture } from './mic'
+import { SignalWatch, startMic, type MicCapture, type MicDevice, type MicDsp, type MicReading, type MicState, type SignalAdvice } from './mic'
 import { detectFromPartial, detectScripture, resetDetection } from './scriptureDetection'
 import { collectStatementText } from './statements'
 
@@ -41,6 +41,13 @@ interface ListenerState {
   log: ListenerLogEntry[]
   /** Times the system muted the microphone this session (each gap was filled with silence). */
   dropouts: number
+  /** The input open now; null before it opens (and while waiting for an unplugged one, the last one open). */
+  input: MicDevice | null
+  inputState: MicState | null
+  /** The last 100 ms of levels; null while silence is sent in place of the input. */
+  reading: MicReading | null
+  /** What is wrong with the signal, most serious first. */
+  advice: SignalAdvice[]
   start(): Promise<void>
   stop(): Promise<void>
   clear(): void
@@ -48,6 +55,25 @@ interface ListenerState {
 }
 
 let mic: MicCapture | null = null
+let signal = new SignalWatch()
+
+/** The channel, gain, filter and gate settings, which apply while listening without opening the input again. */
+export const dspOf = (s: AppSettings): MicDsp => ({
+  channel: s.micChannel,
+  gainDb: s.micGainDb,
+  highPass: s.micHighPass,
+  noiseGate: s.micNoiseGate,
+  gateThresholdDb: s.micGateThresholdDb,
+})
+
+/** The saved device was found under a new deviceId (another USB port, a restart): remember the new one. */
+export function rememberDevice(device: MicDevice) {
+  const { settings, updateSettings } = useOperatorStore.getState()
+  if (!device.deviceId || settings.micDeviceId === null || settings.micDeviceId === device.deviceId) return
+  updateSettings({ micDeviceId: device.deviceId, micDeviceName: device.label }).catch(console.error)
+}
+
+const sameAdvice = (a: SignalAdvice[], b: SignalAdvice[]) => a.length === b.length && a.every((x, i) => x.text === b[i].text)
 
 function addLog(text: string) {
   useListener.setState((s) => {
@@ -69,7 +95,7 @@ const MODE_LOG: Record<SpeechMode, string> = { cloud: 'Cloud', offline: 'Offline
 function releaseMic() {
   mic?.stop()
   mic = null
-  useListener.setState({ level: 0 })
+  useListener.setState({ level: 0, inputState: null, reading: null, advice: [] })
 }
 
 export const useListener = create<ListenerState>((set, get) => ({
@@ -86,32 +112,64 @@ export const useListener = create<ListenerState>((set, get) => ({
   notice: null,
   log: [],
   dropouts: 0,
+  input: null,
+  inputState: null,
+  reading: null,
+  advice: [],
 
   async start() {
     if (get().status !== 'idle' && get().status !== 'error') return
-    set({ status: 'starting', error: null, performance: null, mode: null, modeReason: '', warning: null, restarting: null, notice: null, dropouts: 0 })
+    set({
+      status: 'starting',
+      error: null,
+      performance: null,
+      mode: null,
+      modeReason: '',
+      warning: null,
+      restarting: null,
+      notice: null,
+      dropouts: 0,
+      input: null,
+      inputState: null,
+      reading: null,
+      advice: [],
+    })
+    signal = new SignalWatch()
     addLog('Start pressed; opening the microphone.')
     // A new session starts without the last one's book and chapter.
     resetDetection()
     // Audio captured before the engine is connected waits here, so the first words are not lost.
     let connected = false
     const waiting: ArrayBuffer[] = []
-    const { micDeviceId, micProcessing } = useOperatorStore.getState().settings
+    const settings = useOperatorStore.getState().settings
+    const { micDeviceId, micDeviceName, micProcessing } = settings
     try {
       mic = await startMic({
         deviceId: micDeviceId,
+        deviceName: micDeviceName,
         processing: micProcessing,
+        dsp: dspOf(settings),
         onChunk(pcm) {
           if (connected) window.api.speech.pushAudio(pcm)
           else if (waiting.length < 50) waiting.push(pcm)
         },
         onLevel: (level) => set({ level }),
+        onReading(reading) {
+          signal.push(reading)
+          const advice = signal.advice(useOperatorStore.getState().settings.micChannel)
+          set((s) => ({ reading, advice: sameAdvice(s.advice, advice) ? s.advice : advice }))
+        },
         // The capture recovers by itself; the log says what happened.
         onNotice: (text) => addLog(`Microphone: ${text}`),
-        onDevice: ({ label, sampleRate, bluetooth }) =>
+        onDevice(device) {
+          set({ input: device })
+          rememberDevice(device)
+          const { label, sampleRate, channels, bluetooth } = device
           addLog(
-            `Input: ${label} · ${sampleRate} Hz · ${bluetooth ? 'Bluetooth' : 'not Bluetooth'} · processing ${micProcessing ? 'on' : 'off'}`,
-          ),
+            `Input: ${label} · ${channels} channel${channels === 1 ? '' : 's'} · ${sampleRate} Hz · ${bluetooth ? 'Bluetooth' : 'wired'} · processing ${micProcessing ? 'on' : 'off'}`,
+          )
+        },
+        onState: (inputState) => set({ inputState }),
         onMute(muted, cause) {
           if (muted && cause === 'muted') set((s) => ({ dropouts: s.dropouts + 1 }))
           // The watchdog does not count muted time as the engine failing to transcribe.
@@ -207,4 +265,11 @@ window.api?.speech.onEvent((event) => {
       useOperatorStore.getState().loadSettings().catch(console.error)
       break
   }
+})
+
+// Channel, gain, filter and gate changes in Settings apply at once while listening.
+useOperatorStore.subscribe((state, previous) => {
+  const next = dspOf(state.settings)
+  const before = dspOf(previous.settings)
+  if (mic && (Object.keys(next) as (keyof MicDsp)[]).some((key) => next[key] !== before[key])) mic.configure(next)
 })
