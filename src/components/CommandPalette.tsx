@@ -30,7 +30,7 @@ import {
 } from '../lib/referenceSuggestions'
 import { loadScripture } from '../lib/scripture'
 import { MOD } from '../lib/shortcuts'
-import { useOperatorStore } from '../store'
+import { selectDefaultTranslation, useOperatorStore } from '../store'
 
 interface Command {
   id: string
@@ -124,6 +124,7 @@ export function CommandPalette() {
 
         // The same search as the Scripture tab: reference suggestions, else the full-text index.
         const filter = savedVersionFilter()
+        const preferred = selectDefaultTranslation(st())
         const asText = forceText === query
         // The box as typed: a trailing space after a book name moves on to its chapters.
         if (!asText && !isKeywordQuery(query)) {
@@ -133,7 +134,7 @@ export function CommandPalette() {
           // A complete reference such as "ps 23" opens straight away, as Enter does in the Scripture tab.
           const parsed = parseReference(query)
           if (parsed && suggestions[0]?.kind === 'chapter') {
-            const version = referenceVersion(filter)
+            const version = referenceVersion(filter, preferred)
             results.push({
               id: 'ref-open',
               group: 'Scripture',
@@ -154,7 +155,7 @@ export function CommandPalette() {
             } else if (suggestion.kind === 'text') {
               results.push({ ...base, label: suggestion.label, complete: query, run: () => setForceText(query) })
             } else {
-              const version = referenceVersion(filter)
+              const version = referenceVersion(filter, preferred)
               results.push({
                 ...base,
                 label: `${suggestion.label.replace(' (whole chapter)', '')} ${version}`,
@@ -170,7 +171,7 @@ export function CommandPalette() {
           const { hits } = await window.api.bible.search({
             // As typed: a trailing space marks the last word finished, so it is not matched as a prefix.
             query,
-            versions: searchVersions(filter, (await window.api.bible.listVersions()).map((v) => v.code)),
+            versions: searchVersions(filter, (await window.api.bible.listVersions()).map((v) => v.code), preferred),
             testament: 'all',
             book: null,
             offset: 0,

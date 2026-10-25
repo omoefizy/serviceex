@@ -16,7 +16,7 @@ import {
 } from '../lib/referenceSuggestions'
 import { usePersistentState } from '../lib/usePersistentState'
 import { useVerseSearch } from '../lib/useVerseSearch'
-import { selectLiveSlide, useOperatorStore } from '../store'
+import { selectDefaultTranslation, selectLiveSlide, useOperatorStore } from '../store'
 import { AiButton } from './AiButton'
 import { BibleImportModal } from './BibleImportModal'
 import { VerseResults, VerseText, type VerseResultsHandle } from './VerseResults'
@@ -82,16 +82,26 @@ export function ScripturePanel() {
   /** Enter pressed before the debounced query caught up: open the row once the list for `input` is in. */
   const pending = useRef<{ input: string; live: boolean } | null>(null)
   const liveCaption = useOperatorStore((s) => (s.live.itemType === 'scripture' ? (selectLiveSlide(s)?.caption ?? null) : null))
+  /** The default translation, or the open service's own. */
+  const preferred = useOperatorStore(selectDefaultTranslation)
 
-  const versions = searchVersions(version, installed.map((v) => v.code))
+  const versions = searchVersions(version, installed.map((v) => v.code), preferred)
 
   const loadVersions = useCallback(() => {
     window.api.bible.listVersions().then((list) => {
       setInstalled(list)
-      // A version that was removed (or never imported here) falls back to the KJV.
-      if (list.length > 0) setVersion((current) => (current === 'both' || list.some((v) => v.code === current) ? current : 'KJV'))
+      useOperatorStore.setState({ bibleVersions: list })
+      // A version that was removed (or never imported here) falls back to the default translation.
+      const fallback = selectDefaultTranslation(useOperatorStore.getState())
+      if (list.length > 0) setVersion((current) => (current === 'both' || list.some((v) => v.code === current) ? current : fallback))
     }, console.error)
   }, [setVersion])
+
+  // A reference opens in the default translation: the version choice follows it when it (or the service) changes.
+  // "All" stays, with the default translation first.
+  useEffect(() => {
+    setVersion((current) => (current === 'both' ? current : preferred))
+  }, [preferred, setVersion])
 
   useEffect(() => {
     window.api.bible.listBooks().then(

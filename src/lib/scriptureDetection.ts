@@ -13,7 +13,7 @@ import type { BibleVersionCode, ScripturePayload } from '../../shared/types'
 import { formatReference, parseReference, type ScriptureReference } from '../../shared/parseReference'
 import { countTokens, emptyContext, readTranscript, type ReferenceCandidate, type ReferenceContext, type SpokenReference } from '../../shared/spokenReference'
 import { wordKeys } from '../../shared/statements'
-import { useOperatorStore } from '../store'
+import { selectDefaultTranslation, useOperatorStore } from '../store'
 import { fetchPassage, previewPassage } from './scripture'
 
 export const EXPIRE_MS = 2 * 60_000
@@ -360,10 +360,11 @@ async function suggestReference(found: SpokenReference, heardAt: number, stage: 
   // Checked before the lookup so a repeated reference costs nothing.
   if (recentlySuggested(label, heardAt)) return
   suggestedAt.set(label, heardAt)
-  // The tray shows the KJV wording; a chapter or verse that does not exist finds nothing and is dropped.
-  const [top, ...alternatives] = await lookUp([found, ...found.alternatives], 'KJV')
+  // The tray shows the default translation's wording; a chapter or verse that does not exist finds nothing and is dropped.
+  const version = selectDefaultTranslation(useOperatorStore.getState())
+  const [top, ...alternatives] = await lookUp([found, ...found.alternatives], version)
   if (!top) return
-  place({ ...top, text: firstVerse(top.passage), version: 'KJV', alternatives, heardAt, kind: 'reference', heard: found.heard }, stage)
+  place({ ...top, text: firstVerse(top.passage), version, alternatives, heardAt, kind: 'reference', heard: found.heard }, stage)
 }
 
 /** Adds or updates a card, and notes it for the AI fallback and the debug view. */
@@ -439,10 +440,11 @@ async function askAi(at: number) {
       })
       result = references.length > 0 ? `suggested ${references.map((r) => formatReference(r.reference)).join(', ')}` : 'nothing found'
       // Checked against the Bible again here; the main process already dropped passages that do not exist.
-      const [top, ...alternatives] = await lookUp(references, 'KJV')
+      const version = selectDefaultTranslation(useOperatorStore.getState())
+      const [top, ...alternatives] = await lookUp(references, version)
       if (top && !recentlySuggested(top.label, at)) {
         suggestedAt.set(top.label, at)
-        place({ ...top, text: firstVerse(top.passage), version: 'KJV', alternatives, heardAt: at, kind: 'ai', heard: transcript }, 'AI fallback')
+        place({ ...top, text: firstVerse(top.passage), version, alternatives, heardAt: at, kind: 'ai', heard: transcript }, 'AI fallback')
       }
     }
   } catch (error) {

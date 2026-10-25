@@ -895,6 +895,23 @@ export interface AppSettings {
   presentationAutoRefreshLive: boolean
   /** Plays animated PowerPoint slides with PowerPoint itself, over the output display. Off (the default) shows still images. */
   presentationLivePowerPoint: boolean
+  /** The translation a reference opens in when no version is chosen: typed, from the listener, search and the command palette. */
+  scriptureDefaultVersion: BibleVersionCode
+  /** A service's own default translation, by service id, set in the schedule header; it wins over the default above. */
+  scriptureServiceVersions: Record<string, BibleVersionCode>
+  /** A version chip on the Live box sends the new translation straight to the output; off stages it in the preview to resend. */
+  scriptureSwitchLiveImmediately: boolean
+  /** Two translations on one slide: the chosen one, with `second` in a second text box. */
+  scriptureDual: DualTranslation
+}
+
+/** How a second translation sits on a slide whose theme has one text box; a theme with two text boxes uses its own layout. */
+export type DualLayout = 'stacked' | 'sideBySide'
+
+export interface DualTranslation {
+  enabled: boolean
+  second: BibleVersionCode
+  layout: DualLayout
 }
 
 export interface DisplayInfo {

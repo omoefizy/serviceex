@@ -1,12 +1,20 @@
 import type { AnnouncementPayload, BibleVersionCode, Verse } from '../../shared/types'
 
-/** The caption every scripture slide carries, such as "John 3:16 KJV". */
-export const verseCaption = (verse: Verse, version: BibleVersionCode) => `${verse.book} ${verse.chapter}:${verse.verse} ${version}`
+/**
+ * The caption every scripture slide carries, such as "John 3:16 KJV"; with a second translation on the slide,
+ * both versions, such as "John 3:16 KJV · WEB".
+ */
+export const verseCaption = (verse: Verse, version: BibleVersionCode, second?: BibleVersionCode) =>
+  `${verse.book} ${verse.chapter}:${verse.verse} ${version}${second ? ` · ${second}` : ''}`
 
-/** Reads a scripture slide's caption (see verseCaption) back into its verse and version; null for any other caption. */
-export function parseVerseCaption(caption: string): { book: string; chapter: number; verse: number; version: BibleVersionCode } | null {
-  const match = /^(.+) (\d+):(\d+) (\S+)$/.exec(caption)
-  return match ? { book: match[1], chapter: Number(match[2]), verse: Number(match[3]), version: match[4] } : null
+/** Reads a scripture slide's caption (see verseCaption) back into its verse and versions; null for any other caption. */
+export function parseVerseCaption(
+  caption: string,
+): { book: string; chapter: number; verse: number; version: BibleVersionCode; second?: BibleVersionCode } | null {
+  const match = /^(.+) (\d+):(\d+) (\S+)(?: · (\S+))?$/.exec(caption)
+  if (!match) return null
+  const at = { book: match[1], chapter: Number(match[2]), verse: Number(match[3]), version: match[4] }
+  return match[5] ? { ...at, second: match[5] } : at
 }
 
 /** Splits text into slide texts on blank lines, dropping empty chunks. Songs use buildSongSlides in shared/lyrics.ts. */

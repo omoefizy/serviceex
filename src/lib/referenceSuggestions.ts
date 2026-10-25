@@ -148,9 +148,16 @@ export function savedVersionFilter(): VersionFilter {
   }
 }
 
-/** Versions a keyword search covers: one, or every installed version. */
-export const searchVersions = (filter: VersionFilter, installed: readonly BibleVersionCode[] = BUNDLED_BIBLE_VERSIONS): BibleVersionCode[] =>
-  filter === 'both' ? [...installed] : [filter]
+/** Versions a search covers: one, or every installed version with the default translation first, so a reference opens in it. */
+export function searchVersions(
+  filter: VersionFilter,
+  installed: readonly BibleVersionCode[] = BUNDLED_BIBLE_VERSIONS,
+  preferred?: BibleVersionCode,
+): BibleVersionCode[] {
+  if (filter !== 'both') return [filter]
+  return preferred && installed.includes(preferred) ? [preferred, ...installed.filter((v) => v !== preferred)] : [...installed]
+}
 
-/** References open in one version; with "All" that is the KJV. */
-export const referenceVersion = (filter: VersionFilter): BibleVersionCode => (filter === 'both' ? 'KJV' : filter)
+/** References open in one version; with "All" that is the default translation (see Settings, Scripture). */
+export const referenceVersion = (filter: VersionFilter, preferred: BibleVersionCode = 'KJV'): BibleVersionCode =>
+  filter === 'both' ? preferred : filter

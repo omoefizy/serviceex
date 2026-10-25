@@ -796,6 +796,69 @@ const DETECTION_ALERTS: { value: AppSettings['detectionAlert']; label: string }[
 ]
 
 /** Scripture suggestions from the live transcript: on or off, how sure they must be, and how they announce themselves. */
+/** The default translation, switching translations on the Live box, and two translations on one slide. */
+function ScriptureSection() {
+  const settings = useOperatorStore((s) => s.settings)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const versions = useOperatorStore((s) => s.bibleVersions)
+  const dual = settings.scriptureDual
+  const listed = versions.some((v) => v.code === settings.scriptureDefaultVersion) ? versions : [{ code: settings.scriptureDefaultVersion, name: '' }, ...versions]
+  return (
+    <Section icon={<BookOpen size={16} aria-hidden="true" />} title="Scripture">
+      <label className="field">
+        <span>
+          Default translation <small>For a typed reference, listener suggestions, search set to All, and the command palette.</small>
+        </span>
+        <select className="input" value={settings.scriptureDefaultVersion} onChange={(e) => updateSettings({ scriptureDefaultVersion: e.target.value })}>
+          {listed.map((v) => (
+            <option key={v.code} value={v.code}>
+              {v.name ? `${v.code} · ${v.name}` : v.code}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="hint">A service can use its own translation: pick it in the schedule header.</p>
+      <label className="inline-check">
+        <input
+          type="checkbox"
+          checked={settings.scriptureSwitchLiveImmediately}
+          onChange={(e) => updateSettings({ scriptureSwitchLiveImmediately: e.target.checked })}
+        />
+        Switch live immediately
+      </label>
+      <p className="hint">
+        On: a version chip on the Live box (or {MOD}1 to 9, Alt+↑ and Alt+↓) crossfades the live verse into that translation. Off: the new
+        translation waits in the preview, and you resend it.
+      </p>
+      <div className="field">
+        <span>Two translations on a slide</span>
+        <div className="segmented" role="radiogroup" aria-label="Second translation layout">
+          {DUAL_LAYOUTS.map((l) => (
+            <button
+              key={l.value}
+              type="button"
+              role="radio"
+              aria-checked={dual.layout === l.value}
+              className={dual.layout === l.value ? 'active' : ''}
+              onClick={() => updateSettings({ scriptureDual: { ...dual, layout: l.value } })}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
+        <span className="hint">
+          Turn it on and pick the versions from the Dual menu on the Preview or Live box. A theme with two text boxes uses its own layout.
+        </span>
+      </div>
+    </Section>
+  )
+}
+
+const DUAL_LAYOUTS: { value: AppSettings['scriptureDual']['layout']; label: string }[] = [
+  { value: 'stacked', label: 'One above the other' },
+  { value: 'sideBySide', label: 'Side by side' },
+]
+
 function DetectionSection() {
   const settings = useOperatorStore((s) => s.settings)
   const updateSettings = useOperatorStore((s) => s.updateSettings)
@@ -1190,6 +1253,7 @@ export function SettingsPanel() {
 
       <ListenerSection />
 
+      <ScriptureSection />
       <DetectionSection />
       <QuotesSection />
 

@@ -67,7 +67,21 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
   const addToSchedule = useOperatorStore((s) => s.addToSchedule)
   const removeFromSchedule = useOperatorStore((s) => s.removeFromSchedule)
   const reorderSchedule = useOperatorStore((s) => s.reorderSchedule)
+  const bibleVersions = useOperatorStore((s) => s.bibleVersions)
+  const defaultVersion = useOperatorStore((s) => s.settings.scriptureDefaultVersion)
+  const serviceVersions = useOperatorStore((s) => s.settings.scriptureServiceVersions)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
   const items = service?.items ?? []
+  const serviceVersion = service ? (serviceVersions[String(service.id)] ?? '') : ''
+
+  /** The open service's own default translation; empty uses the one in Settings. */
+  function setServiceVersion(code: string) {
+    if (!service) return
+    const next = { ...serviceVersions }
+    if (code) next[String(service.id)] = code
+    else delete next[String(service.id)]
+    run(() => updateSettings({ scriptureServiceVersions: next }))
+  }
 
   const run = useCallback(async (action: () => Promise<unknown>) => {
     try {
@@ -167,6 +181,19 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
     >
       <header className="panel-header">
         <h2>Schedule</h2>
+        {service && bibleVersions.length > 0 && (
+          <label className="schedule-translation" title="The translation references open in during this service">
+            <BookOpen size={13} aria-hidden="true" />
+            <select className="input" aria-label="Translation for this service" value={serviceVersion} onChange={(e) => setServiceVersion(e.target.value)}>
+              <option value="">Default ({defaultVersion})</option>
+              {bibleVersions.map((v) => (
+                <option key={v.code} value={v.code} title={v.name}>
+                  {v.code}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <button
           className="icon-button"
           aria-label="Hide schedule"

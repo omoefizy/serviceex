@@ -17,8 +17,19 @@ import { Splitter } from './components/Splitter'
 import { ThemeEditor } from './components/ThemeEditor'
 import { Toolbar } from './components/Toolbar'
 import { focusLowerThirdHeadline, isTyping, MODE_KEYS } from './lib/shortcuts'
+import { slideTranslation } from './lib/translations'
 import { usePersistentState } from './lib/usePersistentState'
-import { selectBrowsingLive, selectOutputState, selectPowerPointTarget, selectStageState, selectStreamState, useOperatorStore } from './store'
+import {
+  selectBrowsingLive,
+  selectLiveSlide,
+  selectOutputState,
+  selectPowerPointTarget,
+  selectPreviewSlide,
+  selectStageState,
+  selectStreamState,
+  selectTranslationTarget,
+  useOperatorStore,
+} from './store'
 
 type PanelSizes = { library: number; preview: number; schedule: number }
 
@@ -57,6 +68,7 @@ function App() {
     st.loadSettings().catch(console.error)
     st.loadLowerThirdTemplates().catch(console.error)
     st.loadPresentations().catch(console.error)
+    st.loadBibleVersions().catch(console.error)
     window.api.stage.isOpen().then(st.setStageOpen, console.error)
     window.api.output.isOpen().then(st.setOutputOpen, console.error)
     window.api.stream.isOpen().then(st.setStreamOpen, console.error)
@@ -156,6 +168,21 @@ function App() {
       if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'l') {
         e.preventDefault()
         focusLowerThirdHeadline()
+        return
+      }
+      // Cmd+1 to 9 (Ctrl+1 to 9) pick a translation, in the order of the version chips; Alt+Up and Down cycle them.
+      // They change the live scripture or the preview's, as Up and Down would step (see selectTranslationTarget).
+      const digit = /^Digit([1-9])$/.exec(e.code)
+      const cycle = e.altKey && !mod && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')
+      if (((digit && mod && !e.altKey && !e.shiftKey) || cycle) && !isTyping(e.target)) {
+        const where = selectTranslationTarget(st)
+        const codes = st.bibleVersions.map((v) => v.code)
+        if (!where || codes.length === 0) return
+        e.preventDefault()
+        const current = slideTranslation(where === 'live' ? selectLiveSlide(st) : selectPreviewSlide(st))?.version
+        const at = current ? codes.indexOf(current) : -1
+        const next = digit ? codes[Number(digit[1]) - 1] : codes[(at + (e.key === 'ArrowDown' ? 1 : -1) + codes.length) % codes.length]
+        if (next && next !== current) st.switchTranslation(where, next).catch(console.error)
         return
       }
       // Cmd+Down (Ctrl+Down) runs the schedule: next item, first slide live.

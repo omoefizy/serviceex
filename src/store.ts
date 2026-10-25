@@ -8,6 +8,9 @@ import type {
   AlertMessage,
   AnnouncementPayload,
   AppSettings,
+  BibleVersion,
+  BibleVersionCode,
+  DualTranslation,
   LivePowerPointStatus,
   LowerThirdDisplay,
   LowerThirdStyle,
@@ -39,6 +42,7 @@ import type {
 } from '../shared/types'
 import { announcementSlides, parseVerseCaption, quoteSlide, verseCaption } from './lib/slides'
 import { PRIORITY_BAND_COLOR, PRIORITY_PASSES, runDurationMs } from './lib/ticker'
+import { dualTheme, missingNote, slideTranslation, translateSlides, type Translation } from './lib/translations'
 
 export interface DeckSlide {
   text: string
@@ -66,6 +70,18 @@ export interface DeckSlide {
   native?: ThemeStyle
   /** What Native mode could not draw on this slide (it may show its picture instead), for the warning icon. */
   warnings?: string[]
+  /** A scripture slide's second translation (its version is in the caption), drawn in a second text box. */
+  second?: { text: string; layout: DualTranslation['layout'] }
+}
+
+/** Where a translation change goes: the preview's scripture, or the live scripture. */
+export type TranslationTarget = 'preview' | 'live'
+
+/** What the last translation change did, shown on the Preview or Live box. */
+export interface TranslationNote {
+  where: TranslationTarget
+  text: string
+  error: boolean
 }
 
 /** What the grid holds: a schedule item type, or a quote (a sermon statement, with the Quote theme default). */
@@ -242,6 +258,9 @@ interface OperatorState {
   livePowerPoint: LivePowerPointStatus
   /** Bumped by Resend while PowerPoint plays the live slide, to restart it from a fresh copy. */
   powerPointGeneration: number
+  /** Installed Bible versions, in the order the version chips and Cmd+1 to 9 (Ctrl+1 to 9) use. */
+  bibleVersions: BibleVersion[]
+  translationNote: TranslationNote | null
 
   /** Shows a song in the grid and preview. Never touches what is live. */
   selectSong(song: Song | null): void
@@ -374,6 +393,16 @@ interface OperatorState {
   livePowerPointStatus(status: LivePowerPointStatus): void
   /** Ends PowerPoint's slide show and puts the still slide on the output (Ctrl+Shift+K or Cmd+Shift+K). */
   panicPowerPoint(): void
+  /** Reads the installed Bible versions again, as after an import. */
+  loadBibleVersions(): Promise<void>
+  /**
+   * Reads the preview's or the live scripture in another translation, the same verses. On the Live box it goes to the
+   * output at once (with the crossfade); with Switch live immediately off it is staged in the preview for a resend.
+   */
+  switchTranslation(where: TranslationTarget, version: BibleVersionCode): Promise<void>
+  /** Saves the two translation choice and shows the preview's or the live scripture with it. */
+  setDualTranslation(where: TranslationTarget, dual: DualTranslation): Promise<void>
+  dismissTranslationNote(): void
 }
 
 /** Bumped by every grid load, so a slow song fetch for an old item cannot overwrite a newer selection. */
@@ -443,6 +472,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   presentationEngine: 'auto',
   presentationAutoRefreshLive: false,
   presentationLivePowerPoint: false,
+  scriptureDefaultVersion: 'KJV',
+  scriptureServiceVersions: {},
+  scriptureSwitchLiveImmediately: true,
+  scriptureDual: { enabled: false, second: 'WEB', layout: 'stacked' },
 }
 
 /** A settings answer with every key present, so a key missing after an update or a bad answer cannot break a panel. */
@@ -483,6 +516,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   presentationJobs: [],
   livePowerPoint: POWERPOINT_IDLE,
   powerPointGeneration: 0,
+  bibleVersions: [],
+  translationNote: null,
 
   selectSong(song) {
     const token = ++loadToken
@@ -514,7 +549,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
       highlightIndex: slides.length > 0 ? 0 : null,
       activeItemId: null,
     })
-    applySlideBackgrounds(token, deckKey)
+    applySlideBackgrounds(token, deckKey).then(() => showDualInGrid(token))
   },
 
   selectQuote(text, speaker) {
@@ -745,6 +780,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
       activeItemId: item.id,
     })
     await applySlideBackgrounds(token, deckKey)
+    if (item.type === 'scripture') await showDualInGrid(token)
     return true
   },
 
@@ -787,6 +823,32 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
 
   async setFadeMs(fadeMs) {
     await get().updateSettings({ fadeMs })
+  },
+
+  async loadBibleVersions() {
+    set({ bibleVersions: await window.api.bible.listVersions() })
+  },
+
+  async switchTranslation(where, version) {
+    const current = slideTranslation(where === 'live' ? selectLiveSlide(get()) : selectPreviewSlide(get()))
+    const { scriptureDual: dual } = get().settings
+    const second = current?.second ?? (dual.enabled ? dual.second : null)
+    await retranslate(where, { version, second: second && second !== version ? { version: second, layout: dual.layout } : null })
+  },
+
+  async setDualTranslation(where, dual) {
+    await get().updateSettings({ scriptureDual: dual })
+    const slide = where === 'live' ? selectLiveSlide(get()) : selectPreviewSlide(get())
+    const current = slideTranslation(slide)
+    if (!current) return
+    const second = dual.enabled && dual.second !== current.version ? { version: dual.second, layout: dual.layout } : null
+    // Nothing to read again when the slide already looks like this.
+    if ((second?.version ?? null) === current.second && (!second || slide?.second?.layout === second.layout)) return
+    await retranslate(where, { version: current.version, second })
+  },
+
+  dismissTranslationNote() {
+    set({ translationNote: null })
   },
 
   async setSlideBackground(index, mediaId) {
@@ -1145,16 +1207,94 @@ function stepLive(delta: 1 | -1): void {
 /** Past the end of the longest chapter, to read a whole chapter. */
 const LAST_VERSE = 999
 
-/** The verse after (or before) a scripture slide's verse, crossing into the next (or previous) chapter; null at either end of the book. */
+/**
+ * The verse after (or before) a scripture slide's verse, crossing into the next (or previous) chapter, in the slide's
+ * translation (and its second one, where that has the verse); null at either end of the book.
+ */
 async function neighbourVerse(slide: DeckSlide, delta: 1 | -1): Promise<DeckSlide | null> {
   const at = parseVerseCaption(slide.caption)
   if (!at) return null
-  const read = (chapter: number, from: number, to: number) => window.api.bible.getRange(at.version, at.book, chapter, from, to)
+  const read = (chapter: number, from: number, to: number, version = at.version) => window.api.bible.getRange(version, at.book, chapter, from, to)
   let found: Verse | undefined
   if (delta > 0) found = (await read(at.chapter, at.verse + 1, at.verse + 1))[0] ?? (await read(at.chapter + 1, 1, 1))[0]
   else if (at.verse > 1) found = (await read(at.chapter, at.verse - 1, at.verse - 1))[0]
   else if (at.chapter > 1) found = (await read(at.chapter - 1, 1, LAST_VERSE)).at(-1)
-  return found ? { text: found.text, caption: verseCaption(found, at.version) } : null
+  if (!found) return null
+  const other = at.second && slide.second ? (await read(found.chapter, found.verse, found.verse, at.second))[0] : undefined
+  if (!other || !slide.second) return { text: found.text, caption: verseCaption(found, at.version) }
+  return { text: found.text, caption: verseCaption(found, at.version, at.second), second: { text: other.text, layout: slide.second.layout } }
+}
+
+// ---------- Translations ----------
+
+/** How long a translation note stays up; a note about missing verses stays until dismissed or replaced. */
+const NOTE_MS = 6000
+let noteTimer: ReturnType<typeof setTimeout> | undefined
+
+function noteTranslation(where: TranslationTarget, text: string, error = false): void {
+  clearTimeout(noteTimer)
+  useOperatorStore.setState({ translationNote: { where, text, error } })
+  if (!error) noteTimer = setTimeout(() => useOperatorStore.setState({ translationNote: null }), NOTE_MS)
+}
+
+/** Reads the preview's or the live scripture in `to` (see switchTranslation), unless something else was loaded meanwhile. */
+async function retranslate(where: TranslationTarget, to: Translation): Promise<void> {
+  const s = useOperatorStore.getState()
+  const live = where === 'live'
+  if (live ? s.live.itemType !== 'scripture' || s.live.slideIndex === null : s.deckType !== 'scripture') return
+  const slides = live ? s.live.slides : s.slides
+  const result = await translateSlides(slides, (live ? s.live.title : s.deckTitle) ?? '', to)
+  if (!result.ok) return noteTranslation(where, missingNote(result.missing), true)
+  const now = useOperatorStore.getState()
+  const label = to.second ? `${to.version} and ${to.second.version}` : `${to.version}`
+  const cleared = result.clearedFormatting ? ' Highlights were cleared, since the words changed.' : ''
+  if (!live) {
+    if (now.slides !== slides) return
+    useOperatorStore.setState({ slides: result.slides, deckTitle: result.title })
+    // Like an edit, the output keeps what went live until it is sent again.
+    if (now.deckKey) markLiveStale(now.deckKey)
+    return noteTranslation(where, `Preview shows the ${label}.${cleared}`)
+  }
+  if (now.live.slides !== slides) return
+  const browsing = selectBrowsingLive(now)
+  if (!now.settings.scriptureSwitchLiveImmediately) {
+    // The new translation waits in the preview, and the live copy is marked out of date for a resend.
+    if (!browsing) now.jumpToLive()
+    useOperatorStore.setState({ slides: result.slides, deckTitle: result.title, highlightIndex: now.live.slideIndex })
+    if (now.live.deckKey) markLiveStale(now.live.deckKey)
+    return noteTranslation(where, `The ${label} is in the preview; resend to show it live.${cleared}`)
+  }
+  // The output crossfades to the same verse in the new words; Go Back returns to the old translation.
+  const next: LiveState = {
+    ...now.live,
+    slides: result.slides,
+    title: result.title,
+    stale: browsing ? false : now.live.stale,
+    source: now.live.source && { ...now.live.source, slides: result.slides, deckTitle: result.title },
+  }
+  useOperatorStore.setState({
+    live: next,
+    liveHistory: historyBefore(now, next),
+    ...(browsing ? { slides: result.slides, deckTitle: result.title } : {}),
+  })
+  noteTranslation(where, `Live shows the ${label}.${cleared}`)
+}
+
+/** With two translations on, scripture that comes into the grid shows its second translation too. */
+async function showDualInGrid(token: number): Promise<void> {
+  const s = useOperatorStore.getState()
+  const dual = s.settings.scriptureDual
+  const current = slideTranslation(s.slides.find((slide) => slideTranslation(slide)))
+  if (!dual.enabled || s.deckType !== 'scripture' || !current || current.second === dual.second || current.version === dual.second) return
+  const result = await translateSlides(s.slides, s.deckTitle ?? '', { version: current.version, second: { version: dual.second, layout: dual.layout } }).catch(
+    (err) => {
+      console.error(err)
+      return null
+    },
+  )
+  if (!result || token !== loadToken || useOperatorStore.getState().slides !== s.slides) return
+  if (result.ok) useOperatorStore.setState({ slides: result.slides, deckTitle: result.title })
+  else noteTranslation('preview', missingNote(result.missing), true)
 }
 
 // ---------- Alert ticker ----------
@@ -1489,18 +1629,38 @@ export function selectStageState(s: OperatorState): StageState {
   }
 }
 
-/** A Native mode slide's own theme, or a slide's own background in place of the theme's. */
+/** A Native mode slide's own theme, or a slide's own background in place of the theme's; a second translation gets a second text box. */
 export function slideTheme(theme: ThemeStyle, slide: DeckSlide | null | undefined): ThemeStyle {
   if (slide?.native) return slide.native
-  if (!slide?.background) return theme
+  const look = slide?.second ? dualTheme(theme, slide.second) : theme
+  if (!slide?.background) return look
   // A presentation page is the whole slide, so the theme's shapes and images stay off it.
   return {
-    ...theme,
+    ...look,
     background: slide.background,
-    overlay: slide.page ? 0 : theme.overlay,
+    overlay: slide.page ? 0 : look.overlay,
     keyTransparent: false,
-    elements: slide.page ? [] : theme.elements,
+    elements: slide.page ? [] : look.elements,
   }
+}
+
+/** The translation references open in: the service's own choice from the schedule header, else Settings, Scripture. */
+export function selectDefaultTranslation(s: OperatorState): BibleVersionCode {
+  const own = s.service ? s.settings.scriptureServiceVersions[String(s.service.id)] : undefined
+  const choice = own ?? s.settings.scriptureDefaultVersion
+  // A version removed since falls back to the first one installed.
+  return s.bibleVersions.length === 0 || s.bibleVersions.some((v) => v.code === choice) ? choice : s.bibleVersions[0].code
+}
+
+/**
+ * Where Cmd+1 to 9 (Ctrl+1 to 9) and Alt+Up and Down change the translation: the live scripture while the grid shows
+ * it or holds no scripture, as Up and Down step the live verse; otherwise the preview's.
+ */
+export function selectTranslationTarget(s: OperatorState): TranslationTarget | null {
+  const liveScripture = s.live.itemType === 'scripture' && s.live.slideIndex !== null
+  if (liveScripture && (selectBrowsingLive(s) || s.deckType !== 'scripture')) return 'live'
+  if (s.deckType === 'scripture' && s.slides.length > 0) return 'preview'
+  return null
 }
 
 /** The theme the default for what is loaded would use, ignoring the picker: the song's own theme, else the content type's default. */

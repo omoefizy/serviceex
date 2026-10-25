@@ -1,7 +1,17 @@
-import { AlertTriangle, Eye, EyeOff, Presentation, RefreshCw, Undo2, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import type { LivePowerPointStatus, OutputState } from '../../shared/types'
-import { selectDeckTheme, selectOutputState, selectPreviewSlide, slideTheme, useOperatorStore } from '../store'
+import { AlertTriangle, Columns2, Eye, EyeOff, Presentation, RefreshCw, Undo2, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { DualTranslation, LivePowerPointStatus, OutputState } from '../../shared/types'
+import { MOD } from '../lib/shortcuts'
+import { slideTranslation } from '../lib/translations'
+import {
+  selectDeckTheme,
+  selectLiveSlide,
+  selectOutputState,
+  selectPreviewSlide,
+  slideTheme,
+  useOperatorStore,
+  type TranslationTarget,
+} from '../store'
 import { OutputScreen } from './OutputView'
 import { ThemedSlide } from './ThemedSlide'
 
@@ -21,6 +31,150 @@ function powerPointText(status: LivePowerPointStatus): string {
   if (status.slideIndex === null) return 'Waiting'
   const step = status.steps ? `, step ${status.step ?? '?'} of ${status.steps}` : ''
   return `Slide ${status.slideIndex + 1}${step}${status.phase === 'covered' ? ' (under the output)' : ''}`
+}
+
+const DUAL_LAYOUTS: { value: DualTranslation['layout']; label: string }[] = [
+  { value: 'stacked', label: 'Above and below' },
+  { value: 'sideBySide', label: 'Side by side' },
+]
+
+/**
+ * Version chips under a screen showing scripture: a chip reads the same verses in that translation. Dual puts a
+ * second translation on the slide too. Notes (a missing verse, cleared highlights) show here as well.
+ */
+function TranslationBar({ where }: { where: TranslationTarget }) {
+  const slide = useOperatorStore((s) =>
+    where === 'live' ? (s.live.itemType === 'scripture' ? selectLiveSlide(s) : null) : s.deckType === 'scripture' ? selectPreviewSlide(s) : null,
+  )
+  const versions = useOperatorStore((s) => s.bibleVersions)
+  const dual = useOperatorStore((s) => s.settings.scriptureDual)
+  const note = useOperatorStore((s) => (s.translationNote?.where === where ? s.translationNote : null))
+  const switchTranslation = useOperatorStore((s) => s.switchTranslation)
+  const setDualTranslation = useOperatorStore((s) => s.setDualTranslation)
+  const dismissNote = useOperatorStore((s) => s.dismissTranslationNote)
+  const [busy, setBusy] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const current = slideTranslation(slide)
+
+  // The menu closes on a click outside it.
+  useEffect(() => {
+    if (!menuOpen) return
+    const close = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [menuOpen])
+
+  async function run(action: () => Promise<void>) {
+    setBusy(true)
+    try {
+      await action()
+    } catch (err) {
+      useOperatorStore.setState({ translationNote: { where, text: err instanceof Error ? err.message : String(err), error: true } })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const noteLine = note && (
+    <p className={`translation-note${note.error ? ' error' : ''}`} role={note.error ? 'alert' : 'status'}>
+      {note.error && <AlertTriangle size={13} aria-hidden="true" />}
+      <span>{note.text}</span>
+      <button type="button" className="icon-button" aria-label="Dismiss" onClick={dismissNote}>
+        <X size={12} aria-hidden="true" />
+      </button>
+    </p>
+  )
+  if (!current || versions.length === 0) return noteLine || null
+
+  const others = versions.filter((v) => v.code !== current.version)
+  const second = current.second ?? (dual.second !== current.version ? dual.second : others[0]?.code)
+  const applyDual = (next: DualTranslation) => run(() => setDualTranslation(where, next))
+
+  return (
+    <>
+      <div className="translation-bar" role="group" aria-label={`${where === 'live' ? 'Live' : 'Preview'} translation`}>
+        {versions.map((v, i) => (
+          <button
+            key={v.code}
+            type="button"
+            className={`translation-chip${v.code === current.version ? ' active' : ''}${v.code === current.second ? ' second' : ''}`}
+            aria-pressed={v.code === current.version}
+            title={`${v.name}${i < 9 ? ` (${MOD}${i + 1})` : ''}`}
+            disabled={busy}
+            onClick={() => v.code !== current.version && run(() => switchTranslation(where, v.code))}
+          >
+            {v.code}
+          </button>
+        ))}
+        {others.length > 0 && (
+          <div className="translation-dual" ref={menuRef}>
+            <button
+              type="button"
+              className={`translation-chip${current.second ? ' active' : ''}`}
+              aria-haspopup="dialog"
+              aria-expanded={menuOpen}
+              title="Two translations on one slide"
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              <Columns2 size={12} aria-hidden="true" /> Dual
+            </button>
+            {menuOpen && (
+              <div className="translation-menu" role="dialog" aria-label="Two translations">
+                <label className="inline-check">
+                  <input
+                    type="checkbox"
+                    checked={current.second !== null}
+                    disabled={busy || !second}
+                    onChange={(e) => second && applyDual({ ...dual, enabled: e.target.checked, second })}
+                  />
+                  Show two translations
+                </label>
+                <label className="field">
+                  <span>First</span>
+                  <select className="input" value={current.version} disabled={busy} onChange={(e) => run(() => switchTranslation(where, e.target.value))}>
+                    {versions.map((v) => (
+                      <option key={v.code} value={v.code}>
+                        {v.code}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Second</span>
+                  <select className="input" value={second} disabled={busy} onChange={(e) => applyDual({ ...dual, enabled: true, second: e.target.value })}>
+                    {others.map((v) => (
+                      <option key={v.code} value={v.code}>
+                        {v.code}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="segmented" role="radiogroup" aria-label="Layout">
+                  {DUAL_LAYOUTS.map((l) => (
+                    <button
+                      key={l.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={dual.layout === l.value}
+                      className={dual.layout === l.value ? 'active' : ''}
+                      disabled={busy}
+                      onClick={() => second && applyDual({ ...dual, enabled: current.second !== null, second, layout: l.value })}
+                    >
+                      {l.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      {noteLine}
+    </>
+  )
 }
 
 /**
@@ -85,6 +239,7 @@ export function LivePreview() {
         {(live.slideIndex !== null && live.title) || 'Nothing live'}
         {live.mode !== 'show' && <span className="screen-mode"> · {live.mode.toUpperCase()}</span>}
       </p>
+      <TranslationBar where="live" />
       {powerPoint && (
         // The output shows PowerPoint's own slide show; the screen above shows the still slide.
         <p className="powerpoint-status" aria-live="polite">
@@ -146,6 +301,7 @@ export function LivePreview() {
         <SlideBadge index={previewSlide ? highlightIndex : null} count={slideCount} />
       </div>
       <p className="screen-label">{(highlightIndex !== null && deckTitle) || 'Nothing selected'}</p>
+      <TranslationBar where="preview" />
     </section>
   )
 }

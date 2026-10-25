@@ -68,6 +68,10 @@ const DEFAULTS: AppSettings = {
   presentationEngine: 'auto',
   presentationAutoRefreshLive: false,
   presentationLivePowerPoint: false,
+  scriptureDefaultVersion: 'KJV',
+  scriptureServiceVersions: {},
+  scriptureSwitchLiveImmediately: true,
+  scriptureDual: { enabled: false, second: 'WEB', layout: 'stacked' },
 }
 
 export const FADE_LIMITS = { min: 0, max: 1500 }
@@ -138,6 +142,10 @@ const KEYS: Record<keyof AppSettings, string> = {
   presentationEngine: 'presentations.engine',
   presentationAutoRefreshLive: 'presentations.autoRefreshLive',
   presentationLivePowerPoint: 'presentations.livePowerPoint',
+  scriptureDefaultVersion: 'scripture.defaultVersion',
+  scriptureServiceVersions: 'scripture.serviceVersions',
+  scriptureSwitchLiveImmediately: 'scripture.switchLiveImmediately',
+  scriptureDual: 'scripture.dual',
 }
 
 export const ALERT_LIMITS = {
@@ -246,6 +254,9 @@ function cleanOutputBounds(value: unknown): AppSettings['outputBounds'] | undefi
   return left === undefined || top === undefined || width === undefined || height === undefined ? undefined : { left, top, width, height }
 }
 
+/** A Bible version code as the importer allows it, such as "KJV". */
+const versionCode = (value: unknown) => (typeof value === 'string' && /^[A-Z0-9][A-Z0-9-]{0,11}$/.test(value) ? value : undefined)
+
 const hexColor = (value: unknown) => (typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : undefined)
 
 /** Checks one value, returning undefined for anything unusable so the default applies. */
@@ -332,7 +343,24 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'aiScriptureFallback':
     case 'presentationAutoRefreshLive':
     case 'presentationLivePowerPoint':
+    case 'scriptureSwitchLiveImmediately':
       return typeof value === 'boolean' ? v : undefined
+    case 'scriptureDefaultVersion':
+      return versionCode(value) as never
+    case 'scriptureServiceVersions': {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+      const entries = Object.entries(value).filter(([id, code]) => /^\d+$/.test(id) && versionCode(code) !== undefined)
+      return Object.fromEntries(entries.slice(0, 500)) as never
+    }
+    case 'scriptureDual': {
+      if (typeof value !== 'object' || value === null) return undefined
+      const d = value as Partial<AppSettings['scriptureDual']>
+      return {
+        enabled: d.enabled === true,
+        second: versionCode(d.second) ?? 'WEB',
+        layout: d.layout === 'sideBySide' ? 'sideBySide' : 'stacked',
+      } as never
+    }
     case 'presentationEngine':
       return value === 'auto' || value === 'powerpoint' || value === 'libreoffice' ? v : undefined
     case 'quoteSpeakerName':
