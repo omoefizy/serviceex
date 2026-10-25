@@ -132,3 +132,24 @@ describe('selectDefaultTranslation', () => {
     expect(selectDefaultTranslation(st())).toBe('WEB')
   })
 })
+
+describe('scripture quick adjustments', () => {
+  it('stay with the verse through a change of translation, on both lines of two translations', async () => {
+    st().adjustScripture('preview', { fontSize: 7, color: '#ffd400' })
+    await st().setDualTranslation('preview', { enabled: true, second: 'ASV', layout: 'stacked' })
+    const slide = st().slides[0]
+    expect(slide).toMatchObject({ text: 'KJV 16', adjust: { fontSize: 7, color: '#ffd400' } })
+    const boxes = slideTheme(DEFAULT_THEME_STYLE, slide).elements.filter((e) => e.kind === 'text')
+    expect(boxes).toHaveLength(2)
+    for (const box of boxes) expect(box.text).toMatchObject({ sizeMode: 'fixed', fontSize: 7, color: '#ffd400' })
+  })
+
+  it('reach the output while the verse is live, and come off with Reset to theme', () => {
+    st().goLiveHighlighted()
+    st().adjustScripture('live', { offset: -2 })
+    const verse = () => selectOutputState(st()).theme.elements.find((e) => e.kind === 'text')
+    expect(verse()?.text.offset).toBe(-2)
+    st().resetScriptureAdjust('live')
+    expect(verse()?.text.offset).toBeUndefined()
+  })
+})

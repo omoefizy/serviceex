@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { DEFAULT_FONT } from '../../shared/themes'
-import type { OutputState, ScreenMargins } from '../../shared/types'
+import { DEFAULT_FONT, DEFAULT_TEXT_PROPS } from '../../shared/themes'
+import type { OutputState, ScreenMargins, ThemeStyle } from '../../shared/types'
 import { AlertBand } from './AlertBand'
 import { Overlays } from './Overlays'
 import { TestPattern } from './StreamView'
@@ -39,12 +39,23 @@ function contentOf(state: OutputState): string {
   return JSON.stringify([state.mode, state.text, state.caption, state.copyright, state.rich ?? null, state.defaultFont, state.logoUrl, state.theme.elements])
 }
 
-/** Marking words on the live slide (live highlighting) changes only its formatting: a quick soft fade, not the slide crossfade. */
+/**
+ * Marking words on the live slide (live highlighting) or a quick adjustment to the live verse changes only how it
+ * looks: a quick soft fade, not the slide crossfade.
+ */
 const MARK_FADE_MS = 120
+
+/** The theme with every text box given one look, to tell a change of look from a change of slide. */
+const unstyled = (theme: ThemeStyle): ThemeStyle => ({
+  ...theme,
+  elements: theme.elements.map((element) => ('text' in element ? { ...element, text: DEFAULT_TEXT_PROPS } : element)),
+})
 
 /** The fade from `previous` to `state`: quick when only the formatting changed. */
 function contentFade(previous: OutputState | null, state: OutputState): number {
-  const restyled = previous !== null && contentOf({ ...previous, rich: null }) === contentOf({ ...state, rich: null })
+  const restyled =
+    previous !== null &&
+    contentOf({ ...previous, rich: null, theme: unstyled(previous.theme) }) === contentOf({ ...state, rich: null, theme: unstyled(state.theme) })
   return restyled ? Math.min(MARK_FADE_MS, state.fadeMs) : state.fadeMs
 }
 

@@ -63,6 +63,9 @@ export function keyLuma(color: string): number {
 /** Below this, a luma key starts cutting a color out along with the black. */
 export const LUMA_KEY_THRESHOLD = 0.2
 
+/** The largest auto fit size in percent of screen height, unless a text box sets its own, so one short line does not fill the screen. */
+export const AUTO_FIT_MAX = 16
+
 // ---------- Elements ----------
 
 export const DEFAULT_TEXT_PROPS: ThemeTextProps = {
@@ -509,6 +512,8 @@ function normalizeTextProps(value: unknown, fallback: ThemeTextProps): ThemeText
       width: number(outline.width, d.outline.width, 0, 0.2),
     },
     padding: number(v.padding, d.padding, 0, 20),
+    ...(typeof v.maxSize === 'number' ? { maxSize: number(v.maxSize, AUTO_FIT_MAX, 1, 30) } : {}),
+    ...(typeof v.offset === 'number' && v.offset !== 0 ? { offset: number(v.offset, 0, -50, 50) } : {}),
   }
 }
 
@@ -558,7 +563,7 @@ function normalizeElement(value: unknown, id: string): ThemeElement | null {
     }
     case 'reference':
     case 'copyright':
-      return { id, kind: d.kind, box, locked, attached: flag(v.attached, false), text: normalizeTextProps(v.text, d.text) }
+      return { id, kind: d.kind, box, locked, attached: flag(v.attached, false), ...(v.above === true ? { above: true } : {}), text: normalizeTextProps(v.text, d.text) }
     case 'image':
       return {
         id,

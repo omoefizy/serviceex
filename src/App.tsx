@@ -17,6 +17,7 @@ import { Splitter } from './components/Splitter'
 import { ThemeEditor } from './components/ThemeEditor'
 import { Toolbar } from './components/Toolbar'
 import { highlightKey, toggleHighlightMode } from './lib/highlights'
+import { nudgeVerse, stepVerseSize } from './lib/scriptureAdjust'
 import { focusLowerThirdHeadline, isTyping, MODE_KEYS } from './lib/shortcuts'
 import { slideTranslation } from './lib/translations'
 import { usePersistentState } from './lib/usePersistentState'
@@ -138,6 +139,17 @@ function App() {
   // On macOS the main process catches Cmd+H before the app menu's Hide and passes it on here.
   useEffect(() => window.api.onToggleHighlight(toggleHighlightMode), [])
 
+  // Cmd+Plus and Minus (Ctrl+Plus and Minus) size the live verse, or the preview's (as Up and Down would step). The
+  // main process catches them before the View menu zooms the window.
+  useEffect(
+    () =>
+      window.api.onScriptureSize((step) => {
+        const where = selectTranslationTarget(useOperatorStore.getState())
+        if (where) stepVerseSize(where, step)
+      }),
+    [],
+  )
+
   // A file dropped outside the import drop zone would otherwise replace the app with the file.
   useEffect(() => {
     const block = (e: DragEvent) => {
@@ -179,10 +191,18 @@ function App() {
         e.preventDefault()
         return
       }
-      // Cmd+1 to 9 (Ctrl+1 to 9) pick a translation, in the order of the version chips; Alt+Up and Down cycle them.
+      // Alt+Up and Down move the live verse (or the preview's, as Up and Down would step) up and down the screen.
+      if (e.altKey && !mod && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && !isTyping(e.target)) {
+        const where = selectTranslationTarget(st)
+        if (!where) return
+        e.preventDefault()
+        nudgeVerse(where, e.key === 'ArrowDown' ? 1 : -1)
+        return
+      }
+      // Cmd+1 to 9 (Ctrl+1 to 9) pick a translation, in the order of the version chips; Alt+Shift+Up and Down cycle them.
       // They change the live scripture or the preview's, as Up and Down would step (see selectTranslationTarget).
       const digit = /^Digit([1-9])$/.exec(e.code)
-      const cycle = e.altKey && !mod && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')
+      const cycle = e.altKey && !mod && e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')
       if (((digit && mod && !e.altKey && !e.shiftKey) || cycle) && !isTyping(e.target)) {
         const where = selectTranslationTarget(st)
         const codes = st.bibleVersions.map((v) => v.code)

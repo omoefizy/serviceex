@@ -85,6 +85,16 @@ function createWindow() {
     win?.webContents.send('highlight:toggle')
   })
 
+  // Cmd+Plus and Minus (Ctrl+Plus and Minus) size the live or preview verse; the View menu would take them to zoom the window.
+  win.webContents.on('before-input-event', (event, input) => {
+    const mod = process.platform === 'darwin' ? input.meta && !input.control : input.control && !input.meta
+    if (input.type !== 'keyDown' || !mod || input.alt) return
+    const step = input.key === '=' || input.key === '+' ? 1 : input.key === '-' ? -1 : 0
+    if (!step) return
+    event.preventDefault()
+    win?.webContents.send('scripture:size', step)
+  })
+
   // Test active push message to Renderer-process.
   win.webContents.on('did-finish-load', () => {
     win?.webContents.send('main-process-message', (new Date).toLocaleString())

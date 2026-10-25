@@ -315,6 +315,11 @@ const api: WorshipDeckApi = {
     ipcRenderer.on('highlight:toggle', handler)
     return () => ipcRenderer.off('highlight:toggle', handler)
   },
+  onScriptureSize(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, step: 1 | -1) => listener(step)
+    ipcRenderer.on('scripture:size', handler)
+    return () => ipcRenderer.off('scripture:size', handler)
+  },
   output,
 }
 contextBridge.exposeInMainWorld('api', api)

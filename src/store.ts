@@ -3,6 +3,7 @@ import { buildSongSlides } from '../shared/lyrics'
 import { DEFAULT_LOWER_THIRD_STYLE } from '../shared/lowerThirds'
 import { DEFAULT_HIGHLIGHT, isMarked, markSlide, slideRich, unmarkSlide } from '../shared/highlights'
 import { formatFor, matching, trimRich, type RichRange } from '../shared/richText'
+import { adjustTheme, isEmptyAdjust } from '../shared/scriptureLook'
 import { DEFAULT_FONT, DEFAULT_THEME_STYLE } from '../shared/themes'
 import type {
   AlertDisplay,
@@ -26,6 +27,7 @@ import type {
   PresentationMode,
   PresentationProgress,
   RichText,
+  ScriptureAdjust,
   ScripturePayload,
   ServiceItemPayload,
   ServiceItem,
@@ -76,6 +78,8 @@ export interface DeckSlide {
   warnings?: string[]
   /** A scripture slide's second translation (its version is in the caption), drawn in a second text box. */
   second?: { text: string; layout: DualTranslation['layout'] }
+  /** Quick adjustments to this verse alone (the Aa popover), over its theme; they stay through a change of translation. */
+  adjust?: ScriptureAdjust
 }
 
 /** Where a translation change goes: the preview's scripture, or the live scripture. */
@@ -421,6 +425,20 @@ interface OperatorState {
   markWords(where: TranslationTarget, range: RichRange, again?: boolean): void
   /** Takes every mark off the live slide (Esc) or the preview slide. */
   clearHighlights(where: TranslationTarget): void
+  /** Quick adjustments to the live or preview verse alone (the Aa popover); on the live verse they reach the output at once. */
+  adjustScripture(where: TranslationTarget, patch: ScriptureAdjust): void
+  /**
+   * Keeps the verse's quick adjustments: in the default scripture theme, or for every verse of the open service. The
+   * verse then shows them through its theme, and the rest of the passage with it.
+   */
+  saveScriptureAdjust(where: TranslationTarget, scope: 'theme' | 'service'): Promise<void>
+  /** Takes the verse's quick adjustments off, and the open service's own scripture look: the verse looks like its theme again. */
+  resetScriptureAdjust(where: TranslationTarget): void
+  /**
+   * Saves `style` as the default scripture theme: in place for a custom theme; a built-in one cannot change, so a copy
+   * is made and becomes the default for scripture.
+   */
+  saveScriptureTheme(style: ThemeStyle): Promise<void>
 }
 
 /** Bumped by every grid load, so a slow song fetch for an old item cannot overwrite a newer selection. */
@@ -494,6 +512,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   scriptureServiceVersions: {},
   scriptureSwitchLiveImmediately: true,
   scriptureDual: { enabled: false, second: 'WEB', layout: 'stacked' },
+  scriptureServiceLooks: {},
   highlightClearOnSlideChange: true,
   highlightKeepWithItem: false,
   highlightDefault: DEFAULT_HIGHLIGHT,
@@ -901,6 +920,64 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   clearHighlights(where) {
     const at = selectMarkTarget(get(), where)
     if (at && isMarked(at.slide)) putMarked(where, at.index, unmarkSlide(at.slide))
+  },
+
+  adjustScripture(where, patch) {
+    const at = selectAdjustTarget(get(), where)
+    if (at) putSlide(where, at.index, { ...at.slide, adjust: { ...at.slide.adjust, ...patch } })
+  },
+
+  async saveScriptureAdjust(where, scope) {
+    const s = get()
+    const adjust = selectAdjustTarget(s, where)?.slide.adjust
+    if (!adjust || isEmptyAdjust(adjust)) return
+    if (scope === 'service') {
+      if (!s.service) return
+      const id = String(s.service.id)
+      const looks = s.settings.scriptureServiceLooks
+      await get().updateSettings({ scriptureServiceLooks: { ...looks, [id]: { ...looks[id], ...adjust } } })
+    } else {
+      const theme = s.themes.find((t) => t.id === s.themeDefaults?.scripture)
+      if (!theme) throw new Error('There is no default scripture theme to save to.')
+      await get().saveScriptureTheme(adjustTheme(theme.style, adjust))
+    }
+    // The live copy keeps its own theme, so the adjustments go into it too; the preview takes the new theme itself.
+    const now = get()
+    if (where === 'live' && now.live.itemType === 'scripture') set({ live: { ...now.live, theme: adjustTheme(now.live.theme, adjust) } })
+    const at = selectAdjustTarget(get(), where)
+    if (at && at.slide.adjust === adjust) putSlide(where, at.index, withoutAdjust(at.slide))
+  },
+
+  resetScriptureAdjust(where) {
+    const s = get()
+    const at = selectAdjustTarget(s, where)
+    if (!at) return
+    if (s.service && selectServiceLook(s)) {
+      const looks = { ...s.settings.scriptureServiceLooks }
+      delete looks[String(s.service.id)]
+      get().updateSettings({ scriptureServiceLooks: looks }).catch(console.error)
+      // The live copy took the service's look into its theme when it went live; it goes back to the theme itself.
+      const live = get().live
+      const base = s.themes.find((t) => t.id === (live.source?.deckThemeId ?? s.themeDefaults?.scripture))?.style
+      if (where === 'live' && live.itemType === 'scripture' && base) set({ live: { ...live, theme: base } })
+    }
+    putSlide(where, at.index, withoutAdjust(at.slide))
+  },
+
+  async saveScriptureTheme(style) {
+    const { themes, themeDefaults } = get()
+    const theme = themes.find((t) => t.id === themeDefaults?.scripture)
+    if (!theme) throw new Error('There is no default scripture theme to save to.')
+    if (theme.type === 'builtin') {
+      const taken = new Set(themes.map((t) => t.name.toLowerCase()))
+      let name = `${theme.name} Scripture`
+      for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${theme.name} Scripture ${n}`
+      const created = await window.api.themes.create(name, { ...style, category: 'scripture' })
+      await window.api.themes.setDefault('scripture', created.id)
+    } else if (!(await window.api.themes.update(theme.id, theme.name, style))) {
+      throw new Error('The default scripture theme no longer exists.')
+    }
+    await get().loadThemes()
   },
 
   async setSlideBackground(index, mediaId) {
@@ -1370,15 +1447,21 @@ let lastMark: { where: TranslationTarget; before: DeckSlide; after: DeckSlide } 
 /** Marks kept with schedule items while the app is open (Keep highlights with the schedule item): by item id, then slide text. */
 const keptMarks = new Map<number, Map<string, Pick<DeckSlide, 'rich' | 'unmarked'>>>()
 
-/** Puts a newly marked (or unmarked) live or preview slide in place. Marking is not a slide change, so Go Back skips it. */
-function putMarked(where: TranslationTarget, index: number, slide: DeckSlide): void {
+/** Puts a changed live or preview slide in place. It is not a slide change, so Go Back skips it. */
+function putSlide(where: TranslationTarget, index: number, slide: DeckSlide): void {
   const s = useOperatorStore.getState()
   const replace = (slides: DeckSlide[]) => slides.map((old, i) => (i === index ? slide : old))
   if (where === 'live') {
-    // The grid's copy of the live slide follows, so its thumbnail shows the marks too.
+    // The grid's copy of the live slide follows, so its thumbnail shows the change too.
     const grid = selectBrowsingLive(s) && s.slides[index]?.text === slide.text ? { slides: replace(s.slides) } : {}
     useOperatorStore.setState({ live: { ...s.live, slides: replace(s.live.slides) }, ...grid })
   } else useOperatorStore.setState({ slides: replace(s.slides) })
+}
+
+/** Puts a newly marked (or unmarked) live or preview slide in place. */
+function putMarked(where: TranslationTarget, index: number, slide: DeckSlide): void {
+  const s = useOperatorStore.getState()
+  putSlide(where, index, slide)
   const itemId = where === 'live' ? s.live.scheduleItemId : s.activeItemId
   if (!s.settings.highlightKeepWithItem || itemId === null) return
   const kept = keptMarks.get(itemId) ?? new Map()
@@ -1395,6 +1478,29 @@ function withKeptMarks(itemId: number, slides: DeckSlide[]): DeckSlide[] {
     const marks = kept.get(slide.text)
     return marks && JSON.stringify(slideRich(slide)) === JSON.stringify(marks.unmarked) ? { ...slide, ...marks } : slide
   })
+}
+
+// ---------- Scripture quick adjustments ----------
+
+/** The live or preview verse, for quick adjustments: scripture slides only. */
+export function selectAdjustTarget(s: OperatorState, where: TranslationTarget): { slide: DeckSlide; index: number } | null {
+  const live = where === 'live'
+  const index = live ? s.live.slideIndex : s.highlightIndex
+  const slide = index === null ? undefined : (live ? s.live.slides : s.slides)[index]
+  if (index === null || !slide || (live ? s.live.itemType : s.deckType) !== 'scripture') return null
+  return { slide, index }
+}
+
+/** The open service's own scripture look (Apply to this service only), if it has one. */
+export function selectServiceLook(s: OperatorState): ScriptureAdjust | undefined {
+  const own = s.service ? s.settings.scriptureServiceLooks[String(s.service.id)] : undefined
+  return isEmptyAdjust(own) ? undefined : own
+}
+
+function withoutAdjust(slide: DeckSlide): DeckSlide {
+  const next = { ...slide }
+  delete next.adjust
+  return next
 }
 
 /** Slides with the marks taken off slide `index`. */
@@ -1754,7 +1860,9 @@ export function selectStageState(s: OperatorState): StageState {
 /** A Native mode slide's own theme, or a slide's own background in place of the theme's; a second translation gets a second text box. */
 export function slideTheme(theme: ThemeStyle, slide: DeckSlide | null | undefined): ThemeStyle {
   if (slide?.native) return slide.native
-  const look = slide?.second ? dualTheme(theme, slide.second) : theme
+  // Quick adjustments go on first, so both translations of a dual slide take them.
+  const adjusted = adjustTheme(theme, slide?.adjust)
+  const look = slide?.second ? dualTheme(adjusted, slide.second) : adjusted
   if (!slide?.background) return look
   // A presentation page is the whole slide, so the theme's shapes and images stay off it.
   return {
@@ -1775,8 +1883,9 @@ export function selectDefaultTranslation(s: OperatorState): BibleVersionCode {
 }
 
 /**
- * Where Cmd+1 to 9 (Ctrl+1 to 9) and Alt+Up and Down change the translation: the live scripture while the grid shows
- * it or holds no scripture, as Up and Down step the live verse; otherwise the preview's.
+ * Where Cmd+1 to 9 (Ctrl+1 to 9) and Alt+Shift+Up and Down change the translation, and Cmd+Plus and Minus and Alt+Up
+ * and Down adjust the verse: the live scripture while the grid shows it or holds no scripture, as Up and Down step the
+ * live verse; otherwise the preview's.
  */
 export function selectTranslationTarget(s: OperatorState): TranslationTarget | null {
   const liveScripture = s.live.itemType === 'scripture' && s.live.slideIndex !== null
@@ -1795,8 +1904,15 @@ export function selectBaseThemeId(s: OperatorState): number | null {
   return s.themeDefaults?.[type] ?? null
 }
 
-/** The style the grid and preview use for what is loaded; it goes live with the item. */
+/** The last theme with a service's scripture look over it, so the selector returns the same object until either changes. */
+let serviceLookCache: { theme: ThemeStyle; look: ScriptureAdjust; result: ThemeStyle } | null = null
+
+/** The style the grid and preview use for what is loaded; it goes live with the item. Scripture takes the service's own look. */
 export function selectDeckTheme(s: OperatorState): ThemeStyle {
   const id = s.deckThemeId ?? selectBaseThemeId(s)
-  return s.themes.find((t) => t.id === id)?.style ?? s.themes[0]?.style ?? DEFAULT_THEME_STYLE
+  const theme = s.themes.find((t) => t.id === id)?.style ?? s.themes[0]?.style ?? DEFAULT_THEME_STYLE
+  const look = s.deckType === 'scripture' ? selectServiceLook(s) : undefined
+  if (!look) return theme
+  if (serviceLookCache?.theme !== theme || serviceLookCache.look !== look) serviceLookCache = { theme, look, result: adjustTheme(theme, look) }
+  return serviceLookCache.result
 }

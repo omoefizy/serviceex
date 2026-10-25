@@ -24,6 +24,7 @@ import {
   Sun,
   SunMoon,
   Trash2,
+  Type,
   X,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
@@ -61,6 +62,7 @@ import {
 } from '../lib/mic'
 import { IS_MAC, MOD } from '../lib/shortcuts'
 import { LevelMeter } from './LevelMeter'
+import { ScriptureDisplayForm } from './ScriptureDisplay'
 import { ThemeDefaultsForm } from './ThemeEditor'
 
 function Section({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
@@ -830,7 +832,7 @@ function ScriptureSection() {
         Switch live immediately
       </label>
       <p className="hint">
-        On: a version chip on the Live box (or {MOD}1 to 9, Alt+↑ and Alt+↓) crossfades the live verse into that translation. Off: the new
+        On: a version chip on the Live box (or {MOD}1 to 9, Alt+Shift+↑ and Alt+Shift+↓) crossfades the live verse into that translation. Off: the new
         translation waits in the preview, and you resend it.
       </p>
       <div className="field">
@@ -1316,6 +1318,12 @@ export function SettingsPanel() {
       <ListenerSection />
 
       <ScriptureSection />
+      <Section icon={<Type size={16} aria-hidden="true" />} title="Scripture display">
+        <ScriptureDisplayForm />
+        <p className="hint">
+          The Aa button on the Live and Preview boxes adjusts one verse: {MOD}+ and {MOD}− change its size, Alt+↑ and Alt+↓ move it.
+        </p>
+      </Section>
       <HighlightSection />
       <DetectionSection />
       <QuotesSection />

@@ -66,7 +66,7 @@ function boxPatch(patch: FormatPatch, t: ThemeTextProps, emptyFont: boolean): Pa
   return next
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+export function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="theme-row" role="group" aria-label={label}>
       <span>{label}</span>
@@ -92,7 +92,7 @@ function NumberInput(props: { value: number; min: number; max: number; step: num
   )
 }
 
-function Range(props: { value: number; min: number; max: number; step: number; onChange(value: number): void; format(value: number): string }) {
+export function Range(props: { value: number; min: number; max: number; step: number; onChange(value: number): void; format(value: number): string }) {
   return (
     <>
       <input type="range" value={props.value} min={props.min} max={props.max} step={props.step} onChange={(e) => props.onChange(Number(e.target.value))} />
@@ -101,7 +101,7 @@ function Range(props: { value: number; min: number; max: number; step: number; o
   )
 }
 
-function Segmented<T extends string>(props: { value: T; options: { value: T; label: string }[]; onChange(value: T): void }) {
+export function Segmented<T extends string>(props: { value: T; options: { value: T; label: string }[]; onChange(value: T): void }) {
   return (
     <span className="segmented" role="radiogroup">
       {props.options.map((option) => (
@@ -120,7 +120,7 @@ function Segmented<T extends string>(props: { value: T; options: { value: T; lab
   )
 }
 
-const Color = ({ value, onChange }: { value: string; onChange(value: string): void }) => (
+export const Color = ({ value, onChange }: { value: string; onChange(value: string): void }) => (
   <input className="color-input" type="color" value={value} onChange={(e) => onChange(e.target.value)} />
 )
 

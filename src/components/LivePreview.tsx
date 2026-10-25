@@ -33,6 +33,7 @@ import {
   type TranslationTarget,
 } from '../store'
 import { OutputScreen } from './OutputView'
+import { ScriptureQuickAdjust } from './ScriptureDisplay'
 import { ThemedSlide } from './ThemedSlide'
 
 /** "Slide 2 of 5" across the corner of a screen, when it shows a slide. */
@@ -268,6 +269,7 @@ function HighlightBar({ where }: { where: TranslationTarget }) {
       >
         <Eraser size={14} aria-hidden="true" />
       </button>
+      <ScriptureQuickAdjust where={where} />
     </div>
   )
 }

@@ -2354,6 +2354,11 @@ button {
   max-width: 100%;
 }
 
+/* Lines attached over the main text keep their gap below them. */
+.themed-attached.above .themed-caption {
+  margin: 0 0 0.6em;
+}
+
 .themed-line {
   display: block;
 }
@@ -5486,4 +5491,98 @@ button {
   width: auto;
   padding: var(--space-0-5) var(--space-1-5);
   font-size: 12px;
+}
+
+/* The Aa button for quick verse adjustments, at the end of the highlight toolbar, and its popover. */
+.scripture-adjust {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.scripture-adjust-button {
+  min-width: 26px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Shown while the verse looks different from its theme. */
+.custom-chip {
+  padding: 1px var(--space-1-5);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.scripture-adjust-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 300px;
+  padding: var(--space-2-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.scripture-adjust-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 12px;
+}
+
+.scripture-adjust-row > span:first-child {
+  width: 56px;
+  color: var(--text-muted);
+}
+
+.scripture-adjust-row .font-picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.scripture-adjust-row .font-picker-value {
+  width: 100%;
+}
+
+.scripture-adjust-value {
+  min-width: 48px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.scripture-adjust-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* A color too close to the background, or too dark for a luma key. */
+.contrast-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.14);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.contrast-warning > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #f59e0b;
 }

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import { matching, richVerticalAlign } from '../../shared/richText'
-import { DEFAULT_FONT, isTextKind } from '../../shared/themes'
+import { AUTO_FIT_MAX, DEFAULT_FONT, isTextKind } from '../../shared/themes'
 import type {
   OutputMode,
   RichText,
@@ -20,8 +20,6 @@ import { animateSmoke, drawStillSmoke, SMOKE_HEIGHT, SMOKE_WIDTH } from '../lib/
 import { spanStyle } from '../lib/richText'
 import { RichSlideLines } from './RichText'
 
-/** The largest auto fit size in percent of screen height, so one short line does not fill the screen. */
-const AUTO_FIT_MAX = 16
 const MIN_SIZE = 1
 
 const TEXT_TRANSFORMS: Record<TextCase, CSSProperties['textTransform']> = {
@@ -182,11 +180,12 @@ function ImageElement({ element, logoUrl }: { element: Extract<ThemeElement, { k
   )
 }
 
-/** A line drawn under the main text, following it: an attached Reference or Copyright box. */
+/** A line drawn under (or over) the main text, following it: an attached Reference or Copyright box. */
 interface AttachedLine {
   id: string
   text: string
   props: ThemeTextProps
+  above: boolean
 }
 
 /**
@@ -199,6 +198,7 @@ function TextBox({ element, content, attached = [], main, rich = null }: { eleme
   const fitRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLParagraphElement>(null)
   const attachedRef = useRef<HTMLDivElement>(null)
+  const aboveRef = useRef<HTMLDivElement>(null)
   const props = element.text
   const paragraphs = element.kind === 'text' ? element.paragraphs : undefined
   const attachedKey = JSON.stringify(attached)
@@ -211,14 +211,15 @@ function TextBox({ element, content, attached = [], main, rich = null }: { eleme
     const fit = () => {
       if (box.clientHeight === 0) return
       const below = attachedRef.current
-      const height = box.clientHeight - (below ? below.offsetHeight : 0)
+      const above = aboveRef.current
+      const height = box.clientHeight - (below ? below.offsetHeight : 0) - (above ? above.offsetHeight : 0)
       const fits = (size: number) => {
         el.style.fontSize = `${size}cqh`
         return el.scrollWidth <= box.clientWidth && el.scrollHeight <= height
       }
       if (props.sizeMode === 'fixed' && fits(props.fontSize)) return
       let low = MIN_SIZE
-      let high = props.sizeMode === 'fixed' ? props.fontSize : AUTO_FIT_MAX
+      let high = props.sizeMode === 'fixed' ? props.fontSize : (props.maxSize ?? AUTO_FIT_MAX)
       while (high - low > 0.05) {
         const size = (low + high) / 2
         if (fits(size)) low = size
@@ -241,14 +242,34 @@ function TextBox({ element, content, attached = [], main, rich = null }: { eleme
   // Aligned paragraphs line up across the whole box, as in a word processor, not just across the widest line.
   const fullWidth = paragraphs !== undefined || (rich?.paragraphs.some((p) => p.align !== undefined) ?? false)
   const verticalAlign = (rich && richVerticalAlign(rich)) ?? props.verticalAlign
+  const attachedLines = (lines: AttachedLine[]) =>
+    lines.map((line) => (
+      <p
+        key={line.id}
+        className="themed-caption"
+        style={{ ...textStyle(line.props, defaultFont), fontSize: `${line.props.fontSize}cqh`, textAlign: props.align }}
+      >
+        {line.text}
+      </p>
+    ))
+  const over = attached.filter((line) => line.above)
+  const under = attached.filter((line) => !line.above)
 
   return (
-    <div className="themed-element themed-box" style={{ ...boxStyle(element.box), padding: `${props.padding}cqh` }}>
+    <div
+      className="themed-element themed-box"
+      style={{ ...boxStyle(element.box), padding: `${props.padding}cqh`, transform: props.offset ? `translateY(${props.offset}cqh)` : undefined }}
+    >
       <div
         ref={fitRef}
         className="themed-fit"
         style={{ justifyContent: JUSTIFY[verticalAlign], alignItems: ALIGN_ITEMS[props.align], textAlign: props.align }}
       >
+        {over.length > 0 && (
+          <div ref={aboveRef} className="themed-attached above">
+            {attachedLines(over)}
+          </div>
+        )}
         {/* data-slide-text lets the Live and Preview boxes find the clicked word (see useWordMarking). */}
         <p ref={textRef} className={`themed-text${fullWidth ? ' fixed' : ''}`} style={textStyle(props, defaultFont)} data-slide-text={main || undefined}>
           {paragraphs ? (
@@ -267,17 +288,9 @@ function TextBox({ element, content, attached = [], main, rich = null }: { eleme
               ))
             : content}
         </p>
-        {attached.length > 0 && (
+        {under.length > 0 && (
           <div ref={attachedRef} className="themed-attached">
-            {attached.map((line) => (
-              <p
-                key={line.id}
-                className="themed-caption"
-                style={{ ...textStyle(line.props, defaultFont), fontSize: `${line.props.fontSize}cqh`, textAlign: props.align }}
-              >
-                {line.text}
-              </p>
-            ))}
+            {attachedLines(under)}
           </div>
         )}
       </div>
@@ -330,7 +343,9 @@ export function ThemedSlide({ theme, text, caption = '', copyright = '', mode = 
   const followsText = (element: ThemeElement) => mainText !== undefined && (element.kind === 'reference' || element.kind === 'copyright') && element.attached
   const attached: AttachedLine[] = []
   for (const element of theme.elements) {
-    if (followsText(element) && 'text' in element && contentOf(element)) attached.push({ id: element.id, text: contentOf(element), props: element.text })
+    if (followsText(element) && 'attached' in element && contentOf(element)) {
+      attached.push({ id: element.id, text: contentOf(element), props: element.text, above: element.above === true })
+    }
   }
 
   const drawn: ReactNode[] = []

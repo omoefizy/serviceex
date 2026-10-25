@@ -1,7 +1,18 @@
 import { DEFAULT_HIGHLIGHT, HIGHLIGHT_COLORS, HIGHLIGHT_KINDS } from '../../shared/highlights'
 import { sanitizeRichFor } from '../../shared/richText'
+import { clampOffset, clampSize } from '../../shared/scriptureLook'
 import { DEFAULT_FONT } from '../../shared/themes'
-import type { AlertMessage, AppSettings, LogoAnchor, LogoItem, SavedLowerThirdLine, ScreenMargins, StreamResolution, WhisperModelId } from '../../shared/types'
+import type {
+  AlertMessage,
+  AppSettings,
+  LogoAnchor,
+  LogoItem,
+  SavedLowerThirdLine,
+  ScreenMargins,
+  ScriptureAdjust,
+  StreamResolution,
+  WhisperModelId,
+} from '../../shared/types'
 import { db } from './index'
 
 export const NO_MARGINS: ScreenMargins = { top: 0, right: 0, bottom: 0, left: 0 }
@@ -73,6 +84,7 @@ const DEFAULTS: AppSettings = {
   scriptureServiceVersions: {},
   scriptureSwitchLiveImmediately: true,
   scriptureDual: { enabled: false, second: 'WEB', layout: 'stacked' },
+  scriptureServiceLooks: {},
   highlightClearOnSlideChange: true,
   highlightKeepWithItem: false,
   highlightDefault: DEFAULT_HIGHLIGHT,
@@ -150,6 +162,7 @@ const KEYS: Record<keyof AppSettings, string> = {
   scriptureServiceVersions: 'scripture.serviceVersions',
   scriptureSwitchLiveImmediately: 'scripture.switchLiveImmediately',
   scriptureDual: 'scripture.dual',
+  scriptureServiceLooks: 'scripture.serviceLooks',
   highlightClearOnSlideChange: 'highlight.clearOnSlideChange',
   highlightKeepWithItem: 'highlight.keepWithItem',
   highlightDefault: 'highlight.default',
@@ -173,6 +186,18 @@ export const MIC_LIMITS = {
 /** A number in [min, max], rounded to `step`; undefined for anything else. */
 const ranged = (value: unknown, [min, max]: readonly [number, number], step: number) =>
   typeof value === 'number' && Number.isFinite(value) ? Number((Math.round(Math.min(max, Math.max(min, value)) / step) * step).toFixed(2)) : undefined
+
+/** A service's quick adjustments with each field checked; fields out of shape are dropped. */
+function cleanScriptureAdjust(value: unknown): ScriptureAdjust {
+  const v = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
+  const adjust: ScriptureAdjust = {}
+  if (typeof v.fontSize === 'number' && Number.isFinite(v.fontSize)) adjust.fontSize = clampSize(v.fontSize)
+  if (typeof v.color === 'string' && /^#[0-9a-f]{6}$/i.test(v.color)) adjust.color = v.color.toLowerCase()
+  if (typeof v.fontFamily === 'string' && v.fontFamily.length <= 200) adjust.fontFamily = v.fontFamily
+  if (typeof v.bold === 'boolean') adjust.bold = v.bold
+  if (typeof v.offset === 'number' && Number.isFinite(v.offset)) adjust.offset = clampOffset(v.offset)
+  return adjust
+}
 
 /** Saved alerts with a usable shape; anything else in the list is dropped. */
 function cleanAlertMessages(value: unknown): AlertMessage[] | undefined {
@@ -367,6 +392,14 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'scriptureServiceVersions': {
       if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
       const entries = Object.entries(value).filter(([id, code]) => /^\d+$/.test(id) && versionCode(code) !== undefined)
+      return Object.fromEntries(entries.slice(0, 500)) as never
+    }
+    case 'scriptureServiceLooks': {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+      const entries = Object.entries(value)
+        .filter(([id]) => /^\d+$/.test(id))
+        .map(([id, look]) => [id, cleanScriptureAdjust(look)] as const)
+        .filter(([, look]) => Object.keys(look).length > 0)
       return Object.fromEntries(entries.slice(0, 500)) as never
     }
     case 'scriptureDual': {

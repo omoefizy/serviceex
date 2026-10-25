@@ -92,12 +92,13 @@ const GAP = 2
 /**
  * The theme for a slide that shows a second translation: a theme with two text boxes shows it in its second one;
  * otherwise the text box is split in two, one above the other or side by side, the second showing the second translation.
+ * Both translations take the verse box's look (Settings, Scripture display, and any quick adjustments).
  */
 export function dualTheme(theme: ThemeStyle, second: NonNullable<DeckSlide['second']>): ThemeStyle {
   const boxes = theme.elements.filter((e): e is Extract<ThemeElement, { kind: 'text' }> => e.kind === 'text' && !e.paragraphs)
   if (boxes.length === 0) return theme
   const paragraphs = second.text.split('\n').map((line) => ({ runs: [{ text: line }] }))
-  if (boxes.length >= 2) return { ...theme, elements: theme.elements.map((e) => (e === boxes[1] ? { ...boxes[1], paragraphs } : e)) }
+  if (boxes.length >= 2) return { ...theme, elements: theme.elements.map((e) => (e === boxes[1] ? { ...boxes[1], text: boxes[0].text, paragraphs } : e)) }
   const main = boxes[0]
   const { x, y, width, height } = main.box
   const [first, other] =

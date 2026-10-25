@@ -428,6 +428,8 @@ export interface ThemeTextProps {
   /** auto: as large as fits the box. fixed: `fontSize`, shrunk only when the text would overflow. */
   sizeMode: 'auto' | 'fixed'
   fontSize: number
+  /** The largest size auto fit picks; left out, AUTO_FIT_MAX (shared/themes.ts). */
+  maxSize?: number
   color: string
   textCase: TextCase
   align: 'left' | 'center' | 'right'
@@ -437,6 +439,8 @@ export interface ThemeTextProps {
   outline: { enabled: boolean; color: string; width: number }
   /** Space inside the box, in percent of screen height. */
   padding: number
+  /** Moves the box up (negative) or down, in percent of screen height: Settings, Scripture display's fine offset. */
+  offset?: number
 }
 
 /** A run of words with its own look, inside an imported PowerPoint text box. Fields left out use the box's. */
@@ -494,6 +498,8 @@ export type ThemeElement =
       text: ThemeTextProps
       /** Drawn just under the main text, following it, instead of in its own box (how themes before the layout editor worked). */
       attached: boolean
+      /** An attached line drawn just over the main text instead of under it. */
+      above?: boolean
     })
   | (ThemeElementBase & { kind: 'image'; src: string | null; fit: 'contain' | 'cover'; opacity: number })
   | (ThemeElementBase & { kind: 'shape'; color: string; opacity: number })
@@ -525,6 +531,22 @@ export interface Theme {
 }
 
 export type ThemeDefaults = Record<ThemeContentType, number>
+
+/**
+ * Quick adjustments to how a verse looks, over its theme: from the Aa popover on the Live and Preview boxes, for one
+ * verse or a whole service. Fields left out keep the theme's.
+ */
+export interface ScriptureAdjust {
+  /** A fixed verse size in percent of screen height. */
+  fontSize?: number
+  /** #rrggbb. */
+  color?: string
+  /** A family name; empty uses the Default Font. */
+  fontFamily?: string
+  bold?: boolean
+  /** Moves the verse and its reference up (negative) or down, in percent of screen height. */
+  offset?: number
+}
 
 export interface ThemesApi {
   /** Built-in themes first, then custom ones in the order they were made. */
@@ -903,6 +925,8 @@ export interface AppSettings {
   scriptureSwitchLiveImmediately: boolean
   /** Two translations on one slide: the chosen one, with `second` in a second text box. */
   scriptureDual: DualTranslation
+  /** Quick adjustments saved with Apply to this service only, by service id: every verse of that service shows them. */
+  scriptureServiceLooks: Record<string, ScriptureAdjust>
   /** Live highlighting: the marks on a live slide come off when another slide goes live. On by default. */
   highlightClearOnSlideChange: boolean
   /** Live highlighting: marks stay with their schedule item while the app is open, and come back when it is loaded again. Off by default. */
@@ -1228,6 +1252,8 @@ export interface WorshipDeckApi {
   fonts: FontsApi
   /** Cmd+H on macOS, caught by the main process before the app menu hides the app, to toggle highlight mode. */
   onToggleHighlight(listener: () => void): () => void
+  /** Cmd+Plus and Cmd+Minus (Ctrl+Plus and Minus), caught by the main process before they zoom the window: +1 or -1. */
+  onScriptureSize(listener: (step: 1 | -1) => void): () => void
   output: {
     /** Sends the operator's output state to the output window. */
     send(state: OutputState): void
