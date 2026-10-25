@@ -23,6 +23,7 @@ import { registerStreamIpc, sendLastStreamState } from './ipc/stream'
 import { registerPresentationIpc } from './ipc/presentations'
 import { registerLivePowerPointIpc, type LivePowerPoint } from './ipc/livePowerPoint'
 import { registerLogIpc } from './ipc/log'
+import { registerFontIpc } from './ipc/fonts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -307,6 +308,7 @@ app.whenReady().then(() => {
   registerLowerThirdIpc()
   registerMediaIpc()
   registerLogIpc()
+  registerFontIpc()
   registerSettingsIpc((before, after) => {
     // Live PowerPoint off: the slide show ends and PowerPoint lets go of the copies.
     if (before.presentationLivePowerPoint && !after.presentationLivePowerPoint) livePowerPoint?.stop().catch(console.error)

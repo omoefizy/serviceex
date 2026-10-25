@@ -1,9 +1,10 @@
-import { useEffect, useState, type FocusEvent, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { replaceThemeFont, themeFonts } from '../../shared/fonts'
 import { THEME_CONTENT_TYPES } from '../../shared/themes'
 import type { TextCase, Theme, ThemeBackground, ThemeBox, ThemeContentType, ThemeElement, ThemeStyle, ThemeTextElement, ThemeTextProps } from '../../shared/types'
 import { selectBaseThemeId, useOperatorStore } from '../store'
-import { cssFontFamily } from '../lib/fonts'
 import { clampBox } from '../lib/themeLayout'
+import { FontPicker, MissingFontChips } from './FontPicker'
 import { MediaPickerModal } from './MediaGrid'
 import { ThemedSlide } from './ThemedSlide'
 
@@ -32,112 +33,6 @@ const CASES: { value: TextCase; label: string }[] = [
   { value: 'upper', label: 'UPPERCASE' },
   { value: 'lower', label: 'lowercase' },
 ]
-
-/** Shown when the system will not list its fonts. */
-const FALLBACK_FONTS = [
-  'Arial',
-  'Avenir Next',
-  'Calibri',
-  'Georgia',
-  'Gill Sans',
-  'Helvetica Neue',
-  'Montserrat',
-  'Open Sans',
-  'Palatino',
-  'Segoe UI',
-  'Times New Roman',
-  'Trebuchet MS',
-  'Verdana',
-]
-
-let systemFonts: Promise<string[]> | null = null
-
-/** Installed font families, through Chromium's Local Font Access API. Asked once, on first use (it needs a click). */
-function loadSystemFonts(): Promise<string[]> {
-  systemFonts ??= (async () => {
-    const query = (window as Window & { queryLocalFonts?: () => Promise<{ family: string }[]> }).queryLocalFonts
-    if (!query) return FALLBACK_FONTS
-    try {
-      const fonts = await query.call(window)
-      const families = [...new Set(fonts.map((font) => font.family))].sort((a, b) => a.localeCompare(b))
-      return families.length > 0 ? families : FALLBACK_FONTS
-    } catch {
-      return FALLBACK_FONTS
-    }
-  })()
-  return systemFonts
-}
-
-/** "'Helvetica Neue', Inter, sans-serif" → "Helvetica Neue". */
-const familyName = (value: string) => value.split(',')[0].replace(/['"]/g, '').trim()
-
-export function FontPicker({ value, onChange, emptyLabel }: { value: string; onChange(value: string): void; emptyLabel?: string }) {
-  const [open, setOpen] = useState(false)
-  const [fonts, setFonts] = useState<string[] | null>(null)
-  const [query, setQuery] = useState('')
-  const shown = (fonts ?? []).filter((f) => f.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 300)
-
-  function openList() {
-    setOpen(true)
-    setQuery('')
-    loadSystemFonts().then(setFonts)
-  }
-
-  function choose(font: string) {
-    onChange(font)
-    setOpen(false)
-  }
-
-  function handleBlur(e: FocusEvent<HTMLDivElement>) {
-    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false)
-  }
-
-  return (
-    <div className="font-picker" onBlur={handleBlur}>
-      <button
-        type="button"
-        className="input font-picker-value"
-        style={{ fontFamily: value ? cssFontFamily(value) : undefined }}
-        onClick={() => (open ? setOpen(false) : openList())}
-      >
-        {value ? familyName(value) : emptyLabel}
-      </button>
-      {open && (
-        <div className="font-picker-menu">
-          <input
-            className="input"
-            placeholder="Search installed fonts"
-            value={query}
-            autoFocus
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') setOpen(false)
-              // Allow a family the list does not show, such as a web font name.
-              if (e.key === 'Enter' && query.trim()) choose(shown.find((f) => f.toLowerCase() === query.trim().toLowerCase()) ?? query.trim())
-            }}
-          />
-          <ul>
-            {emptyLabel !== undefined && (
-              <li>
-                <button type="button" onClick={() => choose('')}>
-                  {emptyLabel}
-                </button>
-              </li>
-            )}
-            {fonts === null && <li className="hint">Loading fonts…</li>}
-            {shown.map((font) => (
-              <li key={font}>
-                <button type="button" style={{ fontFamily: cssFontFamily(font) }} onClick={() => choose(font)}>
-                  {font}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  )
-}
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -439,6 +334,7 @@ export function ThemeEditor() {
             {confirmingDelete && <p className="hint">Songs and defaults using this theme go back to the built-in defaults.</p>}
             {message && <p className="hint">{message}</p>}
             {error && <p className="error">{error}</p>}
+            <MissingFontChips values={themeFonts(style)} onReplace={(from, to) => setStyle((s) => s && replaceThemeFont(s, from, to))} />
 
             {mainText &&
               (() => {

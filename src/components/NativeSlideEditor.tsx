@@ -1,7 +1,9 @@
 import { AlertTriangle, ChevronLeft, ChevronRight, Columns2, Unlink } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { replaceThemeFont, themeFonts } from '../../shared/fonts'
 import type { ThemeElement, ThemeStyle, ThemeTextParagraph } from '../../shared/types'
 import { useOperatorStore } from '../store'
+import { MissingFontChips } from './FontPicker'
 import { ThemedSlide } from './ThemedSlide'
 
 type FixedText = Extract<ThemeElement, { kind: 'text' }> & { paragraphs: ThemeTextParagraph[] }
@@ -142,6 +144,13 @@ export function NativeSlideEditor({ presentationId, index: startIndex, onClose }
               </li>
             ))}
           </ul>
+        )}
+
+        {edited && (
+          <MissingFontChips
+            values={themeFonts(edited)}
+            onReplace={(from, to) => run(() => updateNativeSlide(presentation.id, index, replaceThemeFont(edited, from, to))).then((ok) => ok && setDraft({}))}
+          />
         )}
 
         {texts.length > 0 && (

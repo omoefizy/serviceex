@@ -2,12 +2,14 @@
 // so they keep working when the originals move, and are served to both windows as wd-media://local/<name>.
 // Imported presentations' slide pictures live in <userData>/presentations/<hash>/, served as
 // wd-media://deck/<hash>/<name>, and the pictures Native mode takes out of a .pptx in its native/ folder.
+// Imported fonts live in <userData>/fonts, served as wd-media://font/<name> (see fonts.ts).
 // The dev renderer runs on http://localhost, which may not load file:// URLs.
 
 import { app, net, protocol } from 'electron'
 import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { fontFileName, fontsDir } from './fonts'
 
 const SCHEME = 'wd-media'
 
@@ -30,6 +32,11 @@ export function registerMediaProtocol(): void {
       const match = /^([0-9a-f]{64})\/(slide-\d{3}\.png|native\/[0-9a-f]{64}\.(?:png|jpe?g|gif|webp|svg|bmp))$/.exec(name)
       if (!match) return new Response('Not found', { status: 404 })
       file = path.join(presentationsDir(), match[1], ...match[2].split('/'))
+    } else if (url.host === 'font') {
+      // Only a font file name inside the fonts folder.
+      const font = fontFileName(name)
+      if (!font) return new Response('Not found', { status: 404 })
+      file = path.join(fontsDir(), font)
     } else {
       // Only plain file names inside the media folder.
       if (!name || name !== path.basename(name) || name.startsWith('.')) return new Response('Not found', { status: 404 })

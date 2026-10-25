@@ -5,7 +5,10 @@ import { OutputView } from './components/OutputView'
 import { RasterizeView } from './components/RasterizeView'
 import { StageView } from './components/StageView'
 import { StreamView } from './components/StreamView'
+import { installFonts } from './lib/fonts'
 import './index.css'
+
+installFonts()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

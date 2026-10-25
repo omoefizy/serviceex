@@ -25,6 +25,7 @@ import type {
   StreamApi,
   StreamState,
   ThemesApi,
+  FontsApi,
   WorshipDeckApi,
 } from '../shared/types'
 
@@ -280,6 +281,16 @@ const log: LogApi = {
   panelError: (report) => ipcRenderer.invoke('log:panelError', report),
 }
 
+const fonts: FontsApi = {
+  list: () => ipcRenderer.invoke('fonts:list'),
+  import: () => ipcRenderer.invoke('fonts:import'),
+  onChanged(listener) {
+    const handler = () => listener()
+    ipcRenderer.on('fonts:changed', handler)
+    return () => ipcRenderer.off('fonts:changed', handler)
+  },
+}
+
 const api: WorshipDeckApi = {
   songs,
   bible,
@@ -297,6 +308,7 @@ const api: WorshipDeckApi = {
   livePowerPoint,
   rasterizer,
   log,
+  fonts,
   output,
 }
 contextBridge.exposeInMainWorld('api', api)

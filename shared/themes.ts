@@ -13,6 +13,7 @@ import type {
   ThemeTextProps,
   ThemeTextRun,
 } from './types'
+import { migrateFontName } from './fonts'
 
 /** The Default Font until Live Options picks another. Text boxes with no font of their own use it. */
 export const DEFAULT_FONT = "'Helvetica Neue', Inter, 'Segoe UI', Arial, sans-serif"
@@ -168,7 +169,7 @@ function readLegacy(v: Fields): LegacyStyle {
   const band = fieldsOf(v.band)
   const caption = fieldsOf(v.caption)
   return {
-    fontFamily: text(v.fontFamily, d.fontFamily).trim() || d.fontFamily,
+    fontFamily: migrateFontName(text(v.fontFamily, d.fontFamily)) || d.fontFamily,
     fontWeight: weight(v.fontWeight, d.fontWeight),
     sizeMode: oneOf(v.sizeMode, ['auto', 'fixed'], d.sizeMode),
     fontSize: number(v.fontSize, d.fontSize, 1, 30),
@@ -202,7 +203,7 @@ function readLegacy(v: Fields): LegacyStyle {
     background: normalizeBackground(v.background, d.background),
     overlay: number(v.overlay, d.overlay, 0, 1),
     caption: {
-      fontFamily: text(caption.fontFamily, d.caption.fontFamily).trim(),
+      fontFamily: migrateFontName(text(caption.fontFamily, d.caption.fontFamily)),
       fontWeight: weight(caption.fontWeight, d.caption.fontWeight),
       size: number(caption.size, d.caption.size, 1, 15),
       color: hex(caption.color, d.caption.color),
@@ -485,7 +486,7 @@ function normalizeTextProps(value: unknown, fallback: ThemeTextProps): ThemeText
   const outline = fieldsOf(v.outline)
   const d = fallback
   return {
-    fontFamily: text(v.fontFamily, d.fontFamily).trim().slice(0, 200),
+    fontFamily: migrateFontName(text(v.fontFamily, d.fontFamily)).slice(0, 200),
     fontWeight: weight(v.fontWeight, d.fontWeight),
     italic: flag(v.italic, d.italic),
     underline: flag(v.underline, d.underline),
@@ -517,7 +518,7 @@ const MAX_RUNS = 100
 function normalizeRun(value: unknown): ThemeTextRun {
   const v = fieldsOf(value)
   const run: ThemeTextRun = { text: text(v.text, '').slice(0, 5000) }
-  if (typeof v.fontFamily === 'string' && v.fontFamily.trim()) run.fontFamily = v.fontFamily.trim().slice(0, 200)
+  if (typeof v.fontFamily === 'string' && v.fontFamily.trim()) run.fontFamily = migrateFontName(v.fontFamily).slice(0, 200)
   if (typeof v.fontSize === 'number') run.fontSize = number(v.fontSize, 4, 0.5, 30)
   if (typeof v.color === 'string') run.color = hex(v.color, '#ffffff')
   for (const key of ['bold', 'italic', 'underline'] as const) if (typeof v[key] === 'boolean') run[key] = v[key] as boolean

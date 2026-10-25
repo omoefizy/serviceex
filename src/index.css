@@ -2746,7 +2746,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: var(--space-1-5);
-  width: 280px;
+  width: 300px;
   padding: var(--space-1-5);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -2755,7 +2755,7 @@ button {
 }
 
 .font-picker-menu ul {
-  max-height: 280px;
+  max-height: 320px;
   margin: 0;
   padding: 0;
   overflow-y: auto;
@@ -2777,6 +2777,116 @@ button {
 .font-picker-menu li button:focus-visible {
   background: var(--panel-raised);
   outline: none;
+}
+
+/* Sections inside the one scrolling list. */
+.font-picker-menu .font-picker-group ul {
+  max-height: none;
+  overflow: visible;
+}
+
+.font-picker-group h3 {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  background: var(--panel);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.font-picker-group > .hint {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+}
+
+.font-picker-row {
+  display: flex;
+  align-items: center;
+}
+
+.font-picker-menu li button.font-picker-font {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.font-picker-menu li button.font-picker-font.selected {
+  color: var(--accent);
+}
+
+.font-picker-menu li button.font-picker-star {
+  flex: none;
+  width: auto;
+  padding: var(--space-1);
+  color: var(--text-muted);
+  opacity: 0.45;
+}
+
+.font-picker-menu li button.font-picker-star.on {
+  color: #f5a524;
+  opacity: 1;
+}
+
+.font-picker-menu li button.font-picker-star.on svg {
+  fill: currentColor;
+}
+
+.font-picker-row:hover .font-picker-star {
+  opacity: 1;
+}
+
+.font-picker-preview {
+  margin: 0;
+  padding: var(--space-2);
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--panel-raised);
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.font-picker-import {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-1-5);
+  border-top: 1px solid var(--border);
+}
+
+.font-picker-import .hint {
+  margin: 0;
+}
+
+.font-picker-replace {
+  padding: 2px var(--space-2);
+  font-size: 12px;
+}
+
+/* A font a theme or slide uses that this computer does not have. */
+.font-missing-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+}
+
+.font-missing-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: 2px 2px 2px var(--space-2);
+  border: 1px solid rgba(245, 165, 36, 0.5);
+  border-radius: 999px;
+  background: rgba(245, 165, 36, 0.12);
+  color: #f5a524;
+  font-size: 12px;
 }
 
 /* ---------- Media library ---------- */

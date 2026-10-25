@@ -222,7 +222,12 @@ function TextBox({ element, content, attached = [], main }: { element: ThemeText
     fit()
     const observer = new ResizeObserver(fit)
     observer.observe(box)
-    return () => observer.disconnect()
+    // Fonts load on first use, so measure again once they have, or the fit is for the fallback font.
+    document.fonts.addEventListener('loadingdone', fit)
+    return () => {
+      observer.disconnect()
+      document.fonts.removeEventListener('loadingdone', fit)
+    }
   }, [props, content, paragraphs, attachedKey, defaultFont])
 
   return (

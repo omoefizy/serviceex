@@ -1078,6 +1078,30 @@ export interface StreamApi {
 }
 
 /** The API the preload script exposes to the renderer as `window.api`. */
+// ---------- Fonts ----------
+
+/** A font file imported into the app data fonts folder. */
+export interface ImportedFont {
+  /** File name in the fonts folder. */
+  file: string
+  /** The family name inside the file, which themes refer to. */
+  family: string
+  /** A CSS font-weight: one weight, or a range for a variable font. */
+  weight: string
+  italic: boolean
+  /** wd-media://font/<file>, for loading it in any window. */
+  url: string
+}
+
+export interface FontsApi {
+  /** Imported fonts, by family. */
+  list(): Promise<ImportedFont[]>
+  /** Picks .ttf, .otf and .woff2 files and copies them in. Skipped lists files that are not fonts it can read. */
+  import(): Promise<{ fonts: ImportedFont[]; skipped: string[] }>
+  /** Called in every window when fonts are imported. Returns an unsubscribe function. */
+  onChanged(listener: () => void): () => void
+}
+
 export interface WorshipDeckApi {
   songs: SongsApi
   bible: BibleApi
@@ -1095,6 +1119,7 @@ export interface WorshipDeckApi {
   livePowerPoint: LivePowerPointApi
   rasterizer: RasterizerApi
   log: LogApi
+  fonts: FontsApi
   output: {
     /** Sends the operator's output state to the output window. */
     send(state: OutputState): void

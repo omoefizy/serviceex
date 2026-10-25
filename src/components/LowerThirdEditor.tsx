@@ -4,7 +4,7 @@ import { normalizeLowerThirdStyle } from '../../shared/lowerThirds'
 import type { LowerThirdBox, LowerThirdStyle, LowerThirdTemplate, LowerThirdTextStyle, TextCase } from '../../shared/types'
 import { useOperatorStore } from '../store'
 import { LowerThirdGraphic } from './LowerThird'
-import { FontPicker } from './ThemeEditor'
+import { FontPicker, MissingFontChips } from './FontPicker'
 
 const WEIGHTS = [300, 400, 500, 600, 700, 800, 900]
 const CASES: { value: TextCase; label: string }[] = [
@@ -67,6 +67,7 @@ function TextFields({ label, field, onChange }: { label: string; field: LowerThi
         </select>
         <input type="color" aria-label={`${label} color`} value={field.color} onChange={(e) => onChange({ color: e.target.value })} />
       </div>
+      <MissingFontChips values={[field.fontFamily]} onReplace={(_from, fontFamily) => onChange({ fontFamily })} />
       <label className="stream-slider">
         <span>Size</span>
         <input type="range" min={1} max={20} step={0.1} value={field.size} onChange={(e) => onChange({ size: Number(e.target.value) })} />

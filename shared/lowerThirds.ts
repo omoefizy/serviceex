@@ -1,6 +1,7 @@
 // Lower third templates: the default, the built-in templates and validation. Shared by the main process (database,
 // stream IPC) and the renderer (the lower third layer and the template editor), like shared/themes.ts for slides.
 
+import { migrateFontName } from './fonts'
 import { fieldsOf, flag, hex, number, oneOf, text, TEXT_CASES } from './themes'
 import type { LowerThirdBox, LowerThirdStyle, LowerThirdTextStyle } from './types'
 
@@ -87,7 +88,7 @@ function normalizeText(value: unknown, fallback: LowerThirdTextStyle): LowerThir
   const v = fieldsOf(value)
   return {
     box: normalizeBox(v.box, fallback.box),
-    fontFamily: text(v.fontFamily, fallback.fontFamily).trim() || fallback.fontFamily,
+    fontFamily: migrateFontName(text(v.fontFamily, fallback.fontFamily)) || fallback.fontFamily,
     fontWeight: Math.round(number(v.fontWeight, fallback.fontWeight, 100, 900) / 100) * 100,
     size: number(v.size, fallback.size, 1, 20),
     color: hex(v.color, fallback.color),
