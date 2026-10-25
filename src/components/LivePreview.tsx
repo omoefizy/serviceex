@@ -132,7 +132,14 @@ export function LivePreview() {
       <h2 className="preview-subheading">Preview</h2>
       <div className="preview-screen preview">
         {previewSlide ? (
-          <ThemedSlide theme={previewTheme} text={previewSlide.text} caption={previewSlide.caption} copyright={previewSlide.copyright} logoUrl={logoUrl} />
+          <ThemedSlide
+            theme={previewTheme}
+            text={previewSlide.text}
+            caption={previewSlide.caption}
+            copyright={previewSlide.copyright}
+            rich={previewSlide.rich}
+            logoUrl={logoUrl}
+          />
         ) : (
           <p className="empty">Select something to preview</p>
         )}

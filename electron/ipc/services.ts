@@ -14,7 +14,9 @@ import {
   listServices,
   removeItem,
   reorderItems,
+  updateItemPayload,
 } from '../db/services'
+import { sanitizeSlideFormats } from '../../shared/richText'
 
 // Arguments arrive from the renderer, so check their shape before they reach the database.
 
@@ -57,7 +59,14 @@ function assertScripture(value: unknown): ScripturePayload {
     }
     return { text: verse.text, caption: verse.caption }
   })
-  return { title: assertTitle(payload.title), verses }
+  return { title: assertTitle(payload.title), verses, ...formatsOf(payload.formats) }
+}
+
+/** Slide formatting, checked against its schema; none is left out. */
+function formatsOf(value: unknown): { formats?: ScripturePayload['formats'] } {
+  if (value === undefined) return {}
+  const formats = sanitizeSlideFormats(value)
+  return Object.keys(formats).length > 0 ? { formats } : {}
 }
 
 function assertAnnouncement(value: unknown): AnnouncementPayload {
@@ -77,6 +86,7 @@ function assertAnnouncement(value: unknown): AnnouncementPayload {
     body: payload.body,
     ...(payload.titleSlide ? { titleSlide: true } : {}),
     ...(payload.quote ? { quote: { speaker: payload.quote.speaker.trim().slice(0, 100) } } : {}),
+    ...formatsOf(payload.formats),
   }
 }
 
@@ -130,6 +140,12 @@ export function registerServiceIpc(): void {
   ipcMain.handle('services:addItem', (_event, serviceId: unknown, type: unknown, refId: unknown, payload: unknown) => {
     const item = assertItem(type, refId, payload)
     return addItem(assertId(serviceId, 'Service id'), item.type, item.refId, item.payload)
+  })
+
+  ipcMain.handle('services:updatePayload', (_event, itemId: unknown, payload: unknown) => {
+    const id = assertId(itemId, 'Item id')
+    const type = (payload as { verses?: unknown } | null)?.verses !== undefined ? 'scripture' : 'announcement'
+    return updateItemPayload(id, type === 'scripture' ? assertScripture(payload) : assertAnnouncement(payload))
   })
 
   ipcMain.handle('services:removeItem', (_event, itemId: unknown) => removeItem(assertId(itemId, 'Item id')))

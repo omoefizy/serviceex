@@ -21,6 +21,8 @@ export interface Song {
   themeId: number | null
   /** Plain text. A line like [Verse 1] starts a section; a blank line or a section label starts a new slide. */
   lyrics: string
+  /** Formatting for some of its slides, keyed by slide text; the lyrics stay the source. Absent or empty: the theme's look. */
+  formatting?: SlideFormats
 }
 
 export type SongSummary = Pick<Song, 'id' | 'title' | 'author'>
@@ -45,6 +47,8 @@ export interface ScripturePayload {
   /** Such as "John 3:16-18 KJV". */
   title: string
   verses: { text: string; caption: string }[]
+  /** Formatting for some of its slides, keyed by slide text. */
+  formats?: SlideFormats
 }
 
 export interface AnnouncementPayload {
@@ -58,6 +62,8 @@ export interface AnnouncementPayload {
    * on the line under it, and it uses the Quote theme default.
    */
   quote?: { speaker: string }
+  /** Formatting for some of its slides, keyed by slide text. */
+  formats?: SlideFormats
 }
 
 /** Images or PDF pages, one slide each, stored as image files in the media folder. */
@@ -104,7 +110,59 @@ export interface SlideContent {
   caption: string
   /** What the theme's Copyright box shows: a song's copyright line on its first slide. */
   copyright?: string
+  /** The words with their formatting, drawn in place of `text` when its plain text matches it exactly. */
+  rich?: RichText | null
 }
+
+// ---------- Formatted text ----------
+
+/**
+ * How a span of words looks where it differs from the theme. Left out: the theme's. `size` is a multiple of the
+ * theme's size, so auto fit scales it with the rest of the words.
+ */
+export interface RichMarks {
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  strike?: boolean
+  /** #rrggbb. */
+  color?: string
+  /** A background color behind the words, #rrggbb. */
+  highlight?: string
+  size?: number
+  /** A family name such as "Avenir Next". */
+  font?: string
+  textCase?: TextCase
+}
+
+export interface RichSpan extends RichMarks {
+  /** Never holds a line break: each line is its own paragraph. */
+  text: string
+}
+
+export type RichAlign = 'left' | 'center' | 'right' | 'justify'
+
+export interface RichParagraphStyle {
+  align?: RichAlign
+  /** Where the words sit in the text box; the first paragraph of a slide that sets it decides. */
+  verticalAlign?: 'top' | 'middle' | 'bottom'
+  lineHeight?: number
+}
+
+export interface RichParagraph extends RichParagraphStyle {
+  spans: RichSpan[]
+}
+
+/**
+ * Formatted words: one paragraph per line of the plain text, made of spans. Stored as JSON next to the plain text,
+ * which stays the source for search, the AI features and the speech matcher (see shared/richText.ts).
+ */
+export interface RichText {
+  paragraphs: RichParagraph[]
+}
+
+/** Formatting for slides, keyed by each slide's plain text; a slide not listed shows the theme's look. */
+export type SlideFormats = Record<string, RichText>
 
 /**
  * - show:  slide text over its background
@@ -120,6 +178,8 @@ export type OutputMode = 'show' | 'black' | 'clear' | 'logo'
 export interface AlertMessage {
   id: string
   text: string
+  /** The text with its formatting, used when its plain text matches `text`. */
+  rich?: RichText
   /** Interrupts the normal messages in its own band color; they carry on where they were afterwards. */
   priority: boolean
 }
@@ -135,6 +195,8 @@ export interface AlertDisplay {
   /** Changes whenever a new run starts. */
   runId: number
   texts: string[]
+  /** Each text's formatting, or null, in the same order. */
+  riches?: (RichText | null)[]
   /** Epoch milliseconds at which the start of the text was at the band's right edge. */
   startedAt: number
   /** Times through the messages before the band empties; 0 loops until stopped. */
@@ -268,6 +330,8 @@ export interface SavedLowerThirdLine {
   id: string
   headline: string
   body: string
+  headlineRich?: RichText
+  bodyRich?: RichText
   pinned: boolean
 }
 
@@ -277,6 +341,9 @@ export interface LowerThirdDisplay {
   runId: number
   headline: string
   body: string
+  /** The headline and body with their formatting, used when their plain text matches. */
+  headlineRich?: RichText
+  bodyRich?: RichText
   style: LowerThirdStyle
   animation: LowerThirdAnimation
   /** How long the animation in and out takes, 200 to 1000 ms. */
@@ -382,12 +449,15 @@ export interface ThemeTextRun {
   bold?: boolean
   italic?: boolean
   underline?: boolean
+  strike?: boolean
+  highlight?: string
+  textCase?: TextCase
 }
 
 /** A paragraph of an imported PowerPoint text box. */
 export interface ThemeTextParagraph {
   runs: ThemeTextRun[]
-  align?: 'left' | 'center' | 'right'
+  align?: 'left' | 'center' | 'right' | 'justify'
   lineHeight?: number
   /** Drawn before the words, such as "•". */
   bullet?: string
@@ -1019,6 +1089,8 @@ export interface ServicesApi {
     payload: ServiceItemPayload | null,
   ): Promise<ServiceItem>
   removeItem(itemId: number): Promise<boolean>
+  /** Replaces a scripture or announcement item's payload, as after formatting its slides. Resolves to false if not found. */
+  updatePayload(itemId: number, payload: ScripturePayload | AnnouncementPayload): Promise<boolean>
   /** Resolves to false unless `orderedItemIds` lists each of the service's items exactly once. */
   reorderItems(serviceId: number, orderedItemIds: number[]): Promise<boolean>
 }

@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react'
+import { matching, richVerticalAlign } from '../../shared/richText'
 import { DEFAULT_FONT, isTextKind } from '../../shared/themes'
 import type {
   OutputMode,
+  RichText,
   TextCase,
   ThemeBackground,
   ThemeBox,
@@ -15,6 +17,8 @@ import type {
 import { cssFontFamily } from '../lib/fonts'
 import { REFERENCE_LINE_COLOR, slideLines } from '../lib/slides'
 import { animateSmoke, drawStillSmoke, SMOKE_HEIGHT, SMOKE_WIDTH } from '../lib/smoke'
+import { spanStyle } from '../lib/richText'
+import { RichSlideLines } from './RichText'
 
 /** The largest auto fit size in percent of screen height, so one short line does not fill the screen. */
 const AUTO_FIT_MAX = 16
@@ -143,14 +147,17 @@ function VideoElement({ element, still }: { element: Extract<ThemeElement, { kin
 
 /** A run of an imported text box: sizes are relative to the box's size, so shrinking to fit keeps their proportions. */
 function runStyle(run: ThemeTextRun, props: ThemeTextProps): CSSProperties {
-  return {
-    fontFamily: run.fontFamily ? cssFontFamily(run.fontFamily) : undefined,
-    fontSize: run.fontSize !== undefined ? `${run.fontSize / props.fontSize}em` : undefined,
+  return spanStyle({
+    font: run.fontFamily,
+    size: run.fontSize !== undefined ? run.fontSize / props.fontSize : undefined,
     color: run.color,
-    fontWeight: run.bold === undefined ? undefined : run.bold ? 700 : 400,
-    fontStyle: run.italic === undefined ? undefined : run.italic ? 'italic' : 'normal',
-    textDecoration: run.underline === undefined ? undefined : run.underline ? 'underline' : 'none',
-  }
+    bold: run.bold,
+    italic: run.italic,
+    underline: run.underline,
+    strike: run.strike,
+    highlight: run.highlight,
+    textCase: run.textCase,
+  })
 }
 
 function Paragraphs({ paragraphs, props }: { paragraphs: ThemeTextParagraph[]; props: ThemeTextProps }) {
@@ -184,9 +191,10 @@ interface AttachedLine {
 
 /**
  * A text box: as large as fits (auto), or the fixed size unless that would overflow. Sizes are in cqh, so the result
- * is the same at any slide size. Attached lines sit under the words and count towards what has to fit.
+ * is the same at any slide size. Attached lines sit under the words and count towards what has to fit. The main text
+ * box draws `rich` (the slide's own formatting, over the theme's) in place of the plain words.
  */
-function TextBox({ element, content, attached = [], main }: { element: ThemeTextElement; content: string; attached?: AttachedLine[]; main: boolean }) {
+function TextBox({ element, content, attached = [], main, rich = null }: { element: ThemeTextElement; content: string; attached?: AttachedLine[]; main: boolean; rich?: RichText | null }) {
   const defaultFont = useContext(DefaultFontContext)
   const fitRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLParagraphElement>(null)
@@ -228,18 +236,24 @@ function TextBox({ element, content, attached = [], main }: { element: ThemeText
       observer.disconnect()
       document.fonts.removeEventListener('loadingdone', fit)
     }
-  }, [props, content, paragraphs, attachedKey, defaultFont])
+  }, [props, content, paragraphs, attachedKey, defaultFont, rich])
+
+  // Aligned paragraphs line up across the whole box, as in a word processor, not just across the widest line.
+  const fullWidth = paragraphs !== undefined || (rich?.paragraphs.some((p) => p.align !== undefined) ?? false)
+  const verticalAlign = (rich && richVerticalAlign(rich)) ?? props.verticalAlign
 
   return (
     <div className="themed-element themed-box" style={{ ...boxStyle(element.box), padding: `${props.padding}cqh` }}>
       <div
         ref={fitRef}
         className="themed-fit"
-        style={{ justifyContent: JUSTIFY[props.verticalAlign], alignItems: ALIGN_ITEMS[props.align], textAlign: props.align }}
+        style={{ justifyContent: JUSTIFY[verticalAlign], alignItems: ALIGN_ITEMS[props.align], textAlign: props.align }}
       >
-        <p ref={textRef} className={`themed-text${paragraphs ? ' fixed' : ''}`} style={textStyle(props, defaultFont)}>
+        <p ref={textRef} className={`themed-text${fullWidth ? ' fixed' : ''}`} style={textStyle(props, defaultFont)}>
           {paragraphs ? (
             <Paragraphs paragraphs={paragraphs} props={props} />
+          ) : rich ? (
+            <RichSlideLines rich={rich} />
           ) : main
             ? slideLines(content).map((line, index) => (
                 <span
@@ -291,6 +305,8 @@ interface Props {
   logoUrl?: string | null
   /** On the Stream output a theme that is transparent for keying draws no background, so the key color shows. */
   keyed?: boolean
+  /** The slide's own formatting of `text`; ignored unless its plain text is exactly `text`. */
+  rich?: RichText | null
 }
 
 /**
@@ -298,13 +314,14 @@ interface Props {
  * size is relative to the slide's own height, so the output window, the live preview, thumbnails and the theme
  * editor all lay text out the same way.
  */
-export function ThemedSlide({ theme, text, caption = '', copyright = '', mode = 'show', still = false, layer = 'all', logoUrl = null, keyed = false }: Props) {
+export function ThemedSlide({ theme, text, caption = '', copyright = '', mode = 'show', still = false, layer = 'all', logoUrl = null, keyed = false, rich = null }: Props) {
   const transparentBackground = keyed && theme.keyTransparent && mode !== 'black'
   const drawBackground = (layer === 'all' || layer === 'background' || layer === 'backdrop') && mode !== 'black' && !transparentBackground
   const split = backgroundSplit(theme)
   const from = layer === 'content' ? split : 0
   const to = layer === 'background' || layer === 'under' ? split : layer === 'backdrop' ? 0 : theme.elements.length
   const showText = mode === 'show'
+  const formatted = matching(rich, text)
 
   const contentOf = (element: ThemeTextElement) => (element.kind === 'text' ? text : element.kind === 'reference' ? caption : copyright)
   const mainText = theme.elements.find((element) => element.kind === 'text')
@@ -328,7 +345,17 @@ export function ThemedSlide({ theme, text, caption = '', copyright = '', mode = 
         const content = contentOf(element)
         // The main text carries the attached lines, so they go with it (and like before, only under words).
         if (element.kind === 'text' && element.paragraphs) drawn.push(<TextBox key={element.id} element={element} content="" main={false} />)
-        else if (content) drawn.push(<TextBox key={element.id} element={element} content={content} attached={element === mainText ? attached : undefined} main={element.kind === 'text'} />)
+        else if (content)
+          drawn.push(
+            <TextBox
+              key={element.id}
+              element={element}
+              content={content}
+              attached={element === mainText ? attached : undefined}
+              main={element.kind === 'text'}
+              rich={element.kind === 'text' ? formatted : null}
+            />,
+          )
       }
     }
   }

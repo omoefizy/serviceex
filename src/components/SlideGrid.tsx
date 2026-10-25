@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
-import { AlertTriangle, Clapperboard, Columns2, CornerUpLeft, ImageOff, LayoutGrid, List, MonitorUp, RefreshCw, StickyNote, ZoomIn } from 'lucide-react'
+import { AlertTriangle, Clapperboard, Columns2, CornerUpLeft, ImageOff, LayoutGrid, List, MonitorUp, RefreshCw, StickyNote, Type, ZoomIn } from 'lucide-react'
 import { MEDIA_DRAG_TYPE } from '../lib/media'
 import { sectionColor } from '../lib/sections'
 import { slideLines } from '../lib/slides'
@@ -7,6 +7,7 @@ import { MOD } from '../lib/shortcuts'
 import { usePersistentState } from '../lib/usePersistentState'
 import { selectBaseThemeId, selectBrowsingLive, selectDeckPresentation, selectDeckTheme, slideTheme, useOperatorStore } from '../store'
 import { NativeSlideEditor } from './NativeSlideEditor'
+import { SlideFormatModal } from './SlideFormatModal'
 import { SuggestionTray } from './SuggestionTray'
 import { ThemedSlide } from './ThemedSlide'
 
@@ -62,6 +63,14 @@ export function SlideGrid() {
   })
   /** The slide open in the compare view. */
   const [comparing, setComparing] = useState<number | null>(null)
+  /** A scripture or announcement item from the schedule, whose slides can be formatted and kept with it. */
+  const formattableItemId = useOperatorStore((s) => {
+    const item = s.service?.items.find((i) => i.id === s.activeItemId)
+    return item && s.deckKey === `item:${item.id}` && (item.type === 'scripture' || item.type === 'announcement') ? item.id : null
+  })
+  const editSong = useOperatorStore((s) => s.editSong)
+  const selectedSongId = useOperatorStore((s) => (s.deckType === 'song' ? (s.selectedSong?.id ?? null) : null))
+  const [formatting, setFormatting] = useState(false)
   /** Thumbnail width in pixels, from the zoom slider. */
   const [thumbWidth, setThumbWidth] = usePersistentState(
     'worshipdeck.thumbWidth',
@@ -138,6 +147,17 @@ export function SlideGrid() {
               </option>
             ))}
           </select>
+          {(formattableItemId !== null || selectedSongId !== null) && (
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Format slides"
+              title={selectedSongId !== null ? 'Format slides in the song editor' : 'Format slides'}
+              onClick={() => (selectedSongId !== null ? editSong(selectedSongId) : setFormatting(true))}
+            >
+              <Type size={15} />
+            </button>
+          )}
           <span className="segmented view-toggle" role="radiogroup" aria-label="Slide view">
             <button type="button" role="radio" aria-checked={view === 'grid'} className={view === 'grid' ? 'active' : ''} title="Grid" aria-label="Grid" onClick={() => setView('grid')}>
               <LayoutGrid size={14} aria-hidden="true" />
@@ -237,7 +257,7 @@ export function SlideGrid() {
         </div>
       ) : (
         <div className="slide-grid" ref={gridRef} style={{ '--thumb-width': `${thumbWidth}px` } as CSSProperties}>
-          {slides.map(({ text, caption, label, background, page, animated, warnings }, index) => (
+          {slides.map(({ text, caption, rich, label, background, page, animated, warnings }, index) => (
             <div
               key={index}
               className={`slide-cell${dropIndex === index ? ' drop' : ''}`}
@@ -251,7 +271,7 @@ export function SlideGrid() {
                 title="Go live with this slide"
                 onClick={() => goLive(index)}
               >
-                <ThemedSlide theme={slideThemes[index]} text={text} caption={caption} still />
+                <ThemedSlide theme={slideThemes[index]} text={text} caption={caption} rich={rich} still />
                 <span className="slide-number">{index + 1}</span>
                 {label && <span className="slide-caption section-label">{label}</span>}
                 {animated && <AnimatedMark />}
@@ -280,6 +300,9 @@ export function SlideGrid() {
             </div>
           ))}
         </div>
+      )}
+      {formatting && formattableItemId !== null && (
+        <SlideFormatModal itemId={formattableItemId} startIndex={highlightIndex ?? 0} onClose={() => setFormatting(false)} />
       )}
       {nativePresentation && comparing !== null && (
         <NativeSlideEditor presentationId={nativePresentation.id} index={comparing} onClose={() => setComparing(null)} />

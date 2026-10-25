@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { normalizeLowerThirdStyle } from '../../shared/lowerThirds'
+import { sanitizeRichFor } from '../../shared/richText'
 import { DEFAULT_FONT, DEFAULT_THEME_STYLE, normalizeTheme } from '../../shared/themes'
 import type { AlertDisplay, LowerThirdDisplay, OutputMode, OutputState, OverlayLayers } from '../../shared/types'
 import { cleanDefaultFont, cleanLogoItems, cleanScreenMargins, NO_MARGINS } from '../db/settings'
@@ -39,9 +40,12 @@ export function alertDisplayOf(value: unknown): AlertDisplay | null {
   ) {
     return null
   }
+  const texts = alert.texts.slice(0, 100).map((text) => text.slice(0, 300))
   return {
     runId: alert.runId as number,
-    texts: alert.texts.slice(0, 100).map((text) => text.slice(0, 300)),
+    texts,
+    // Each text's formatting, checked against its schema and its words; anything else draws plain.
+    ...(Array.isArray(alert.riches) ? { riches: texts.map((text, i) => sanitizeRichFor(alert.riches?.[i], text) ?? null) } : {}),
     startedAt: alert.startedAt as number,
     loops: Math.round(clampNumber(alert.loops, 0, 99, 0)),
     layout: alert.layout === 'sequence' ? 'sequence' : 'divider',
@@ -68,10 +72,16 @@ function lowerThirdDisplayOf(value: unknown): LowerThirdDisplay | null {
   ) {
     return null
   }
+  const headline = lowerThird.headline.slice(0, 300)
+  const body = lowerThird.body.slice(0, 300)
+  const headlineRich = sanitizeRichFor(lowerThird.headlineRich, headline)
+  const bodyRich = sanitizeRichFor(lowerThird.bodyRich, body)
   return {
     runId: lowerThird.runId as number,
-    headline: lowerThird.headline.slice(0, 300),
-    body: lowerThird.body.slice(0, 300),
+    headline,
+    body,
+    ...(headlineRich ? { headlineRich } : {}),
+    ...(bodyRich ? { bodyRich } : {}),
     style: normalizeLowerThirdStyle(lowerThird.style),
     animation: lowerThird.animation === 'fade' || lowerThird.animation === 'wipe' ? lowerThird.animation : 'slide',
     durationMs: clampNumber(lowerThird.durationMs, 200, 1000, 500),
@@ -105,6 +115,7 @@ export function assertOutputState(value: unknown): OutputState {
     text: state.text,
     caption: state.caption,
     copyright: typeof state.copyright === 'string' ? state.copyright : '',
+    rich: sanitizeRichFor(state.rich, state.text) ?? null,
     theme: normalizeTheme(state.theme),
     fadeMs: Math.min(1500, Math.max(0, state.fadeMs)),
     logoUrl: state.logoUrl,

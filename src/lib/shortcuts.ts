@@ -28,8 +28,10 @@ export const LOWER_THIRD_HEADLINE_ID = 'lower-third-headline'
 
 export function focusLowerThirdHeadline(): void {
   const field = document.getElementById(LOWER_THIRD_HEADLINE_ID)
-  if (!(field instanceof HTMLInputElement)) return
+  if (!(field instanceof HTMLInputElement) && !field?.isContentEditable) return
   field.scrollIntoView({ block: 'nearest' })
   field.focus()
-  field.select()
+  // A formatted field selects its words the way an input's select() does.
+  if (field instanceof HTMLInputElement) field.select()
+  else window.getSelection()?.selectAllChildren(field)
 }

@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { isArrangement } from '../../shared/lyrics'
+import { sanitizeSlideFormats } from '../../shared/richText'
 import type { SongInput } from '../../shared/types'
 import { createSong, deleteSong, getSong, listSongs, updateSong } from '../db/songs'
 
@@ -39,6 +40,8 @@ export function assertSongInput(value: unknown): SongInput {
     arrangement: { order: input.arrangement.order, linesPerSlide: input.arrangement.linesPerSlide },
     themeId: input.themeId as number | null,
     lyrics: input.lyrics,
+    // Formatting is checked against its schema; anything else in it is dropped rather than refused.
+    ...(input.formatting !== undefined ? { formatting: sanitizeSlideFormats(input.formatting) } : {}),
   }
 }
 

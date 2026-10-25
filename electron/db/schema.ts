@@ -131,6 +131,7 @@ export function initSchema(db: Database.Database): void {
   addColumnIfMissing(db, 'songs', 'tags', 'TEXT') // JSON array of strings
   addColumnIfMissing(db, 'songs', 'arrangement', 'TEXT') // JSON SongArrangement
   addColumnIfMissing(db, 'songs', 'theme_id', 'INTEGER') // themes.id; null uses the default song theme
+  addColumnIfMissing(db, 'songs', 'formatting', 'TEXT') // JSON SlideFormats; null (all older songs) shows the theme's look
   addColumnIfMissing(db, 'presentations', 'live_powerpoint', 'INTEGER NOT NULL DEFAULT 1')
   addColumnIfMissing(db, 'presentations', 'use_timings', 'INTEGER NOT NULL DEFAULT 0')
   addColumnIfMissing(db, 'presentations', 'mode', "TEXT NOT NULL DEFAULT 'image'") // 'image' or 'native'

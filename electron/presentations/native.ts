@@ -622,7 +622,7 @@ function textBox(c: Context, id: string, txBody: XmlNode, chain: TextChain, rect
     fontSize,
     color: firstLook.color.hex,
     textCase: 'normal',
-    align: paragraphs[0].paragraph.align ?? 'left',
+    align: paragraphs[0].paragraph.align === 'justify' ? 'left' : (paragraphs[0].paragraph.align ?? 'left'),
     verticalAlign: anchor === 'ctr' ? 'middle' : anchor === 'b' ? 'bottom' : 'top',
     lineHeight: paragraphs[0].paragraph.lineHeight ?? 1.2,
     shadow: shadowColor

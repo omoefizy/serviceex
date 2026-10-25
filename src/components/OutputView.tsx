@@ -36,7 +36,7 @@ function keyedUnderOf(state: OutputState): string {
 /** What the text layer shows, so identical states need no fade. */
 function contentOf(state: OutputState): string {
   if (state.mode === 'black' || state.mode === 'clear') return state.mode
-  return JSON.stringify([state.mode, state.text, state.caption, state.copyright, state.defaultFont, state.logoUrl, state.theme.elements])
+  return JSON.stringify([state.mode, state.text, state.caption, state.copyright, state.rich ?? null, state.defaultFont, state.logoUrl, state.theme.elements])
 }
 
 /**
@@ -114,6 +114,7 @@ export function SlideLayers({ state, keyed = false }: { state: OutputState | nul
             text={state.text}
             caption={state.caption}
             copyright={state.copyright}
+            rich={state.rich}
             mode={state.mode}
             layer="content"
             logoUrl={state.logoUrl}

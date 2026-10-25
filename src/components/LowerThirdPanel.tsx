@@ -1,9 +1,13 @@
 import { Bookmark, EyeOff, ListPlus, Pin, PinOff, Play, RefreshCw, SkipForward, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { useRef, useState, type KeyboardEvent } from 'react'
-import type { AppSettings, LowerThirdAnimation, SavedLowerThirdLine } from '../../shared/types'
+import { hasFormatting, matching, plainText, richOrPlain, trimRich } from '../../shared/richText'
+import type { AppSettings, LowerThirdAnimation, RichText, SavedLowerThirdLine } from '../../shared/types'
 import { LOWER_THIRD_HEADLINE_ID, MOD } from '../lib/shortcuts'
-import { useOperatorStore, type LowerThirdLine } from '../store'
+import { selectLowerThirdStyle, useOperatorStore, type LowerThirdLine } from '../store'
+import { LowerThirdGraphic } from './LowerThird'
 import { LowerThirdEditor } from './LowerThirdEditor'
+import type { FormatControl } from './FormatToolbar'
+import { RichTextEditor } from './RichTextEditor'
 
 const ANIMATIONS: { value: LowerThirdAnimation; label: string }[] = [
   { value: 'slide', label: 'Slide' },
@@ -11,7 +15,17 @@ const ANIMATIONS: { value: LowerThirdAnimation; label: string }[] = [
   { value: 'wipe', label: 'Wipe' },
 ]
 
-const sameLine = (a: LowerThirdLine, b: LowerThirdLine) => a.headline.trim() === b.headline.trim() && a.body.trim() === b.body.trim()
+/** A field's formatting as it would show: trimmed with its words, or null. */
+const shownRich = (rich: RichText | undefined, text: string) => (rich ? matching(trimRich(rich), text.trim()) : null)
+
+const sameLine = (a: LowerThirdLine, b: LowerThirdLine) =>
+  a.headline.trim() === b.headline.trim() &&
+  a.body.trim() === b.body.trim() &&
+  JSON.stringify([shownRich(a.headlineRich, a.headline), shownRich(a.bodyRich, a.body)]) ===
+    JSON.stringify([shownRich(b.headlineRich, b.headline), shownRich(b.bodyRich, b.body)])
+
+/** The template places and aligns the words, so only the marks apply to a lower third. */
+const LINE_CONTROLS_OFF: FormatControl[] = ['align', 'justify', 'verticalAlign', 'lineHeight']
 
 /**
  * Types a lower third and puts it on the Stream output. Enter shows it, Esc hides it, Up and Down step through the
@@ -24,6 +38,7 @@ export function LowerThirdPanel() {
   const draft = useOperatorStore((s) => s.lowerThirdDraft)
   const history = useOperatorStore((s) => s.lowerThirdHistory)
   const templates = useOperatorStore((s) => s.lowerThirdTemplates)
+  const templateStyle = useOperatorStore(selectLowerThirdStyle)
   const pointIndex = useOperatorStore((s) => s.lowerThirdPointIndex)
   const setDraft = useOperatorStore((s) => s.setLowerThirdDraft)
   const show = useOperatorStore((s) => s.showLowerThird)
@@ -62,7 +77,11 @@ export function LowerThirdPanel() {
     setDraft(next === -1 ? typed.current : history[next])
   }
 
-  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+  /** A field changed: its words, and its formatting when it has any. */
+  const typeField = (field: 'headline' | 'body', rich: RichText) =>
+    type({ [field]: plainText(rich), [`${field}Rich`]: hasFormatting(rich) ? rich : undefined })
+
+  function onKeyDown(e: KeyboardEvent<HTMLElement>) {
     if (e.key === 'Enter') {
       // Enter shows the line; with a lower third up, it (or Ctrl+Enter) updates it in place.
       e.preventDefault()
@@ -78,7 +97,14 @@ export function LowerThirdPanel() {
   }
 
   function saveLine() {
-    const line = { headline: draft.headline.trim(), body: draft.body.trim() }
+    const headlineRich = shownRich(draft.headlineRich, draft.headline)
+    const bodyRich = shownRich(draft.bodyRich, draft.body)
+    const line = {
+      headline: draft.headline.trim(),
+      body: draft.body.trim(),
+      ...(headlineRich ? { headlineRich } : {}),
+      ...(bodyRich ? { bodyRich } : {}),
+    }
     if (settings.lowerThirdSavedLines.some((l) => sameLine(l, line))) return
     save({ lowerThirdSavedLines: [{ id: crypto.randomUUID(), ...line, pinned: false }, ...settings.lowerThirdSavedLines] })
   }
@@ -108,25 +134,42 @@ export function LowerThirdPanel() {
         </button>
       </header>
 
-      <input
+      <RichTextEditor
         id={LOWER_THIRD_HEADLINE_ID}
-        className="input"
         placeholder={`Headline (${MOD}L)`}
-        aria-label="Headline"
+        ariaLabel="Headline"
+        singleLine
         maxLength={300}
-        value={draft.headline}
-        onChange={(e) => type({ headline: e.target.value })}
+        toolbar="focus"
+        disabled={LINE_CONTROLS_OFF}
+        base={null}
+        value={richOrPlain(draft.headlineRich, draft.headline)}
+        onChange={(rich) => typeField('headline', rich)}
         onKeyDown={onKeyDown}
       />
-      <input
-        className="input"
+      <RichTextEditor
         placeholder="Body"
-        aria-label="Body"
+        ariaLabel="Body"
+        singleLine
         maxLength={300}
-        value={draft.body}
-        onChange={(e) => type({ body: e.target.value })}
+        toolbar="focus"
+        disabled={LINE_CONTROLS_OFF}
+        base={null}
+        value={richOrPlain(draft.bodyRich, draft.body)}
+        onChange={(rich) => typeField('body', rich)}
         onKeyDown={onKeyDown}
       />
+      {!empty && (
+        <div className="lower-third-preview" aria-label="Live preview">
+          <LowerThirdGraphic
+            style={templateStyle}
+            headline={draft.headline.trim()}
+            body={draft.body.trim()}
+            headlineRich={shownRich(draft.headlineRich, draft.headline) ?? undefined}
+            bodyRich={shownRich(draft.bodyRich, draft.body) ?? undefined}
+          />
+        </div>
+      )}
       <div className="lower-third-actions">
         {edited ? (
           <button type="button" className="button primary" onClick={show} title={`Change the live lower third to this (Enter or ${MOD}Enter)`}>
@@ -160,7 +203,7 @@ export function LowerThirdPanel() {
                   className="lower-third-line"
                   title="Put it in the fields; Enter shows it"
                   onClick={() => {
-                    type({ headline: line.headline, body: line.body })
+                    type({ headline: line.headline, body: line.body, headlineRich: line.headlineRich, bodyRich: line.bodyRich })
                     document.getElementById(LOWER_THIRD_HEADLINE_ID)?.focus()
                   }}
                 >

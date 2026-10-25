@@ -1,4 +1,5 @@
 import { buildSongSlides, DEFAULT_ARRANGEMENT, isArrangement } from '../../shared/lyrics'
+import { pruneFormats, sanitizeSlideFormats } from '../../shared/richText'
 import type { Song, SongArrangement, SongInput, SongSummary } from '../../shared/types'
 import { db } from './index'
 
@@ -11,6 +12,7 @@ interface SongRow {
   arrangement: string | null
   theme_id: number | null
   lyrics: string | null
+  formatting: string | null
 }
 
 function parseJson(value: string | null): unknown {
@@ -22,7 +24,7 @@ function parseJson(value: string | null): unknown {
   }
 }
 
-/** Songs saved before tags and arrangements existed have nulls in those columns. */
+/** Songs saved before tags, arrangements and formatting existed have nulls in those columns. */
 function toSong(row: SongRow): Song {
   const tags = parseJson(row.tags)
   const arrangement = parseJson(row.arrangement)
@@ -35,7 +37,18 @@ function toSong(row: SongRow): Song {
     arrangement: isArrangement(arrangement) ? arrangement : DEFAULT_ARRANGEMENT,
     themeId: row.theme_id,
     lyrics: row.lyrics ?? '',
+    formatting: sanitizeSlideFormats(parseJson(row.formatting)),
   }
+}
+
+/**
+ * The formatting worth keeping: that of slides the lyrics still have. Sections left out of the play order keep
+ * theirs, so they come back formatted when added again.
+ */
+function storedFormatting(input: SongInput): string | null {
+  const texts = buildSongSlides(input.lyrics, { order: [], linesPerSlide: input.arrangement.linesPerSlide }).map((slide) => slide.text)
+  const formatting = pruneFormats(sanitizeSlideFormats(input.formatting), texts)
+  return Object.keys(formatting).length > 0 ? JSON.stringify(formatting) : null
 }
 
 /** Stores the slides in play order, so the table matches what the slide grid shows. */
@@ -54,6 +67,7 @@ function songParams(input: SongInput) {
     arrangement: JSON.stringify(input.arrangement),
     theme_id: input.themeId,
     lyrics: input.lyrics,
+    formatting: storedFormatting(input),
   }
 }
 
@@ -80,7 +94,7 @@ export function listSongs(search?: string): SongSummary[] {
 
 export function getSong(id: number): Song | undefined {
   const row = db
-    .prepare('SELECT id, title, author, copyright, tags, arrangement, theme_id, lyrics FROM songs WHERE id = ?')
+    .prepare('SELECT id, title, author, copyright, tags, arrangement, theme_id, lyrics, formatting FROM songs WHERE id = ?')
     .get(id) as SongRow | undefined
   return row && toSong(row)
 }
@@ -88,13 +102,13 @@ export function getSong(id: number): Song | undefined {
 export const createSong = db.transaction((input: SongInput): Song => {
   const result = db
     .prepare(
-      `INSERT INTO songs (title, author, copyright, tags, arrangement, theme_id, lyrics)
-       VALUES (@title, @author, @copyright, @tags, @arrangement, @theme_id, @lyrics)`,
+      `INSERT INTO songs (title, author, copyright, tags, arrangement, theme_id, lyrics, formatting)
+       VALUES (@title, @author, @copyright, @tags, @arrangement, @theme_id, @lyrics, @formatting)`,
     )
     .run(songParams(input))
   const id = Number(result.lastInsertRowid)
   replaceSlides(id, input.lyrics, input.arrangement)
-  return { id, ...input }
+  return getSong(id) as Song
 })
 
 /** Adds several songs at once: all of them, or none if any fails. Returns how many were added. */
@@ -108,7 +122,7 @@ export const updateSong = db.transaction((id: number, input: SongInput): boolean
   const result = db
     .prepare(
       `UPDATE songs SET title = @title, author = @author, copyright = @copyright, tags = @tags,
-         arrangement = @arrangement, theme_id = @theme_id, lyrics = @lyrics
+         arrangement = @arrangement, theme_id = @theme_id, lyrics = @lyrics, formatting = @formatting
        WHERE id = @id`,
     )
     .run({ ...songParams(input), id })

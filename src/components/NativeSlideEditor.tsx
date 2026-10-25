@@ -1,32 +1,22 @@
 import { AlertTriangle, ChevronLeft, ChevronRight, Columns2, Unlink } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { replaceThemeFont, themeFonts } from '../../shared/fonts'
-import type { ThemeElement, ThemeStyle, ThemeTextParagraph } from '../../shared/types'
+import { paragraphsFromRich, richFromParagraphs } from '../../shared/richText'
+import type { RichText, ThemeElement, ThemeStyle, ThemeTextParagraph } from '../../shared/types'
 import { useOperatorStore } from '../store'
 import { MissingFontChips } from './FontPicker'
+import { RichTextEditor } from './RichTextEditor'
 import { ThemedSlide } from './ThemedSlide'
 
 type FixedText = Extract<ThemeElement, { kind: 'text' }> & { paragraphs: ThemeTextParagraph[] }
 
 const isFixedText = (element: ThemeElement): element is FixedText => element.kind === 'text' && Array.isArray(element.paragraphs)
 
-const paragraphText = (paragraph: ThemeTextParagraph) => paragraph.runs.map((run) => run.text).join('')
-
-/**
- * New words for a text box, one paragraph per line. A line left as it was keeps its runs; a changed line takes the
- * look of its paragraph's first run, and added lines the look of the last paragraph.
- */
-function withLines(paragraphs: ThemeTextParagraph[], value: string): ThemeTextParagraph[] {
-  return value.split('\n').map((line, index) => {
-    const original = paragraphs[index]
-    if (original && paragraphText(original) === line) return original
-    const model = original ?? paragraphs[paragraphs.length - 1] ?? { runs: [] }
-    const look = model.runs[0] ?? { text: '' }
-    return { ...model, runs: line ? [{ ...look, text: line }] : [] }
-  })
+/** A text box with its words and formatting from the editor; the box's vertical alignment comes along when it was changed. */
+function withRich(element: FixedText, rich: RichText): FixedText {
+  const { paragraphs, verticalAlign } = paragraphsFromRich(rich, element.paragraphs, element.text)
+  return { ...element, paragraphs, text: verticalAlign ? { ...element.text, verticalAlign } : element.text }
 }
-
-const linesOf = (element: FixedText) => element.paragraphs.map(paragraphText).join('\n')
 
 /**
  * The compare view for a Native mode presentation: PowerPoint's picture of the slide on the left, the native render on
@@ -38,7 +28,7 @@ export function NativeSlideEditor({ presentationId, index: startIndex, onClose }
   const updateNativeSlide = useOperatorStore((s) => s.updateNativeSlide)
   const detach = useOperatorStore((s) => s.detachPresentation)
   const [index, setIndex] = useState(startIndex)
-  const [draft, setDraft] = useState<Record<string, string>>({})
+  const [draft, setDraft] = useState<Record<string, RichText>>({})
   const [error, setError] = useState<string | null>(null)
   const [confirmingDetach, setConfirmingDetach] = useState(false)
 
@@ -62,7 +52,7 @@ export function NativeSlideEditor({ presentationId, index: startIndex, onClose }
   const texts = style?.elements.filter(isFixedText) ?? []
   const edited: ThemeStyle | null =
     style && Object.keys(draft).length > 0
-      ? { ...style, elements: style.elements.map((e) => (isFixedText(e) && draft[e.id] !== undefined ? { ...e, paragraphs: withLines(e.paragraphs, draft[e.id]) } : e)) }
+      ? { ...style, elements: style.elements.map((e) => (isFixedText(e) && draft[e.id] !== undefined ? withRich(e, draft[e.id]) : e)) }
       : style
   const file = presentation.sourcePath.split(/[\\/]/).pop()
 
@@ -156,15 +146,15 @@ export function NativeSlideEditor({ presentationId, index: startIndex, onClose }
         {texts.length > 0 && (
           <div className="native-texts">
             {texts.map((element, i) => (
-              <label key={element.id} className="field">
+              <div key={element.id} className="field">
                 <span>Text box {i + 1}</span>
-                <textarea
-                  className="input"
-                  rows={Math.min(6, Math.max(2, element.paragraphs.length))}
-                  value={draft[element.id] ?? linesOf(element)}
-                  onChange={(e) => setDraft({ ...draft, [element.id]: e.target.value })}
+                <RichTextEditor
+                  ariaLabel={`Text box ${i + 1}`}
+                  base={element.text}
+                  value={draft[element.id] ?? richFromParagraphs(element.paragraphs, element.text)}
+                  onChange={(rich) => setDraft((current) => ({ ...current, [element.id]: rich }))}
                 />
-              </label>
+              </div>
             ))}
           </div>
         )}

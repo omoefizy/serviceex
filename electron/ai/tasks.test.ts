@@ -56,3 +56,16 @@ describe('pickStatements', () => {
     expect(create).not.toHaveBeenCalled()
   })
 })
+
+describe('cleanLyrics', () => {
+  const LYRICS = '[Verse 1]\nAmazing grace how sweet the sound'
+
+  it('sends only the plain lyrics, never their formatting, and returns plain lyrics', async () => {
+    create.mockResolvedValue({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ lyrics: LYRICS, order: ['Verse 1'] }) }] })
+    const formatting = { 'Amazing grace how sweet the sound': { paragraphs: [{ spans: [{ text: 'Amazing grace how sweet the sound', bold: true }] }] } }
+    const result = await runTask('cleanLyrics', { lyrics: LYRICS, formatting })
+    expect(create.mock.calls[0][0].messages).toEqual([{ role: 'user', content: `Clean up these lyrics:\n\n${LYRICS}` }])
+    expect(JSON.stringify(create.mock.calls[0][0])).not.toContain('bold')
+    expect(result).toEqual({ ok: true, value: { lyrics: LYRICS, order: ['Verse 1'] } })
+  })
+})

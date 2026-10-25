@@ -521,7 +521,9 @@ function normalizeRun(value: unknown): ThemeTextRun {
   if (typeof v.fontFamily === 'string' && v.fontFamily.trim()) run.fontFamily = migrateFontName(v.fontFamily).slice(0, 200)
   if (typeof v.fontSize === 'number') run.fontSize = number(v.fontSize, 4, 0.5, 30)
   if (typeof v.color === 'string') run.color = hex(v.color, '#ffffff')
-  for (const key of ['bold', 'italic', 'underline'] as const) if (typeof v[key] === 'boolean') run[key] = v[key] as boolean
+  for (const key of ['bold', 'italic', 'underline', 'strike'] as const) if (typeof v[key] === 'boolean') run[key] = v[key] as boolean
+  if (typeof v.highlight === 'string') run.highlight = hex(v.highlight, '#ffff00')
+  if (typeof v.textCase === 'string') run.textCase = oneOf(v.textCase, ['normal', 'upper', 'lower'] as const, 'normal')
   return run
 }
 
@@ -531,7 +533,7 @@ function normalizeParagraphs(value: unknown): ThemeTextParagraph[] | undefined {
   return value.slice(0, MAX_PARAGRAPHS).map((item) => {
     const v = fieldsOf(item)
     const paragraph: ThemeTextParagraph = { runs: Array.isArray(v.runs) ? v.runs.slice(0, MAX_RUNS).map(normalizeRun) : [] }
-    if (typeof v.align === 'string') paragraph.align = oneOf(v.align, ['left', 'center', 'right'] as const, 'left')
+    if (typeof v.align === 'string') paragraph.align = oneOf(v.align, ['left', 'center', 'right', 'justify'] as const, 'left')
     if (typeof v.lineHeight === 'number') paragraph.lineHeight = number(v.lineHeight, 1.2, 0.5, 4)
     if (typeof v.bullet === 'string' && v.bullet) paragraph.bullet = v.bullet.slice(0, 4)
     return paragraph

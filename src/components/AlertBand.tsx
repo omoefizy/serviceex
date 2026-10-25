@@ -1,6 +1,8 @@
 import { Fragment, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { matching } from '../../shared/richText'
 import type { AlertDisplay } from '../../shared/types'
 import { DIVIDER, SAFE_MARGIN, tileCount, tilePlacements } from '../lib/ticker'
+import { RichInline } from './RichText'
 
 /**
  * The alert ticker: a band inside the safe margins at the bottom (or top) of a screen, with the messages scrolling
@@ -18,7 +20,7 @@ function Ticker({ alert }: { alert: AlertDisplay }) {
   /** Copies of the strip needed to keep the band covered; set once the strip is measured. */
   const [count, setCount] = useState(2)
   const { texts, layout, startedAt, speed, loops, fontSize, position } = alert
-  const textsKey = texts.join('\u0000')
+  const textsKey = JSON.stringify([texts, alert.riches ?? null])
   tilesRef.current.length = count
 
   // Each frame places the copies from the clock alone: no state changes and no text redrawn, only transforms, so the
@@ -83,12 +85,15 @@ function Ticker({ alert }: { alert: AlertDisplay }) {
             aria-hidden="true"
             style={{ fontSize: `${fontSize}cqh`, color: alert.textColor }}
           >
-            {texts.map((text, j) => (
-              <Fragment key={j}>
-                <span className="alert-text">{text}</span>
-                {layout === 'divider' && <span className="alert-divider">{DIVIDER}</span>}
-              </Fragment>
-            ))}
+            {texts.map((text, j) => {
+              const rich = matching(alert.riches?.[j], text)
+              return (
+                <Fragment key={j}>
+                  <span className="alert-text">{rich ? <RichInline rich={rich} /> : text}</span>
+                  {layout === 'divider' && <span className="alert-divider">{DIVIDER}</span>}
+                </Fragment>
+              )
+            })}
           </div>
         ))}
       </div>

@@ -28,13 +28,14 @@ const dimension = (value: unknown, fallback: number) =>
 
 function assertStreamState(value: unknown): StreamState {
   // The slide part has the projector's shape; the alert ticker and church screen overlays do not apply.
-  const { mode, text, caption, copyright, theme, fadeMs, logoUrl, defaultFont } = assertOutputState(value)
+  const { mode, text, caption, copyright, rich, theme, fadeMs, logoUrl, defaultFont } = assertOutputState(value)
   const state = value as Partial<StreamState>
   return {
     mode,
     text,
     caption,
     copyright,
+    rich,
     theme,
     fadeMs,
     logoUrl,

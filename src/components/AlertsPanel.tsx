@@ -1,17 +1,26 @@
 import { ArrowDown, ArrowUp, Eye, EyeOff, Pencil, Play, SkipForward, Square, Trash2 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
-import type { AlertMessage, AppSettings } from '../../shared/types'
-import { SPEED_PRESETS } from '../lib/ticker'
+import { hasFormatting, matching, plainText, richOrPlain, trimRich } from '../../shared/richText'
+import type { AlertMessage, AppSettings, RichText } from '../../shared/types'
+import { PRIORITY_BAND_COLOR, SPEED_PRESETS } from '../lib/ticker'
 import { useOperatorStore } from '../store'
+import type { FormatControl } from './FormatToolbar'
+import { RichInline } from './RichText'
+import { RichTextEditor } from './RichTextEditor'
 
 /** The message being written: a new one (id null) or a saved one being edited. */
 interface Draft {
   id: string | null
   text: string
+  /** The text formatted, when it has any formatting. */
+  rich?: RichText
   priority: boolean
 }
 
 const NEW_DRAFT: Draft = { id: null, text: '', priority: false }
+
+/** The ticker is one line placed by its settings, so only the marks apply. */
+const TICKER_CONTROLS_OFF: FormatControl[] = ['align', 'justify', 'verticalAlign', 'lineHeight']
 
 const SPEEDS = [
   { label: 'Slow', value: SPEED_PRESETS.slow },
@@ -52,7 +61,11 @@ export function AlertsPanel() {
     updateSettings(patch).catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }
 
-  const messageOf = (d: Draft): AlertMessage => ({ id: d.id ?? crypto.randomUUID(), text: d.text.trim(), priority: d.priority })
+  const messageOf = (d: Draft): AlertMessage => {
+    const rich = d.rich ? matching(trimRich(d.rich), d.text.trim()) : null
+    return { id: d.id ?? crypto.randomUUID(), text: d.text.trim(), priority: d.priority, ...(rich ? { rich } : {}) }
+  }
+  const draftRich = draft.rich ? matching(trimRich(draft.rich), draft.text.trim()) : null
 
   /** A priority message interrupts; a normal one starts the ticker there and carries on through the rest in turn. */
   function play(message: AlertMessage) {
@@ -154,15 +167,25 @@ export function AlertsPanel() {
       )}
 
       <form className="alerts-editor" onSubmit={handleSubmit}>
-        <textarea
-          className="input"
-          rows={2}
+        <RichTextEditor
+          singleLine
           maxLength={300}
+          toolbar="focus"
+          disabled={TICKER_CONTROLS_OFF}
           placeholder="Message, such as: Parents, please pick up your child"
-          aria-label="Alert message"
-          value={draft.text}
-          onChange={(e) => setDraft((d) => ({ ...d, text: e.target.value }))}
+          ariaLabel="Alert message"
+          value={richOrPlain(draft.rich, draft.text)}
+          onChange={(rich) => setDraft((d) => ({ ...d, text: plainText(rich), rich: hasFormatting(rich) ? rich : undefined }))}
         />
+        {draft.text.trim() && (
+          <div
+            className="alerts-preview"
+            aria-label="Live preview"
+            style={{ color: settings.alertTextColor, background: draft.priority ? PRIORITY_BAND_COLOR : settings.alertBandColor }}
+          >
+            {draftRich ? <RichInline rich={draftRich} /> : draft.text.trim()}
+          </div>
+        )}
         <div className="alerts-editor-actions">
           <button
             type="button"

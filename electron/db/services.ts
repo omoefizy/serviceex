@@ -8,6 +8,7 @@ import type {
   ServiceItemType,
   ServiceWithItems,
 } from '../../shared/types'
+import { sanitizeSlideFormats } from '../../shared/richText'
 import { db } from './index'
 
 interface ItemRow {
@@ -32,15 +33,23 @@ function toItem(row: ItemRow): ServiceItem {
     return { ...fields, type: 'song', ref_id: row.ref_id as number, payload: null, title: row.song_title ?? 'Missing song' }
   }
   if (row.type === 'scripture') {
-    const payload = JSON.parse(row.payload ?? '{}') as ScripturePayload
+    const payload = withFormats(JSON.parse(row.payload ?? '{}') as ScripturePayload)
     return { ...fields, type: 'scripture', ref_id: null, payload, title: payload.title }
   }
   if (row.type === 'presentation') {
     const payload = JSON.parse(row.payload ?? '{}') as PresentationPayload
     return { ...fields, type: 'presentation', ref_id: null, payload, title: payload.title }
   }
-  const payload = JSON.parse(row.payload ?? '{}') as AnnouncementPayload
+  const payload = withFormats(JSON.parse(row.payload ?? '{}') as AnnouncementPayload)
   return { ...fields, type: 'announcement', ref_id: null, payload, title: payload.title }
+}
+
+/** Slide formatting is checked as it is read; items saved before it existed have none. */
+function withFormats<T extends ScripturePayload | AnnouncementPayload>(payload: T): T {
+  const { formats, ...rest } = payload
+  if (formats === undefined) return payload
+  const checked = sanitizeSlideFormats(formats)
+  return (Object.keys(checked).length > 0 ? { ...rest, formats: checked } : rest) as T
 }
 
 function getItem(id: number): ServiceItem | undefined {
@@ -93,6 +102,14 @@ export const addItem = db.transaction(
     return getItem(Number(result.lastInsertRowid)) as ServiceItem
   },
 )
+
+/** Replaces a scripture or announcement item's payload (callers check it suits the item). Returns false if not found. */
+export function updateItemPayload(itemId: number, payload: ScripturePayload | AnnouncementPayload): boolean {
+  const row = db.prepare('SELECT type FROM service_items WHERE id = ?').get(itemId) as { type: ServiceItemType } | undefined
+  if (!row) return false
+  if (row.type !== ('verses' in payload ? 'scripture' : 'announcement')) throw new Error(`A ${row.type} item cannot take that payload`)
+  return db.prepare('UPDATE service_items SET payload = ? WHERE id = ?').run(JSON.stringify(payload), itemId).changes > 0
+}
 
 export function removeItem(itemId: number): boolean {
   return db.prepare('DELETE FROM service_items WHERE id = ?').run(itemId).changes > 0

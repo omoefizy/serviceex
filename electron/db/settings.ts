@@ -1,3 +1,4 @@
+import { sanitizeRichFor } from '../../shared/richText'
 import { DEFAULT_FONT } from '../../shared/themes'
 import type { AlertMessage, AppSettings, LogoAnchor, LogoItem, SavedLowerThirdLine, ScreenMargins, StreamResolution, WhisperModelId } from '../../shared/types'
 import { db } from './index'
@@ -166,7 +167,8 @@ function cleanAlertMessages(value: unknown): AlertMessage[] | undefined {
     const m = item as Partial<AlertMessage> | null
     if (typeof m !== 'object' || m === null || typeof m.id !== 'string' || !m.id || m.id.length > 64) continue
     if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > ALERT_LIMITS.text) continue
-    messages.push({ id: m.id, text: m.text.trim(), priority: m.priority === true })
+    const rich = sanitizeRichFor(m.rich, m.text.trim())
+    messages.push({ id: m.id, text: m.text.trim(), priority: m.priority === true, ...(rich ? { rich } : {}) })
   }
   return messages
 }
@@ -213,7 +215,9 @@ function cleanSavedLines(value: unknown): SavedLowerThirdLine[] | undefined {
     const headline = typeof l.headline === 'string' ? l.headline.trim().slice(0, LOWER_THIRD_LIMITS.text) : ''
     const body = typeof l.body === 'string' ? l.body.trim().slice(0, LOWER_THIRD_LIMITS.text) : ''
     if (!headline && !body) continue
-    lines.push({ id: l.id, headline, body, pinned: l.pinned === true })
+    const headlineRich = sanitizeRichFor(l.headlineRich, headline)
+    const bodyRich = sanitizeRichFor(l.bodyRich, body)
+    lines.push({ id: l.id, headline, body, pinned: l.pinned === true, ...(headlineRich ? { headlineRich } : {}), ...(bodyRich ? { bodyRich } : {}) })
   }
   return lines
 }

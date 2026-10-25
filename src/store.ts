@@ -1,10 +1,12 @@
 import { create } from 'zustand'
 import { buildSongSlides } from '../shared/lyrics'
 import { DEFAULT_LOWER_THIRD_STYLE } from '../shared/lowerThirds'
+import { formatFor, matching, trimRich } from '../shared/richText'
 import { DEFAULT_FONT, DEFAULT_THEME_STYLE } from '../shared/themes'
 import type {
   AlertDisplay,
   AlertMessage,
+  AnnouncementPayload,
   AppSettings,
   LivePowerPointStatus,
   LowerThirdDisplay,
@@ -18,10 +20,13 @@ import type {
   Presentation,
   PresentationMode,
   PresentationProgress,
+  RichText,
+  ScripturePayload,
   ServiceItemPayload,
   ServiceItem,
   ServiceItemType,
   ServiceWithItems,
+  SlideFormats,
   Song,
   StageState,
   StreamState,
@@ -44,6 +49,8 @@ export interface DeckSlide {
   caption: string
   /** What the theme's Copyright box shows: a song's copyright line, on its first slide. */
   copyright?: string
+  /** The words with their own formatting, drawn over the theme's look; `text` stays the plain words. */
+  rich?: RichText
   /** Song section shown on the slide card only, such as "Chorus". */
   label?: string
   /** Replaces the theme's background for this slide: a library item dropped on it, or a presentation page. */
@@ -74,6 +81,8 @@ type BrowseSnapshot = Pick<
 export interface TickerRun {
   runId: number
   texts: string[]
+  /** Each text's formatting, or null, in the same order. */
+  riches: (RichText | null)[]
   /** Epoch milliseconds when the first letter was at the band's right edge. */
   startedAt: number
   /** Times through the messages; 0 runs until stopped. */
@@ -96,6 +105,9 @@ export interface LiveTicker {
 export interface LowerThirdLine {
   headline: string
   body: string
+  /** The headline and body with their formatting; used only while their plain text matches. */
+  headlineRich?: RichText
+  bodyRich?: RichText
 }
 
 /** The lower third on the Stream output. */
@@ -326,6 +338,8 @@ interface OperatorState {
   /** Refreshes the grid and schedule after the editor saves a song; marks the live copy out of date if it is that song. */
   songSaved(song: Song): Promise<void>
   songDeleted(id: number): Promise<void>
+  /** Saves a scripture or announcement item's new payload (its slides' words and formatting) and shows it in the grid. */
+  updateItemPayload(itemId: number, payload: ScripturePayload | AnnouncementPayload): Promise<void>
   loadPresentations(): Promise<void>
   /** Imports files or image folders into the Presentations library, .pptx files in `mode`; resolves to what was imported. */
   importPresentations(paths: string[], mode?: PresentationMode): Promise<Presentation[]>
@@ -587,16 +601,16 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   startAlerts(messages) {
-    const texts = messages.map((m) => m.text.trim()).filter(Boolean)
-    if (texts.length === 0) return
-    const normal = newRun(texts, get().settings.alertLoops)
+    const shown = messages.filter((m) => m.text.trim())
+    if (shown.length === 0) return
+    const normal = newRun(shown.map((m) => m.text.trim()), get().settings.alertLoops, shown.map(alertRich))
     setTicker({ normal, priority: null, pausedAt: null, hidden: get().live.alert?.hidden ?? false })
     scheduleRunEnd(normal, stopTicker)
   },
 
   interruptAlert(message) {
     const ticker = get().live.alert
-    const priority = newRun([message.text.trim()], PRIORITY_PASSES)
+    const priority = newRun([message.text.trim()], PRIORITY_PASSES, [alertRich(message)])
     // A second priority message keeps the pause point of the first.
     const pausedAt = ticker?.priority ? ticker.pausedAt : ticker?.normal ? Date.now() - ticker.normal.startedAt : null
     setTicker({ normal: ticker?.normal ?? null, priority, pausedAt, hidden: ticker?.hidden ?? false })
@@ -608,8 +622,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     if (!ticker) return get().startAlerts(get().settings.alertMessages.filter((m) => !m.priority))
     if (ticker.priority) return endPriority()
     if (!ticker.normal) return
-    const { texts, loops } = ticker.normal
-    const normal = newRun([...texts.slice(1), texts[0]], loops)
+    const { texts, riches, loops } = ticker.normal
+    const normal = newRun([...texts.slice(1), texts[0]], loops, [...riches.slice(1), riches[0]])
     setTicker({ ...ticker, normal })
     scheduleRunEnd(normal, stopTicker)
   },
@@ -705,7 +719,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
       song = (await window.api.songs.get(item.ref_id)) ?? null
       slides = song ? songSlides(song) : []
     } else if (item.type === 'scripture') {
-      slides = item.payload.verses
+      slides = withFormats(item.payload.verses, item.payload.formats)
     } else if (item.type === 'presentation') {
       // Linked to the library, it has the notes and animation marks too; older items have only their pages.
       const linked = get().presentations.find((p) => p.id === item.payload.presentationId)
@@ -713,7 +727,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
         ? presentationSlides(linked)
         : item.payload.pages.map((src) => ({ text: '', caption: '', background: { kind: 'image', src, fit: 'contain' }, page: true }))
     } else {
-      slides = announcementSlides(item.payload)
+      slides = withFormats(announcementSlides(item.payload), item.payload.formats)
     }
 
     if (token !== loadToken) return false
@@ -845,7 +859,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
 
   showLowerThird() {
     const { live, lowerThirdDraft, lowerThirdHistory, settings } = get()
-    const line = { headline: lowerThirdDraft.headline.trim(), body: lowerThirdDraft.body.trim() }
+    const line = trimLowerThirdLine(lowerThirdDraft)
     if (!line.headline && !line.body) return
     const runId = live.lowerThird?.runId ?? ++lowerThirdRuns
     const history = [line, ...lowerThirdHistory.filter((l) => l.headline !== line.headline || l.body !== line.body)].slice(0, LOWER_THIRD_HISTORY)
@@ -1031,6 +1045,21 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     if (service?.items.some((item) => item.type === 'song' && item.ref_id === song.id)) await refreshService(service.id)
   },
 
+  async updateItemPayload(itemId, payload) {
+    const { service } = get()
+    if (!(await window.api.services.updatePayload(itemId, payload))) throw new Error('This item is no longer in the schedule.')
+    if (service) await refreshService(service.id)
+    const item = get().service?.items.find((i) => i.id === itemId)
+    if (item && get().activeItemId === itemId && (item.type === 'scripture' || item.type === 'announcement')) {
+      const slides = item.type === 'scripture' ? withFormats(item.payload.verses, item.payload.formats) : withFormats(announcementSlides(item.payload), item.payload.formats)
+      const { highlightIndex } = get()
+      set({ deckTitle: item.title, slides, highlightIndex: slides.length === 0 ? null : Math.min(highlightIndex ?? 0, slides.length - 1) })
+      await applySlideBackgrounds(loadToken, get().deckKey)
+    }
+    // Like a saved song, the output keeps what went live until it is sent again.
+    markLiveStale(`item:${itemId}`)
+  },
+
   async songDeleted(id) {
     const { selectedSong, service, songsVersion, editingSongId } = get()
     set({ songsVersion: songsVersion + 1, editingSongId: editingSongId === id ? null : editingSongId })
@@ -1134,7 +1163,19 @@ async function neighbourVerse(slide: DeckSlide, delta: 1 | -1): Promise<DeckSlid
 let tickerTimer: ReturnType<typeof setTimeout> | undefined
 let tickerRuns = 0
 
-const newRun = (texts: string[], loops: number): TickerRun => ({ runId: ++tickerRuns, texts, startedAt: Date.now(), loops })
+const newRun = (texts: string[], loops: number, riches: (RichText | null)[]): TickerRun => ({ runId: ++tickerRuns, texts, riches, startedAt: Date.now(), loops })
+
+/** A message's formatting, trimmed like its text, or null. */
+const alertRich = (message: AlertMessage): RichText | null => matching(message.rich && trimRich(message.rich), message.text.trim())
+
+/** A lower third line trimmed, keeping each field's formatting while it still matches its words. */
+function trimLowerThirdLine(line: LowerThirdLine): LowerThirdLine {
+  const headline = line.headline.trim()
+  const body = line.body.trim()
+  const headlineRich = matching(line.headlineRich && trimRich(line.headlineRich), headline)
+  const bodyRich = matching(line.bodyRich && trimRich(line.bodyRich), body)
+  return { headline, body, ...(headlineRich ? { headlineRich } : {}), ...(bodyRich ? { bodyRich } : {}) }
+}
 
 function setTicker(alert: LiveTicker | null): void {
   const { live } = useOperatorStore.getState()
@@ -1178,6 +1219,7 @@ export function selectAlertDisplay(s: OperatorState): AlertDisplay | null {
   return {
     runId: run.runId,
     texts: run.texts,
+    riches: run.riches,
     startedAt: run.startedAt,
     loops: run.loops,
     layout: settings.alertLayout,
@@ -1237,11 +1279,21 @@ function songSlides(song: Song): DeckSlide[] {
   const titleLine = [song.title, song.author].filter(Boolean).join(' · ')
   return buildSongSlides(song.lyrics, song.arrangement).map(({ text, label }, index) => ({
     text,
+    ...richOf(song.formatting, text),
     caption: index === 0 ? titleLine : '',
     copyright: index === 0 ? (song.copyright ?? '') : '',
     label: label ?? undefined,
   }))
 }
+
+const richOf = (formats: SlideFormats | undefined, text: string) => {
+  const rich = formatFor(formats, text)
+  return rich ? { rich } : {}
+}
+
+/** Scripture or announcement slides with their stored formatting. */
+const withFormats = (slides: { text: string; caption: string }[], formats: SlideFormats | undefined): DeckSlide[] =>
+  slides.map((slide) => ({ ...slide, ...richOf(formats, slide.text) }))
 
 const mediaBackground = (item: MediaItem): ThemeBackground =>
   item.kind === 'video' ? { kind: 'video', src: item.url } : { kind: 'image', src: item.url }
@@ -1338,6 +1390,7 @@ export function selectOutputState(s: OperatorState): OutputState {
     text: live?.text ?? '',
     caption: live?.caption ?? '',
     copyright: live?.copyright ?? '',
+    rich: live?.rich ?? null,
     theme: s.live.mode === 'logo' ? selectDefaultTheme(s, 'logo') : slideTheme(s.live.theme, live),
     fadeMs: s.settings.fadeMs,
     logoUrl: s.settings.logoUrl,
@@ -1368,6 +1421,8 @@ export function selectLowerThirdDisplay(s: OperatorState, overFullSlide: boolean
     runId: lowerThird.runId,
     headline: lowerThird.headline,
     body: lowerThird.body,
+    ...(lowerThird.headlineRich ? { headlineRich: lowerThird.headlineRich } : {}),
+    ...(lowerThird.bodyRich ? { bodyRich: lowerThird.bodyRich } : {}),
     style: selectLowerThirdStyle(s),
     animation: s.settings.lowerThirdAnimation,
     durationMs: s.settings.lowerThirdDurationMs,
@@ -1388,7 +1443,7 @@ export function selectOverlayLayers(s: OperatorState, overFullSlide: boolean): O
  * them with its own background.
  */
 export function selectStreamState(s: OperatorState): StreamState {
-  const { mode, text, caption, copyright, theme: slideLook, fadeMs, logoUrl, defaultFont } = selectOutputState(s)
+  const { mode, text, caption, copyright, rich, theme: slideLook, fadeMs, logoUrl, defaultFont } = selectOutputState(s)
   const { streamKeyMode, streamKeyColor, streamResolution, streamSlideContent } = s.settings
   const [width, height] = streamResolution.split('x').map(Number)
   const streamMode = mode === 'black' ? 'black' : streamSlideContent === 'hide' ? 'clear' : mode
@@ -1401,6 +1456,7 @@ export function selectStreamState(s: OperatorState): StreamState {
     text,
     caption,
     copyright,
+    rich,
     theme,
     fadeMs,
     logoUrl,
@@ -1424,8 +1480,8 @@ export function selectStageState(s: OperatorState): StageState {
   const items = s.service?.items ?? []
   const nextItem = live.scheduleItemId === null ? undefined : items[items.findIndex((item) => item.id === live.scheduleItemId) + 1]
   return {
-    current: current ? { text: current.text, caption: current.caption } : null,
-    next: next ? { text: next.text, caption: next.caption } : null,
+    current: current ? { text: current.text, caption: current.caption, rich: current.rich ?? null } : null,
+    next: next ? { text: next.text, caption: next.caption, rich: next.rich ?? null } : null,
     title: live.title,
     nextItemTitle: nextItem?.title ?? null,
     mode: live.mode,

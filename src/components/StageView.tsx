@@ -59,7 +59,7 @@ export function StageView() {
 
       <section className="stage-current" aria-label="Current slide">
         {state?.current?.text ? (
-          <ThemedSlide theme={CURRENT_STYLE} text={state.current.text} caption={state.current.caption} />
+          <ThemedSlide theme={CURRENT_STYLE} text={state.current.text} caption={state.current.caption} rich={state.current.rich} />
         ) : (
           <p className="stage-empty">No slide live</p>
         )}
@@ -70,7 +70,7 @@ export function StageView() {
         <span className="stage-next-label">Next</span>
         <div className="stage-next-slide">
           {state?.next?.text ? (
-            <ThemedSlide theme={NEXT_STYLE} text={state.next.text} caption={state.next.caption} />
+            <ThemedSlide theme={NEXT_STYLE} text={state.next.text} caption={state.next.caption} rich={state.next.rich} />
           ) : (
             <p className="stage-empty">{state?.nextItemTitle ? `Next item: ${state.nextItemTitle}` : 'End'}</p>
           )}

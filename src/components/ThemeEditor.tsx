@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { replaceThemeFont, themeFonts } from '../../shared/fonts'
 import { THEME_CONTENT_TYPES } from '../../shared/themes'
-import type { TextCase, Theme, ThemeBackground, ThemeBox, ThemeContentType, ThemeElement, ThemeStyle, ThemeTextElement, ThemeTextProps } from '../../shared/types'
+import type { Theme, ThemeBackground, ThemeBox, ThemeContentType, ThemeElement, ThemeStyle, ThemeTextElement, ThemeTextProps } from '../../shared/types'
 import { selectBaseThemeId, useOperatorStore } from '../store'
 import { clampBox } from '../lib/themeLayout'
-import { FontPicker, MissingFontChips } from './FontPicker'
+import { MissingFontChips } from './FontPicker'
+import { FormatToolbar, type FormatControl, type FormatPatch, type FormatState } from './FormatToolbar'
 import { MediaPickerModal } from './MediaGrid'
 import { ThemedSlide } from './ThemedSlide'
 
@@ -28,11 +29,42 @@ const SAMPLES = {
 
 const CONTENT_LABELS: Record<ThemeContentType, string> = { song: 'Songs', scripture: 'Scripture', announcement: 'Announcements', quote: 'Quotes', lowerThird: 'Lower thirds', logo: 'Logos' }
 const WEIGHTS = [300, 400, 500, 600, 700, 800, 900]
-const CASES: { value: TextCase; label: string }[] = [
-  { value: 'normal', label: 'As typed' },
-  { value: 'upper', label: 'UPPERCASE' },
-  { value: 'lower', label: 'lowercase' },
-]
+
+/** A theme's text box has one look for all its words, so the toolbar's per-word controls do not apply. */
+const BOX_CONTROLS_OFF: FormatControl[] = ['strike', 'highlight', 'size', 'justify', 'clear']
+
+/** The toolbar's view of a text box's look. */
+function boxFormat(t: ThemeTextProps): FormatState {
+  return {
+    bold: t.fontWeight >= 600,
+    italic: t.italic,
+    underline: t.underline,
+    strike: false,
+    color: t.color,
+    highlight: null,
+    font: t.fontFamily,
+    size: null,
+    textCase: t.textCase,
+    align: t.align,
+    verticalAlign: t.verticalAlign,
+    lineHeight: t.lineHeight,
+  }
+}
+
+/** A toolbar change as a change to a text box's look. `emptyFont` is whether the box may have no font of its own. */
+function boxPatch(patch: FormatPatch, t: ThemeTextProps, emptyFont: boolean): Partial<ThemeTextProps> {
+  const next: Partial<ThemeTextProps> = {}
+  if (patch.bold !== undefined) next.fontWeight = patch.bold ? Math.max(700, t.fontWeight) : 400
+  if (patch.italic !== undefined) next.italic = patch.italic === true
+  if (patch.underline !== undefined) next.underline = patch.underline === true
+  if (patch.color) next.color = patch.color
+  if (patch.font !== undefined && (patch.font || emptyFont)) next.fontFamily = patch.font ?? ''
+  if (patch.textCase !== undefined) next.textCase = patch.textCase ?? 'normal'
+  if (patch.align && patch.align !== 'justify') next.align = patch.align
+  if (patch.verticalAlign) next.verticalAlign = patch.verticalAlign
+  if (typeof patch.lineHeight === 'number') next.lineHeight = patch.lineHeight
+  return next
+}
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -342,8 +374,8 @@ export function ThemeEditor() {
                 return (
                   <fieldset>
                     <legend>Text</legend>
-                    <Row label="Font">
-                      <FontPicker value={t.fontFamily} onChange={(fontFamily) => fontFamily && updateText({ fontFamily })} />
+                    <FormatToolbar state={boxFormat(t)} inherit={false} disabled={BOX_CONTROLS_OFF} onChange={(patch) => updateText(boxPatch(patch, t, false))} />
+                    <Row label="Weight">
                       <select className="input" value={t.fontWeight} onChange={(e) => updateText({ fontWeight: Number(e.target.value) })}>
                         {WEIGHTS.map((w) => (
                           <option key={w} value={w}>
@@ -365,40 +397,8 @@ export function ThemeEditor() {
                         <NumberInput value={t.fontSize} min={1} max={30} step={0.5} suffix="% of height" onChange={(fontSize) => updateText({ fontSize })} />
                       )}
                     </Row>
-                    <Row label="Color">
-                      <Color value={t.color} onChange={(color) => updateText({ color })} />
-                    </Row>
-                    <Row label="Align">
-                      <Segmented
-                        value={t.align}
-                        options={[
-                          { value: 'left', label: 'Left' },
-                          { value: 'center', label: 'Center' },
-                          { value: 'right', label: 'Right' },
-                        ]}
-                        onChange={(align) => updateText({ align })}
-                      />
-                      <Segmented
-                        value={t.verticalAlign}
-                        options={[
-                          { value: 'top', label: 'Top' },
-                          { value: 'middle', label: 'Middle' },
-                          { value: 'bottom', label: 'Bottom' },
-                        ]}
-                        onChange={(verticalAlign) => updateText({ verticalAlign })}
-                      />
-                    </Row>
                     <Row label="Line spacing">
                       <Range value={t.lineHeight} min={0.8} max={2.5} step={0.05} format={(v) => v.toFixed(2)} onChange={(lineHeight) => updateText({ lineHeight })} />
-                    </Row>
-                    <Row label="Case">
-                      <select className="input" value={t.textCase} onChange={(e) => updateText({ textCase: e.target.value as TextCase })}>
-                        {CASES.map((c) => (
-                          <option key={c.value} value={c.value}>
-                            {c.label}
-                          </option>
-                        ))}
-                      </select>
                     </Row>
                     <Row label="Shadow">
                       <input type="checkbox" checked={t.shadow.enabled} onChange={(e) => updateText({ shadow: { ...t.shadow, enabled: e.target.checked } })} />
@@ -502,12 +502,14 @@ export function ThemeEditor() {
                 return (
                   <fieldset>
                     <legend>Reference and copyright line</legend>
-                    <Row label="Font">
-                      <FontPicker
-                        value={c.fontFamily}
-                        emptyLabel="Same as text"
-                        onChange={(fontFamily) => updateCaption({ fontFamily })}
-                      />
+                    <FormatToolbar
+                      state={boxFormat(c)}
+                      inherit={false}
+                      disabled={BOX_CONTROLS_OFF}
+                      fontEmptyLabel="Same as text"
+                      onChange={(patch) => updateCaption(boxPatch(patch, c, true))}
+                    />
+                    <Row label="Weight">
                       <select className="input" value={c.fontWeight} onChange={(e) => updateCaption({ fontWeight: Number(e.target.value) })}>
                         {WEIGHTS.map((w) => (
                           <option key={w} value={w}>
@@ -519,13 +521,6 @@ export function ThemeEditor() {
                     <Row label="Size">
                       <NumberInput value={c.fontSize} min={1} max={15} step={0.2} suffix="% of height" onChange={(size) => updateCaption({ fontSize: size })} />
                     </Row>
-                    <Row label="Color">
-                      <Color value={c.color} onChange={(color) => updateCaption({ color })} />
-                      <label className="inline-check">
-                        <input type="checkbox" checked={c.italic} onChange={(e) => updateCaption({ italic: e.target.checked })} />
-                        Italic
-                      </label>
-                    </Row>
                     <Row label="Position">
                       <Segmented
                         value={caption.attached ? 'below' : 'box'}
@@ -535,15 +530,6 @@ export function ThemeEditor() {
                         ]}
                         onChange={(position) => setCaptionAttached(position === 'below')}
                       />
-                    </Row>
-                    <Row label="Case">
-                      <select className="input" value={c.textCase} onChange={(e) => updateCaption({ textCase: e.target.value as TextCase })}>
-                        {CASES.map((c) => (
-                          <option key={c.value} value={c.value}>
-                            {c.label}
-                          </option>
-                        ))}
-                      </select>
                     </Row>
                   </fieldset>
                 )

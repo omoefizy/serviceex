@@ -123,10 +123,21 @@ function splitLines(lines: string[], max: number | null): string[][] {
   return groups
 }
 
+/** A section's slides, each with the lines of the lyrics it came from (`endLine` exclusive). */
+function sectionSlideLines(section: LyricsSection, linesPerSlide: number | null): (SongSlide & { startLine: number; endLine: number })[] {
+  return section.chunks.flatMap((chunk) => {
+    // A chunk's lines are consecutive in the lyrics, and its slides take them in order.
+    let at = chunk.startLine
+    return splitLines(chunk.lines, linesPerSlide).map((lines) => {
+      const startLine = at
+      at += lines.length
+      return { text: lines.join('\n'), label: section.label, startLine, endLine: at }
+    })
+  })
+}
+
 function sectionSlides(section: LyricsSection, linesPerSlide: number | null): SongSlide[] {
-  return section.chunks
-    .flatMap((chunk) => splitLines(chunk.lines, linesPerSlide))
-    .map((lines) => ({ text: lines.join('\n'), label: section.label }))
+  return sectionSlideLines(section, linesPerSlide).map(({ text, label }) => ({ text, label }))
 }
 
 /** Finds a section by label, ignoring case. The first section wins when a label is used twice. */
@@ -146,4 +157,23 @@ export function buildSongSlides(lyrics: string, arrangement: SongArrangement = D
     const section = findSection(sections, label)
     return section ? sectionSlides(section, arrangement.linesPerSlide) : []
   })
+}
+
+/**
+ * The lyrics with the words of slide `index` (in play order) replaced by `text`, as when a slide is edited in the
+ * formatting editor. A slide that plays more than once is the same lines, so every play of it changes.
+ */
+export function replaceSongSlide(lyrics: string, arrangement: SongArrangement, index: number, text: string): string {
+  const sections = parseLyrics(lyrics)
+  const played =
+    arrangement.order.length === 0
+      ? sections
+      : arrangement.order.flatMap((label) => {
+          const section = findSection(sections, label)
+          return section ? [section] : []
+        })
+  const slide = played.flatMap((section) => sectionSlideLines(section, arrangement.linesPerSlide))[index]
+  if (!slide) return lyrics
+  const lines = lyrics.replace(/\r\n?/g, '\n').split('\n')
+  return [...lines.slice(0, slide.startLine), ...text.replace(/\r\n?/g, '\n').split('\n'), ...lines.slice(slide.endLine)].join('\n')
 }

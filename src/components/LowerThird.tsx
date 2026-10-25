@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
-import type { LowerThirdBox, LowerThirdDisplay, LowerThirdStyle, LowerThirdTextStyle, TextCase } from '../../shared/types'
+import { matching } from '../../shared/richText'
+import type { LowerThirdBox, LowerThirdDisplay, LowerThirdStyle, LowerThirdTextStyle, RichText, TextCase } from '../../shared/types'
 import { cssFontFamily } from '../lib/fonts'
+import { RichInline } from './RichText'
 
 /** Must match .lt-text in index.css. */
 const LINE_HEIGHT = 1.15
@@ -21,7 +23,15 @@ function accentStyle({ side, size }: LowerThirdStyle['accent']): CSSProperties {
  * One text field in its box, as large as its template allows and shrunk until it fits the box in no more than its
  * line count. The line clamp is a backstop, so even the longest text never spills off the bar.
  */
-function FitText({ field, text, align, outline }: { field: LowerThirdTextStyle; text: string; align: LowerThirdStyle['align']; outline: LowerThirdStyle['outline'] }) {
+function FitText({ field, text, rich, align, outline }: {
+  field: LowerThirdTextStyle
+  text: string
+  /** The words with their formatting, used when its plain text is `text`. */
+  rich?: RichText | null
+  align: LowerThirdStyle['align']
+  outline: LowerThirdStyle['outline']
+}) {
+  const formatted = matching(rich, text)
   const boxRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLParagraphElement>(null)
 
@@ -50,7 +60,7 @@ function FitText({ field, text, align, outline }: { field: LowerThirdTextStyle; 
     const observer = new ResizeObserver(fit)
     observer.observe(box)
     return () => observer.disconnect()
-  }, [field, text])
+  }, [field, text, formatted])
 
   return (
     <div ref={boxRef} className="lt-text-box" style={{ ...boxStyle(field.box), alignItems: ALIGN_ITEMS[align], textAlign: align }}>
@@ -69,7 +79,7 @@ function FitText({ field, text, align, outline }: { field: LowerThirdTextStyle; 
           paintOrder: 'stroke fill',
         }}
       >
-        {text}
+        {formatted ? <RichInline rich={formatted} /> : text}
       </p>
     </div>
   )
@@ -79,10 +89,12 @@ function FitText({ field, text, align, outline }: { field: LowerThirdTextStyle; 
  * A lower third drawn with a template: the bar, its accent stripe, the logo and the two text fields. It is placed in
  * its positioned parent by the template's frame; sizes are in cqh of the nearest size container (the screen).
  */
-export function LowerThirdGraphic({ style, headline, body, className = '', frameStyle }: {
+export function LowerThirdGraphic({ style, headline, body, headlineRich, bodyRich, className = '', frameStyle }: {
   style: LowerThirdStyle
   headline: string
   body: string
+  headlineRich?: RichText
+  bodyRich?: RichText
   className?: string
   frameStyle?: CSSProperties
 }) {
@@ -91,8 +103,8 @@ export function LowerThirdGraphic({ style, headline, body, className = '', frame
       {style.bar.enabled && <div className="lt-fill" style={{ background: style.bar.color }} />}
       {style.accent.enabled && <div className="lt-accent" style={{ ...accentStyle(style.accent), background: style.accent.color }} />}
       {style.logo.enabled && style.logo.url && <img className="lt-logo" src={style.logo.url} style={boxStyle(style.logo.box)} alt="" draggable={false} />}
-      {headline && <FitText field={style.headline} text={headline} align={style.align} outline={style.outline} />}
-      {body && <FitText field={style.body} text={body} align={style.align} outline={style.outline} />}
+      {headline && <FitText field={style.headline} text={headline} rich={headlineRich} align={style.align} outline={style.outline} />}
+      {body && <FitText field={style.body} text={body} rich={bodyRich} align={style.align} outline={style.outline} />}
     </div>
   )
 }
@@ -129,6 +141,8 @@ export function LowerThirdLayer({ display }: { display: LowerThirdDisplay | null
       style={d.style}
       headline={d.headline}
       body={d.body}
+      headlineRich={d.headlineRich}
+      bodyRich={d.bodyRich}
       className={`lt-${d.animation}-${leaving ? 'out' : 'in'}`}
       frameStyle={{ animationDuration: `${d.durationMs}ms`, ['--lt-offset' as string]: `${-(frame.x + frame.width)}cqw` }}
     />

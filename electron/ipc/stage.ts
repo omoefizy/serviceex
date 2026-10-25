@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron'
+import { sanitizeRichFor } from '../../shared/richText'
 import type { OutputMode, SlideContent, StageState } from '../../shared/types'
 import { alertDisplayOf } from './output'
 
@@ -12,7 +13,7 @@ function slideOf(value: unknown): SlideContent | null {
   if (typeof slide !== 'object' || typeof slide.text !== 'string' || typeof slide.caption !== 'string') {
     throw new TypeError('A stage slide needs text and a caption')
   }
-  return { text: slide.text, caption: slide.caption }
+  return { text: slide.text, caption: slide.caption, rich: sanitizeRichFor(slide.rich, slide.text) ?? null }
 }
 
 const textOrNull = (value: unknown) => (typeof value === 'string' ? value : null)

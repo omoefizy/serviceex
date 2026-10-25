@@ -1,11 +1,14 @@
 import { Copy, Download, Merge, Scissors, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
-import { buildSongSlides, findSection, isArrangement, LINES_PER_SLIDE_OPTIONS, parseLyrics } from '../../shared/lyrics'
-import type { AiError, AiTasks, ExportFormat, Song, SongArrangement, SongInput } from '../../shared/types'
+import { buildSongSlides, findSection, isArrangement, LINES_PER_SLIDE_OPTIONS, parseLyrics, replaceSongSlide } from '../../shared/lyrics'
+import { formatFor, pruneFormats, renameFormat, sanitizeSlideFormats } from '../../shared/richText'
+import { DEFAULT_THEME_STYLE } from '../../shared/themes'
+import type { AiError, AiTasks, ExportFormat, RichText, SlideFormats, Song, SongArrangement, SongInput } from '../../shared/types'
 import { duplicateSection, mergeWithNext, splitSlideAt, type ToolResult } from '../lib/lyricsTools'
 import { MOD } from '../lib/shortcuts'
 import { useOperatorStore } from '../store'
 import { LyricsDiffModal } from './LyricsDiffModal'
+import { SlideFormatter } from './SlideFormatter'
 
 /** The editor's fields as typed. */
 interface Form {
@@ -18,6 +21,8 @@ interface Form {
   /** Null uses the default song theme. */
   themeId: number | null
   lyrics: string
+  /** Formatting for some slides, keyed by slide text; the lyrics stay plain. */
+  formatting: SlideFormats
 }
 
 interface Draft {
@@ -35,15 +40,16 @@ function isForm(value: unknown): value is Form {
     form !== null &&
     ['title', 'author', 'copyright', 'tags', 'lyrics'].every((key) => typeof form[key as keyof Form] === 'string') &&
     isArrangement(form.arrangement) &&
-    // Drafts saved before songs had themes have no themeId.
-    (form.themeId === undefined || form.themeId === null || typeof form.themeId === 'number')
+    // Drafts saved before songs had themes have no themeId, and before formatting no formatting.
+    (form.themeId === undefined || form.themeId === null || typeof form.themeId === 'number') &&
+    (form.formatting === undefined || (typeof form.formatting === 'object' && form.formatting !== null))
   )
 }
 
 /** The fields in toForm's order, so sameForm's JSON comparison is not thrown off by key order. */
 function orderedForm(form: Form): Form {
   const { title, author, copyright, tags, arrangement, lyrics } = form
-  return { title, author, copyright, tags, arrangement, themeId: form.themeId ?? null, lyrics }
+  return { title, author, copyright, tags, arrangement, themeId: form.themeId ?? null, lyrics, formatting: sanitizeSlideFormats(form.formatting) }
 }
 
 function readDraft(id: number): Draft | null {
@@ -83,8 +89,13 @@ function toForm(song: Omit<Song, 'id'>): Form {
     themeId: song.themeId,
     // The section tools count lines, so keep one kind of line break.
     lyrics: song.lyrics.replace(/\r\n?/g, '\n'),
+    formatting: song.formatting ?? {},
   }
 }
+
+/** Every slide the lyrics have, whether or not the play order uses it. */
+const writtenSlideTexts = (lyrics: string, arrangement: SongArrangement) =>
+  buildSongSlides(lyrics, { order: [], linesPerSlide: arrangement.linesPerSlide }).map((slide) => slide.text)
 
 function toInput(form: Form): SongInput {
   return {
@@ -95,6 +106,7 @@ function toInput(form: Form): SongInput {
     arrangement: form.arrangement,
     themeId: form.themeId,
     lyrics: form.lyrics,
+    formatting: pruneFormats(form.formatting, writtenSlideTexts(form.lyrics, form.arrangement)),
   }
 }
 
@@ -113,6 +125,8 @@ export function SongEditor({ songId }: { songId: number }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [toolMessage, setToolMessage] = useState<string | null>(null)
+  /** The slide open in the formatting editor, by play order. */
+  const [formatIndex, setFormatIndex] = useState<number | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const deletedRef = useRef(false)
   const latestRef = useRef({ form, saved })
@@ -131,6 +145,7 @@ export function SongEditor({ songId }: { songId: number }) {
   } | null>(null)
   const themes = useOperatorStore((s) => s.themes)
   const songDefaultTheme = useOperatorStore((s) => s.themes.find((t) => t.id === s.themeDefaults?.song))
+  const logoUrl = useOperatorStore((s) => s.settings.logoUrl)
 
   const dirty = form !== null && saved !== null && !sameForm(form, saved)
   const sections = useMemo(() => parseLyrics(form?.lyrics ?? ''), [form?.lyrics])
@@ -293,9 +308,31 @@ export function SongEditor({ songId }: { songId: number }) {
     )
   }
 
-  /** Takes the cleaned lyrics and their play order; lines per slide stays as it was. */
+  /** A slide's words changed in the formatting editor: they go back into the lyrics, and its formatting with them. */
+  function handleSlideText(index: number, text: string, rich: RichText) {
+    setForm((current) => {
+      if (!current) return current
+      const old = buildSongSlides(current.lyrics, current.arrangement)[index]?.text
+      const lyrics = replaceSongSlide(current.lyrics, current.arrangement, index, text)
+      const formatting = old === undefined ? current.formatting : renameFormat(current.formatting, old, text, rich, writtenSlideTexts(lyrics, current.arrangement))
+      return { ...current, lyrics, formatting }
+    })
+  }
+
+  /**
+   * Takes the cleaned lyrics and their play order; lines per slide stays as it was. The AI sees and returns plain
+   * text only, so formatting stays with the slides whose words are unchanged and is dropped from the rest.
+   */
   function handleAcceptCleaned(cleaned: { lyrics: string; order: string[] }) {
-    setForm((current) => current && { ...current, lyrics: cleaned.lyrics, arrangement: { ...current.arrangement, order: cleaned.order } })
+    setForm(
+      (current) =>
+        current && {
+          ...current,
+          lyrics: cleaned.lyrics,
+          arrangement: { ...current.arrangement, order: cleaned.order },
+          formatting: pruneFormats(current.formatting, writtenSlideTexts(cleaned.lyrics, current.arrangement)),
+        },
+    )
     setCleaning(null)
     setToolMessage('Cleaned lyrics applied. Save to keep them.')
   }
@@ -335,6 +372,8 @@ export function SongEditor({ songId }: { songId: number }) {
         ? 'Draft autosaved · not saved to library'
         : 'Unsaved changes'
   const missingLabels = form.arrangement.order.filter((label) => !findSection(sections, label))
+  const formatSlide = formatIndex === null ? null : (slides[formatIndex] ?? null)
+  const theme = themes.find((t) => t.id === (form.themeId ?? songDefaultTheme?.id))?.style ?? DEFAULT_THEME_STYLE
 
   return (
     <section className="panel song-editor" onKeyDown={handleKeyDown}>
@@ -545,15 +584,48 @@ export function SongEditor({ songId }: { songId: number }) {
           </p>
           <ol className="editor-preview-list">
             {slides.map((slide, index) => (
-              <li key={index} className="slide-card">
-                <span className="slide-number">{index + 1}</span>
-                {slide.label && <span className="slide-caption">{slide.label}</span>}
-                <span className="slide-text">{slide.text}</span>
+              <li key={index}>
+                <button
+                  type="button"
+                  className={`slide-card${index === formatIndex ? ' preview' : ''}${formatFor(form.formatting, slide.text) ? ' formatted' : ''}`}
+                  title="Format this slide"
+                  aria-pressed={index === formatIndex}
+                  onClick={() => setFormatIndex(index === formatIndex ? null : index)}
+                >
+                  <span className="slide-number">{index + 1}</span>
+                  {slide.label && <span className="slide-caption">{slide.label}</span>}
+                  <span className="slide-text">{slide.text}</span>
+                </button>
               </li>
             ))}
           </ol>
         </div>
       </div>
+
+      {formatSlide ? (
+        <section className="editor-format" aria-label={`Format slide ${(formatIndex ?? 0) + 1}`}>
+          <h3>
+            Format slide {(formatIndex ?? 0) + 1}
+            {formatSlide.label ? ` · ${formatSlide.label}` : ''}
+          </h3>
+          <SlideFormatter
+            slides={slides.map((slide, index) => ({
+              text: slide.text,
+              label: slide.label,
+              caption: index === 0 ? [form.title, form.author].filter(Boolean).join(' · ') : '',
+              copyright: index === 0 ? form.copyright : '',
+            }))}
+            index={formatIndex ?? 0}
+            formats={form.formatting}
+            theme={theme}
+            logoUrl={logoUrl}
+            onFormats={(formatting) => update({ formatting })}
+            onText={handleSlideText}
+          />
+        </section>
+      ) : (
+        slides.length > 0 && <p className="hint">Click a slide in the preview to format it: bold, color, font, size, alignment and more.</p>
+      )}
 
       {cleaning !== null && (
         <LyricsDiffModal

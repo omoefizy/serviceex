@@ -1,8 +1,11 @@
 import { Plus, Sparkles, X } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import type { AiError, AnnouncementPayload } from '../../shared/types'
+import { fromPlain, plainText, setFormat, splitRichSlides } from '../../shared/richText'
+import type { AiError, AnnouncementPayload, RichText, SlideFormats } from '../../shared/types'
 import { announcementSlides } from '../lib/slides'
-import { useOperatorStore } from '../store'
+import { selectDefaultTheme, useOperatorStore } from '../store'
+import { RichTextEditor } from './RichTextEditor'
+import { ThemedSlide } from './ThemedSlide'
 
 interface Props {
   onSave(payload: AnnouncementPayload): Promise<void>
@@ -11,8 +14,10 @@ interface Props {
 
 export function AnnouncementModal({ onSave, onCancel }: Props) {
   const [title, setTitle] = useState('')
-  /** One card per slide; saved as the body with a blank line between slides. */
-  const [slides, setSlides] = useState<string[]>([''])
+  /** One card per slide, formatted; saved as the plain body with a blank line between slides, and the formatting beside it. */
+  const [slides, setSlides] = useState<RichText[]>([fromPlain('')])
+  /** The card shown in the live preview. */
+  const [active, setActive] = useState(0)
   const [titleSlide, setTitleSlide] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -21,9 +26,14 @@ export function AnnouncementModal({ onSave, onCancel }: Props) {
   const [building, setBuilding] = useState(false)
   const [aiError, setAiError] = useState<AiError | null>(null)
   const aiEnabled = useOperatorStore((s) => s.settings.aiEnabled)
+  const theme = useOperatorStore((s) => selectDefaultTheme(s, 'announcement'))
+  const logoUrl = useOperatorStore((s) => s.settings.logoUrl)
 
-  const body = slides.map((slide) => slide.trim()).filter(Boolean).join('\n\n')
+  const body = slides.map((slide) => plainText(slide).trim()).filter(Boolean).join('\n\n')
   const slideCount = title.trim() ? announcementSlides({ title, body, titleSlide }).length : 0
+  /** Each slide's formatting, split from the cards exactly as the body splits into slides. */
+  const formats = slides.flatMap(splitRichSlides).reduce<SlideFormats>((all, rich) => setFormat(all, plainText(rich), rich), {})
+  const previewSlide = slides[active] ? splitRichSlides(slides[active])[0] : undefined
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -35,14 +45,14 @@ export function AnnouncementModal({ onSave, onCancel }: Props) {
 
   /** Sends the message once, from the click. The answer fills the title and the cards, to edit before saving. */
   async function handleBuild() {
-    if (slides.some((slide) => slide.trim()) && !window.confirm('Replace the current slides with the AI’s slides?')) return
+    if (slides.some((slide) => plainText(slide).trim()) && !window.confirm('Replace the current slides with the AI’s slides?')) return
     setBuilding(true)
     setAiError(null)
     try {
       const answer = await window.api.ai.ask('buildAnnouncement', { message })
       if (answer.ok) {
         setTitle(answer.value.title)
-        setSlides(answer.value.slides)
+        setSlides(answer.value.slides.map(fromPlain))
         setTitleSlide(true)
       } else {
         setAiError(answer.error)
@@ -54,8 +64,8 @@ export function AnnouncementModal({ onSave, onCancel }: Props) {
     }
   }
 
-  function setSlide(index: number, text: string) {
-    setSlides((current) => current.map((slide, i) => (i === index ? text : slide)))
+  function setSlide(index: number, rich: RichText) {
+    setSlides((current) => current.map((slide, i) => (i === index ? rich : slide)))
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -64,7 +74,12 @@ export function AnnouncementModal({ onSave, onCancel }: Props) {
     setSaving(true)
     setError(null)
     try {
-      await onSave({ title: title.trim(), body, ...(titleSlide ? { titleSlide: true } : {}) })
+      await onSave({
+        title: title.trim(),
+        body,
+        ...(titleSlide ? { titleSlide: true } : {}),
+        ...(Object.keys(formats).length > 0 ? { formats } : {}),
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setSaving(false)
@@ -142,12 +157,13 @@ export function AnnouncementModal({ onSave, onCancel }: Props) {
             {slides.map((slide, index) => (
               <li key={index} className="announcement-card">
                 <span className="announcement-card-label">Slide {index + 1}</span>
-                <textarea
-                  className="input"
-                  rows={3}
-                  aria-label={`Slide ${index + 1}`}
+                <RichTextEditor
                   value={slide}
-                  onChange={(e) => setSlide(index, e.target.value)}
+                  onChange={(rich) => setSlide(index, rich)}
+                  onFocus={() => setActive(index)}
+                  base={theme.elements.find((e) => e.kind === 'text')?.text}
+                  ariaLabel={`Slide ${index + 1}`}
+                  toolbar="focus"
                 />
                 <button
                   type="button"
@@ -155,17 +171,26 @@ export function AnnouncementModal({ onSave, onCancel }: Props) {
                   aria-label={`Remove slide ${index + 1}`}
                   title="Remove slide"
                   disabled={slides.length === 1}
-                  onClick={() => setSlides((current) => current.filter((_, i) => i !== index))}
+                  onClick={() => {
+                    setSlides((current) => current.filter((_, i) => i !== index))
+                    setActive(0)
+                  }}
                 >
                   <X size={14} />
                 </button>
               </li>
             ))}
           </ol>
-          <button type="button" className="button" onClick={() => setSlides((current) => [...current, ''])}>
+          <button type="button" className="button" onClick={() => setSlides((current) => [...current, fromPlain('')])}>
             <Plus size={15} aria-hidden="true" /> Add slide
           </button>
         </div>
+
+        {previewSlide && (
+          <div className="announcement-preview" aria-label="Live preview">
+            <ThemedSlide theme={theme} text={plainText(previewSlide)} caption={title.trim()} rich={previewSlide} logoUrl={logoUrl} />
+          </div>
+        )}
 
         {error && <p className="error">{error}</p>}
 

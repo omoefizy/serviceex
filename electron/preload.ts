@@ -81,6 +81,7 @@ const services: ServicesApi = {
   delete: (id) => ipcRenderer.invoke('services:delete', id),
   addItem: (serviceId, type, refId, payload) => ipcRenderer.invoke('services:addItem', serviceId, type, refId, payload),
   removeItem: (itemId) => ipcRenderer.invoke('services:removeItem', itemId),
+  updatePayload: (itemId, payload) => ipcRenderer.invoke('services:updatePayload', itemId, payload),
   reorderItems: (serviceId, orderedItemIds) => ipcRenderer.invoke('services:reorderItems', serviceId, orderedItemIds),
 }
 

@@ -62,3 +62,17 @@ export function announcementSlides({ title, body, titleSlide, quote }: Announcem
   const parts = splitIntoSlides(body).map((text) => ({ text, caption: title }))
   return parts.length === 0 || titleSlide ? [{ text: title, caption: '' }, ...parts] : parts
 }
+
+/**
+ * The payload with slide `index` (numbered as announcementSlides numbers them) saying `text`: the title slide changes
+ * the title, a quote its words, any other slide its part of the body.
+ */
+export function withAnnouncementSlideText(payload: AnnouncementPayload, index: number, text: string): AnnouncementPayload {
+  if (payload.quote) return { ...payload, body: text.trim().replace(/^["“”]+|["“”]+$/g, '').trim() }
+  const parts = splitIntoSlides(payload.body)
+  const titleFirst = parts.length === 0 || payload.titleSlide === true
+  if (titleFirst && index === 0) return { ...payload, title: text.replace(/\s*\n\s*/g, ' ').trim() || payload.title }
+  const at = index - (titleFirst ? 1 : 0)
+  if (at < 0 || at >= parts.length) return payload
+  return { ...payload, body: parts.map((part, i) => (i === at ? text : part)).join('\n\n') }
+}
