@@ -4,6 +4,7 @@ import {
   Download,
   FolderOpen,
   HardDrive,
+  Highlighter,
   HardDriveDownload,
   Image,
   KeyRound,
@@ -31,6 +32,7 @@ import type {
   AiStatus,
   AppSettings,
   DisplayInfo,
+  HighlightColor,
   LivePowerPointTestResult,
   OutputDisplay,
   PresentationEngineId,
@@ -41,6 +43,7 @@ import type {
   WhisperModelId,
   WhisperStatus,
 } from '../../shared/types'
+import { HIGHLIGHT_COLORS, HIGHLIGHT_KINDS } from '../../shared/highlights'
 import { useOperatorStore } from '../store'
 import { dspOf, rememberDevice } from '../lib/listener'
 import {
@@ -854,6 +857,65 @@ function ScriptureSection() {
   )
 }
 
+/** Live highlighting: what happens to the marks when the slide changes, and the brush it starts with. */
+function HighlightSection() {
+  const settings = useOperatorStore((s) => s.settings)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const brush = settings.highlightDefault
+  return (
+    <Section icon={<Highlighter size={16} aria-hidden="true" />} title="Live highlighting">
+      <p className="hint">
+        Mark words on the Live or Preview box: {MOD}H turns highlight mode on, then click a word, drag across a phrase or double click a
+        sentence. 1 to 5 pick a color, Esc clears the live slide.
+      </p>
+      <label className="inline-check">
+        <input
+          type="checkbox"
+          checked={settings.highlightClearOnSlideChange}
+          onChange={(e) => updateSettings({ highlightClearOnSlideChange: e.target.checked })}
+        />
+        Clear highlights when the slide changes
+      </label>
+      <label className="inline-check">
+        <input type="checkbox" checked={settings.highlightKeepWithItem} onChange={(e) => updateSettings({ highlightKeepWithItem: e.target.checked })} />
+        Keep highlights with the schedule item
+      </label>
+      <p className="hint">On: a schedule item's highlights come back when it is loaded again, until the app closes.</p>
+      <div className="field">
+        <span>Default style</span>
+        <div className="segmented" role="radiogroup" aria-label="Default highlight style">
+          {HIGHLIGHT_KINDS.map((k) => (
+            <button
+              key={k.id}
+              type="button"
+              role="radio"
+              aria-checked={brush.kind === k.id}
+              className={brush.kind === k.id ? 'active' : ''}
+              onClick={() => updateSettings({ highlightDefault: { ...brush, kind: k.id } })}
+            >
+              {k.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <label className="field">
+        <span>Default color</span>
+        <select
+          className="input"
+          value={brush.color}
+          onChange={(e) => updateSettings({ highlightDefault: { ...brush, color: e.target.value as HighlightColor } })}
+        >
+          {HIGHLIGHT_COLORS.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    </Section>
+  )
+}
+
 const DUAL_LAYOUTS: { value: AppSettings['scriptureDual']['layout']; label: string }[] = [
   { value: 'stacked', label: 'One above the other' },
   { value: 'sideBySide', label: 'Side by side' },
@@ -1254,6 +1316,7 @@ export function SettingsPanel() {
       <ListenerSection />
 
       <ScriptureSection />
+      <HighlightSection />
       <DetectionSection />
       <QuotesSection />
 

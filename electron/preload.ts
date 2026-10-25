@@ -310,6 +310,11 @@ const api: WorshipDeckApi = {
   rasterizer,
   log,
   fonts,
+  onToggleHighlight(listener) {
+    const handler = () => listener()
+    ipcRenderer.on('highlight:toggle', handler)
+    return () => ipcRenderer.off('highlight:toggle', handler)
+  },
   output,
 }
 contextBridge.exposeInMainWorld('api', api)

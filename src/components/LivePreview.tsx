@@ -1,11 +1,31 @@
-import { AlertTriangle, Columns2, Eye, EyeOff, Presentation, RefreshCw, Undo2, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { DualTranslation, LivePowerPointStatus, OutputState } from '../../shared/types'
+import {
+  AlertTriangle,
+  Baseline,
+  Bold,
+  Columns2,
+  Eraser,
+  Eye,
+  EyeOff,
+  Highlighter,
+  MousePointerClick,
+  Presentation,
+  RefreshCw,
+  Underline,
+  Undo2,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { HIGHLIGHT_COLORS, HIGHLIGHT_KINDS, isMarked, sentenceAt, slideRich, wordAt, wordsBetween } from '../../shared/highlights'
+import { comparePos, type RichPos } from '../../shared/richText'
+import type { DualTranslation, HighlightKind, LivePowerPointStatus, OutputState } from '../../shared/types'
+import { pickHighlightColor } from '../lib/highlights'
 import { MOD } from '../lib/shortcuts'
 import { slideTranslation } from '../lib/translations'
 import {
   selectDeckTheme,
   selectLiveSlide,
+  selectMarkTarget,
   selectOutputState,
   selectPreviewSlide,
   slideTheme,
@@ -177,6 +197,125 @@ function TranslationBar({ where }: { where: TranslationTarget }) {
   )
 }
 
+const KIND_ICONS: Record<HighlightKind, LucideIcon> = { highlight: Highlighter, bold: Bold, underline: Underline, color: Baseline }
+
+/**
+ * The live highlighting toolbar over a screen: highlight mode, the brush (a highlighter, bold, underline or a text
+ * color), its color, and Clear all. The brush is shared by both screens; Clear all clears this screen's slide.
+ */
+function HighlightBar({ where }: { where: TranslationTarget }) {
+  const mode = useOperatorStore((s) => s.highlightMode)
+  const style = useOperatorStore((s) => s.highlightStyle)
+  const markable = useOperatorStore((s) => selectMarkTarget(s, where) !== null)
+  const marked = useOperatorStore((s) => isMarked(selectMarkTarget(s, where)?.slide))
+  const setMode = useOperatorStore((s) => s.setHighlightMode)
+  const setStyle = useOperatorStore((s) => s.setHighlightStyle)
+  const clear = useOperatorStore((s) => s.clearHighlights)
+
+  return (
+    <div className="rt-toolbar highlight-bar" role="toolbar" aria-label={`${where === 'live' ? 'Live' : 'Preview'} highlighting`}>
+      <button
+        type="button"
+        className={`rt-button${mode ? ' on' : ''}`}
+        aria-pressed={mode}
+        aria-label={`Highlight mode (${MOD}H)`}
+        title={`Highlight mode (${MOD}H): click a word to mark it, drag across a phrase, double click a sentence`}
+        onClick={() => setMode(!mode)}
+      >
+        <MousePointerClick size={14} aria-hidden="true" />
+      </button>
+      <span className="highlight-group" role="radiogroup" aria-label="Brush">
+        {HIGHLIGHT_KINDS.map(({ id, label }) => {
+          const Icon = KIND_ICONS[id]
+          return (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={style.kind === id}
+              className={`rt-button${style.kind === id ? ' on' : ''}`}
+              aria-label={label}
+              title={label}
+              onClick={() => setStyle({ kind: id })}
+            >
+              <Icon size={14} aria-hidden="true" />
+            </button>
+          )
+        })}
+      </span>
+      <span className="highlight-group" role="radiogroup" aria-label="Color">
+        {HIGHLIGHT_COLORS.map((color, i) => (
+          <button
+            key={color.id}
+            type="button"
+            role="radio"
+            aria-checked={style.color === color.id}
+            className={`highlight-swatch${style.color === color.id ? ' on' : ''}`}
+            style={{ background: style.kind === 'color' ? color.ink : color.fill }}
+            aria-label={color.label}
+            title={`${color.label}${mode ? ` (${i + 1})` : ''}`}
+            onClick={() => pickHighlightColor(color.id)}
+          />
+        ))}
+      </span>
+      <button
+        type="button"
+        className="rt-button highlight-clear"
+        aria-label={where === 'live' ? 'Clear all highlights (Esc)' : 'Clear all highlights'}
+        title={where === 'live' ? 'Clear all highlights (Esc)' : 'Clear all highlights'}
+        disabled={!markable || !marked}
+        onClick={() => clear(where)}
+      >
+        <Eraser size={14} aria-hidden="true" />
+      </button>
+    </div>
+  )
+}
+
+/** The place in the slide's words under the pointer: a line of the main text box (see ThemedSlide), and how far into it. */
+function positionAt(screen: HTMLElement, x: number, y: number): RichPos | null {
+  const line = document.elementFromPoint(x, y)?.closest('.themed-line')
+  const box = line?.parentElement
+  const caret = document.caretRangeFromPoint(x, y)
+  // Reference and translation lines lose their brackets on screen, so only plain lines of words can be marked.
+  if (!line || !box?.hasAttribute('data-slide-text') || !screen.contains(box) || !line.classList.contains('text') || !caret) return null
+  if (!line.contains(caret.startContainer)) return null
+  const before = document.createRange()
+  before.setStart(line, 0)
+  before.setEnd(caret.startContainer, caret.startOffset)
+  return { p: Array.from(box.children).indexOf(line), o: before.toString().length }
+}
+
+/**
+ * Clicks on a screen in highlight mode: a click marks the word, a drag the words it crosses, a double click the
+ * sentence. Each toggles the brush on the screen's slide.
+ */
+function useWordMarking(where: TranslationTarget) {
+  const marking = useOperatorStore((s) => s.highlightMode && selectMarkTarget(s, where) !== null)
+  const anchor = useRef<RichPos | null>(null)
+  if (!marking) return { marking, handlers: {} }
+
+  const onMouseDown = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return
+    anchor.current = positionAt(e.currentTarget, e.clientX, e.clientY)
+    // A drag marks words; it does not select the page's text.
+    e.preventDefault()
+  }
+  const onMouseUp = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const from = anchor.current
+    anchor.current = null
+    const st = useOperatorStore.getState()
+    const target = selectMarkTarget(st, where)
+    if (e.button !== 0 || !from || !target) return
+    const rich = slideRich(target.slide)
+    const to = positionAt(e.currentTarget, e.clientX, e.clientY) ?? from
+    const sentence = e.detail >= 2
+    const range = sentence ? sentenceAt(rich, to) : comparePos(from, to) === 0 ? wordAt(rich, from) : wordsBetween(rich, from, to)
+    if (range) st.markWords(where, range, sentence)
+  }
+  return { marking, handlers: { onMouseDown, onMouseUp } }
+}
+
 /**
  * LIVE shows the live snapshot, exactly what the projector shows. PREVIEW shows the highlighted slide of the item
  * in the grid, with its theme; Enter or Go Live sends it.
@@ -202,6 +341,8 @@ export function LivePreview() {
   const canGoBack = useOperatorStore((s) => s.liveHistory.length > 0)
   const powerPoint = useOperatorStore((s) => s.live.powerPoint && s.settings.presentationLivePowerPoint)
   const powerPointStatus = useOperatorStore((s) => s.livePowerPoint)
+  const liveMarking = useWordMarking('live')
+  const previewMarking = useWordMarking('preview')
   const [dismissedFailure, setDismissedFailure] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
@@ -231,7 +372,8 @@ export function LivePreview() {
           <Undo2 size={14} aria-hidden="true" /> Go Back
         </button>
       </header>
-      <div className="preview-screen live">
+      <HighlightBar where="live" />
+      <div className={`preview-screen live${liveMarking.marking ? ' marking' : ''}`} {...liveMarking.handlers}>
         {output ? <OutputScreen state={output} /> : <p className="empty">Preview Output is off</p>}
         <SlideBadge index={live.slideIndex} count={live.slides.length} />
       </div>
@@ -285,7 +427,8 @@ export function LivePreview() {
       </label>
 
       <h2 className="preview-subheading">Preview</h2>
-      <div className="preview-screen preview">
+      <HighlightBar where="preview" />
+      <div className={`preview-screen preview${previewMarking.marking ? ' marking' : ''}`} {...previewMarking.handlers}>
         {previewSlide ? (
           <ThemedSlide
             theme={previewTheme}

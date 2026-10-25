@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import { buildSongSlides } from '../shared/lyrics'
 import { DEFAULT_LOWER_THIRD_STYLE } from '../shared/lowerThirds'
-import { formatFor, matching, trimRich } from '../shared/richText'
+import { DEFAULT_HIGHLIGHT, isMarked, markSlide, slideRich, unmarkSlide } from '../shared/highlights'
+import { formatFor, matching, trimRich, type RichRange } from '../shared/richText'
 import { DEFAULT_FONT, DEFAULT_THEME_STYLE } from '../shared/themes'
 import type {
   AlertDisplay,
@@ -11,6 +12,7 @@ import type {
   BibleVersion,
   BibleVersionCode,
   DualTranslation,
+  HighlightStyle,
   LivePowerPointStatus,
   LowerThirdDisplay,
   LowerThirdStyle,
@@ -55,6 +57,8 @@ export interface DeckSlide {
   copyright?: string
   /** The words with their own formatting, drawn over the theme's look; `text` stays the plain words. */
   rich?: RichText
+  /** The formatting from before live highlighting (shared/highlights.ts), to take the marks off; set only while it has some. */
+  unmarked?: RichText
   /** Song section shown on the slide card only, such as "Chorus". */
   label?: string
   /** Replaces the theme's background for this slide: a library item dropped on it, or a presentation page. */
@@ -261,6 +265,10 @@ interface OperatorState {
   /** Installed Bible versions, in the order the version chips and Cmd+1 to 9 (Ctrl+1 to 9) use. */
   bibleVersions: BibleVersion[]
   translationNote: TranslationNote | null
+  /** Highlight mode: clicking words on the Live or Preview box marks them. Cmd+H (Ctrl+H) turns it on and off. */
+  highlightMode: boolean
+  /** The brush highlight mode marks words with; it starts as Settings' default. */
+  highlightStyle: HighlightStyle
 
   /** Shows a song in the grid and preview. Never touches what is live. */
   selectSong(song: Song | null): void
@@ -403,6 +411,16 @@ interface OperatorState {
   /** Saves the two translation choice and shows the preview's or the live scripture with it. */
   setDualTranslation(where: TranslationTarget, dual: DualTranslation): Promise<void>
   dismissTranslationNote(): void
+  setHighlightMode(on: boolean): void
+  /** Changes the brush, and turns highlight mode on. */
+  setHighlightStyle(patch: Partial<HighlightStyle>): void
+  /**
+   * Toggles the brush on words of the live slide (straight to the output) or the preview slide (it goes live with it).
+   * `again` replaces the last marking instead of adding to it: the second click of a double click.
+   */
+  markWords(where: TranslationTarget, range: RichRange, again?: boolean): void
+  /** Takes every mark off the live slide (Esc) or the preview slide. */
+  clearHighlights(where: TranslationTarget): void
 }
 
 /** Bumped by every grid load, so a slow song fetch for an old item cannot overwrite a newer selection. */
@@ -476,6 +494,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   scriptureServiceVersions: {},
   scriptureSwitchLiveImmediately: true,
   scriptureDual: { enabled: false, second: 'WEB', layout: 'stacked' },
+  highlightClearOnSlideChange: true,
+  highlightKeepWithItem: false,
+  highlightDefault: DEFAULT_HIGHLIGHT,
 }
 
 /** A settings answer with every key present, so a key missing after an update or a bad answer cannot break a panel. */
@@ -518,6 +539,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   powerPointGeneration: 0,
   bibleVersions: [],
   translationNote: null,
+  highlightMode: false,
+  highlightStyle: DEFAULT_HIGHLIGHT,
 
   selectSong(song) {
     const token = ++loadToken
@@ -598,7 +621,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
       powerPoint,
       powerPointCue: powerPoint ? ++powerPointCues : 0,
     }
-    set({ live, liveHistory: historyBefore(s, live), highlightIndex: index })
+    set({ ...leaveSlide(s, live), liveHistory: historyBefore(s, live), highlightIndex: index })
   },
 
   goLiveHighlighted() {
@@ -629,10 +652,13 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   goBack() {
-    const { liveHistory, live } = get()
+    const s = get()
+    const { liveHistory, live } = s
     const previous = liveHistory[liveHistory.length - 1]
     if (!previous) return
-    set({ live: { ...previous, mode: 'show', alert: live.alert, lowerThird: live.lowerThird }, liveHistory: liveHistory.slice(0, -1) })
+    // With Clear highlights when the slide changes on, the slide coming back has no marks either.
+    const slides = s.settings.highlightClearOnSlideChange ? unmarkAt(previous.slides, previous.slideIndex) : previous.slides
+    set({ ...leaveSlide(s, { ...previous, slides, mode: 'show', alert: live.alert, lowerThird: live.lowerThird }), liveHistory: liveHistory.slice(0, -1) })
   },
 
   startAlerts(messages) {
@@ -764,6 +790,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     } else {
       slides = withFormats(announcementSlides(item.payload), item.payload.formats)
     }
+    slides = withKeptMarks(item.id, slides)
 
     if (token !== loadToken) return false
     // A song keeps its slide backgrounds wherever it is loaded from; other items keep their own.
@@ -812,11 +839,12 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   async loadSettings() {
-    set({ settings: withDefaults(await window.api.settings.get()) })
+    const settings = withDefaults(await window.api.settings.get())
+    set({ settings, highlightStyle: settings.highlightDefault })
   },
 
   async updateSettings(patch) {
-    set({ settings: { ...get().settings, ...patch } })
+    set({ settings: { ...get().settings, ...patch }, ...(patch.highlightDefault ? { highlightStyle: patch.highlightDefault } : {}) })
     set({ settings: withDefaults(await window.api.settings.set(patch)) })
     if (patch.presentationLivePowerPoint) prepareLivePowerPoint()
   },
@@ -849,6 +877,30 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
 
   dismissTranslationNote() {
     set({ translationNote: null })
+  },
+
+  setHighlightMode(on) {
+    set({ highlightMode: on })
+  },
+
+  setHighlightStyle(patch) {
+    set({ highlightStyle: { ...get().highlightStyle, ...patch }, highlightMode: true })
+  },
+
+  markWords(where, range, again = false) {
+    const s = get()
+    const at = selectMarkTarget(s, where)
+    if (!at) return
+    // The second click of a double click marks the sentence in place of the word the first click marked.
+    const from = again && lastMark?.where === where && lastMark.after === at.slide ? lastMark.before : at.slide
+    const marked = markSlide(from, range, s.highlightStyle)
+    lastMark = { where, before: from, after: marked }
+    putMarked(where, at.index, marked)
+  },
+
+  clearHighlights(where) {
+    const at = selectMarkTarget(get(), where)
+    if (at && isMarked(at.slide)) putMarked(where, at.index, unmarkSlide(at.slide))
   },
 
   async setSlideBackground(index, mediaId) {
@@ -1171,7 +1223,8 @@ function showLiveSlide(slides: DeckSlide[], index: number): void {
   const powerPoint = playsInPowerPoint(s, s.live.deckKey, slides[index])
   const live: LiveState = { ...s.live, slides, slideIndex: index, powerPoint, powerPointCue: powerPoint ? ++powerPointCues : 0 }
   const follow = s.live.itemType === 'scripture' && selectBrowsingLive(s)
-  useOperatorStore.setState({ live, liveHistory: historyBefore(s, live), ...(follow ? { slides, highlightIndex: index } : {}) })
+  const left = leaveSlide(s, live)
+  useOperatorStore.setState({ ...left, liveHistory: historyBefore(s, live), ...(follow ? { slides: left.live.slides, highlightIndex: index } : {}) })
 }
 
 /** True while the next or previous verse is being read, so key presses meanwhile do not skip ahead. */
@@ -1295,6 +1348,75 @@ async function showDualInGrid(token: number): Promise<void> {
   if (!result || token !== loadToken || useOperatorStore.getState().slides !== s.slides) return
   if (result.ok) useOperatorStore.setState({ slides: result.slides, deckTitle: result.title })
   else noteTranslation('preview', missingNote(result.missing), true)
+}
+
+// ---------- Live highlighting ----------
+
+/** Slides of words can be marked: scripture, songs, announcements and quotes (the Stream's lower third shows the same live slide). */
+const MARKABLE: (DeckType | null)[] = ['scripture', 'song', 'announcement', 'quote']
+
+/** The live or preview slide, when its words can be marked. */
+export function selectMarkTarget(s: OperatorState, where: TranslationTarget): { slide: DeckSlide; index: number } | null {
+  const live = where === 'live'
+  const index = live ? s.live.slideIndex : s.highlightIndex
+  const slide = index === null ? undefined : (live ? s.live.slides : s.slides)[index]
+  if (index === null || !slide || !MARKABLE.includes(live ? s.live.itemType : s.deckType)) return null
+  return slide.page || slide.native || !slide.text.trim() ? null : { slide, index }
+}
+
+/** The last marking, so the second click of a double click can replace it. */
+let lastMark: { where: TranslationTarget; before: DeckSlide; after: DeckSlide } | null = null
+
+/** Marks kept with schedule items while the app is open (Keep highlights with the schedule item): by item id, then slide text. */
+const keptMarks = new Map<number, Map<string, Pick<DeckSlide, 'rich' | 'unmarked'>>>()
+
+/** Puts a newly marked (or unmarked) live or preview slide in place. Marking is not a slide change, so Go Back skips it. */
+function putMarked(where: TranslationTarget, index: number, slide: DeckSlide): void {
+  const s = useOperatorStore.getState()
+  const replace = (slides: DeckSlide[]) => slides.map((old, i) => (i === index ? slide : old))
+  if (where === 'live') {
+    // The grid's copy of the live slide follows, so its thumbnail shows the marks too.
+    const grid = selectBrowsingLive(s) && s.slides[index]?.text === slide.text ? { slides: replace(s.slides) } : {}
+    useOperatorStore.setState({ live: { ...s.live, slides: replace(s.live.slides) }, ...grid })
+  } else useOperatorStore.setState({ slides: replace(s.slides) })
+  const itemId = where === 'live' ? s.live.scheduleItemId : s.activeItemId
+  if (!s.settings.highlightKeepWithItem || itemId === null) return
+  const kept = keptMarks.get(itemId) ?? new Map()
+  keptMarks.set(itemId, kept)
+  if (isMarked(slide)) kept.set(slide.text, { rich: slide.rich, unmarked: slide.unmarked })
+  else kept.delete(slide.text)
+}
+
+/** A schedule item's slides with the marks kept with it, on slides whose own formatting is still what they were made on. */
+function withKeptMarks(itemId: number, slides: DeckSlide[]): DeckSlide[] {
+  const kept = useOperatorStore.getState().settings.highlightKeepWithItem ? keptMarks.get(itemId) : undefined
+  if (!kept) return slides
+  return slides.map((slide) => {
+    const marks = kept.get(slide.text)
+    return marks && JSON.stringify(slideRich(slide)) === JSON.stringify(marks.unmarked) ? { ...slide, ...marks } : slide
+  })
+}
+
+/** Slides with the marks taken off slide `index`. */
+function unmarkAt(slides: DeckSlide[], index: number | null): DeckSlide[] {
+  const slide = index === null ? undefined : slides[index]
+  return slide && isMarked(slide) ? slides.map((old) => (old === slide ? unmarkSlide(slide) : old)) : slides
+}
+
+/**
+ * Clear highlights when the slide changes: the slide leaving the screen loses its marks, in the live copy and in the
+ * grid's copy when the grid shows the live item. The slide coming on keeps any marks it brings from the preview.
+ */
+function leaveSlide(s: OperatorState, next: LiveState): { live: LiveState; slides?: DeckSlide[] } {
+  const index = s.live.slideIndex
+  const leaving = index === null ? undefined : s.live.slides[index]
+  if (!s.settings.highlightClearOnSlideChange || index === null || !leaving || !isMarked(leaving)) return { live: next }
+  const holds = (slides: DeckSlide[], deckKey: string | null) => deckKey === s.live.deckKey && slides[index]?.text === leaving.text
+  if (holds(next.slides, next.deckKey) && next.slideIndex === index) return { live: next }
+  return {
+    live: holds(next.slides, next.deckKey) ? { ...next, slides: unmarkAt(next.slides, index) } : next,
+    ...(holds(s.slides, s.deckKey) ? { slides: unmarkAt(s.slides, index) } : {}),
+  }
 }
 
 // ---------- Alert ticker ----------

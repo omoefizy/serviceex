@@ -77,6 +77,14 @@ function createWindow() {
     },
   })
 
+  // Cmd+H toggles highlight mode; on macOS the app menu would take it to hide the app, so it is caught first and passed on.
+  win.webContents.on('before-input-event', (event, input) => {
+    const cmdH = input.type === 'keyDown' && input.meta && !input.control && !input.alt && !input.shift && input.key.toLowerCase() === 'h'
+    if (process.platform !== 'darwin' || !cmdH) return
+    event.preventDefault()
+    win?.webContents.send('highlight:toggle')
+  })
+
   // Test active push message to Renderer-process.
   win.webContents.on('did-finish-load', () => {
     win?.webContents.send('main-process-message', (new Date).toLocaleString())

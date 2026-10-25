@@ -1315,6 +1315,44 @@ button {
   color: #9ca3af;
 }
 
+/* Highlight mode: words on the screen are clicked, not selected. */
+.preview-screen.marking {
+  cursor: text;
+  user-select: none;
+}
+
+/* The live highlighting toolbar over the Live and Preview screens. */
+.highlight-bar {
+  gap: var(--space-1);
+  padding: 2px var(--space-1);
+}
+
+.highlight-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: var(--space-1);
+  border-left: 1px solid var(--border);
+}
+
+.highlight-swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}
+
+.highlight-swatch.on {
+  border-color: var(--text);
+}
+
+.highlight-clear {
+  margin-left: auto;
+}
+
 /* The item title and slide number under each screen. */
 .screen-label {
   margin: calc(-1 * var(--space-1-5)) 0 0;

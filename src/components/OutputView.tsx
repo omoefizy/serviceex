@@ -39,13 +39,29 @@ function contentOf(state: OutputState): string {
   return JSON.stringify([state.mode, state.text, state.caption, state.copyright, state.rich ?? null, state.defaultFont, state.logoUrl, state.theme.elements])
 }
 
+/** Marking words on the live slide (live highlighting) changes only its formatting: a quick soft fade, not the slide crossfade. */
+const MARK_FADE_MS = 120
+
+/** The fade from `previous` to `state`: quick when only the formatting changed. */
+function contentFade(previous: OutputState | null, state: OutputState): number {
+  const restyled = previous !== null && contentOf({ ...previous, rich: null }) === contentOf({ ...state, rich: null })
+  return restyled ? Math.min(MARK_FADE_MS, state.fadeMs) : state.fadeMs
+}
+
 /**
  * A stack of fading frames for one layer. A new frame fades in on top; when `fadeOut` says so for the new state,
  * older frames fade out at the same time (text layers are transparent, so the old words would otherwise show through).
+ * `fadeFor` can shorten the fade for some changes.
  */
-function useFrames(state: OutputState | null, identity: (state: OutputState) => string, fadeOut: (state: OutputState) => boolean): Frame[] {
+function useFrames(
+  state: OutputState | null,
+  identity: (state: OutputState) => string,
+  fadeOut: (state: OutputState) => boolean,
+  fadeFor: (previous: OutputState | null, state: OutputState) => number = (_previous, state) => state.fadeMs,
+): Frame[] {
   const [frames, setFrames] = useState<Frame[]>([])
   const currentRef = useRef<string | null>(null)
+  const previousRef = useRef<OutputState | null>(null)
   const lastKeyRef = useRef(0)
   const timersRef = useRef<number[]>([])
 
@@ -57,6 +73,8 @@ function useFrames(state: OutputState | null, identity: (state: OutputState) => 
   useEffect(() => {
     if (!state) return
     const id = identity(state)
+    const previous = previousRef.current
+    previousRef.current = state
     if (id === currentRef.current) {
       // Same look; keep the newest state on the top frame without a fade.
       setFrames((frames) => frames.map((f, i) => (i === frames.length - 1 ? { ...f, state } : f)))
@@ -65,12 +83,13 @@ function useFrames(state: OutputState | null, identity: (state: OutputState) => 
     currentRef.current = id
     const key = ++lastKeyRef.current
     const leaving = fadeOut(state)
+    const fadeMs = fadeFor(previous, state)
     setFrames((frames) => [
       // A frame already fading out keeps going.
-      ...frames.map((f) => ({ ...f, leaving: f.leaving || leaving, fadeMs: state.fadeMs })),
-      { key, state, leaving: false, fadeMs: state.fadeMs },
+      ...frames.map((f) => ({ ...f, leaving: f.leaving || leaving, fadeMs })),
+      { key, state, leaving: false, fadeMs },
     ])
-    timersRef.current.push(window.setTimeout(() => setFrames((frames) => frames.filter((f) => f.key >= key)), state.fadeMs))
+    timersRef.current.push(window.setTimeout(() => setFrames((frames) => frames.filter((f) => f.key >= key)), fadeMs))
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per new output state
   }, [state])
 
@@ -89,7 +108,7 @@ const isClear = (state: OutputState) => state.mode === 'clear'
 export function SlideLayers({ state, keyed = false }: { state: OutputState | null; keyed?: boolean }) {
   const backgrounds = useFrames(state, keyed ? keyedBackgroundOf : backgroundOf, keyed ? isClear : never)
   const unders = useFrames(state, keyed ? keyedUnderOf : underOf, always)
-  const contents = useFrames(state, contentOf, always)
+  const contents = useFrames(state, contentOf, always, contentFade)
 
   return (
     <>

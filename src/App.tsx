@@ -16,6 +16,7 @@ import { StreamPanel } from './components/StreamPanel'
 import { Splitter } from './components/Splitter'
 import { ThemeEditor } from './components/ThemeEditor'
 import { Toolbar } from './components/Toolbar'
+import { highlightKey, toggleHighlightMode } from './lib/highlights'
 import { focusLowerThirdHeadline, isTyping, MODE_KEYS } from './lib/shortcuts'
 import { slideTranslation } from './lib/translations'
 import { usePersistentState } from './lib/usePersistentState'
@@ -134,6 +135,9 @@ function App() {
     return useOperatorStore.subscribe(send)
   }, [])
 
+  // On macOS the main process catches Cmd+H before the app menu's Hide and passes it on here.
+  useEffect(() => window.api.onToggleHighlight(toggleHighlightMode), [])
+
   // A file dropped outside the import drop zone would otherwise replace the app with the file.
   useEffect(() => {
     const block = (e: DragEvent) => {
@@ -168,6 +172,11 @@ function App() {
       if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'l') {
         e.preventDefault()
         focusLowerThirdHeadline()
+        return
+      }
+      // Live highlighting: Esc clears the live slide's marks, Cmd+H (Ctrl+H) toggles highlight mode, 1 to 5 pick a color.
+      if (!isTyping(e.target) && highlightKey(e)) {
+        e.preventDefault()
         return
       }
       // Cmd+1 to 9 (Ctrl+1 to 9) pick a translation, in the order of the version chips; Alt+Up and Down cycle them.

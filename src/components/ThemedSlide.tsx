@@ -249,7 +249,8 @@ function TextBox({ element, content, attached = [], main, rich = null }: { eleme
         className="themed-fit"
         style={{ justifyContent: JUSTIFY[verticalAlign], alignItems: ALIGN_ITEMS[props.align], textAlign: props.align }}
       >
-        <p ref={textRef} className={`themed-text${fullWidth ? ' fixed' : ''}`} style={textStyle(props, defaultFont)}>
+        {/* data-slide-text lets the Live and Preview boxes find the clicked word (see useWordMarking). */}
+        <p ref={textRef} className={`themed-text${fullWidth ? ' fixed' : ''}`} style={textStyle(props, defaultFont)} data-slide-text={main || undefined}>
           {paragraphs ? (
             <Paragraphs paragraphs={paragraphs} props={props} />
           ) : rich ? (

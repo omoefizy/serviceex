@@ -1,3 +1,4 @@
+import { DEFAULT_HIGHLIGHT, HIGHLIGHT_COLORS, HIGHLIGHT_KINDS } from '../../shared/highlights'
 import { sanitizeRichFor } from '../../shared/richText'
 import { DEFAULT_FONT } from '../../shared/themes'
 import type { AlertMessage, AppSettings, LogoAnchor, LogoItem, SavedLowerThirdLine, ScreenMargins, StreamResolution, WhisperModelId } from '../../shared/types'
@@ -72,6 +73,9 @@ const DEFAULTS: AppSettings = {
   scriptureServiceVersions: {},
   scriptureSwitchLiveImmediately: true,
   scriptureDual: { enabled: false, second: 'WEB', layout: 'stacked' },
+  highlightClearOnSlideChange: true,
+  highlightKeepWithItem: false,
+  highlightDefault: DEFAULT_HIGHLIGHT,
 }
 
 export const FADE_LIMITS = { min: 0, max: 1500 }
@@ -146,6 +150,9 @@ const KEYS: Record<keyof AppSettings, string> = {
   scriptureServiceVersions: 'scripture.serviceVersions',
   scriptureSwitchLiveImmediately: 'scripture.switchLiveImmediately',
   scriptureDual: 'scripture.dual',
+  highlightClearOnSlideChange: 'highlight.clearOnSlideChange',
+  highlightKeepWithItem: 'highlight.keepWithItem',
+  highlightDefault: 'highlight.default',
 }
 
 export const ALERT_LIMITS = {
@@ -344,7 +351,17 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'presentationAutoRefreshLive':
     case 'presentationLivePowerPoint':
     case 'scriptureSwitchLiveImmediately':
+    case 'highlightClearOnSlideChange':
+    case 'highlightKeepWithItem':
       return typeof value === 'boolean' ? v : undefined
+    case 'highlightDefault': {
+      if (typeof value !== 'object' || value === null) return undefined
+      const h = value as Partial<AppSettings['highlightDefault']>
+      return {
+        kind: HIGHLIGHT_KINDS.some((k) => k.id === h.kind) ? h.kind : DEFAULT_HIGHLIGHT.kind,
+        color: HIGHLIGHT_COLORS.some((c) => c.id === h.color) ? h.color : DEFAULT_HIGHLIGHT.color,
+      } as never
+    }
     case 'scriptureDefaultVersion':
       return versionCode(value) as never
     case 'scriptureServiceVersions': {

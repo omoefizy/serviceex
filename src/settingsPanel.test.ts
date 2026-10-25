@@ -38,6 +38,7 @@ const SECTIONS = [
   'Sermon quotes',
   'Presentations',
   'Live PowerPoint diagnostics',
+  'Live highlighting',
   'Autosave and backups',
 ]
 

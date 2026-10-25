@@ -66,6 +66,7 @@ export async function translateSlides(slides: DeckSlide[], title: string, to: Tr
       if (!verse || (second && !other)) return slide
       const next: DeckSlide = { ...slide, text: verse.text, caption: verseCaption(verse, to.version, second?.version) }
       delete next.rich
+      delete next.unmarked
       delete next.second
       if (second && other) next.second = { text: other.text, layout: second.layout }
       return next

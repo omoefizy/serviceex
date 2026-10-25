@@ -903,6 +903,23 @@ export interface AppSettings {
   scriptureSwitchLiveImmediately: boolean
   /** Two translations on one slide: the chosen one, with `second` in a second text box. */
   scriptureDual: DualTranslation
+  /** Live highlighting: the marks on a live slide come off when another slide goes live. On by default. */
+  highlightClearOnSlideChange: boolean
+  /** Live highlighting: marks stay with their schedule item while the app is open, and come back when it is loaded again. Off by default. */
+  highlightKeepWithItem: boolean
+  /** The brush live highlighting starts with. */
+  highlightDefault: HighlightStyle
+}
+
+/** The highlighter colors live highlighting offers, in the order the number keys 1 to 5 pick them. */
+export type HighlightColor = 'yellow' | 'green' | 'blue' | 'red' | 'orange'
+
+/** What clicking a word does in highlight mode: a highlighter behind it, bold, underline, or its words in a color. */
+export type HighlightKind = 'highlight' | 'bold' | 'underline' | 'color'
+
+export interface HighlightStyle {
+  kind: HighlightKind
+  color: HighlightColor
 }
 
 /** How a second translation sits on a slide whose theme has one text box; a theme with two text boxes uses its own layout. */
@@ -1209,6 +1226,8 @@ export interface WorshipDeckApi {
   rasterizer: RasterizerApi
   log: LogApi
   fonts: FontsApi
+  /** Cmd+H on macOS, caught by the main process before the app menu hides the app, to toggle highlight mode. */
+  onToggleHighlight(listener: () => void): () => void
   output: {
     /** Sends the operator's output state to the output window. */
     send(state: OutputState): void
