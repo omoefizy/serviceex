@@ -1,5 +1,6 @@
 import { BookPlus, History, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { can, upgradeNote } from '../../shared/features'
 import { BOOK_NAMES, formatReference, NEW_TESTAMENT_BOOKS, OLD_TESTAMENT_BOOKS, parseReference } from '../../shared/parseReference'
 import type { AiError, BibleVersion, BibleVersionCode, Testament, Verse } from '../../shared/types'
 import { itemTitle, passageOf, previewPassage, type ResultItem } from '../lib/scripture'
@@ -436,6 +437,7 @@ export function ScripturePanel() {
             onKeyDown={handleKeyDown}
           />
           <AiButton
+            feature="ai.scriptureSearch"
             label="By meaning"
             busyLabel="Searching…"
             busy={meaningBusy}
@@ -505,7 +507,13 @@ export function ScripturePanel() {
               {v.code === 'both' ? 'All' : v.code}
             </button>
           ))}
-          <button type="button" className="version-item version-import" title="Import a Bible version your church owns" onClick={() => setImportOpen(true)}>
+          <button
+            type="button"
+            className="version-item version-import"
+            title={can('bible.extraVersions') ? 'Import a Bible version your church owns' : upgradeNote('bible.extraVersions')}
+            disabled={!can('bible.extraVersions')}
+            onClick={() => setImportOpen(true)}
+          >
             <BookPlus size={14} aria-hidden="true" />
             <span>Import</span>
           </button>

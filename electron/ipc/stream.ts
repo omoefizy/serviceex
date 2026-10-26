@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import path from 'node:path'
+import { requireFeature } from '../../shared/features'
 import { DEFAULT_FONT, DEFAULT_THEME_STYLE } from '../../shared/themes'
 import type { StreamState } from '../../shared/types'
 import { copyIntoMedia, mediaUrl } from '../media'
@@ -52,7 +53,11 @@ function assertStreamState(value: unknown): StreamState {
 
 /** Forwards stream state from the operator window to the Stream output window, opens and closes it, and adds logos. */
 export function registerStreamIpc(getStreamWindow: () => BrowserWindow | null, setOpen: (open: boolean) => void): void {
-  ipcMain.handle('stream:setOpen', (_event, open: unknown) => setOpen(open === true))
+  ipcMain.handle('stream:setOpen', (_event, open: unknown) => {
+    // Closing always works; only opening needs the plan.
+    if (open === true) requireFeature('multiOutput')
+    setOpen(open === true)
+  })
   ipcMain.handle('stream:isOpen', () => getStreamWindow() !== null)
 
   ipcMain.on('stream:send', (_event, state: unknown) => {

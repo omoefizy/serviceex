@@ -1,6 +1,9 @@
 // Types shared by the main process, the preload script and the renderer.
 // Keep this file free of runtime code: it is imported with `import type` only.
 
+import type { Entitlements } from './features'
+import type { LicenseStatus } from './license'
+
 /** How a song's sections play and how its slides are cut. */
 export interface SongArrangement {
   /** Section labels in play order, repeats allowed, such as ["Verse 1", "Chorus", "Verse 2", "Chorus"]. Empty plays sections as written. */
@@ -873,6 +876,8 @@ export interface AppSettings {
   /** Turns every AI feature off; when false the main process makes no AI requests at all. */
   aiEnabled: boolean
   aiModel: AiModel
+  /** Where the Anthropic key comes from: the operator's own key, or one included in the plan (not available yet). */
+  aiKeyProvider: KeyProvider
   /** Cmd+Down stages the next schedule item in the preview; with this on it also goes live, as it used to. */
   autoGoLiveOnNext: boolean
   /** The microphone the sermon listener uses (a MediaDeviceInfo deviceId), or null for the system default. */
@@ -895,6 +900,8 @@ export interface AppSettings {
   saveTranscripts: boolean
   /** Auto (cloud, falling back to offline), cloud only (Deepgram), or offline only (whisper.cpp). */
   speechEngine: SpeechEngineId
+  /** Where the Deepgram key comes from: the operator's own key, or one included in the plan (not available yet). */
+  speechKeyProvider: KeyProvider
   /** The whisper.cpp model the offline engine uses. */
   whisperModel: WhisperModelId
   /** Real time factor measured per model (processing time / audio time; below 1 keeps up). Set by the main process. */
@@ -1609,6 +1616,7 @@ export interface WorshipDeckApi {
   log: LogApi
   fonts: FontsApi
   sharing: SharingApi
+  license: LicenseApi
   /** Cmd+H on macOS, caught by the main process before the app menu hides the app, to toggle highlight mode. */
   onToggleHighlight(listener: () => void): () => void
   /** Cmd+Plus and Cmd+Minus (Ctrl+Plus and Minus), caught by the main process before they zoom the window: +1 or -1. */
@@ -1637,6 +1645,18 @@ export interface PanelErrorReport {
 export interface LogApi {
   /** Appends the report to logs/panel-errors.log in the app data folder. */
   panelError(report: PanelErrorReport): Promise<void>
+}
+
+// ---------- Plan ----------
+
+/** "own": the operator's key, saved encrypted on this computer. "plan": a key included in the plan, for later. */
+export type KeyProvider = 'own' | 'plan'
+
+export interface LicenseApi {
+  /** The plan, its features and expiry as read at startup. */
+  status(): Promise<LicenseStatus>
+  /** What this run of the app allows, asked synchronously as the operator window starts; null if it cannot be asked. */
+  entitlements(): Entitlements | null
 }
 
 // ---------- AI ----------
@@ -1688,6 +1708,8 @@ export type AiTask = keyof AiTasks
 export type AiErrorCode =
   /** AI is switched off in Settings. */
   | 'disabled'
+  /** This AI feature is not included in the plan. */
+  | 'not_in_plan'
   /** No API key has been saved. */
   | 'no_key'
   /** The key was rejected or lacks access. */
@@ -1743,7 +1765,7 @@ export type SpeechMode = 'cloud' | 'offline' | 'reconnecting'
 /** What the speech engine is doing. The renderer adds 'starting' while it opens the microphone. */
 export type SpeechStatus = 'idle' | 'connecting' | 'listening' | 'stopping' | 'error'
 
-export type SpeechErrorCode = 'no_key' | 'invalid_key' | 'no_encryption' | 'auth' | 'network' | 'busy' | 'engine'
+export type SpeechErrorCode = 'not_in_plan' | 'no_key' | 'invalid_key' | 'no_encryption' | 'auth' | 'network' | 'busy' | 'engine'
 
 export interface SpeechError {
   code: SpeechErrorCode

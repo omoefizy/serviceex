@@ -25,6 +25,7 @@ import { registerLivePowerPointIpc, type LivePowerPoint } from './ipc/livePowerP
 import { registerLogIpc } from './ipc/log'
 import { registerFontIpc } from './ipc/fonts'
 import { registerSharingIpc, type SharingHandle } from './ipc/sharing'
+import { loadLicense, registerLicenseIpc } from './license'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -320,6 +321,9 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(() => {
+  // First: what the licence allows is fixed now, for this whole run, before any feature starts.
+  loadLicense()
+  registerLicenseIpc()
   seedBuiltinThemes()
   seedBuiltinLowerThirds()
   registerMediaProtocol()

@@ -1,6 +1,7 @@
 // AI tasks. The renderer sends a task name and its input; the prompts, output schemas and checks live here,
 // so the renderer cannot steer the model with its own instructions.
 
+import { can, upgradeNote, type FeatureKey } from '../../shared/features'
 import { findSection, parseLyrics } from '../../shared/lyrics'
 import { formatReference, parseReference } from '../../shared/parseReference'
 import { MAX_STATEMENT_WORDS, verbatimStatements } from '../../shared/statements'
@@ -358,6 +359,16 @@ const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
 
 export const isAiTask = (value: unknown): value is AiTask => typeof value === 'string' && value in TASKS
 
+/** The plan feature each task belongs to. */
+export const TASK_FEATURES: Record<AiTask, FeatureKey> = {
+  cleanLyrics: 'ai.lyricsCleaner',
+  suggestScripture: 'ai.scriptureSearch',
+  findScriptureReferences: 'ai.scriptureSearch',
+  sermonToSlides: 'ai.sermonPoints',
+  buildAnnouncement: 'ai.announcements',
+  pickStatements: 'ai.statements',
+}
+
 /** Server-side refusal fallback: Sonnet 5.5 supports the "default" form; Haiku 5.5 has no fallback. */
 function fallbackOptions(model: AiModel) {
   return model === 'claude-sonnet-5-5'
@@ -366,6 +377,7 @@ function fallbackOptions(model: AiModel) {
 }
 
 export async function runTask<T extends AiTask>(task: T, input: unknown): Promise<AiResult<AiTasks[T]['output']>> {
+  if (!can(TASK_FEATURES[task])) return fail('not_in_plan', upgradeNote(TASK_FEATURES[task]))
   const definition = TASKS[task] as TaskDefinition<T>
   let parsed: AiTasks[T]['input']
   try {

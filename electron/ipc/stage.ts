@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron'
+import { requireFeature } from '../../shared/features'
 import { sanitizeRichFor } from '../../shared/richText'
 import type { OutputMode, SlideContent, StageState } from '../../shared/types'
 import { alertDisplayOf } from './output'
@@ -41,7 +42,10 @@ interface StageWindowControls {
 
 /** Opens and closes the stage window, and forwards stage state from the operator window to it. */
 export function registerStageIpc(controls: StageWindowControls): void {
-  ipcMain.handle('stage:open', () => controls.open())
+  ipcMain.handle('stage:open', () => {
+    requireFeature('stageDisplay')
+    controls.open()
+  })
   ipcMain.handle('stage:close', () => controls.close())
   ipcMain.handle('stage:isOpen', () => controls.getWindow() !== null)
 

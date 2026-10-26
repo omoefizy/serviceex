@@ -69,3 +69,17 @@ describe('cleanLyrics', () => {
     expect(result).toEqual({ ok: true, value: { lyrics: LYRICS, order: ['Verse 1'] } })
   })
 })
+
+describe('plans', () => {
+  it('refuses a task whose feature the plan leaves out, before asking Claude', async () => {
+    const { setEntitlements } = await import('../../shared/features')
+    setEntitlements({ plan: 'Basic', features: ['ai.statements'] })
+    try {
+      const result = await runTask('cleanLyrics', { lyrics: 'Amazing grace' })
+      expect(result).toEqual({ ok: false, error: { code: 'not_in_plan', message: 'AI lyrics cleaner is not included in the Basic plan. See Settings, Plan.' } })
+      expect(create).not.toHaveBeenCalled()
+    } finally {
+      setEntitlements(null)
+    }
+  })
+})

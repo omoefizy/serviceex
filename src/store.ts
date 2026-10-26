@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { buildSongSlides } from '../shared/lyrics'
 import { DEFAULT_LOWER_THIRD_STYLE } from '../shared/lowerThirds'
 import { DEFAULT_HIGHLIGHT, isMarked, markSlide, slideRich, unmarkSlide } from '../shared/highlights'
+import { can } from '../shared/features'
 import { DEFAULT_LAYOUT_ID, PRESET_LAYOUTS } from '../shared/layouts'
 import { formatFor, matching, trimRich, type RichRange } from '../shared/richText'
 import { adjustTheme, isEmptyAdjust } from '../shared/scriptureLook'
@@ -487,6 +488,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lastBackupAt: null,
   aiEnabled: true,
   aiModel: 'claude-sonnet-5-5',
+  aiKeyProvider: 'own',
   autoGoLiveOnNext: false,
   micDeviceId: null,
   micDeviceName: null,
@@ -498,6 +500,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   micProcessing: false,
   saveTranscripts: false,
   speechEngine: 'auto',
+  speechKeyProvider: 'own',
   whisperModel: 'base.en',
   whisperSpeed: {},
   scriptureDetection: true,
@@ -692,6 +695,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   startAlerts(messages) {
+    if (!can('alerts')) return
     const shown = messages.filter((m) => m.text.trim())
     if (shown.length === 0) return
     const normal = newRun(shown.map((m) => m.text.trim()), get().settings.alertLoops, shown.map(alertRich))
@@ -700,6 +704,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   interruptAlert(message) {
+    if (!can('alerts')) return
     const ticker = get().live.alert
     const priority = newRun([message.text.trim()], PRIORITY_PASSES, [alertRich(message)])
     // A second priority message keeps the pause point of the first.
@@ -1006,6 +1011,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   openThemeEditor(open) {
+    if (open && !can('themes.editor')) return
     set(open ? { themeEditorOpen: true, editingSongId: null, settingsOpen: false, streamPanelOpen: false } : { themeEditorOpen: false })
   },
 
@@ -1026,6 +1032,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   async toggleStage() {
+    if (!get().stageOpen && !can('stageDisplay')) return
     await (get().stageOpen ? window.api.stage.close() : window.api.stage.open())
   },
 
@@ -1042,6 +1049,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   async toggleStream() {
+    if (!get().streamOpen && !can('multiOutput')) return
     await window.api.stream.setOpen(!get().streamOpen)
   },
 
@@ -1062,6 +1070,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   showLowerThird() {
+    if (!can('lowerThirds')) return
     const { live, lowerThirdDraft, lowerThirdHistory, settings } = get()
     const line = trimLowerThirdLine(lowerThirdDraft)
     if (!line.headline && !line.body) return

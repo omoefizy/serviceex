@@ -18,6 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { can, type FeatureKey } from '../../shared/features'
 import { formatReference, parseReference } from '../../shared/parseReference'
 import {
   bookNeeded,
@@ -42,6 +43,8 @@ interface Command {
   run(): void | Promise<unknown>
   /** Choosing it fills the box with this instead of running (a book or chapter while typing a reference). */
   complete?: string
+  /** The plan feature it starts; left out of the list when the plan does not include it. */
+  feature?: FeatureKey
 }
 
 const MAX_RESULTS = 8
@@ -51,7 +54,7 @@ function actionCommands(): Command[] {
   const st = useOperatorStore.getState
   const mode = (m: 'show' | 'black' | 'clear' | 'logo') => () => st().setOutputMode(m)
   const appearance = st().settings.appearance
-  return [
+  const commands: Command[] = [
     { id: 'show', group: 'Actions', label: 'Show slide', shortcut: 'S', icon: Monitor, run: mode('show') },
     { id: 'black', group: 'Actions', label: 'Black screen', shortcut: 'B', icon: Square, run: mode('black') },
     { id: 'clear', group: 'Actions', label: 'Clear text (keep background)', shortcut: 'C', icon: Eraser, run: mode('clear') },
@@ -60,13 +63,14 @@ function actionCommands(): Command[] {
     { id: 'next-slide', group: 'Actions', label: 'Next live slide', shortcut: '→', icon: ArrowRight, run: () => st().nextSlide() },
     { id: 'prev-slide', group: 'Actions', label: 'Previous live slide', shortcut: '←', icon: ArrowLeft, run: () => st().previousSlide() },
     { id: 'next-item', group: 'Actions', label: 'Stage the next schedule item', shortcut: `${MOD}↓`, icon: SkipForward, run: () => st().nextItem() },
-    { id: 'themes', group: 'Actions', label: 'Open themes', icon: Palette, run: () => st().openThemeEditor(true) },
+    { id: 'themes', group: 'Actions', label: 'Open themes', icon: Palette, feature: 'themes.editor', run: () => st().openThemeEditor(true) },
     { id: 'settings', group: 'Actions', label: 'Open settings', icon: Settings, run: () => st().openSettings(true) },
     {
       id: 'stage',
       group: 'Actions',
       label: st().stageOpen ? 'Close stage display' : 'Open stage display',
       icon: MonitorPlay,
+      feature: 'stageDisplay',
       run: () => st().toggleStage(),
     },
     {
@@ -77,6 +81,7 @@ function actionCommands(): Command[] {
       run: () => st().updateSettings({ appearance: appearance === 'light' ? 'dark' : 'light' }),
     },
   ]
+  return commands.filter((c) => !c.feature || can(c.feature))
 }
 
 /** Search for songs, verses and actions; Cmd+K (Ctrl+K) opens it. */

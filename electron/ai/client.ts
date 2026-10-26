@@ -1,17 +1,19 @@
 // The Anthropic client, main process only. The API key is stored encrypted by ../secrets (safeStorage) as
 // <userData>/anthropic-key.enc; it is never sent to the renderer, never read from the environment or a plain
-// file, and never lives in the repository.
+// file, and never lives in the repository. Which key is used comes from the provider chosen in Settings (see ../keys).
 
 import Anthropic from '@anthropic-ai/sdk'
 import { net } from 'electron'
-import type { AiError, AiResult } from '../../shared/types'
+import type { AiError, AiResult, KeyProvider } from '../../shared/types'
 import { getAppSettings } from '../db/settings'
-import { clearSecret, encryptionAvailable, hasSecret, readSecret, saveSecret } from '../secrets'
+import { keyProvider, missingKeyMessage, readProviderKey } from '../keys'
+import { clearSecret, encryptionAvailable, hasSecret, saveSecret } from '../secrets'
 
 export { encryptionAvailable }
 
-/** Cached so requests do not decrypt the key each time; dropped whenever the key changes. */
+/** Cached so requests do not decrypt the key each time; dropped whenever the key or its provider changes. */
 let client: Anthropic | null = null
+let clientProvider: KeyProvider = 'own'
 
 export function hasApiKey(): boolean {
   return hasSecret('anthropic-key')
@@ -27,11 +29,14 @@ export async function clearApiKey(): Promise<void> {
   client = null
 }
 
-/** The client for the saved key, or null when there is none (or it can no longer be decrypted). */
+/** The client for the key from the chosen provider, or null when there is none (or it can no longer be decrypted). */
 export async function getClient(): Promise<Anthropic | null> {
-  if (client) return client
-  const apiKey = await readSecret('anthropic-key')
+  const provider = keyProvider('anthropic')
+  if (client && clientProvider === provider) return client
+  client = null
+  const apiKey = await readProviderKey('anthropic')
   if (!apiKey) return null
+  clientProvider = provider
   // Pass the key explicitly and switch off the environment fallbacks, so only the saved key is ever used.
   client = new Anthropic({ apiKey, authToken: null, maxRetries: 2, timeout: 60_000 })
   return client
@@ -47,7 +52,7 @@ export async function readyClient(): Promise<AiResult<Anthropic>> {
   if (!getAppSettings().aiEnabled) return fail('disabled', 'AI features are turned off in Settings.')
   if (!encryptionAvailable()) return fail('no_encryption', 'This system cannot store the API key securely.')
   const ready = await getClient()
-  if (!ready) return fail('no_key', 'Add an Anthropic API key in Settings to use AI features.')
+  if (!ready) return fail('no_key', missingKeyMessage('anthropic'))
   if (!net.isOnline()) return fail('offline', 'No internet connection. AI features need to reach Anthropic.')
   return { ok: true, value: ready }
 }

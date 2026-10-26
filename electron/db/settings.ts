@@ -59,6 +59,7 @@ const DEFAULTS: AppSettings = {
   lastBackupAt: null,
   aiEnabled: true,
   aiModel: 'claude-sonnet-5-5',
+  aiKeyProvider: 'own',
   autoGoLiveOnNext: false,
   micDeviceId: null,
   micDeviceName: null,
@@ -70,6 +71,7 @@ const DEFAULTS: AppSettings = {
   micProcessing: false,
   saveTranscripts: false,
   speechEngine: 'auto',
+  speechKeyProvider: 'own',
   whisperModel: 'base.en',
   whisperSpeed: {},
   scriptureDetection: true,
@@ -147,6 +149,7 @@ const KEYS: Record<keyof AppSettings, string> = {
   lastBackupAt: 'backup.lastAt',
   aiEnabled: 'ai.enabled',
   aiModel: 'ai.model',
+  aiKeyProvider: 'ai.keyProvider',
   autoGoLiveOnNext: 'schedule.autoGoLiveOnNext',
   micDeviceId: 'speech.micDeviceId',
   micDeviceName: 'speech.micDeviceName',
@@ -158,6 +161,7 @@ const KEYS: Record<keyof AppSettings, string> = {
   micProcessing: 'speech.micProcessing',
   saveTranscripts: 'speech.saveTranscripts',
   speechEngine: 'speech.engine',
+  speechKeyProvider: 'speech.keyProvider',
   whisperModel: 'speech.whisperModel',
   whisperSpeed: 'speech.whisperSpeed',
   scriptureDetection: 'detection.enabled',
@@ -482,6 +486,9 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
         : undefined
     case 'detectionAlert':
       return value === 'off' || value === 'sound' || value === 'flash' ? v : undefined
+    case 'aiKeyProvider':
+    case 'speechKeyProvider':
+      return value === 'own' || value === 'plan' ? v : undefined
     case 'speechEngine':
       return value === 'auto' || value === 'deepgram' || value === 'whisper' ? v : undefined
     case 'whisperModel':

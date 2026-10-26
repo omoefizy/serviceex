@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
+import { requireFeature } from '../../shared/features'
 import { BOOK_NAMES } from '../../shared/parseReference'
 import type { BibleImportResult, BibleVersionCode, Testament, VerseSearchParams } from '../../shared/types'
 import {
@@ -99,9 +100,10 @@ export function registerBibleIpc(): void {
 
   ipcMain.handle('bible:listVersions', () => listVersions())
 
-  ipcMain.handle('bible:importVersion', (event, code: unknown, name: unknown) =>
-    importVersion(BrowserWindow.fromWebContents(event.sender), assertVersion(code), assertVersionName(name)),
-  )
+  ipcMain.handle('bible:importVersion', (event, code: unknown, name: unknown) => {
+    requireFeature('bible.extraVersions')
+    return importVersion(BrowserWindow.fromWebContents(event.sender), assertVersion(code), assertVersionName(name))
+  })
 
   ipcMain.handle('bible:removeVersion', (_event, code: unknown) => removeVersion(assertVersion(code)))
 

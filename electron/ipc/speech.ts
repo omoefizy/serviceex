@@ -2,8 +2,10 @@ import { app, ipcMain, net, powerSaveBlocker, systemPreferences, type WebContent
 import { appendFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import type { SpeechEvent, SpeechKeyStatus, SpeechMode, SpeechPerformance, SpeechResult, WhisperProgress, WhisperStatus } from '../../shared/types'
+import { can, upgradeNote } from '../../shared/features'
 import { getAppSettings, setAppSettings } from '../db/settings'
-import { clearSecret, encryptionAvailable, hasSecret, readSecret, saveSecret } from '../secrets'
+import { hasProviderKey, missingKeyMessage, readProviderKey } from '../keys'
+import { clearSecret, encryptionAvailable, hasSecret, saveSecret } from '../secrets'
 import { checkDeepgramKey, DEEPGRAM_MODEL, DeepgramEngine } from '../speech/deepgram'
 import { AutoEngine, reconnectDelay } from '../speech/auto'
 import { isSpeechError, speechError, type SpeechEngine } from '../speech/engine'
@@ -89,19 +91,41 @@ const transcriptsFolder = () => path.join(app.getPath('userData'), 'transcripts'
 /** What stops the chosen engine from starting, or null when it is ready. */
 /** Why the offline engine cannot run, or null when it can. */
 function offlineProblem(): string | null {
+  if (!can('listener.offline')) return upgradeNote('listener.offline')
   const { whisperModel } = getAppSettings()
   if (!whisperServerPath()) return 'The offline engine is not included in this build.'
   const label = WHISPER_MODELS.find((m) => m.id === whisperModel)?.label ?? whisperModel
   return isDownloaded(whisperModel) ? null : `Download the ${label} model in Settings first.`
 }
 
+/** Why the cloud engine cannot run, or null when it can. */
+function cloudProblem(): string | null {
+  if (!can('listener.cloud')) return upgradeNote('listener.cloud')
+  return hasProviderKey('deepgram') ? null : missingKeyMessage('deepgram')
+}
+
+/** The Deepgram key, when the plan includes the cloud listener and the chosen provider has one. */
+const cloudKey = async () => (can('listener.cloud') ? readProviderKey('deepgram') : null)
+
+/** Whether the plan leaves the chosen engine nothing to run. */
+function engineNotInPlan(): boolean {
+  const { speechEngine } = getAppSettings()
+  if (speechEngine === 'deepgram') return !can('listener.cloud')
+  if (speechEngine === 'whisper') return !can('listener.offline')
+  return !can('listener.cloud') && !can('listener.offline')
+}
+
 function notReadyReason(): string | null {
   const { speechEngine } = getAppSettings()
-  const hasKey = hasSecret('deepgram-key')
-  if (speechEngine === 'deepgram') return hasKey ? null : 'Add a Deepgram API key in Settings first.'
+  if (speechEngine === 'deepgram') return cloudProblem()
   if (speechEngine === 'whisper') return offlineProblem()
-  // Auto needs at least one of the two.
-  return hasKey || !offlineProblem() ? null : 'Add a Deepgram API key or download an offline model in Settings first.'
+  // Auto needs at least one of the two; when the plan has only one, its problem is the one to fix.
+  const cloud = cloudProblem()
+  const offline = offlineProblem()
+  if (!cloud || !offline) return null
+  if (!can('listener.cloud')) return offline
+  if (!can('listener.offline')) return cloud
+  return 'Add a Deepgram API key or download an offline model in Settings first.'
 }
 
 function status(): SpeechKeyStatus {
@@ -302,13 +326,13 @@ async function transcribeTest(pcm: Uint8Array): Promise<SpeechResult<{ text: str
   const problem = notReadyReason()
   if (problem) return { ok: false, error: speechError('engine', problem) }
   const { speechEngine, whisperModel } = getAppSettings()
-  const key = await readSecret('deepgram-key')
+  const key = await cloudKey()
   const binary = whisperServerPath()
   const cloud = speechEngine === 'deepgram' || (speechEngine === 'auto' && key !== null && (net.isOnline() || offlineProblem() !== null))
   let engine: SpeechEngine
   let name: string
   if (cloud) {
-    if (!key) return { ok: false, error: speechError('no_key', 'Add a Deepgram API key in Settings first.') }
+    if (!key) return { ok: false, error: speechError('no_key', missingKeyMessage('deepgram')) }
     engine = new DeepgramEngine(key)
     name = `Deepgram ${DEEPGRAM_MODEL}`
   } else {
@@ -369,8 +393,9 @@ export function registerSpeechIpc(): void {
   })
 
   ipcMain.handle('speech:test', async (): Promise<SpeechResult<{ model: string }>> => {
-    const key = await readSecret('deepgram-key')
-    if (!key) return { ok: false, error: speechError('no_key', 'Add a Deepgram API key first.') }
+    if (!can('listener.cloud')) return { ok: false, error: speechError('not_in_plan', upgradeNote('listener.cloud')) }
+    const key = await readProviderKey('deepgram')
+    if (!key) return { ok: false, error: speechError('no_key', missingKeyMessage('deepgram')) }
     const problem = await checkDeepgramKey(key)
     if (problem) return { ok: false, error: problem }
     // Open a real stream and close it again, so the test covers what listening uses.
@@ -406,9 +431,9 @@ export function registerSpeechIpc(): void {
 
     const { speechEngine, whisperModel } = getAppSettings()
     const problem = notReadyReason()
-    if (problem) return { ok: false, error: speechError(speechEngine === 'deepgram' ? 'no_key' : 'engine', problem) }
-    const key = await readSecret('deepgram-key')
-    if (speechEngine === 'deepgram' && !key) return { ok: false, error: speechError('no_key', 'Add a Deepgram API key in Settings first.') }
+    if (problem) return { ok: false, error: speechError(engineNotInPlan() ? 'not_in_plan' : speechEngine === 'deepgram' ? 'no_key' : 'engine', problem) }
+    const key = await cloudKey()
+    if (speechEngine === 'deepgram' && !key) return { ok: false, error: speechError('no_key', missingKeyMessage('deepgram')) }
     const reportSpeed = (s: Session, performance: SpeechPerformance) => {
       s.behind = !performance.keepingUp
       send({ type: 'performance', performance })

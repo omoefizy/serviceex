@@ -28,6 +28,7 @@ const { SettingsPanel } = await import('./components/SettingsPanel')
 const { ThemeEditor } = await import('./components/ThemeEditor')
 
 const SECTIONS = [
+  'Plan',
   'Appearance',
   'Output',
   'Logo',

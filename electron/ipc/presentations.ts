@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import PptxGenJS from 'pptxgenjs'
+import { requireFeature } from '../../shared/features'
 import { normalizeTheme } from '../../shared/themes'
 import type { NativeSlide, Presentation, PresentationEngineId, PresentationMode } from '../../shared/types'
 import { findMediaByHash, insertMedia } from '../db/media'
@@ -41,6 +42,7 @@ function assertIndex(value: unknown): number {
 
 const assertMode = (value: unknown): PresentationMode => {
   if (value !== 'image' && value !== 'native') throw new TypeError("Mode must be 'image' or 'native'")
+  if (value === 'native') requireFeature('powerpoint.native')
   return value
 }
 

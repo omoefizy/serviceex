@@ -1,7 +1,9 @@
 import { useEffect, useState, type DragEvent } from 'react'
 import { buildSongSlides } from '../../shared/lyrics'
+import { can } from '../../shared/features'
 import type { ExportFormat, ImportScan } from '../../shared/types'
 import { useOperatorStore } from '../store'
+import { UpgradeNote } from './UpgradeNote'
 
 const FORMAT_NAMES = { text: 'Text', openlyrics: 'OpenLyrics', opensong: 'OpenSong' }
 
@@ -98,35 +100,39 @@ export function ImportModal({ onClose }: Props) {
 
         {(stage.name === 'choose' || stage.name === 'reading') && (
           <>
-            <div
-              className={`drop-zone${dragging ? ' over' : ''}`}
-              onDragOver={(e) => {
-                if (!e.dataTransfer.types.includes('Files')) return
-                e.preventDefault()
-                setDragging(true)
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={handleDrop}
-            >
-              {stage.name === 'reading' ? (
-                <p>Reading files…</p>
-              ) : (
-                <>
-                  <p>Drop song files or a folder here</p>
-                  <p className="hint">
-                    Text (.txt, first line is the title), OpenLyrics (.xml, as OpenLP exports) or OpenSong
-                  </p>
-                  <div className="drop-zone-buttons">
-                    <button className="button" onClick={() => read(window.api.songFiles.pickFiles)}>
-                      Choose files…
-                    </button>
-                    <button className="button" onClick={() => read(window.api.songFiles.pickFolder)}>
-                      Choose folder…
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+            {can('import.songs') ? (
+              <div
+                className={`drop-zone${dragging ? ' over' : ''}`}
+                onDragOver={(e) => {
+                  if (!e.dataTransfer.types.includes('Files')) return
+                  e.preventDefault()
+                  setDragging(true)
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={handleDrop}
+              >
+                {stage.name === 'reading' ? (
+                  <p>Reading files…</p>
+                ) : (
+                  <>
+                    <p>Drop song files or a folder here</p>
+                    <p className="hint">
+                      Text (.txt, first line is the title), OpenLyrics (.xml, as OpenLP exports) or OpenSong
+                    </p>
+                    <div className="drop-zone-buttons">
+                      <button className="button" onClick={() => read(window.api.songFiles.pickFiles)}>
+                        Choose files…
+                      </button>
+                      <button className="button" onClick={() => read(window.api.songFiles.pickFolder)}>
+                        Choose folder…
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <UpgradeNote feature="import.songs" />
+            )}
 
             <div className="export-all">
               <span>Export all songs</span>

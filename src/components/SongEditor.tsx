@@ -1,5 +1,6 @@
 import { Copy, Download, Merge, Scissors, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { can, upgradeNote } from '../../shared/features'
 import { buildSongSlides, findSection, isArrangement, LINES_PER_SLIDE_OPTIONS, parseLyrics, replaceSongSlide } from '../../shared/lyrics'
 import { formatFor, pruneFormats, renameFormat, sanitizeSlideFormats } from '../../shared/richText'
 import { DEFAULT_THEME_STYLE } from '../../shared/themes'
@@ -490,17 +491,19 @@ export function SongEditor({ songId }: { songId: number }) {
         {/* Disabled buttons show no tooltip, so the reason sits on a wrapper. */}
         <span
           title={
-            !aiEnabled
-              ? 'AI features are turned off in Settings'
-              : !form.lyrics.trim()
-                ? 'Paste lyrics into the box first'
-                : 'Add section labels, merge repeated choruses and remove chords and junk, without changing the words'
+            !can('ai.lyricsCleaner')
+              ? upgradeNote('ai.lyricsCleaner')
+              : !aiEnabled
+                ? 'AI features are turned off in Settings'
+                : !form.lyrics.trim()
+                  ? 'Paste lyrics into the box first'
+                  : 'Add section labels, merge repeated choruses and remove chords and junk, without changing the words'
           }
         >
           <button
             type="button"
             className="button"
-            disabled={!aiEnabled || !form.lyrics.trim() || cleaning !== null}
+            disabled={!can('ai.lyricsCleaner') || !aiEnabled || !form.lyrics.trim() || cleaning !== null}
             onClick={handleClean}
           >
             <Sparkles size={15} aria-hidden="true" />{' '}

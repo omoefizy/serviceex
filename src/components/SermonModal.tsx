@@ -116,6 +116,7 @@ export function SermonModal({ onClose }: Props) {
         </label>
         <div className="settings-row">
           <AiButton
+            feature="ai.sermonPoints"
             label="Find Points and Verses"
             busyLabel="Reading the outline…"
             busy={busy}

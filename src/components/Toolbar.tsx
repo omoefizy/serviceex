@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type RefObject } from 'react'
+import { can, upgradeNote } from '../../shared/features'
 import type { OutputMode } from '../../shared/types'
 import { MOD, MODE_KEYS } from '../lib/shortcuts'
 import { selectStreamState, useOperatorStore } from '../store'
@@ -57,15 +58,18 @@ function AlertsButton() {
   const ref = useRef<HTMLDivElement>(null)
   const showing = useOperatorStore((s) => s.live.alert !== null)
   useDismiss(open, ref, () => setOpen(false))
+  const inPlan = can('alerts')
 
   return (
-    <div className="alerts-control" ref={ref}>
+    // Disabled buttons show no tooltip, so the plan's note sits on the wrapper.
+    <div className="alerts-control" ref={ref} title={inPlan ? undefined : upgradeNote('alerts')}>
       <button
         type="button"
         className={`mode-button mode-alert${showing ? ' active' : ''}`}
         aria-haspopup="dialog"
         aria-expanded={open}
-        title={showing ? 'Alerts (the ticker is running)' : 'Alerts'}
+        disabled={!inPlan}
+        title={!inPlan ? undefined : showing ? 'Alerts (the ticker is running)' : 'Alerts'}
         onClick={() => setOpen(!open)}
       >
         <Megaphone size={18} aria-hidden="true" />
@@ -183,6 +187,8 @@ function LiveMenu() {
             type="button"
             role="menuitemcheckbox"
             aria-checked={streamOpen}
+            disabled={!streamOpen && !can('multiOutput')}
+            title={can('multiOutput') ? undefined : upgradeNote('multiOutput')}
             onClick={choose(() => toggleStream().catch(console.error))}
           >
             <Cast size={15} aria-hidden="true" />
@@ -278,34 +284,44 @@ export function Toolbar() {
           <span>Search</span>
           <kbd>{MOD}K</kbd>
         </button>
-        <button
-          className={`icon-button toolbar-icon${stageOpen ? ' active' : ''}`}
-          aria-pressed={stageOpen}
-          aria-label="Stage display"
-          title={stageOpen ? 'Close the stage display' : 'Open the stage display for the worship leader'}
-          onClick={() => toggleStage().catch(console.error)}
-        >
-          <MonitorPlay size={18} />
-        </button>
-        <button
-          className={`icon-button toolbar-icon${streamPanelOpen ? ' active' : ''}`}
-          aria-pressed={streamPanelOpen}
-          aria-label="Stream"
-          title={streamOpen ? 'Stream output, logos and key (the Stream output is open)' : 'Stream output, logos and key'}
-          onClick={() => openStreamPanel(!streamPanelOpen)}
-        >
-          <Cast size={18} />
-          {streamOpen && <span className="toolbar-icon-dot" aria-hidden="true" />}
-        </button>
-        <button
-          className={`icon-button toolbar-icon${themeEditorOpen ? ' active' : ''}`}
-          aria-pressed={themeEditorOpen}
-          aria-label="Themes"
-          title="Themes"
-          onClick={() => openThemeEditor(!themeEditorOpen)}
-        >
-          <Palette size={18} />
-        </button>
+        {/* Disabled buttons show no tooltip, so the plan's note sits on a wrapper. */}
+        <span title={can('stageDisplay') ? undefined : upgradeNote('stageDisplay')}>
+          <button
+            className={`icon-button toolbar-icon${stageOpen ? ' active' : ''}`}
+            aria-pressed={stageOpen}
+            aria-label="Stage display"
+            disabled={!stageOpen && !can('stageDisplay')}
+            title={!can('stageDisplay') ? undefined : stageOpen ? 'Close the stage display' : 'Open the stage display for the worship leader'}
+            onClick={() => toggleStage().catch(console.error)}
+          >
+            <MonitorPlay size={18} />
+          </button>
+        </span>
+        <span title={can('multiOutput') ? undefined : upgradeNote('multiOutput')}>
+          <button
+            className={`icon-button toolbar-icon${streamPanelOpen ? ' active' : ''}`}
+            aria-pressed={streamPanelOpen}
+            aria-label="Stream"
+            disabled={!streamPanelOpen && !can('multiOutput')}
+            title={!can('multiOutput') ? undefined : streamOpen ? 'Stream output, logos and key (the Stream output is open)' : 'Stream output, logos and key'}
+            onClick={() => openStreamPanel(!streamPanelOpen)}
+          >
+            <Cast size={18} />
+            {streamOpen && <span className="toolbar-icon-dot" aria-hidden="true" />}
+          </button>
+        </span>
+        <span title={can('themes.editor') ? undefined : upgradeNote('themes.editor')}>
+          <button
+            className={`icon-button toolbar-icon${themeEditorOpen ? ' active' : ''}`}
+            aria-pressed={themeEditorOpen}
+            aria-label="Themes"
+            disabled={!can('themes.editor')}
+            title={can('themes.editor') ? 'Themes' : undefined}
+            onClick={() => openThemeEditor(!themeEditorOpen)}
+          >
+            <Palette size={18} />
+          </button>
+        </span>
         <button
           className={`icon-button toolbar-icon${settingsOpen ? ' active' : ''}`}
           aria-pressed={settingsOpen}

@@ -1,5 +1,6 @@
 import { AlertTriangle, Columns2, FilePen, FolderOpen, Loader2, Plus, Trash2, Upload, X } from 'lucide-react'
 import { useState } from 'react'
+import { can, upgradeNote } from '../../shared/features'
 import type { Presentation, PresentationMode } from '../../shared/types'
 import { droppedPaths, isFileDrag } from '../lib/presentations'
 import { openSendMenu, setShareDrag } from '../lib/sharing'
@@ -138,8 +139,15 @@ function PresentationCard({ presentation, onError }: { presentation: Presentatio
                 role="radio"
                 aria-checked={presentation.mode === mode}
                 className={presentation.mode === mode ? 'active' : ''}
-                disabled={switching}
-                title={mode === 'image' ? 'Each slide as the picture PowerPoint draws: the exact look' : 'Slides rebuilt from the file, with motion backgrounds that keep playing between slides'}
+                // Native slides already built keep showing; only switching to Native needs the plan.
+                disabled={switching || (mode === 'native' && presentation.mode !== 'native' && !can('powerpoint.native'))}
+                title={
+                  mode === 'image'
+                    ? 'Each slide as the picture PowerPoint draws: the exact look'
+                    : can('powerpoint.native')
+                      ? 'Slides rebuilt from the file, with motion backgrounds that keep playing between slides'
+                      : upgradeNote('powerpoint.native')
+                }
                 onClick={() => {
                   if (presentation.mode === mode) return
                   setSwitching(true)
@@ -209,7 +217,7 @@ export function PresentationsPanel() {
     if (paths.length === 0) return
     try {
       setError(null)
-      await importPresentations(paths, importMode)
+      await importPresentations(paths, can('powerpoint.native') ? importMode : 'image')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -244,11 +252,13 @@ export function PresentationsPanel() {
             className="input import-mode"
             aria-label="Import PowerPoint files in"
             title="How PowerPoint .pptx files import; each presentation can be switched later"
-            value={importMode}
+            value={can('powerpoint.native') ? importMode : 'image'}
             onChange={(e) => setImportMode(e.target.value as PresentationMode)}
           >
             <option value="image">Image mode</option>
-            <option value="native">Native mode</option>
+            <option value="native" disabled={!can('powerpoint.native')}>
+              {can('powerpoint.native') ? 'Native mode' : 'Native mode (not in your plan)'}
+            </option>
           </select>
           <button className="icon-button" aria-label="Import a folder of images" title="Import a folder of images" onClick={() => window.api.presentations.pick('folder').then(importPaths)}>
             <FolderOpen size={16} />

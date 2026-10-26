@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import path from 'node:path'
+import { requireFeature } from '../../shared/features'
 import type { ExportFormat, ExportResult } from '../../shared/types'
 import { createSongs } from '../db/songs'
 import {
@@ -50,6 +51,7 @@ function assertFormat(value: unknown): ExportFormat {
 
 export function registerSongFileIpc(): void {
   ipcMain.handle('songFiles:pickFiles', async (event) => {
+    requireFeature('import.songs')
     const options: Electron.OpenDialogOptions = {
       title: 'Import songs',
       properties: ['openFile', 'multiSelections'],
@@ -61,15 +63,20 @@ export function registerSongFileIpc(): void {
   })
 
   ipcMain.handle('songFiles:pickFolder', async (event) => {
+    requireFeature('import.songs')
     const options: Electron.OpenDialogOptions = { title: 'Import a folder of songs', properties: ['openDirectory'] }
     const win = windowOf(event)
     const { canceled, filePaths } = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
     return canceled || filePaths.length === 0 ? null : scanSongFiles(filePaths)
   })
 
-  ipcMain.handle('songFiles:scan', (_event, paths: unknown) => scanSongFiles(assertPaths(paths)))
+  ipcMain.handle('songFiles:scan', (_event, paths: unknown) => {
+    requireFeature('import.songs')
+    return scanSongFiles(assertPaths(paths))
+  })
 
   ipcMain.handle('songFiles:import', (_event, songs: unknown) => {
+    requireFeature('import.songs')
     if (!Array.isArray(songs)) throw new TypeError('Songs must be a list')
     return createSongs(songs.map(assertSongInput))
   })

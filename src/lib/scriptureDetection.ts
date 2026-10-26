@@ -9,6 +9,7 @@
 // ever goes to the preview; going live stays the operator's decision.
 
 import { create } from 'zustand'
+import { can } from '../../shared/features'
 import type { BibleVersionCode, ScripturePayload } from '../../shared/types'
 import { formatReference, parseReference, type ScriptureReference } from '../../shared/parseReference'
 import { countTokens, emptyContext, readTranscript, type ReferenceCandidate, type ReferenceContext, type SpokenReference } from '../../shared/spokenReference'
@@ -414,7 +415,7 @@ async function quoteStage(text: string, at: number): Promise<DetectionStage> {
 /** Notes scripture-like talk; when it has gone 8 seconds with nothing found, asks the AI (if turned on). */
 function noteSpeech(text: string, at: number) {
   const { aiEnabled, aiScriptureFallback } = settings()
-  if (!aiEnabled || !aiScriptureFallback) {
+  if (!can('ai.scriptureSearch') || !aiEnabled || !aiScriptureFallback) {
     cueAt = null
     return
   }

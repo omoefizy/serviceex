@@ -28,6 +28,7 @@ import type {
   FontsApi,
   SharingApi,
   SharingEvent,
+  LicenseApi,
   WorshipDeckApi,
 } from '../shared/types'
 
@@ -335,6 +336,17 @@ const sharing: SharingApi = {
   syncLibraryNow: () => ipcRenderer.invoke('sharing:syncLibraryNow'),
 }
 
+const license: LicenseApi = {
+  status: () => ipcRenderer.invoke('license:status'),
+  entitlements() {
+    try {
+      return ipcRenderer.sendSync('license:entitlements')
+    } catch {
+      return null
+    }
+  },
+}
+
 const api: WorshipDeckApi = {
   songs,
   bible,
@@ -354,6 +366,7 @@ const api: WorshipDeckApi = {
   log,
   fonts,
   sharing,
+  license,
   onToggleHighlight(listener) {
     const handler = () => listener()
     ipcRenderer.on('highlight:toggle', handler)

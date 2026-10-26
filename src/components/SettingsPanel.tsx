@@ -1,5 +1,7 @@
 import {
+  BadgeCheck,
   BookOpen,
+  Check,
   Cloud,
   Copy,
   Download,
@@ -11,6 +13,7 @@ import {
   KeyRound,
   LayoutPanelLeft,
   Library,
+  Lock,
   Mic,
   MicOff,
   Monitor,
@@ -41,6 +44,7 @@ import type {
   AppSettings,
   DisplayInfo,
   HighlightColor,
+  KeyProvider,
   Layout,
   PairedDevice,
   LivePowerPointTestResult,
@@ -55,7 +59,8 @@ import type {
   WhisperStatus,
 } from '../../shared/types'
 import { HIGHLIGHT_COLORS, HIGHLIGHT_KINDS } from '../../shared/highlights'
-import { hasFeature } from '../../shared/features'
+import { can, FEATURE_KEYS, FEATURES, hasFeature, type FeatureKey } from '../../shared/features'
+import type { LicenseStatus } from '../../shared/license'
 import { createLayout, deleteLayout, duplicateLayout, LAYOUT_PANELS, renameLayout, updateLayout } from '../../shared/layouts'
 import { formatBytes } from '../../shared/sharing'
 import { useOperatorStore } from '../store'
@@ -79,6 +84,7 @@ import { errorText, useSharingStore } from '../lib/sharing'
 import { LevelMeter } from './LevelMeter'
 import { ScriptureDisplayForm } from './ScriptureDisplay'
 import { ThemeDefaultsForm } from './ThemeEditor'
+import { UpgradeNote } from './UpgradeNote'
 
 function Section({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
@@ -104,6 +110,80 @@ const INTERVALS: { value: AppSettings['backupIntervalMinutes']; label: string }[
   { value: 30, label: 'Every 30 minutes' },
   { value: 60, label: 'Every hour' },
 ]
+
+/** The plan from the licence on this computer: what it includes and when it ends. Licence keys come later. */
+function PlanSection() {
+  const [status, setStatus] = useState<LicenseStatus | null>(null)
+
+  useEffect(() => {
+    window.api.license.status().then(setStatus, console.error)
+  }, [])
+
+  return (
+    <Section icon={<BadgeCheck size={16} aria-hidden="true" />} title="Plan">
+      {status && (
+        <dl className="plan-summary">
+          <dt>Plan</dt>
+          <dd>{status.plan}</dd>
+          {status.organization && (
+            <>
+              <dt>Organization</dt>
+              <dd>{status.organization}</dd>
+            </>
+          )}
+          <dt>Computers</dt>
+          <dd>{status.seats}</dd>
+          <dt>Issued</dt>
+          <dd>{status.issuedAt}</dd>
+          <dt>Expires</dt>
+          <dd>{status.expiresAt ? `${status.expiresAt} (then ${status.graceDays} days of grace)` : 'Never'}</dd>
+        </dl>
+      )}
+      {status?.message && <p className={status.state === 'expired' ? 'error' : 'hint'}>{status.message}</p>}
+
+      <ul className="plan-features" aria-label="Features">
+        {FEATURE_KEYS.map((feature) => (
+          <li key={feature} className={can(feature) ? '' : 'off'} title={FEATURES[feature].description}>
+            {can(feature) ? <Check size={13} aria-label="Included" /> : <Lock size={13} aria-label="Not included" />}
+            {FEATURES[feature].label}
+          </li>
+        ))}
+      </ul>
+      <p className="hint">A change to the plan takes effect the next time WorshipDeck starts, never during a service.</p>
+
+      <form className="field" onSubmit={(e) => e.preventDefault()}>
+        <label htmlFor="license-key">License key</label>
+        <div className="settings-row">
+          <input id="license-key" className="input settings-key" disabled placeholder="License keys are coming in a later version" />
+          <button type="submit" className="button" disabled>
+            <KeyRound size={15} aria-hidden="true" /> Activate
+          </button>
+        </div>
+      </form>
+    </Section>
+  )
+}
+
+const KEY_PROVIDERS: { value: KeyProvider; label: string }[] = [
+  { value: 'own', label: 'Use my own key' },
+  { value: 'plan', label: 'Included in plan (coming later)' },
+]
+
+/** Where a service's key comes from. Keys included in a plan are not available yet, so that choice is disabled. */
+function KeyProviderField({ value, onChange }: { value: KeyProvider; onChange(value: KeyProvider): void }) {
+  return (
+    <label className="field">
+      <span>Key</span>
+      <select className="input" value={value} onChange={(e) => onChange(e.target.value as KeyProvider)}>
+        {KEY_PROVIDERS.map((p) => (
+          <option key={p.value} value={p.value} disabled={p.value === 'plan'}>
+            {p.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
 
 const AI_MODELS: { value: AiModel; label: string }[] = [
   { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (recommended)' },
@@ -160,6 +240,8 @@ function AiSection() {
       </label>
       <p className="hint">When this is off, WorshipDeck sends nothing to Anthropic.</p>
 
+      <KeyProviderField value={settings.aiKeyProvider} onChange={(aiKeyProvider) => updateSettings({ aiKeyProvider })} />
+
       {status && !status.encryptionAvailable && (
         <p className="error">This system cannot encrypt the key (no keychain or keyring), so it cannot be saved.</p>
       )}
@@ -214,10 +296,12 @@ function AiSection() {
   )
 }
 
-const SPEECH_ENGINES: { value: SpeechEngineId; label: string; icon: ReactNode; hint: string }[] = [
+/** `features`: the plan features an engine can run with; any one of them will do. */
+const SPEECH_ENGINES: { value: SpeechEngineId; label: string; icon: ReactNode; hint: string; features: FeatureKey[] }[] = [
   {
     value: 'auto',
     label: 'Auto',
+    features: ['listener.cloud', 'listener.offline'],
     icon: <RefreshCw size={15} aria-hidden="true" />,
     hint:
       'Uses Deepgram in the cloud, and switches to whisper.cpp on this computer if the connection drops, without losing words. ' +
@@ -226,12 +310,14 @@ const SPEECH_ENGINES: { value: SpeechEngineId; label: string; icon: ReactNode; h
   {
     value: 'deepgram',
     label: 'Cloud only',
+    features: ['listener.cloud'],
     icon: <Cloud size={15} aria-hidden="true" />,
     hint: 'Deepgram transcribes in the cloud: very accurate, needs the internet and an API key.',
   },
   {
     value: 'whisper',
     label: 'Offline only',
+    features: ['listener.offline'],
     icon: <HardDrive size={15} aria-hidden="true" />,
     hint: 'whisper.cpp transcribes on this computer: nothing leaves it, and no internet is needed once a model is downloaded.',
   },
@@ -741,6 +827,7 @@ function ListenerSection() {
               role="radio"
               aria-checked={settings.speechEngine === engine.value}
               className={settings.speechEngine === engine.value ? 'active' : ''}
+              disabled={!engine.features.some(can)}
               onClick={() => updateSettings({ speechEngine: engine.value })}
             >
               {engine.icon}
@@ -751,6 +838,8 @@ function ListenerSection() {
         <span className="hint">
           {SPEECH_ENGINES.find((e) => e.value === settings.speechEngine)?.hint}
         </span>
+        {!can('listener.cloud') && <UpgradeNote feature="listener.cloud" />}
+        {!can('listener.offline') && <UpgradeNote feature="listener.offline" />}
       </div>
 
       {settings.speechEngine !== 'deepgram' && <WhisperModels />}
@@ -760,6 +849,7 @@ function ListenerSection() {
       )}
       {settings.speechEngine !== 'whisper' && (
         <>
+          <KeyProviderField value={settings.speechKeyProvider} onChange={(speechKeyProvider) => updateSettings({ speechKeyProvider })} />
           <form className="field" onSubmit={handleSave}>
             <label htmlFor="deepgram-key">Deepgram API key</label>
             <div className="settings-row">
@@ -1764,6 +1854,8 @@ export function SettingsPanel() {
 
       {error && <p className="error">{error}</p>}
       {message && <p className="hint">{message}</p>}
+
+      <PlanSection />
 
       <Section icon={<SunMoon size={16} aria-hidden="true" />} title="Appearance">
         <div className="segmented" role="radiogroup" aria-label="Appearance">

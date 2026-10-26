@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { can } from '../shared/features'
 import { layoutById, showsPanel } from '../shared/layouts'
 import { CommandPalette } from './components/CommandPalette'
 import { LivePreview } from './components/LivePreview'
@@ -73,7 +74,8 @@ function App() {
   const paletteOpen = useOperatorStore((s) => s.paletteOpen)
   const appearance = useOperatorStore((s) => s.settings.appearance)
   const layout = useOperatorStore((s) => layoutById(s.settings.layouts, s.settings.activeLayoutId))
-  const libraryTabs = LIBRARY_TABS.filter((tab) => showsPanel(layout, tab.id))
+  // A tab whose feature the plan leaves out is not shown.
+  const libraryTabs = LIBRARY_TABS.filter((tab) => showsPanel(layout, tab.id) && (tab.id !== 'media' || can('mediaLibrary')))
   const libraryTab = libraryTabs.some((tab) => tab.id === chosenTab) ? chosenTab : (libraryTabs[0]?.id ?? chosenTab)
   // Editors and Settings open in the centre whatever the layout, so they can always be reached.
   const centreOpen = editingSongId !== null || themeEditorOpen || settingsOpen || streamPanelOpen
@@ -81,7 +83,7 @@ function App() {
     library: libraryTabs.length > 0,
     centre: showsPanel(layout, 'slides') || centreOpen,
     live: showsPanel(layout, 'live'),
-    points: showsPanel(layout, 'points'),
+    points: showsPanel(layout, 'points') && can('lowerThirds'),
     listener: showsPanel(layout, 'listener'),
     schedule: showsPanel(layout, 'schedule'),
   }

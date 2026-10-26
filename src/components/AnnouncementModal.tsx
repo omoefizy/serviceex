@@ -1,5 +1,6 @@
 import { Plus, Sparkles, X } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
+import { can, upgradeNote } from '../../shared/features'
 import { fromPlain, plainText, setFormat, splitRichSlides } from '../../shared/richText'
 import type { AiError, AnnouncementPayload, RichText, SlideFormats } from '../../shared/types'
 import { announcementSlides } from '../lib/slides'
@@ -86,11 +87,13 @@ export function AnnouncementModal({ onSave, onCancel }: Props) {
     }
   }
 
-  const buildTooltip = !aiEnabled
-    ? 'AI features are turned off in Settings'
-    : !message.trim()
-      ? 'Paste a message first'
-      : 'Turn the message into a title slide and short slides, one idea each'
+  const buildTooltip = !can('ai.announcements')
+    ? upgradeNote('ai.announcements')
+    : !aiEnabled
+      ? 'AI features are turned off in Settings'
+      : !message.trim()
+        ? 'Paste a message first'
+        : 'Turn the message into a title slide and short slides, one idea each'
 
   return (
     <div className="modal-backdrop" onMouseDown={onCancel}>
@@ -112,7 +115,7 @@ export function AnnouncementModal({ onSave, onCancel }: Props) {
           <div className="settings-row">
             {/* Disabled buttons show no tooltip, so the reason sits on a wrapper. */}
             <span title={buildTooltip}>
-              <button type="button" className="button" disabled={!aiEnabled || !message.trim() || building} onClick={handleBuild}>
+              <button type="button" className="button" disabled={!can('ai.announcements') || !aiEnabled || !message.trim() || building} onClick={handleBuild}>
                 <Sparkles size={15} aria-hidden="true" /> {building ? 'Building…' : 'Build Slides'}
               </button>
             </span>

@@ -2,6 +2,7 @@
 // text that arrived since the last run (and only that) goes to the pickStatements AI task. The main process keeps
 // only statements found in that text word for word. They appear in the suggestion tray; nothing is saved.
 
+import { can } from '../../shared/features'
 import { locateStatement, wordKeys } from '../../shared/statements'
 import { useOperatorStore } from '../store'
 import { alertNewSuggestion, useSuggestions } from './scriptureDetection'
@@ -21,7 +22,7 @@ let report: ((message: string) => void) | null = null
 
 function enabled(): boolean {
   const { aiEnabled, statementPicking } = useOperatorStore.getState().settings
-  return aiEnabled && statementPicking
+  return can('ai.statements') && aiEnabled && statementPicking
 }
 
 /** Takes one final transcript line. With statement picking off, nothing is kept. */
