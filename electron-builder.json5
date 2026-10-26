@@ -58,7 +58,11 @@
     "extendInfo": {
       "NSMicrophoneUsageDescription": "WorshipDeck listens to the sermon to show a live transcript.",
       // Shown when the PowerPoint import first asks to control Microsoft PowerPoint through AppleScript.
-      "NSAppleEventsUsageDescription": "ServiceEx uses PowerPoint to render your slides."
+      "NSAppleEventsUsageDescription": "ServiceEx uses PowerPoint to render your slides.",
+      // Local network sharing (off until turned on in Settings): macOS asks before the app may use the local
+      // network, and mDNS browsing needs the service type declared.
+      "NSLocalNetworkUsageDescription": "ServiceEx finds and shares files with other ServiceEx computers on your local network when Sharing is turned on.",
+      "NSBonjourServices": ["_serviceex._tcp"]
     },
     // Signed builds use the hardened runtime, which also needs the audio-input and Apple Events entitlements.
     "entitlements": "build/entitlements.mac.plist",

@@ -3,6 +3,7 @@ import { replaceThemeFont, themeFonts } from '../../shared/fonts'
 import { THEME_CONTENT_TYPES } from '../../shared/themes'
 import type { Theme, ThemeBackground, ThemeBox, ThemeContentType, ThemeElement, ThemeStyle, ThemeTextElement, ThemeTextProps } from '../../shared/types'
 import { selectBaseThemeId, useOperatorStore } from '../store'
+import { openSendMenu, setShareDrag } from '../lib/sharing'
 import { clampBox } from '../lib/themeLayout'
 import { MissingFontChips } from './FontPicker'
 import { FormatToolbar, type FormatControl, type FormatPatch, type FormatState } from './FormatToolbar'
@@ -311,7 +312,14 @@ export function ThemeEditor() {
         <ul className="theme-list">
           {themes.map((t) => (
             <li key={t.id}>
-              <button className={`theme-list-item${t.id === selectedId ? ' selected' : ''}`} onClick={() => select(t.id)}>
+              <button
+                className={`theme-list-item${t.id === selectedId ? ' selected' : ''}`}
+                onClick={() => select(t.id)}
+                // Built-in themes are on every computer already; custom ones can be sent.
+                draggable={t.type === 'custom'}
+                onDragStart={(e) => setShareDrag(e, { type: 'theme', id: t.id })}
+                onContextMenu={t.type === 'custom' ? (e) => openSendMenu(e, [{ type: 'theme', id: t.id }]) : undefined}
+              >
                 <span className="theme-swatch">
                   <ThemedSlide theme={t.style} text="Aa" still />
                 </span>

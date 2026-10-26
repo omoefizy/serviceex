@@ -2,6 +2,7 @@ import { AlertTriangle, Columns2, FilePen, FolderOpen, Loader2, Plus, Trash2, Up
 import { useState } from 'react'
 import type { Presentation, PresentationMode } from '../../shared/types'
 import { droppedPaths, isFileDrag } from '../lib/presentations'
+import { openSendMenu, setShareDrag } from '../lib/sharing'
 import { usePersistentState } from '../lib/usePersistentState'
 import { useOperatorStore } from '../store'
 import { NativeSlideEditor } from './NativeSlideEditor'
@@ -60,7 +61,15 @@ function PresentationCard({ presentation, onError }: { presentation: Presentatio
 
   return (
     <li className={`presentation-card${active ? ' active' : ''}`}>
-      <button className="presentation-main" title={presentation.sourcePath} onClick={() => selectPresentation(presentation)}>
+      <button
+        className="presentation-main"
+        title={presentation.sourcePath}
+        onClick={() => selectPresentation(presentation)}
+        // A folder of images has no single original to send.
+        draggable={presentation.kind !== 'images'}
+        onDragStart={(e) => setShareDrag(e, { type: 'presentation', id: presentation.id })}
+        onContextMenu={presentation.kind !== 'images' ? (e) => openSendMenu(e, [{ type: 'presentation', id: presentation.id }]) : undefined}
+      >
         {/* The picture's URL changes with each render, so a saved original shows its new first slide. */}
         <span className="presentation-thumb">{first && <img src={first.image} alt="" loading="lazy" />}</span>
         <span className="presentation-info">

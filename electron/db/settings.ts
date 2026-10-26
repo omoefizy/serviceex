@@ -88,6 +88,10 @@ const DEFAULTS: AppSettings = {
   highlightClearOnSlideChange: true,
   highlightKeepWithItem: false,
   highlightDefault: DEFAULT_HIGHLIGHT,
+  sharingEnabled: false,
+  sharingDeviceName: '',
+  sharingMaxSizeMb: 2048,
+  sharingAutoAccept: false,
 }
 
 export const FADE_LIMITS = { min: 0, max: 1500 }
@@ -166,6 +170,10 @@ const KEYS: Record<keyof AppSettings, string> = {
   highlightClearOnSlideChange: 'highlight.clearOnSlideChange',
   highlightKeepWithItem: 'highlight.keepWithItem',
   highlightDefault: 'highlight.default',
+  sharingEnabled: 'sharing.enabled',
+  sharingDeviceName: 'sharing.deviceName',
+  sharingMaxSizeMb: 'sharing.maxSizeMb',
+  sharingAutoAccept: 'sharing.autoAccept',
 }
 
 export const ALERT_LIMITS = {
@@ -242,6 +250,9 @@ export function cleanLogoItems(value: unknown): LogoItem[] | undefined {
   }
   return items
 }
+
+/** The size limit for received files: 1 MB to 20 GB. */
+export const SHARING_SIZE_LIMITS_MB = [1, 20480] as const
 
 export const LOWER_THIRD_LIMITS = { lines: 200, points: 100, text: 300, durationMs: [200, 1000], holdSeconds: [0, 600] } as const
 
@@ -378,7 +389,15 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'scriptureSwitchLiveImmediately':
     case 'highlightClearOnSlideChange':
     case 'highlightKeepWithItem':
+    case 'sharingEnabled':
+    case 'sharingAutoAccept':
       return typeof value === 'boolean' ? v : undefined
+    case 'sharingDeviceName':
+      // Shown on other computers, so plain characters only.
+      // eslint-disable-next-line no-control-regex
+      return typeof value === 'string' && value.length <= 200 ? (value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 40) as never) : undefined
+    case 'sharingMaxSizeMb':
+      return ranged(value, SHARING_SIZE_LIMITS_MB, 1) as never
     case 'highlightDefault': {
       if (typeof value !== 'object' || value === null) return undefined
       const h = value as Partial<AppSettings['highlightDefault']>

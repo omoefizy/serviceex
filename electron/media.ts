@@ -2,7 +2,8 @@
 // so they keep working when the originals move, and are served to both windows as wd-media://local/<name>.
 // Imported presentations' slide pictures live in <userData>/presentations/<hash>/, served as
 // wd-media://deck/<hash>/<name>, and the pictures Native mode takes out of a .pptx in its native/ folder.
-// Imported fonts live in <userData>/fonts, served as wd-media://font/<name> (see fonts.ts).
+// Imported fonts live in <userData>/fonts, served as wd-media://font/<name> (see fonts.ts), and received files
+// waiting in the sharing Inbox as wd-media://inbox/<id>, for previews.
 // The dev renderer runs on http://localhost, which may not load file:// URLs.
 
 import { app, net, protocol } from 'electron'
@@ -22,6 +23,13 @@ export function registerMediaScheme(): void {
   ])
 }
 
+let inboxResolver: ((id: string) => string | null) | null = null
+
+/** How wd-media://inbox/<id> finds a received file (see sharing). */
+export function setInboxResolver(resolver: (id: string) => string | null): void {
+  inboxResolver = resolver
+}
+
 export function registerMediaProtocol(): void {
   protocol.handle(SCHEME, async (request) => {
     const url = new URL(request.url)
@@ -32,6 +40,11 @@ export function registerMediaProtocol(): void {
       const match = /^([0-9a-f]{64})\/(slide-\d{3}\.png|native\/[0-9a-f]{64}\.(?:png|jpe?g|gif|webp|svg|bmp))$/.exec(name)
       if (!match) return new Response('Not found', { status: 404 })
       file = path.join(presentationsDir(), match[1], ...match[2].split('/'))
+    } else if (url.host === 'inbox') {
+      // Only an Inbox item's file, by its id, for previewing it before it is accepted.
+      const inboxFile = /^[0-9a-f]{32}$/.test(name) ? inboxResolver?.(name) : null
+      if (!inboxFile) return new Response('Not found', { status: 404 })
+      file = inboxFile
     } else if (url.host === 'font') {
       // Only a font file name inside the fonts folder.
       const font = fontFileName(name)
@@ -61,6 +74,17 @@ export function mediaName(url: string): string | null {
   if (!url.startsWith(`${SCHEME}://`)) return null
   const name = decodeURIComponent(new URL(url).pathname.replace(/^\//, ''))
   return name && name === path.basename(name) ? name : null
+}
+
+/** The file on disk behind a library file's or a presentation picture's wd-media:// URL, or null for anything else. */
+export function mediaFilePath(url: string): string | null {
+  if (!url.startsWith(`${SCHEME}://`)) return null
+  const parsed = new URL(url)
+  const name = decodeURIComponent(parsed.pathname.replace(/^\//, ''))
+  if (parsed.host === 'local') return name && name === path.basename(name) && !name.startsWith('.') ? path.join(mediaDir(), name) : null
+  if (parsed.host !== 'deck') return null
+  const match = /^([0-9a-f]{64})\/(slide-\d{3}\.png|native\/[0-9a-f]{64}\.(?:png|jpe?g|gif|webp|svg|bmp))$/.exec(name)
+  return match ? path.join(presentationsDir(), match[1], ...match[2].split('/')) : null
 }
 
 function uniqueName(base: string, extension: string): string {

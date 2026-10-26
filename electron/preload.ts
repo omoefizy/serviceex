@@ -26,6 +26,8 @@ import type {
   StreamState,
   ThemesApi,
   FontsApi,
+  SharingApi,
+  SharingEvent,
   WorshipDeckApi,
 } from '../shared/types'
 
@@ -292,6 +294,32 @@ const fonts: FontsApi = {
   },
 }
 
+const sharing: SharingApi = {
+  status: () => ipcRenderer.invoke('sharing:status'),
+  peers: () => ipcRenderer.invoke('sharing:peers'),
+  paired: () => ipcRenderer.invoke('sharing:paired'),
+  setTrusted: (id, trusted) => ipcRenderer.invoke('sharing:setTrusted', id, trusted),
+  forget: (id) => ipcRenderer.invoke('sharing:forget', id),
+  startPairing: (peerId) => ipcRenderer.invoke('sharing:startPairing', peerId),
+  finishPairing: (pairingId, code) => ipcRenderer.invoke('sharing:finishPairing', pairingId, code),
+  dismissPairing: (pairingId) => ipcRenderer.invoke('sharing:dismissPairing', pairingId),
+  testConnection: (peerId) => ipcRenderer.invoke('sharing:testConnection', peerId),
+  send: (peerId, sources) => ipcRenderer.invoke('sharing:send', peerId, sources),
+  retry: (transferId) => ipcRenderer.invoke('sharing:retry', transferId),
+  pathForFile: (file) => webUtils.getPathForFile(file),
+  inbox: () => ipcRenderer.invoke('sharing:inbox'),
+  preview: (id) => ipcRenderer.invoke('sharing:preview', id),
+  accept: (id, options) => ipcRenderer.invoke('sharing:accept', id, options),
+  reject: (id) => ipcRenderer.invoke('sharing:reject', id),
+  exportPackage: (serviceId) => ipcRenderer.invoke('sharing:exportPackage', serviceId),
+  importPackage: () => ipcRenderer.invoke('sharing:importPackage'),
+  onEvent(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, event: SharingEvent) => listener(event)
+    ipcRenderer.on('sharing:event', handler)
+    return () => ipcRenderer.off('sharing:event', handler)
+  },
+}
+
 const api: WorshipDeckApi = {
   songs,
   bible,
@@ -310,6 +338,7 @@ const api: WorshipDeckApi = {
   rasterizer,
   log,
   fonts,
+  sharing,
   onToggleHighlight(listener) {
     const handler = () => listener()
     ipcRenderer.on('highlight:toggle', handler)

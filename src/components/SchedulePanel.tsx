@@ -4,6 +4,8 @@ import {
   ChevronRight,
   Megaphone,
   Music,
+  Package,
+  PackageOpen,
   Plus,
   Presentation,
   ScrollText,
@@ -11,8 +13,9 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useCallback, useEffect, useState, type DragEvent } from 'react'
-import type { AnnouncementPayload, Service, ServiceItemType } from '../../shared/types'
+import type { AnnouncementPayload, Service, ServiceItem, ServiceItemType, ShareSource } from '../../shared/types'
 import { droppedPaths, isFileDrag } from '../lib/presentations'
+import { errorText, openSendMenu, SERVICES_CHANGED_EVENT, setShareDrag, showMessage, useSharingStore } from '../lib/sharing'
 import { MOD } from '../lib/shortcuts'
 import { useOperatorStore } from '../store'
 import { AnnouncementModal } from './AnnouncementModal'
@@ -32,6 +35,14 @@ const TYPE_ICONS: Record<ServiceItemType, LucideIcon> = {
   scripture: BookOpen,
   announcement: Megaphone,
   presentation: Presentation,
+}
+
+/** What Send to sends for a schedule item: the song, the announcement or the library presentation. */
+function shareSourceOf(item: ServiceItem): ShareSource | null {
+  if (item.type === 'song') return { type: 'song', id: item.ref_id }
+  if (item.type === 'announcement') return { type: 'announcement', itemId: item.id }
+  if (item.type === 'presentation' && item.payload.presentationId) return { type: 'presentation', id: item.payload.presentationId }
+  return null
 }
 
 function ItemIcon({ type }: { type: ServiceItemType }) {
@@ -100,6 +111,30 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
       if (list.length > 0 && !useOperatorStore.getState().service) await openService(list[0].id)
     })
   }, [run, openService])
+
+  // A service received from another computer joins the list; the open one stays open.
+  useEffect(() => {
+    const reload = () => run(async () => setServices(await window.api.services.list()))
+    window.addEventListener(SERVICES_CHANGED_EVENT, reload)
+    return () => window.removeEventListener(SERVICES_CHANGED_EVENT, reload)
+  }, [run])
+
+  /** Writes the open service, its songs, themes, media and presentations as one .serviceex file. */
+  function exportPackage() {
+    if (!service) return
+    run(async () => {
+      const file = await window.api.sharing.exportPackage(service.id)
+      if (file) showMessage(`Saved ${file}`)
+    })
+  }
+
+  /** Puts a .serviceex file in the Inbox, where it is previewed and accepted like a received one. */
+  function importPackage() {
+    window.api.sharing.importPackage().then(
+      (item) => item && useSharingStore.setState({ inboxOpen: true, unseen: 0 }),
+      (err) => setError(errorText(err)),
+    )
+  }
 
   async function handleCreate(name: string, date: string | null) {
     const created = await window.api.services.create(name, date)
@@ -209,6 +244,8 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
         <select
           className="input"
           aria-label="Service"
+          title="Right-click to send this service to another computer"
+          onContextMenu={(e) => service && openSendMenu(e, [{ type: 'service', id: service.id }])}
           value={service?.id ?? ''}
           onChange={(e) => run(() => openService(Number(e.target.value)))}
           disabled={services.length === 0}
@@ -222,6 +259,12 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
         </select>
         <button className="button" onClick={() => setCreating(true)}>
           <Plus size={15} aria-hidden="true" /> New service
+        </button>
+        <button className="icon-button" aria-label="Export package" title="Export package: this service as one .serviceex file, for a USB drive" disabled={!service} onClick={exportPackage}>
+          <Package size={16} />
+        </button>
+        <button className="icon-button" aria-label="Import package" title="Import package: open a .serviceex file" onClick={importPackage}>
+          <PackageOpen size={16} />
         </button>
       </div>
 
@@ -246,6 +289,13 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
               setDragId(item.id)
               e.dataTransfer.effectAllowed = 'move'
               e.dataTransfer.setData('text/plain', String(item.id))
+              // It can also be dropped on a device chip to send it.
+              const source = shareSourceOf(item)
+              if (source) setShareDrag(e, source)
+            }}
+            onContextMenu={(e) => {
+              const source = shareSourceOf(item)
+              if (source) openSendMenu(e, [source])
             }}
             onDragOver={(e) => handleDragOver(e, index)}
             onDrop={handleDrop}

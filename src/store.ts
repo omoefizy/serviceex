@@ -516,6 +516,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   highlightClearOnSlideChange: true,
   highlightKeepWithItem: false,
   highlightDefault: DEFAULT_HIGHLIGHT,
+  sharingEnabled: false,
+  sharingDeviceName: '',
+  sharingMaxSizeMb: 2048,
+  sharingAutoAccept: false,
 }
 
 /** A settings answer with every key present, so a key missing after an update or a bad answer cannot break a panel. */

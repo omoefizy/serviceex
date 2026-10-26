@@ -108,7 +108,7 @@ function assertPresentation(value: unknown): PresentationPayload {
 }
 
 /** Songs take a song id and no payload; scripture and announcements take a payload and no id. */
-function assertItem(
+export function assertItem(
   type: unknown,
   refId: unknown,
   payload: unknown,

@@ -24,6 +24,7 @@ import { registerPresentationIpc } from './ipc/presentations'
 import { registerLivePowerPointIpc, type LivePowerPoint } from './ipc/livePowerPoint'
 import { registerLogIpc } from './ipc/log'
 import { registerFontIpc } from './ipc/fonts'
+import { registerSharingIpc, type SharingHandle } from './ipc/sharing'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -57,6 +58,8 @@ let rasterWin: BrowserWindow | null = null
 let stopPresentations: (() => Promise<void>) | null = null
 /** Plays animated slides with PowerPoint over the output (see ipc/livePowerPoint). */
 let livePowerPoint: LivePowerPoint | null = null
+/** Local network sharing (see ipc/sharing); off unless turned on in Settings. */
+let sharing: SharingHandle | null = null
 
 /** Loads the renderer, optionally at a hash route such as /output. */
 function loadRenderer(target: BrowserWindow, route?: string) {
@@ -303,6 +306,8 @@ app.on('before-quit', (event) => {
 app.on('will-quit', () => {
   stopPresentations?.().catch(console.error)
   stopPresentations = null
+  sharing?.stop().catch(console.error)
+  sharing = null
 })
 
 app.on('activate', () => {
@@ -327,7 +332,9 @@ app.whenReady().then(() => {
   registerMediaIpc()
   registerLogIpc()
   registerFontIpc()
+  sharing = registerSharingIpc(() => win)
   registerSettingsIpc((before, after) => {
+    sharing?.settingsChanged(before, after)
     // Live PowerPoint off: the slide show ends and PowerPoint lets go of the copies.
     if (before.presentationLivePowerPoint && !after.presentationLivePowerPoint) livePowerPoint?.stop().catch(console.error)
     // Move the output by rebuilding its window; fullscreen and frame cannot change in place. On macOS, Live

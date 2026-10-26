@@ -119,7 +119,7 @@ export function MediaPanel() {
 
       <div className="media-scroll">
         {shown.length > 0 ? (
-          <MediaGrid items={shown} selectedId={selectedId} onSelect={(item) => setSelectedId(item.id === selectedId ? null : item.id)} draggable />
+          <MediaGrid items={shown} selectedId={selectedId} onSelect={(item) => setSelectedId(item.id === selectedId ? null : item.id)} draggable shareable />
         ) : (
           <p className="empty">{items.length === 0 ? 'Import images or MP4/WebM loops to use as backgrounds.' : 'Nothing matches.'}</p>
         )}

@@ -2,6 +2,7 @@ import { Film, Upload } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { MediaItem } from '../../shared/types'
 import { matchesSearch, MEDIA_DRAG_TYPE } from '../lib/media'
+import { openSendMenu, setShareDrag } from '../lib/sharing'
 import { useMediaLibrary } from '../lib/useMediaLibrary'
 
 interface GridProps {
@@ -10,9 +11,11 @@ interface GridProps {
   onSelect(item: MediaItem): void
   /** Lets items be dragged onto slides. */
   draggable?: boolean
+  /** Lets items be sent to another computer: right-click for Send to, or drag onto a device chip. */
+  shareable?: boolean
 }
 
-export function MediaGrid({ items, selectedId = null, onSelect, draggable = false }: GridProps) {
+export function MediaGrid({ items, selectedId = null, onSelect, draggable = false, shareable = false }: GridProps) {
   return (
     <ul className="media-grid">
       {items.map((item) => (
@@ -24,7 +27,9 @@ export function MediaGrid({ items, selectedId = null, onSelect, draggable = fals
             onDragStart={(e) => {
               e.dataTransfer.setData(MEDIA_DRAG_TYPE, String(item.id))
               e.dataTransfer.effectAllowed = 'copy'
+              if (shareable) setShareDrag(e, { type: 'media', id: item.id })
             }}
+            onContextMenu={shareable ? (e) => openSendMenu(e, [{ type: 'media', id: item.id }]) : undefined}
             onClick={() => onSelect(item)}
           >
             <span className="media-thumb">

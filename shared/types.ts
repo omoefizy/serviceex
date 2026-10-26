@@ -933,6 +933,14 @@ export interface AppSettings {
   highlightKeepWithItem: boolean
   /** The brush live highlighting starts with. */
   highlightDefault: HighlightStyle
+  /** Local network sharing with other ServiceEx computers (see SharingApi). Off by default. */
+  sharingEnabled: boolean
+  /** The name other computers see; empty uses the computer's own name. */
+  sharingDeviceName: string
+  /** The largest file another computer may send, in MB (2048 by default). */
+  sharingMaxSizeMb: number
+  /** Saves items from trusted paired devices straight into the library. Never touches the output. */
+  sharingAutoAccept: boolean
 }
 
 /** The highlighter colors live highlighting offers, in the order the number keys 1 to 5 pick them. */
@@ -1207,6 +1215,171 @@ export interface StreamApi {
   pickLogo(): Promise<{ url: string; name: string } | null>
 }
 
+// ---------- Sharing ----------
+
+/** What a received file is, from its extension (see shared/sharing.ts). */
+export type ShareKind = 'package' | 'presentation' | 'image' | 'video' | 'audio' | 'text' | 'openlyrics'
+
+/** Another ServiceEx computer on the local network, seen through mDNS or remembered from pairing. */
+export interface SharePeer {
+  id: string
+  name: string
+  /** Seen on the network just now. */
+  online: boolean
+  paired: boolean
+  /** Paired and marked trusted, so Auto accept applies to it. */
+  trusted: boolean
+}
+
+export interface PairedDevice {
+  id: string
+  name: string
+  trusted: boolean
+  /** ISO time. */
+  pairedAt: string
+}
+
+/** Something that can be sent to another computer. */
+export type ShareSource =
+  | { type: 'song'; id: number }
+  | { type: 'service'; id: number }
+  | { type: 'theme'; id: number }
+  | { type: 'media'; id: number }
+  | { type: 'presentation'; id: number }
+  | { type: 'announcement'; itemId: number }
+  /** A file dropped from outside the app, by absolute path. */
+  | { type: 'file'; path: string }
+
+/** A received item waiting in the Inbox. It never goes live by itself. */
+export interface InboxItem {
+  id: string
+  senderId: string
+  senderName: string
+  name: string
+  size: number
+  kind: ShareKind
+  /** ISO time. */
+  receivedAt: string
+}
+
+export type ConflictChoice = 'replace' | 'keepBoth' | 'skip'
+
+/** Something in a received item with the same name as something already here. */
+export interface InboxConflict {
+  /** Pass a choice for it under this key. */
+  key: string
+  what: 'song' | 'theme' | 'media' | 'presentation' | 'service' | 'file'
+  name: string
+}
+
+export type AcceptResult =
+  | { status: 'conflicts'; conflicts: InboxConflict[] }
+  | {
+      status: 'done'
+      message: string
+      /**
+       * Presentation files saved for the renderer to import into the Presentations library, each replacing the
+       * library presentation `replaceId` when the operator chose Replace.
+       */
+      presentations: { path: string; replaceId: number | null }[]
+      /** A service that was added, for the schedule list. */
+      serviceId: number | null
+      /** What changed, so the views can reload. */
+      changed: ('songs' | 'themes' | 'media' | 'services' | 'schedule')[]
+    }
+
+/** What is inside a received item, without accepting it. Nothing in it is run or opened by another program. */
+export interface InboxPreview {
+  kind: ShareKind
+  /** wd-media://inbox/<id> for images, videos and audio. */
+  url?: string
+  /** The start of a text or OpenLyrics file, or the slide titles of a PowerPoint file. */
+  text?: string
+  /** For a .serviceex package. */
+  contents?: {
+    service: { name: string; date: string | null; items: string[] } | null
+    songs: string[]
+    themes: string[]
+    media: string[]
+    presentations: string[]
+    announcements: string[]
+  }
+}
+
+export interface TransferProgress {
+  id: string
+  peerId: string
+  peerName: string
+  name: string
+  sent: number
+  size: number
+  state: 'preparing' | 'sending' | 'retrying' | 'done' | 'failed'
+  error?: string
+}
+
+/** The receiving side of pairing: show this code until the other computer has typed it. */
+export interface PairRequest {
+  pairingId: string
+  deviceName: string
+  code: string
+}
+
+export interface SharingStatus {
+  enabled: boolean
+  deviceId: string
+  deviceName: string
+  /** The port it listens on, or null while off. */
+  port: number | null
+  /** This computer's local network addresses. */
+  addresses: string[]
+  /** Why sharing could not start, if it could not. */
+  error: string | null
+}
+
+export type SharingEvent =
+  | { type: 'peers'; peers: SharePeer[] }
+  | { type: 'inbox'; items: InboxItem[]; arrived: InboxItem | null }
+  | { type: 'progress'; transfer: TransferProgress }
+  | { type: 'pairRequest'; request: PairRequest }
+  | { type: 'pairEnded'; pairingId: string; paired: boolean }
+  | { type: 'status'; status: SharingStatus }
+  /** Auto accept saved an item from a trusted device; the views reload and its presentations are imported. */
+  | { type: 'accepted'; item: InboxItem; result: Extract<AcceptResult, { status: 'done' }> }
+
+export interface SharingApi {
+  status(): Promise<SharingStatus>
+  /** Devices seen on the network and paired ones, paired first. */
+  peers(): Promise<SharePeer[]>
+  paired(): Promise<PairedDevice[]>
+  setTrusted(id: string, trusted: boolean): Promise<PairedDevice[]>
+  /** Removes the device and its key; it must pair again to send anything. */
+  forget(id: string): Promise<PairedDevice[]>
+  /** Asks the other computer to show a 6 digit code. Resolves to the pairing to finish with that code. */
+  startPairing(peerId: string): Promise<{ pairingId: string }>
+  /** Checks the typed code with the other computer and stores the shared key on both. */
+  finishPairing(pairingId: string, code: string): Promise<PairedDevice>
+  /** The receiving side closes its code without pairing. */
+  dismissPairing(pairingId: string): Promise<void>
+  /** Reaches a paired device over the encrypted channel. Resolves with the round trip time, or what went wrong. */
+  testConnection(peerId: string): Promise<{ ok: boolean; ms?: number; error?: string }>
+  /** Sends each item to a paired device; progress comes as events. Rejects files of types that cannot be sent. */
+  send(peerId: string, sources: ShareSource[]): Promise<void>
+  /** Sends a failed transfer again, carrying on from what the other computer already has. */
+  retry(transferId: string): Promise<void>
+  /** The path of a file dropped on a device chip. */
+  pathForFile(file: File): string
+  inbox(): Promise<InboxItem[]>
+  preview(id: string): Promise<InboxPreview>
+  /** Copies the item into the library, media or the given schedule. With conflicts and no choices, resolves to them. */
+  accept(id: string, options: { serviceId: number | null; choices?: Record<string, ConflictChoice> }): Promise<AcceptResult>
+  reject(id: string): Promise<InboxItem[]>
+  /** Asks where to save, then writes the service as one .serviceex file. Resolves to the file, or null if cancelled. */
+  exportPackage(serviceId: number): Promise<string | null>
+  /** Picks a .serviceex file (from a USB drive, say) and puts it in the Inbox. Resolves to the item, or null if cancelled. */
+  importPackage(): Promise<InboxItem | null>
+  onEvent(listener: (event: SharingEvent) => void): () => void
+}
+
 /** The API the preload script exposes to the renderer as `window.api`. */
 // ---------- Fonts ----------
 
@@ -1250,6 +1423,7 @@ export interface WorshipDeckApi {
   rasterizer: RasterizerApi
   log: LogApi
   fonts: FontsApi
+  sharing: SharingApi
   /** Cmd+H on macOS, caught by the main process before the app menu hides the app, to toggle highlight mode. */
   onToggleHighlight(listener: () => void): () => void
   /** Cmd+Plus and Cmd+Minus (Ctrl+Plus and Minus), caught by the main process before they zoom the window: +1 or -1. */

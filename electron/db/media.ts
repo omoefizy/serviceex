@@ -99,6 +99,22 @@ export const deleteMedia = db.transaction((id: number): MediaRow | undefined => 
   return row
 })
 
+/**
+ * Points a library item at a new file (a received copy chosen to replace it), keeping its id, tags and slide uses.
+ * Custom themes showing the old file are moved to the new one. Returns the old file and thumbnail for deleting.
+ */
+export const replaceMediaFile = db.transaction((id: number, file: string): { file: string; thumb: string | null } | undefined => {
+  const row = getMediaRow(id)
+  if (!row) return undefined
+  const before = JSON.stringify(mediaUrl(row.file))
+  const after = JSON.stringify(mediaUrl(file))
+  const themes = db.prepare("SELECT id, json FROM themes WHERE type = 'custom' AND instr(json, ?) > 0").all(before) as { id: number; json: string }[]
+  const update = db.prepare('UPDATE themes SET json = ? WHERE id = ?')
+  for (const theme of themes) update.run(theme.json.split(before).join(after), theme.id)
+  db.prepare('UPDATE media SET file = ?, thumb = NULL WHERE id = ?').run(file, id)
+  return { file: row.file, thumb: row.thumb }
+})
+
 export function getSlideBackgrounds(deckKey: string): Record<number, MediaItem> {
   const rows = db
     .prepare(

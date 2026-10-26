@@ -25,6 +25,7 @@ import {
   SunMoon,
   Trash2,
   Type,
+  Wifi,
   X,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
@@ -34,6 +35,7 @@ import type {
   AppSettings,
   DisplayInfo,
   HighlightColor,
+  PairedDevice,
   LivePowerPointTestResult,
   OutputDisplay,
   PresentationEngineId,
@@ -61,6 +63,7 @@ import {
   type SignalAdvice,
 } from '../lib/mic'
 import { IS_MAC, MOD } from '../lib/shortcuts'
+import { errorText, useSharingStore } from '../lib/sharing'
 import { LevelMeter } from './LevelMeter'
 import { ScriptureDisplayForm } from './ScriptureDisplay'
 import { ThemeDefaultsForm } from './ThemeEditor'
@@ -1091,6 +1094,179 @@ function PresentationsSection() {
   )
 }
 
+const SHARE_LIMITS: { value: number; label: string }[] = [
+  { value: 100, label: '100 MB' },
+  { value: 500, label: '500 MB' },
+  { value: 1024, label: '1 GB' },
+  { value: 2048, label: '2 GB (default)' },
+  { value: 5120, label: '5 GB' },
+  { value: 10240, label: '10 GB' },
+]
+
+/** Local network sharing: on or off, this computer's name, limits and the paired devices. */
+function SharingSection() {
+  const settings = useOperatorStore((s) => s.settings)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const status = useSharingStore((s) => s.status)
+  const peers = useSharingStore((s) => s.peers)
+  const [paired, setPaired] = useState<PairedDevice[]>([])
+  const [name, setName] = useState(settings.sharingDeviceName)
+  const [tests, setTests] = useState<Record<string, { busy: boolean; text: string; ok: boolean }>>({})
+  const [forgetting, setForgetting] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => setName(settings.sharingDeviceName), [settings.sharingDeviceName])
+
+  // The list follows pairing and forgetting, wherever they happen.
+  useEffect(() => {
+    window.api.sharing.paired().then(setPaired, console.error)
+  }, [peers])
+
+  async function run(action: () => Promise<unknown>) {
+    setError(null)
+    try {
+      await action()
+    } catch (err) {
+      setError(errorText(err))
+    }
+  }
+
+  async function test(id: string) {
+    setTests((t) => ({ ...t, [id]: { busy: true, text: 'Testing…', ok: true } }))
+    const result = await window.api.sharing.testConnection(id).catch((err) => ({ ok: false, error: errorText(err), ms: undefined }))
+    setTests((t) => ({ ...t, [id]: { busy: false, ok: result.ok, text: result.ok ? `Connected · ${result.ms} ms, encrypted` : (result.error ?? 'Could not connect') } }))
+  }
+
+  const limitOptions = SHARE_LIMITS.some((l) => l.value === settings.sharingMaxSizeMb)
+    ? SHARE_LIMITS
+    : [...SHARE_LIMITS, { value: settings.sharingMaxSizeMb, label: `${settings.sharingMaxSizeMb} MB` }]
+
+  return (
+    <Section icon={<Wifi size={16} aria-hidden="true" />} title="Sharing">
+      <p className="sharing-notice">
+        <Wifi size={15} aria-hidden="true" />
+        <span>
+          Uses your <strong>local network</strong> (the Wi-Fi or Ethernet this computer is on) to send songs, services, themes and media to other ServiceEx
+          computers. Nothing goes over the internet. While on, computers on this network can see this computer's name; only paired ones can send to it.
+        </span>
+      </p>
+      <label className="inline-check">
+        <input type="checkbox" checked={settings.sharingEnabled} onChange={(e) => run(() => updateSettings({ sharingEnabled: e.target.checked }))} />
+        Share with other ServiceEx computers on this network
+      </label>
+      {status?.error && <p className="error">{status.error}</p>}
+      {settings.sharingEnabled && status?.port && (
+        <p className="hint">
+          On as {status.deviceName}
+          {status.addresses.length > 0 ? ` at ${status.addresses.join(', ')}` : ''} (port {status.port}).
+        </p>
+      )}
+      <label className="field">
+        <span>Device name</span>
+        <input
+          className="input"
+          value={name}
+          maxLength={40}
+          placeholder={status?.deviceName ?? 'This computer'}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => name !== settings.sharingDeviceName && run(() => updateSettings({ sharingDeviceName: name }))}
+          onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+        />
+        <span className="hint">What other computers show on their device chips, such as "Sanctuary booth". Empty uses the computer's name.</span>
+      </label>
+      <label className="field">
+        <span>Largest file to receive</span>
+        <select className="input" value={settings.sharingMaxSizeMb} onChange={(e) => run(() => updateSettings({ sharingMaxSizeMb: Number(e.target.value) }))}>
+          {limitOptions.map((l) => (
+            <option key={l.value} value={l.value}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+        <span className="hint">
+          Allowed types: .serviceex packages, PowerPoint (.pptx, .ppt), PDF, images, MP4, WebM, MP3, WAV, .txt and OpenLyrics .xml. Anything else is refused,
+          and nothing received is ever opened or run.
+        </span>
+      </label>
+      <label className="inline-check">
+        <input type="checkbox" checked={settings.sharingAutoAccept} onChange={(e) => run(() => updateSettings({ sharingAutoAccept: e.target.checked }))} />
+        Auto accept from trusted devices
+      </label>
+      <p className="hint">
+        Items from devices marked Trusted below go straight into the library, kept beside anything with the same name. They never change the output or go
+        live.
+      </p>
+
+      <div className="field">
+        <span>Paired devices</span>
+        {paired.length === 0 ? (
+          <p className="hint">None yet. Turn Sharing on here and on the other computer, then click its chip in the toolbar to pair.</p>
+        ) : (
+          <ul className="paired-list">
+            {paired.map((device) => {
+              const online = peers.some((p) => p.id === device.id && p.online)
+              const result = tests[device.id]
+              return (
+                <li key={device.id}>
+                  <div className="paired-device">
+                    <span className={`device-dot${online ? ' online' : ''}`} aria-hidden="true" />
+                    <strong>{device.name}</strong>
+                    <span className="hint">{online ? 'on the network' : 'not seen'} · paired {new Date(device.pairedAt).toLocaleDateString()}</span>
+                  </div>
+                  <div className="settings-row">
+                    <label className="inline-check" title="Auto accept applies to trusted devices only">
+                      <input
+                        type="checkbox"
+                        checked={device.trusted}
+                        onChange={(e) => run(async () => setPaired(await window.api.sharing.setTrusted(device.id, e.target.checked)))}
+                      />
+                      Trusted
+                    </label>
+                    <button type="button" className="button" disabled={!settings.sharingEnabled || result?.busy} onClick={() => test(device.id)}>
+                      <PlugZap size={15} aria-hidden="true" /> Test connection
+                    </button>
+                    {forgetting === device.id ? (
+                      <>
+                        <button
+                          type="button"
+                          className="button danger"
+                          onClick={() =>
+                            run(async () => {
+                              setPaired(await window.api.sharing.forget(device.id))
+                              setForgetting(null)
+                            })
+                          }
+                        >
+                          Forget {device.name}
+                        </button>
+                        <button type="button" className="button" onClick={() => setForgetting(null)}>
+                          Keep
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" className="button" onClick={() => setForgetting(device.id)}>
+                        <Trash2 size={15} aria-hidden="true" /> Forget device
+                      </button>
+                    )}
+                  </div>
+                  {result && !result.busy && <p className={result.ok ? 'hint' : 'error'}>{result.text}</p>}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+      {error && <p className="error">{error}</p>}
+      <p className="hint">
+        <strong>Cannot see or reach the other computer?</strong> Both need ServiceEx open with Sharing on, on the same network. Guest and public Wi-Fi often
+        use client isolation, which keeps devices from seeing each other; use the main network or a cable. On Windows, allow ServiceEx through Windows
+        Defender Firewall for private networks (it asks the first time Sharing is turned on), and set the network to Private. To move a service without
+        the network, use Export package in the schedule and Import package in the Inbox, with a USB drive.
+      </p>
+    </Section>
+  )
+}
+
 /** Plays a generated animated deck with PowerPoint on the output display, and lists each step with its time. */
 function LivePowerPointSection() {
   const enabled = useOperatorStore((s) => s.settings.presentationLivePowerPoint)
@@ -1330,6 +1506,8 @@ export function SettingsPanel() {
 
       <PresentationsSection />
       <LivePowerPointSection />
+
+      <SharingSection />
 
       <Section icon={<Save size={16} aria-hidden="true" />} title="Autosave and backups">
         <label className="inline-check">
