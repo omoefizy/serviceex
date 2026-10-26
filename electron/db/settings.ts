@@ -1,4 +1,5 @@
 import { DEFAULT_HIGHLIGHT, HIGHLIGHT_COLORS, HIGHLIGHT_KINDS } from '../../shared/highlights'
+import { cleanLayouts, DEFAULT_LAYOUT_ID, PRESET_LAYOUTS } from '../../shared/layouts'
 import { sanitizeRichFor } from '../../shared/richText'
 import { clampOffset, clampSize } from '../../shared/scriptureLook'
 import { DEFAULT_FONT } from '../../shared/themes'
@@ -92,6 +93,12 @@ const DEFAULTS: AppSettings = {
   sharingDeviceName: '',
   sharingMaxSizeMb: 2048,
   sharingAutoAccept: false,
+  layouts: [...PRESET_LAYOUTS],
+  activeLayoutId: DEFAULT_LAYOUT_ID,
+  sharingDeviceChips: true,
+  sharingCueAlert: 'off',
+  sharingLibrarySync: false,
+  sharingBandwidthKbps: 0,
 }
 
 export const FADE_LIMITS = { min: 0, max: 1500 }
@@ -174,6 +181,12 @@ const KEYS: Record<keyof AppSettings, string> = {
   sharingDeviceName: 'sharing.deviceName',
   sharingMaxSizeMb: 'sharing.maxSizeMb',
   sharingAutoAccept: 'sharing.autoAccept',
+  layouts: 'layouts.list',
+  activeLayoutId: 'layouts.active',
+  sharingDeviceChips: 'sharing.deviceChips',
+  sharingCueAlert: 'sharing.cueAlert',
+  sharingLibrarySync: 'sharing.librarySync',
+  sharingBandwidthKbps: 'sharing.bandwidthKbps',
 }
 
 export const ALERT_LIMITS = {
@@ -253,6 +266,9 @@ export function cleanLogoItems(value: unknown): LogoItem[] | undefined {
 
 /** The size limit for received files: 1 MB to 20 GB. */
 export const SHARING_SIZE_LIMITS_MB = [1, 20480] as const
+
+/** Library sync's bandwidth limit: no limit (0) up to 1 GB per second, in KB per second. */
+export const SHARING_BANDWIDTH_KBPS = [0, 1_000_000] as const
 
 export const LOWER_THIRD_LIMITS = { lines: 200, points: 100, text: 300, durationMs: [200, 1000], holdSeconds: [0, 600] } as const
 
@@ -391,7 +407,17 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'highlightKeepWithItem':
     case 'sharingEnabled':
     case 'sharingAutoAccept':
+    case 'sharingDeviceChips':
+    case 'sharingLibrarySync':
       return typeof value === 'boolean' ? v : undefined
+    case 'sharingCueAlert':
+      return value === 'off' || value === 'sound' || value === 'flash' ? v : undefined
+    case 'sharingBandwidthKbps':
+      return ranged(value, SHARING_BANDWIDTH_KBPS, 1) as never
+    case 'layouts':
+      return Array.isArray(value) ? (cleanLayouts(value) as never) : undefined
+    case 'activeLayoutId':
+      return typeof value === 'string' && /^[a-z0-9-]{1,40}$/.test(value) ? v : undefined
     case 'sharingDeviceName':
       // Shown on other computers, so plain characters only.
       // eslint-disable-next-line no-control-regex

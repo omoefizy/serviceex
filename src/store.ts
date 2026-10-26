@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { buildSongSlides } from '../shared/lyrics'
 import { DEFAULT_LOWER_THIRD_STYLE } from '../shared/lowerThirds'
 import { DEFAULT_HIGHLIGHT, isMarked, markSlide, slideRich, unmarkSlide } from '../shared/highlights'
+import { DEFAULT_LAYOUT_ID, PRESET_LAYOUTS } from '../shared/layouts'
 import { formatFor, matching, trimRich, type RichRange } from '../shared/richText'
 import { adjustTheme, isEmptyAdjust } from '../shared/scriptureLook'
 import { DEFAULT_FONT, DEFAULT_THEME_STYLE } from '../shared/themes'
@@ -520,6 +521,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sharingDeviceName: '',
   sharingMaxSizeMb: 2048,
   sharingAutoAccept: false,
+  layouts: [...PRESET_LAYOUTS],
+  activeLayoutId: DEFAULT_LAYOUT_ID,
+  sharingDeviceChips: true,
+  sharingCueAlert: 'off',
+  sharingLibrarySync: false,
+  sharingBandwidthKbps: 0,
 }
 
 /** A settings answer with every key present, so a key missing after an update or a bad answer cannot break a panel. */
@@ -767,6 +774,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   async addToSchedule(type, refId, payload) {
+    // With a shared service open, the item joins it instead (see lib/sharing.ts).
+    if (scheduleTarget && (await scheduleTarget(type, refId, payload))) return
     const { service } = get()
     if (!service) throw new Error('Create or pick a service first')
     await window.api.services.addItem(service.id, type, refId, payload)
@@ -1725,6 +1734,15 @@ async function applySlideBackgrounds(token: number, deckKey: string | null): Pro
   } catch (err) {
     console.error(err)
   }
+}
+
+type ScheduleTarget = (type: ServiceItemType, refId: number | null, payload: ServiceItemPayload | null) => Promise<boolean>
+
+let scheduleTarget: ScheduleTarget | null = null
+
+/** Where Add to schedule puts items while a shared service is open; it resolves to false to use the open service. */
+export function setScheduleTarget(target: ScheduleTarget | null): void {
+  scheduleTarget = target
 }
 
 async function refreshService(id: number): Promise<void> {

@@ -941,6 +941,18 @@ export interface AppSettings {
   sharingMaxSizeMb: number
   /** Saves items from trusted paired devices straight into the library. Never touches the output. */
   sharingAutoAccept: boolean
+  /** Named sets of panels (see shared/layouts.ts). */
+  layouts: Layout[]
+  /** The layout this computer shows. */
+  activeLayoutId: string
+  /** Device chips in the toolbar with what each paired computer has live. On by default. */
+  sharingDeviceChips: boolean
+  /** How an arriving cue gets attention, besides appearing in the tray. Off by default. */
+  sharingCueAlert: 'off' | 'sound' | 'flash'
+  /** Copies songs, themes, fonts, media and presentations between paired computers. Off by default. */
+  sharingLibrarySync: boolean
+  /** The most library sync may use, in KB per second; 0 for no limit. */
+  sharingBandwidthKbps: number
 }
 
 /** The highlighter colors live highlighting offers, in the order the number keys 1 to 5 pick them. */
@@ -1229,12 +1241,23 @@ export interface SharePeer {
   paired: boolean
   /** Paired and marked trusted, so Auto accept applies to it. */
   trusted: boolean
+  /** Paired but disconnected in Settings. */
+  disconnected: boolean
+  /** The title of what it has live (title only), from its last presence message; null for nothing or unknown. */
+  liveTitle: string | null
+  /** The shared service it hosts, which this computer can join. */
+  hosting: { id: string; name: string } | null
 }
 
 export interface PairedDevice {
   id: string
+  /** The name the device gives itself. */
   name: string
+  /** The name this computer calls it, set in Settings; empty for its own. */
+  alias: string
   trusted: boolean
+  /** Still paired, but nothing is exchanged with it until it is connected again. */
+  disconnected: boolean
   /** ISO time. */
   pairedAt: string
 }
@@ -1345,6 +1368,11 @@ export type SharingEvent =
   | { type: 'status'; status: SharingStatus }
   /** Auto accept saved an item from a trusted device; the views reload and its presentations are imported. */
   | { type: 'accepted'; item: InboxItem; result: Extract<AcceptResult, { status: 'done' }> }
+  | { type: 'cues'; cues: Cue[]; arrived: Cue | null }
+  | { type: 'sharedService'; state: SharedServiceState }
+  | { type: 'library'; status: LibrarySyncStatus }
+  /** Library sync saved presentation files for the renderer to import, and changed these views. */
+  | { type: 'librarySaved'; presentations: string[]; changed: ('songs' | 'themes' | 'media' | 'fonts')[] }
 
 export interface SharingApi {
   status(): Promise<SharingStatus>
@@ -1378,6 +1406,163 @@ export interface SharingApi {
   /** Picks a .serviceex file (from a USB drive, say) and puts it in the Inbox. Resolves to the item, or null if cancelled. */
   importPackage(): Promise<InboxItem | null>
   onEvent(listener: (event: SharingEvent) => void): () => void
+  /** The name this computer shows for a paired device; empty goes back to the device's own name. */
+  setAlias(id: string, alias: string): Promise<PairedDevice[]>
+  /** Stops (or starts again) everything with a paired device without forgetting the pairing. */
+  setDisconnected(id: string, disconnected: boolean): Promise<PairedDevice[]>
+  /** Runs one shared service and presence round trip with a paired device, as a sync would. */
+  testSync(peerId: string): Promise<{ ok: boolean; ms?: number; error?: string }>
+  /** What this computer has live, title only, for the other computers' device chips; and whether a slide is live. */
+  setLive(info: { title: string | null; slideLive: boolean }): void
+  /** Sends a cue to a paired device. It waits in that computer's tray and never goes live by itself. */
+  sendCue(peerId: string, cue: CueDraft): Promise<void>
+  cues(): Promise<Cue[]>
+  dismissCue(id: string): Promise<Cue[]>
+  sharedService(): Promise<SharedServiceState>
+  /** Hosts a shared service starting with these items; other paired computers can join it. */
+  hostService(name: string, items: SharedItemInput[]): Promise<SharedServiceState>
+  joinService(peerId: string): Promise<SharedServiceState>
+  /** Leaves (or, as host, stops) the shared service. This computer keeps nothing of it but its own copy on disk. */
+  leaveService(): Promise<SharedServiceState>
+  addSharedItems(items: SharedItemInput[]): Promise<SharedServiceState>
+  updateSharedItem(id: string, patch: SharedItemPatch): Promise<SharedServiceState>
+  librarySync(): Promise<LibrarySyncStatus>
+  /** Compares libraries with every online paired device now and fetches what is missing here. */
+  syncLibraryNow(): Promise<LibrarySyncStatus>
+}
+
+// ---------- Layouts ----------
+
+/** A panel a layout can show or hide. The library tabs are panels of their own. */
+export type LayoutPanel = 'songs' | 'scripture' | 'presentations' | 'media' | 'slides' | 'live' | 'points' | 'listener' | 'schedule'
+
+export interface Layout {
+  /** Lower case letters, digits and dashes. */
+  id: string
+  name: string
+  panels: LayoutPanel[]
+  /** What the shared service list starts on: every item, or only this computer's. */
+  itemFilter: 'all' | 'mine'
+  /** Theme defaults set when switching to this layout; types left out keep theirs. */
+  themeDefaults: Partial<ThemeDefaults>
+  /** The output when nothing is live, set when switching to this layout; null leaves it. */
+  outputBackground: 'black' | 'logo' | null
+}
+
+// ---------- Shared service ----------
+
+export type SharedItemType = ServiceItemType | 'note'
+
+/** A song in a shared service carries its words, so every computer can show it whatever its library holds. */
+export interface SharedSongPayload {
+  title: string
+  author: string | null
+  copyright: string | null
+  lyrics: string
+  arrangement: SongArrangement
+}
+
+export interface SharedNotePayload {
+  title: string
+  text: string
+}
+
+export type SharedPayload = SharedSongPayload | ScripturePayload | AnnouncementPayload | PresentationPayload | SharedNotePayload
+
+export interface SharedItem {
+  /** 32 hex characters. */
+  id: string
+  type: SharedItemType
+  payload: SharedPayload
+  /** Run order: items sort by it. Moving an item gives it a number between its new neighbours. */
+  order: number
+  /** Logical clock of the last change (see shared/sharedService.ts). */
+  updatedAt: number
+  /** The device that made the last change. */
+  updatedBy: string
+  /** The device this item belongs to, for filtering; null for nobody in particular. */
+  ownerDevice: string | null
+  /** Removed: kept so the removal reaches every computer. */
+  deleted: boolean
+}
+
+export interface SharedItemInput {
+  type: SharedItemType
+  payload: SharedPayload
+  ownerDevice?: string | null
+}
+
+export type SharedItemPatch = Partial<Pick<SharedItem, 'order' | 'ownerDevice' | 'deleted' | 'payload'>>
+
+export type ItemFilter = { kind: 'all' } | { kind: 'mine' } | { kind: 'device'; deviceId: string }
+
+export interface SharedServiceState {
+  role: 'none' | 'host' | 'member'
+  id: string | null
+  name: string
+  hostId: string | null
+  hostName: string
+  items: SharedItem[]
+  /** Device names by id, for "changed by" and the owner tags. */
+  names: Record<string, string>
+  /** A member reached the host on its last try. Always true for the host. */
+  connected: boolean
+  /** Changes made here the host has not confirmed yet. */
+  pending: number
+  /** ISO time of the last successful sync. */
+  lastSyncAt: string | null
+  error: string | null
+}
+
+// ---------- Cues ----------
+
+export type CueKind = 'verse' | 'song' | 'point' | 'note' | 'text'
+
+export interface CueDraft {
+  kind: CueKind
+  title: string
+  /** Exactly as written. */
+  text: string
+  /** A verse: its slides, as the scripture panel made them. */
+  verses?: { text: string; caption: string }[]
+  /** A song: its words, so it can be previewed where the library does not have it. */
+  song?: SharedSongPayload
+}
+
+export interface Cue extends CueDraft {
+  id: string
+  fromId: string
+  fromName: string
+  /** ISO time. */
+  receivedAt: string
+}
+
+// ---------- Library sync ----------
+
+export type LibraryKind = 'song' | 'theme' | 'font' | 'media' | 'presentation'
+
+export interface LibrarySyncFile {
+  /** The content hash: the same content is fetched once, whatever it is called. */
+  sha256: string
+  kind: LibraryKind
+  name: string
+  peerId: string
+  peerName: string
+  size: number
+  received: number
+  state: 'waiting' | 'transferring' | 'done' | 'failed'
+  error?: string
+}
+
+export interface LibrarySyncStatus {
+  enabled: boolean
+  running: boolean
+  /** Why large transfers are waiting, such as a slide being live; null when they are not. */
+  paused: string | null
+  files: LibrarySyncFile[]
+  /** ISO time. */
+  lastRunAt: string | null
+  error: string | null
 }
 
 /** The API the preload script exposes to the renderer as `window.api`. */

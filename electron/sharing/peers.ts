@@ -56,7 +56,9 @@ export class PeerStore {
         this.peers.set(peer.id, {
           id: peer.id,
           name: typeof peer.name === 'string' ? peer.name : 'Unknown device',
+          alias: typeof peer.alias === 'string' ? peer.alias.slice(0, 40) : '',
           trusted: peer.trusted === true,
+          disconnected: peer.disconnected === true,
           pairedAt: typeof peer.pairedAt === 'string' ? peer.pairedAt : new Date(0).toISOString(),
           secret: codec.decrypt(Buffer.from(peer.secret, 'base64')),
           host: typeof peer.host === 'string' ? peer.host : null,
@@ -74,7 +76,7 @@ export class PeerStore {
   }
 
   list(): PairedDevice[] {
-    return [...this.peers.values()].map(({ id, name, trusted, pairedAt }) => ({ id, name, trusted, pairedAt }))
+    return [...this.peers.values()].map(({ id, name, alias, trusted, disconnected, pairedAt }) => ({ id, name, alias, trusted, disconnected, pairedAt }))
   }
 
   async add(peer: { id: string; name: string; secret: Buffer; host?: string | null; port?: number | null }): Promise<PairedDevice> {
@@ -82,7 +84,10 @@ export class PeerStore {
     const record: PeerRecord = {
       id: peer.id,
       name: peer.name,
+      alias: existing?.alias ?? '',
       trusted: existing?.trusted ?? false,
+      // Pairing again connects a device that was disconnected.
+      disconnected: false,
       pairedAt: new Date().toISOString(),
       secret: peer.secret,
       host: peer.host ?? existing?.host ?? null,
@@ -90,14 +95,14 @@ export class PeerStore {
     }
     this.peers.set(peer.id, record)
     await this.save()
-    return { id: record.id, name: record.name, trusted: record.trusted, pairedAt: record.pairedAt }
+    return { id: record.id, name: record.name, alias: record.alias, trusted: record.trusted, disconnected: record.disconnected, pairedAt: record.pairedAt }
   }
 
-  async update(id: string, patch: Partial<Pick<PeerRecord, 'name' | 'trusted' | 'host' | 'port'>>): Promise<void> {
+  async update(id: string, patch: Partial<Pick<PeerRecord, 'name' | 'alias' | 'trusted' | 'disconnected' | 'host' | 'port'>>): Promise<void> {
     const peer = this.peers.get(id)
     if (!peer) return
     const next = { ...peer, ...patch }
-    if (next.name === peer.name && next.trusted === peer.trusted && next.host === peer.host && next.port === peer.port) return
+    if ((Object.keys(patch) as (keyof typeof patch)[]).every((key) => next[key] === peer[key])) return
     this.peers.set(id, next)
     await this.save()
   }

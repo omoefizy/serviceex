@@ -318,6 +318,21 @@ const sharing: SharingApi = {
     ipcRenderer.on('sharing:event', handler)
     return () => ipcRenderer.off('sharing:event', handler)
   },
+  setAlias: (id, alias) => ipcRenderer.invoke('sharing:setAlias', id, alias),
+  setDisconnected: (id, disconnected) => ipcRenderer.invoke('sharing:setDisconnected', id, disconnected),
+  testSync: (peerId) => ipcRenderer.invoke('sharing:testSync', peerId),
+  setLive: (info) => ipcRenderer.send('sharing:setLive', info),
+  sendCue: (peerId, cue) => ipcRenderer.invoke('sharing:sendCue', peerId, cue),
+  cues: () => ipcRenderer.invoke('sharing:cues'),
+  dismissCue: (id) => ipcRenderer.invoke('sharing:dismissCue', id),
+  sharedService: () => ipcRenderer.invoke('sharing:sharedService'),
+  hostService: (name, items) => ipcRenderer.invoke('sharing:hostService', name, items),
+  joinService: (peerId) => ipcRenderer.invoke('sharing:joinService', peerId),
+  leaveService: () => ipcRenderer.invoke('sharing:leaveService'),
+  addSharedItems: (items) => ipcRenderer.invoke('sharing:addSharedItems', items),
+  updateSharedItem: (id, patch) => ipcRenderer.invoke('sharing:updateSharedItem', id, patch),
+  librarySync: () => ipcRenderer.invoke('sharing:librarySync'),
+  syncLibraryNow: () => ipcRenderer.invoke('sharing:syncLibraryNow'),
 }
 
 const api: WorshipDeckApi = {

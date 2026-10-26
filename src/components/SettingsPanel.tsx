@@ -1,6 +1,7 @@
 import {
   BookOpen,
   Cloud,
+  Copy,
   Download,
   FolderOpen,
   HardDrive,
@@ -8,12 +9,16 @@ import {
   HardDriveDownload,
   Image,
   KeyRound,
+  LayoutPanelLeft,
+  Library,
   Mic,
   MicOff,
   Monitor,
   Moon,
   Palette,
+  Plug,
   PlugZap,
+  Plus,
   Play,
   Presentation,
   Quote,
@@ -25,6 +30,7 @@ import {
   SunMoon,
   Trash2,
   Type,
+  Unplug,
   Wifi,
   X,
 } from 'lucide-react'
@@ -35,6 +41,7 @@ import type {
   AppSettings,
   DisplayInfo,
   HighlightColor,
+  Layout,
   PairedDevice,
   LivePowerPointTestResult,
   OutputDisplay,
@@ -43,10 +50,14 @@ import type {
   PresentationEngineStatus,
   SpeechEngineId,
   SpeechKeyStatus,
+  ThemeContentType,
   WhisperModelId,
   WhisperStatus,
 } from '../../shared/types'
 import { HIGHLIGHT_COLORS, HIGHLIGHT_KINDS } from '../../shared/highlights'
+import { hasFeature } from '../../shared/features'
+import { createLayout, deleteLayout, duplicateLayout, LAYOUT_PANELS, renameLayout, updateLayout } from '../../shared/layouts'
+import { formatBytes } from '../../shared/sharing'
 import { useOperatorStore } from '../store'
 import { dspOf, rememberDevice } from '../lib/listener'
 import {
@@ -63,6 +74,7 @@ import {
   type SignalAdvice,
 } from '../lib/mic'
 import { IS_MAC, MOD } from '../lib/shortcuts'
+import { switchLayout } from '../lib/layouts'
 import { errorText, useSharingStore } from '../lib/sharing'
 import { LevelMeter } from './LevelMeter'
 import { ScriptureDisplayForm } from './ScriptureDisplay'
@@ -1108,19 +1120,10 @@ function SharingSection() {
   const settings = useOperatorStore((s) => s.settings)
   const updateSettings = useOperatorStore((s) => s.updateSettings)
   const status = useSharingStore((s) => s.status)
-  const peers = useSharingStore((s) => s.peers)
-  const [paired, setPaired] = useState<PairedDevice[]>([])
   const [name, setName] = useState(settings.sharingDeviceName)
-  const [tests, setTests] = useState<Record<string, { busy: boolean; text: string; ok: boolean }>>({})
-  const [forgetting, setForgetting] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => setName(settings.sharingDeviceName), [settings.sharingDeviceName])
-
-  // The list follows pairing and forgetting, wherever they happen.
-  useEffect(() => {
-    window.api.sharing.paired().then(setPaired, console.error)
-  }, [peers])
 
   async function run(action: () => Promise<unknown>) {
     setError(null)
@@ -1129,12 +1132,6 @@ function SharingSection() {
     } catch (err) {
       setError(errorText(err))
     }
-  }
-
-  async function test(id: string) {
-    setTests((t) => ({ ...t, [id]: { busy: true, text: 'Testing…', ok: true } }))
-    const result = await window.api.sharing.testConnection(id).catch((err) => ({ ok: false, error: errorText(err), ms: undefined }))
-    setTests((t) => ({ ...t, [id]: { busy: false, ok: result.ok, text: result.ok ? `Connected · ${result.ms} ms, encrypted` : (result.error ?? 'Could not connect') } }))
   }
 
   const limitOptions = SHARE_LIMITS.some((l) => l.value === settings.sharingMaxSizeMb)
@@ -1197,23 +1194,278 @@ function SharingSection() {
         live.
       </p>
 
+      {error && <p className="error">{error}</p>}
+      <p className="hint">Paired computers, device chips and cues are under Devices below.</p>
+    </Section>
+  )
+}
+
+const THEME_TYPES: { type: ThemeContentType; label: string }[] = [
+  { type: 'song', label: 'Songs' },
+  { type: 'scripture', label: 'Scripture' },
+  { type: 'announcement', label: 'Announcements' },
+  { type: 'quote', label: 'Quotes' },
+  { type: 'lowerThird', label: 'Lower thirds' },
+  { type: 'logo', label: 'Logo' },
+]
+
+/** Named layouts: which panels this computer shows, and the defaults each one sets. No layout is tied to a computer. */
+function LayoutsSection() {
+  const layouts = useOperatorStore((s) => s.settings.layouts)
+  const activeId = useOperatorStore((s) => s.settings.activeLayoutId)
+  const themes = useOperatorStore((s) => s.themes)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [names, setNames] = useState<Record<string, string>>({})
+  const [error, setError] = useState<string | null>(null)
+
+  const save = (action: () => Layout[]) => {
+    setError(null)
+    try {
+      updateSettings({ layouts: action() }).catch((err) => setError(errorText(err)))
+    } catch (err) {
+      setError(errorText(err))
+    }
+  }
+
+  if (!hasFeature('sharing.layouts')) return null
+  return (
+    <div id="settings-layouts">
+      <Section icon={<LayoutPanelLeft size={16} aria-hidden="true" />} title="Layouts">
+        <p className="hint">
+          A layout is the set of panels this computer shows. Switch at any time from the toolbar, with {MOD}⌥1 to 9, or {MOD}⇧L for the next one. Settings
+          and the editors always open, whatever the layout.
+        </p>
+        <ul className="layout-list">
+          {layouts.map((layout) => (
+            <li key={layout.id} className={layout.id === activeId ? 'active' : ''}>
+              <div className="settings-row">
+                <input
+                  type="radio"
+                  name="active-layout"
+                  aria-label={`Use ${layout.name}`}
+                  checked={layout.id === activeId}
+                  onChange={() => switchLayout(layout.id).catch((err) => setError(errorText(err)))}
+                />
+                <input
+                  className="input layout-name"
+                  aria-label="Layout name"
+                  maxLength={40}
+                  value={names[layout.id] ?? layout.name}
+                  onChange={(e) => setNames((n) => ({ ...n, [layout.id]: e.target.value }))}
+                  onBlur={() => {
+                    const name = names[layout.id]
+                    if (name !== undefined && name !== layout.name) save(() => renameLayout(layouts, layout.id, name))
+                    setNames((n) => {
+                      const rest = { ...n }
+                      delete rest[layout.id]
+                      return rest
+                    })
+                  }}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                />
+                <button type="button" className="button" aria-expanded={openId === layout.id} onClick={() => setOpenId(openId === layout.id ? null : layout.id)}>
+                  Panels and defaults
+                </button>
+                <button type="button" className="icon-button" aria-label={`Duplicate ${layout.name}`} title="Duplicate" onClick={() => save(() => duplicateLayout(layouts, layout.id).layouts)}>
+                  <Copy size={15} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={`Delete ${layout.name}`}
+                  title="Delete"
+                  disabled={layouts.length <= 1}
+                  onClick={() => save(() => deleteLayout(layouts, layout.id))}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+              {openId === layout.id && (
+                <div className="layout-detail">
+                  <fieldset className="layout-panels">
+                    <legend>Panels</legend>
+                    {LAYOUT_PANELS.map((panel) => (
+                      <label key={panel.id} className="inline-check">
+                        <input
+                          type="checkbox"
+                          checked={layout.panels.includes(panel.id)}
+                          onChange={(e) =>
+                            save(() =>
+                              updateLayout(layouts, layout.id, {
+                                panels: e.target.checked ? [...layout.panels, panel.id] : layout.panels.filter((p) => p !== panel.id),
+                              }),
+                            )
+                          }
+                        />
+                        {panel.label}
+                      </label>
+                    ))}
+                  </fieldset>
+                  <label className="field">
+                    <span>Shared service list starts on</span>
+                    <select
+                      className="input"
+                      value={layout.itemFilter}
+                      onChange={(e) => save(() => updateLayout(layouts, layout.id, { itemFilter: e.target.value === 'mine' ? 'mine' : 'all' }))}
+                    >
+                      <option value="all">All items</option>
+                      <option value="mine">This computer's items</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Output background when nothing is live</span>
+                    <select
+                      className="input"
+                      value={layout.outputBackground ?? ''}
+                      onChange={(e) => save(() => updateLayout(layouts, layout.id, { outputBackground: e.target.value === 'black' || e.target.value === 'logo' ? e.target.value : null }))}
+                    >
+                      <option value="">Leave as it is</option>
+                      <option value="black">Black</option>
+                      <option value="logo">Logo</option>
+                    </select>
+                  </label>
+                  <fieldset className="layout-themes">
+                    <legend>Default themes set by this layout</legend>
+                    {THEME_TYPES.map(({ type, label }) => (
+                      <label key={type} className="field">
+                        <span>{label}</span>
+                        <select
+                          className="input"
+                          value={layout.themeDefaults[type] ?? ''}
+                          onChange={(e) =>
+                            save(() => {
+                              const themeDefaults = { ...layout.themeDefaults }
+                              if (e.target.value) themeDefaults[type] = Number(e.target.value)
+                              else delete themeDefaults[type]
+                              return updateLayout(layouts, layout.id, { themeDefaults })
+                            })
+                          }
+                        >
+                          <option value="">Leave as it is</option>
+                          {themes.map((theme) => (
+                            <option key={theme.id} value={theme.id}>
+                              {theme.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
+                  </fieldset>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+        <button
+          type="button"
+          className="button"
+          onClick={() =>
+            save(() => {
+              const { layouts: next, layout } = createLayout(layouts, 'New layout')
+              setOpenId(layout.id)
+              return next
+            })
+          }
+        >
+          <Plus size={15} aria-hidden="true" /> New layout
+        </button>
+        {error && <p className="error">{error}</p>}
+      </Section>
+    </div>
+  )
+}
+
+/** Paired computers, the device chips, cues, and help when two computers cannot see each other. */
+function DevicesSection() {
+  const settings = useOperatorStore((s) => s.settings)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const peers = useSharingStore((s) => s.peers)
+  const [paired, setPaired] = useState<PairedDevice[]>([])
+  const [aliases, setAliases] = useState<Record<string, string>>({})
+  const [tests, setTests] = useState<Record<string, { busy: boolean; text: string; ok: boolean }>>({})
+  const [forgetting, setForgetting] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  // The list follows pairing, renaming and forgetting, wherever they happen.
+  useEffect(() => {
+    window.api.sharing.paired().then(setPaired, console.error)
+  }, [peers])
+
+  async function run(action: () => Promise<unknown>) {
+    setError(null)
+    try {
+      await action()
+    } catch (err) {
+      setError(errorText(err))
+    }
+  }
+
+  async function test(id: string, kind: 'connection' | 'sync') {
+    setTests((t) => ({ ...t, [id]: { busy: true, text: 'Testing…', ok: true } }))
+    const call = kind === 'connection' ? window.api.sharing.testConnection(id) : window.api.sharing.testSync(id)
+    const result = await call.catch((err) => ({ ok: false, error: errorText(err), ms: undefined }))
+    const done = kind === 'connection' ? `Connected · ${result.ms} ms, encrypted` : `Sync works · ${result.ms} ms round trip`
+    setTests((t) => ({ ...t, [id]: { busy: false, ok: result.ok, text: result.ok ? done : (result.error ?? 'Could not connect') } }))
+  }
+
+  return (
+    <Section icon={<Plug size={16} aria-hidden="true" />} title="Devices">
+      {hasFeature('sharing.presence') && (
+        <label className="inline-check">
+          <input type="checkbox" checked={settings.sharingDeviceChips} onChange={(e) => run(() => updateSettings({ sharingDeviceChips: e.target.checked }))} />
+          Device chips in the toolbar, with the title of what each computer has live
+        </label>
+      )}
+      <p className="hint">Only the title is shared, never the slide. Turned off, this computer also stops telling the others what it has live.</p>
+      {hasFeature('sharing.send') && (
+        <label className="field">
+          <span>When a cue arrives</span>
+          <select className="input" value={settings.sharingCueAlert} onChange={(e) => run(() => updateSettings({ sharingCueAlert: e.target.value as AppSettings['sharingCueAlert'] }))}>
+            <option value="off">Just show it in the tray (default)</option>
+            <option value="sound">Play a short tone</option>
+            <option value="flash">Flash the tray button</option>
+          </select>
+          <span className="hint">Cues wait in the tray with Preview, Add to schedule and Dismiss. A cue never changes what is on the output.</span>
+        </label>
+      )}
+
       <div className="field">
-        <span>Paired devices</span>
+        <span>Paired computers</span>
         {paired.length === 0 ? (
           <p className="hint">None yet. Turn Sharing on here and on the other computer, then click its chip in the toolbar to pair.</p>
         ) : (
           <ul className="paired-list">
             {paired.map((device) => {
-              const online = peers.some((p) => p.id === device.id && p.online)
+              const peer = peers.find((p) => p.id === device.id)
+              const online = peer?.online ?? false
               const result = tests[device.id]
+              const shown = device.alias || device.name
               return (
                 <li key={device.id}>
                   <div className="paired-device">
                     <span className={`device-dot${online ? ' online' : ''}`} aria-hidden="true" />
-                    <strong>{device.name}</strong>
-                    <span className="hint">{online ? 'on the network' : 'not seen'} · paired {new Date(device.pairedAt).toLocaleDateString()}</span>
+                    <strong>{shown}</strong>
+                    <span className="hint">
+                      {device.alias ? `${device.name} · ` : ''}
+                      {device.disconnected ? 'disconnected' : online ? 'online' : 'offline'} · paired {new Date(device.pairedAt).toLocaleDateString()}
+                      {peer?.liveTitle ? ` · live: ${peer.liveTitle}` : ''}
+                    </span>
                   </div>
                   <div className="settings-row">
+                    <input
+                      className="input"
+                      aria-label={`Name for ${device.name} on this computer`}
+                      placeholder={device.name}
+                      maxLength={40}
+                      value={aliases[device.id] ?? device.alias}
+                      onChange={(e) => setAliases((a) => ({ ...a, [device.id]: e.target.value }))}
+                      onBlur={() => {
+                        const alias = aliases[device.id]
+                        if (alias !== undefined && alias !== device.alias) run(async () => setPaired(await window.api.sharing.setAlias(device.id, alias)))
+                      }}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                    />
                     <label className="inline-check" title="Auto accept applies to trusted devices only">
                       <input
                         type="checkbox"
@@ -1222,8 +1474,21 @@ function SharingSection() {
                       />
                       Trusted
                     </label>
-                    <button type="button" className="button" disabled={!settings.sharingEnabled || result?.busy} onClick={() => test(device.id)}>
+                  </div>
+                  <div className="settings-row">
+                    <button
+                      type="button"
+                      className="button"
+                      title={device.disconnected ? 'Exchange cues, the shared service and library sync with it again' : 'Stop exchanging anything with it, without forgetting the pairing'}
+                      onClick={() => run(async () => setPaired(await window.api.sharing.setDisconnected(device.id, !device.disconnected)))}
+                    >
+                      {device.disconnected ? <Plug size={15} aria-hidden="true" /> : <Unplug size={15} aria-hidden="true" />} {device.disconnected ? 'Connect' : 'Disconnect'}
+                    </button>
+                    <button type="button" className="button" disabled={!settings.sharingEnabled || result?.busy} onClick={() => test(device.id, 'connection')}>
                       <PlugZap size={15} aria-hidden="true" /> Test connection
+                    </button>
+                    <button type="button" className="button" disabled={!settings.sharingEnabled || device.disconnected || result?.busy} onClick={() => test(device.id, 'sync')}>
+                      <RefreshCw size={15} aria-hidden="true" /> Test sync
                     </button>
                     {forgetting === device.id ? (
                       <>
@@ -1237,7 +1502,7 @@ function SharingSection() {
                             })
                           }
                         >
-                          Forget {device.name}
+                          Forget {shown}
                         </button>
                         <button type="button" className="button" onClick={() => setForgetting(null)}>
                           Keep
@@ -1245,7 +1510,7 @@ function SharingSection() {
                       </>
                     ) : (
                       <button type="button" className="button" onClick={() => setForgetting(device.id)}>
-                        <Trash2 size={15} aria-hidden="true" /> Forget device
+                        <Trash2 size={15} aria-hidden="true" /> Forget
                       </button>
                     )}
                   </div>
@@ -1257,12 +1522,109 @@ function SharingSection() {
         )}
       </div>
       {error && <p className="error">{error}</p>}
+      <details className="troubleshooting">
+        <summary>Cannot see or reach the other computer?</summary>
+        <ol>
+          <li>Open ServiceEx on both computers and turn Sharing on in both. Each one should then show the other as a chip in the toolbar.</li>
+          <li>
+            Put both on the same network. Guest and public Wi-Fi often use <strong>client isolation</strong>: devices on it can reach the internet but not each
+            other. Use the main network, ask whoever runs the Wi-Fi to turn client isolation off for it, or connect both with a network cable.
+          </li>
+          <li>
+            On Windows, allow ServiceEx through <strong>Windows Defender Firewall</strong>. Windows asks the first time Sharing is turned on: tick Private
+            networks and choose Allow. If that was missed, open Windows Security, Firewall and network protection, Allow an app through firewall, and tick
+            ServiceEx for Private. Also check the network is set to Private, not Public, in Settings, Network and internet.
+          </li>
+          <li>On a Mac, if the firewall is on, allow incoming connections for ServiceEx in System Settings, Network, Firewall, Options.</li>
+          <li>Use Test connection, then Test sync, above. Both should answer within a second or two.</li>
+        </ol>
+        <p className="hint">
+          To move a service without the network, use Export package in the schedule and Import package in the Inbox, with a USB drive.
+        </p>
+      </details>
+    </Section>
+  )
+}
+
+const BANDWIDTH: { value: number; label: string }[] = [
+  { value: 0, label: 'No limit' },
+  { value: 1024, label: '1 MB/s' },
+  { value: 5120, label: '5 MB/s' },
+  { value: 10240, label: '10 MB/s' },
+  { value: 25600, label: '25 MB/s' },
+]
+
+/** Copies songs, themes, fonts, media and presentations between paired computers. Off by default. */
+function LibrarySyncSection() {
+  const settings = useOperatorStore((s) => s.settings)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const library = useSharingStore((s) => s.library)
+  const [error, setError] = useState<string | null>(null)
+
+  if (!hasFeature('sharing.librarySync')) return null
+  const run = (action: () => Promise<unknown>) => {
+    setError(null)
+    action().catch((err) => setError(errorText(err)))
+  }
+  const options = BANDWIDTH.some((b) => b.value === settings.sharingBandwidthKbps)
+    ? BANDWIDTH
+    : [...BANDWIDTH, { value: settings.sharingBandwidthKbps, label: `${settings.sharingBandwidthKbps} KB/s` }]
+  const files = library?.files ?? []
+  return (
+    <Section icon={<Library size={16} aria-hidden="true" />} title="Library sync">
+      <label className="inline-check">
+        <input type="checkbox" checked={settings.sharingLibrarySync} onChange={(e) => run(() => updateSettings({ sharingLibrarySync: e.target.checked }))} />
+        Keep songs, themes, fonts, media and presentations in step with paired computers
+      </label>
       <p className="hint">
-        <strong>Cannot see or reach the other computer?</strong> Both need ServiceEx open with Sharing on, on the same network. Guest and public Wi-Fi often
-        use client isolation, which keeps devices from seeing each other; use the main network or a cable. On Windows, allow ServiceEx through Windows
-        Defender Firewall for private networks (it asks the first time Sharing is turned on), and set the network to Private. To move a service without
-        the network, use Export package in the schedule and Import package in the Inbox, with a USB drive.
+        Fetches what the other computers have and this one does not, in the background. The same content is never copied twice, whatever it is called.
+        Nothing here is replaced or deleted, and nothing goes live. Large files wait while a slide is live.
       </p>
+      <label className="field">
+        <span>Bandwidth limit</span>
+        <select className="input" value={settings.sharingBandwidthKbps} onChange={(e) => run(() => updateSettings({ sharingBandwidthKbps: Number(e.target.value) }))}>
+          {options.map((b) => (
+            <option key={b.value} value={b.value}>
+              {b.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="settings-row">
+        <button
+          type="button"
+          className="button"
+          disabled={!settings.sharingEnabled || !settings.sharingLibrarySync || library?.running}
+          onClick={() => run(async () => useSharingStore.setState({ library: await window.api.sharing.syncLibraryNow() }))}
+        >
+          <RefreshCw size={15} aria-hidden="true" /> {library?.running ? 'Syncing…' : 'Sync now'}
+        </button>
+        <span className="hint">
+          {library?.paused ?? (library?.lastRunAt ? `Last synced ${new Date(library.lastRunAt).toLocaleString()}` : 'Not synced yet')}
+        </span>
+      </div>
+      {library?.error && <p className="error">{library.error}</p>}
+      {error && <p className="error">{error}</p>}
+      {files.length > 0 && (
+        <ul className="sync-files">
+          {files.map((file) => (
+            <li key={file.sha256} className={file.state}>
+              <span className="sync-file-name" title={`${file.kind} from ${file.peerName}`}>
+                {file.name}
+              </span>
+              <span className="hint">
+                {file.state === 'transferring'
+                  ? `${file.size > 0 ? Math.floor((file.received / file.size) * 100) : 0}% of ${formatBytes(file.size)}`
+                  : file.state === 'done'
+                    ? 'Done'
+                    : file.state === 'failed'
+                      ? (file.error ?? 'Failed')
+                      : `Waiting · ${formatBytes(file.size)}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </Section>
   )
 }
@@ -1508,6 +1870,9 @@ export function SettingsPanel() {
       <LivePowerPointSection />
 
       <SharingSection />
+      <DevicesSection />
+      <LibrarySyncSection />
+      <LayoutsSection />
 
       <Section icon={<Save size={16} aria-hidden="true" />} title="Autosave and backups">
         <label className="inline-check">

@@ -155,6 +155,18 @@ export async function secureRequest<Op extends SecureOp>(
   body?: Buffer,
   timeoutMs = 30_000,
 ): Promise<SealedResponse<SecureOps[Op]['response']>> {
+  return (await secureCall(target, myId, op, fields, body, timeoutMs)).header
+}
+
+/** A sealed request whose answer may carry bytes after it (libraryChunk). */
+export async function secureCall<Op extends SecureOp>(
+  target: PeerTarget,
+  myId: string,
+  op: Op,
+  fields: SecureOps[Op]['request'],
+  body?: Buffer,
+  timeoutMs = 30_000,
+): Promise<{ header: SealedResponse<SecureOps[Op]['response']>; body: Buffer }> {
   const nonce = randomId()
   const envelope = seal(channelKey(target.secret, myId, target.id, 'request'), requestAad(myId, target.id), { ...fields, op, nonce, ts: Date.now() }, body)
   let answer: HttpAnswer
@@ -166,7 +178,7 @@ export async function secureRequest<Op extends SecureOp>(
   if (answer.status >= 500) throw new UnreachableError(`${target.name} had a problem: ${plainError(answer)}`)
   if (answer.status !== 200) throw new RefusedError(plainError(answer))
   try {
-    return open<SealedResponse<SecureOps[Op]['response']>>(channelKey(target.secret, myId, target.id, 'response'), responseAad(myId, target.id, nonce), answer.body).header
+    return open<SealedResponse<SecureOps[Op]['response']>>(channelKey(target.secret, myId, target.id, 'response'), responseAad(myId, target.id, nonce), answer.body)
   } catch {
     throw new RefusedError(`The answer from ${target.name} could not be verified. Forget the device on both computers and pair again.`)
   }

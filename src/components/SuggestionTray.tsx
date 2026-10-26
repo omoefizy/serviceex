@@ -1,10 +1,14 @@
-import { BookOpen, Eye, ListPlus, Pencil, PanelBottom, X } from 'lucide-react'
+import { BookOpen, Eye, ListPlus, Pencil, PanelBottom, Send, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useSuggestions, type StatementSuggestion } from '../lib/scriptureDetection'
+import { useSuggestions, type ScriptureSuggestion, type StatementSuggestion } from '../lib/scriptureDetection'
+import { canSendCues, openCueMenu, useSharingStore } from '../lib/sharing'
 import { focusLowerThirdHeadline } from '../lib/shortcuts'
 import { quotePayload } from '../lib/slides'
 import { useOperatorStore } from '../store'
 import { QuoteModal } from './QuoteModal'
+
+/** A heard verse as a cue: its passage, word for word. */
+const verseCue = (s: ScriptureSuggestion) => ({ kind: 'verse' as const, title: s.passage.title, text: s.passage.verses.map((v) => v.text).join('\n'), verses: s.passage.verses })
 
 const timeOf = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
 
@@ -30,6 +34,9 @@ export function SuggestionTray() {
   /** Statements saved to the schedule this session, so the button says so. */
   const [scheduled, setScheduled] = useState<Set<number>>(new Set())
   const [error, setError] = useState<string | null>(null)
+  // Re-renders when sharing turns on or off, for Send to device.
+  useSharingStore((st) => st.status?.enabled)
+  const sendable = canSendCues()
   /** Ticks each second while there are cards, for "seconds ago". */
   const [now, setNow] = useState(() => Date.now())
   const showing = suggestions.length > 0
@@ -113,6 +120,17 @@ export function SuggestionTray() {
                   ))}
                 </div>
               )}
+              {sendable && (
+                <button
+                  type="button"
+                  className="suggestion-send"
+                  aria-label={`Send ${s.label} to another computer`}
+                  title="Send to device: a cue in that computer's tray. It does not go live there."
+                  onClick={(e) => openCueMenu(e, verseCue(s))}
+                >
+                  <Send size={12} aria-hidden="true" />
+                </button>
+              )}
               <button type="button" className="suggestion-dismiss" aria-label={`Dismiss ${s.label}`} title="Dismiss" onClick={() => dismiss(s.id)}>
                 <X size={13} aria-hidden="true" />
               </button>
@@ -158,6 +176,16 @@ export function SuggestionTray() {
                     <ListPlus size={13} aria-hidden="true" /> {scheduled.has(s.id) ? 'Added' : 'Add to Schedule'}
                   </button>
                 </span>
+                {sendable && (
+                  <button
+                    type="button"
+                    className="button"
+                    title="Send to device: the exact words as a cue in that computer's tray. It does not go live there."
+                    onClick={(e) => openCueMenu(e, { kind: 'text', title: 'Statement', text: s.text })}
+                  >
+                    <Send size={13} aria-hidden="true" /> Send to device
+                  </button>
+                )}
               </div>
               <button type="button" className="suggestion-dismiss" aria-label="Dismiss statement" title="Dismiss" onClick={() => dismiss(s.id)}>
                 <X size={13} aria-hidden="true" />

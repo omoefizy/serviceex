@@ -1,7 +1,7 @@
 import { ListPlus, Pencil, Plus, Upload } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { SongInput, SongSummary } from '../../shared/types'
-import { openSendMenu, setShareDrag } from '../lib/sharing'
+import { openSongMenu, setShareDrag } from '../lib/sharing'
 import { useOperatorStore } from '../store'
 import { AddSongModal } from './AddSongModal'
 import { ImportModal } from './ImportModal'
@@ -91,7 +91,7 @@ export function SongList() {
               title="Click to preview, double-click to go live, right-click to send to another computer"
               draggable
               onDragStart={(e) => setShareDrag(e, { type: 'song', id: song.id })}
-              onContextMenu={(e) => openSendMenu(e, [{ type: 'song', id: song.id }])}
+              onContextMenu={(e) => openSongMenu(e, song.id)}
             >
               <span className="song-title">{song.title}</span>
               {song.author && <span className="song-author">{song.author}</span>}

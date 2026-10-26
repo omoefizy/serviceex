@@ -2,6 +2,7 @@ import { Bookmark, EyeOff, ListPlus, Pin, PinOff, Play, RefreshCw, SkipForward, 
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { hasFormatting, matching, plainText, richOrPlain, trimRich } from '../../shared/richText'
 import type { AppSettings, LowerThirdAnimation, RichText, SavedLowerThirdLine } from '../../shared/types'
+import { canSendCues, openCueMenu } from '../lib/sharing'
 import { LOWER_THIRD_HEADLINE_ID, MOD } from '../lib/shortcuts'
 import { selectLowerThirdStyle, useOperatorStore, type LowerThirdLine } from '../store'
 import { LowerThirdGraphic } from './LowerThird'
@@ -246,7 +247,13 @@ export function LowerThirdPanel() {
             <ol className="lower-third-list points">
               {points.map((point, index) => (
                 <li key={index} className={index === pointIndex ? 'current' : ''}>
-                  <button type="button" className="lower-third-line" title="Show this point" onClick={() => showPoint(index)}>
+                  <button
+                    type="button"
+                    className="lower-third-line"
+                    title={canSendCues() ? 'Show this point; right-click to send it to another computer' : 'Show this point'}
+                    onClick={() => showPoint(index)}
+                    onContextMenu={(e) => canSendCues() && openCueMenu(e, { kind: 'point', title: 'Point', text: point })}
+                  >
                     <strong>{point}</strong>
                   </button>
                 </li>

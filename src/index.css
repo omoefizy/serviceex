@@ -1481,8 +1481,22 @@ button {
   background: var(--panel);
 }
 
-.preview-column > .preview-panel {
+.preview-column > .preview-panel,
+.preview-column > .layout-slot > .preview-panel {
   flex-shrink: 0;
+}
+
+.preview-column[hidden] {
+  display: none;
+}
+
+/* A panel the layout hides stays mounted; shown, its wrapper does not take part in the layout. */
+.layout-slot {
+  display: contents;
+}
+
+.layout-slot[hidden] {
+  display: none;
 }
 
 .listener-panel {
@@ -5937,4 +5951,267 @@ button {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* ---------- Device sharing: layouts, live titles, cues, the shared service and library sync ---------- */
+
+.layout-menu-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 200px;
+}
+
+.layout-menu-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout-menu .live-menu-list kbd {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* A chip with the title of what that computer has live. */
+.device-chip:has(.device-live) {
+  max-width: 300px;
+}
+
+.device-live {
+  overflow: hidden;
+  padding-left: var(--space-1);
+  border-left: 1px solid var(--border);
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.send-menu-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1-5) var(--space-2) var(--space-0-5);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.cue-tray {
+  width: min(420px, 90vw);
+}
+
+.cue-tray h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.cue-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+
+.cue-composer-row {
+  display: flex;
+  gap: var(--space-1-5);
+}
+
+.cue-composer-row .button,
+.cue-actions .button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.cue-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cue-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+}
+
+.cue-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: 12px;
+}
+
+.cue-from {
+  flex: 1;
+  color: var(--text-muted);
+}
+
+.cue-kind {
+  padding: 0 var(--space-1-5);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* The exact words as sent. */
+.cue-text {
+  max-height: 160px;
+  margin: 0;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+.cue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+}
+
+.toolbar-icon.cue-flash {
+  animation: suggestion-flash 0.6s ease-in-out 4;
+}
+
+.suggestion-send {
+  position: absolute;
+  top: var(--space-1);
+  right: calc(var(--space-1) + 22px);
+  padding: var(--space-0-5);
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.suggestion-send:hover {
+  color: var(--text);
+}
+
+.shared-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: 0 var(--space-3) var(--space-2);
+  font-size: 12px;
+}
+
+.shared-bar .button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.shared-bar.active .input {
+  width: auto;
+}
+
+.shared-status {
+  display: inline-flex;
+  flex: 1 1 100%;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.shared-bar.offline .shared-status {
+  color: var(--live);
+}
+
+.shared-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  font-size: 11px;
+}
+
+.shared-owner {
+  padding: 0 var(--space-1);
+  border-radius: 999px;
+  background: var(--accent-soft);
+}
+
+.layout-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.layout-list > li.active .layout-name {
+  font-weight: 600;
+}
+
+.layout-name {
+  flex: 1;
+  min-width: 120px;
+}
+
+.layout-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0 var(--space-5);
+}
+
+.layout-panels,
+.layout-themes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5) var(--space-3);
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.troubleshooting summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.troubleshooting ol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  padding-left: var(--space-5);
+}
+
+.sync-files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  font-size: 12px;
+}
+
+.sync-files li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.sync-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-files li.failed .hint {
+  color: var(--live);
 }

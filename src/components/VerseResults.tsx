@@ -1,7 +1,8 @@
-import { Eye, ListPlus } from 'lucide-react'
+import { Eye, ListPlus, Send } from 'lucide-react'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
 import { formatReference } from '../../shared/parseReference'
 import { canMakeRange, passageOf, previewPassage, resultSegments, type ResultItem } from '../lib/scripture'
+import { canSendCues, openCueMenu, useSharingStore } from '../lib/sharing'
 import { verseCaption } from '../lib/slides'
 import { selectLiveSlide, selectPreviewSlide, useOperatorStore } from '../store'
 
@@ -82,17 +83,25 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
     return () => observer.disconnect()
   }, [hasMore, onLoadMore, items.length])
 
+  // Re-renders when sharing turns on or off, for Send to device.
+  useSharingStore((st) => st.status?.enabled)
+  const sendable = canSendCues()
   const chosen = items.filter((item) => selected.has(item.key))
   const rangeOk = canMakeRange(chosen)
   const effectiveMode = mode === 'range' && !rangeOk ? 'sequence' : mode
 
-  async function use(list: ResultItem[], how: 'range' | 'sequence', action: 'preview' | 'schedule') {
+  /** `at` sends the passage to another computer as a cue, from a menu there; it never goes live there. */
+  async function use(list: ResultItem[], how: 'range' | 'sequence', action: 'preview' | 'schedule' | 'send', at?: { clientX: number; clientY: number }) {
     setError(null)
     try {
       const passage = await passageOf(list, how)
       if (!passage) throw new Error('Those verses could not be read from the Bible.')
       if (action === 'preview') previewPassage(passage)
-      else await addToSchedule('scripture', null, passage)
+      else if (action === 'send' && at) {
+        const text = passage.verses.map((v) => v.text).join('\n')
+        openCueMenu({ ...at, preventDefault() {} }, { kind: 'verse', title: passage.title, text, verses: passage.verses })
+        return
+      } else await addToSchedule('scripture', null, passage)
       onUse?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -152,6 +161,11 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
           >
             <ListPlus size={15} aria-hidden="true" /> Schedule
           </button>
+          {sendable && (
+            <button type="button" className="button" title="Send to device: a cue in another computer's tray" onClick={(e) => use(chosen, effectiveMode, 'send', e)}>
+              <Send size={15} aria-hidden="true" /> Send
+            </button>
+          )}
           <button type="button" className="button" onClick={() => setSelected(new Set())}>
             Clear
           </button>
@@ -188,7 +202,12 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
                     caption && caption === previewCaption ? 'preview' : '',
                   ].join(' ')}
                   aria-selected={index === active}
-                  title="Click to preview, double-click to go live"
+                  title={sendable ? 'Click to preview, double-click to go live, right-click to send to another computer' : 'Click to preview, double-click to go live'}
+                  onContextMenu={(e) => {
+                    if (!sendable) return
+                    e.preventDefault()
+                    use([item], 'sequence', 'send', { clientX: e.clientX, clientY: e.clientY })
+                  }}
                   // Keep the keyboard in the search box.
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {

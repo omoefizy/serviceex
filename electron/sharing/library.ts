@@ -46,7 +46,7 @@ const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLow
 export const receivedFolder = () => path.join(app.getPath('documents'), 'ServiceEx Received')
 
 /** A file name in `folder` that is not taken yet: "Name.ext", then "Name 2.ext" and so on. */
-function freeName(folder: string, name: string): string {
+export function freeName(folder: string, name: string): string {
   const extension = path.extname(name)
   const base = path.basename(name, extension)
   let candidate = name

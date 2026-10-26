@@ -22,6 +22,7 @@ import { AnnouncementModal } from './AnnouncementModal'
 import { NewServiceModal } from './NewServiceModal'
 import { PresentationJobs } from './PresentationsPanel'
 import { SermonModal } from './SermonModal'
+import { SharedItemList, SharedServiceBar } from './SharedServicePanel'
 
 const TYPE_LABELS: Record<ServiceItemType, string> = {
   song: 'Song',
@@ -71,6 +72,7 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
   const [dropIndex, setDropIndex] = useState<number | null>(null)
 
   const service = useOperatorStore((s) => s.service)
+  const sharedOpen = useSharingStore((s) => (s.shared?.role ?? 'none') !== 'none')
   const activeItemId = useOperatorStore((s) => s.activeItemId)
   const liveItemId = useOperatorStore((s) => s.live.scheduleItemId)
   const openService = useOperatorStore((s) => s.openService)
@@ -268,75 +270,81 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
         </button>
       </div>
 
+      <SharedServiceBar />
+
       {error && <p className="error">{error}</p>}
 
-      <ol className="schedule-items">
-        {items.map((item, index) => (
-          <li
-            key={item.id}
-            draggable
-            className={[
-              'schedule-item',
-              item.id === activeItemId && 'active',
-              item.id === liveItemId && 'on-air',
-              item.id === dragId && 'dragging',
-              dropIndex === index && 'drop-before',
-              dropIndex === items.length && index === items.length - 1 && 'drop-after',
-            ]
-              .filter(Boolean)
-              .join(' ')}
-            onDragStart={(e) => {
-              setDragId(item.id)
-              e.dataTransfer.effectAllowed = 'move'
-              e.dataTransfer.setData('text/plain', String(item.id))
-              // It can also be dropped on a device chip to send it.
-              const source = shareSourceOf(item)
-              if (source) setShareDrag(e, source)
-            }}
-            onContextMenu={(e) => {
-              const source = shareSourceOf(item)
-              if (source) openSendMenu(e, [source])
-            }}
-            onDragOver={(e) => handleDragOver(e, index)}
-            onDrop={handleDrop}
-            onDragEnd={() => {
-              setDragId(null)
-              setDropIndex(null)
-            }}
-          >
-            <button
-              className="schedule-item-main"
-              title="Click to preview, double-click to go live"
-              onClick={() => run(() => loadItem(item))}
-              onDoubleClick={() =>
-                run(async () => {
-                  if (await loadItem(item)) useOperatorStore.getState().goLive(0)
-                })
-              }
+      {sharedOpen ? (
+        <SharedItemList />
+      ) : (
+        <ol className="schedule-items">
+          {items.map((item, index) => (
+            <li
+              key={item.id}
+              draggable
+              className={[
+                'schedule-item',
+                item.id === activeItemId && 'active',
+                item.id === liveItemId && 'on-air',
+                item.id === dragId && 'dragging',
+                dropIndex === index && 'drop-before',
+                dropIndex === items.length && index === items.length - 1 && 'drop-after',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              onDragStart={(e) => {
+                setDragId(item.id)
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/plain', String(item.id))
+                // It can also be dropped on a device chip to send it.
+                const source = shareSourceOf(item)
+                if (source) setShareDrag(e, source)
+              }}
+              onContextMenu={(e) => {
+                const source = shareSourceOf(item)
+                if (source) openSendMenu(e, [source])
+              }}
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDrop={handleDrop}
+              onDragEnd={() => {
+                setDragId(null)
+                setDropIndex(null)
+              }}
             >
-              {item.type === 'presentation' && item.payload.pages[0] ? (
-                // Its first slide; the picture changes when the original is saved again.
-                <img className="schedule-item-thumb" src={item.payload.pages[0]} alt="Presentation" />
-              ) : (
-                <ItemIcon type={item.type} />
-              )}
-              <span className="schedule-item-title">{item.title}</span>
-            </button>
-            <button
-              className="icon-button"
-              aria-label={`Remove ${item.title} from schedule`}
-              title="Remove from schedule"
-              onClick={() => run(() => removeFromSchedule(item.id))}
-            >
-              <X size={14} />
-            </button>
-          </li>
-        ))}
-        {service && items.length === 0 && (
-          <li className="empty">Add songs and scripture with their + buttons, or add an announcement below.</li>
-        )}
-        {!service && <li className="empty">Create a service to start a run list.</li>}
-      </ol>
+              <button
+                className="schedule-item-main"
+                title="Click to preview, double-click to go live"
+                onClick={() => run(() => loadItem(item))}
+                onDoubleClick={() =>
+                  run(async () => {
+                    if (await loadItem(item)) useOperatorStore.getState().goLive(0)
+                  })
+                }
+              >
+                {item.type === 'presentation' && item.payload.pages[0] ? (
+                  // Its first slide; the picture changes when the original is saved again.
+                  <img className="schedule-item-thumb" src={item.payload.pages[0]} alt="Presentation" />
+                ) : (
+                  <ItemIcon type={item.type} />
+                )}
+                <span className="schedule-item-title">{item.title}</span>
+              </button>
+              <button
+                className="icon-button"
+                aria-label={`Remove ${item.title} from schedule`}
+                title="Remove from schedule"
+                onClick={() => run(() => removeFromSchedule(item.id))}
+              >
+                <X size={14} />
+              </button>
+            </li>
+          ))}
+          {service && items.length === 0 && (
+            <li className="empty">Add songs and scripture with their + buttons, or add an announcement below.</li>
+          )}
+          {!service && <li className="empty">Create a service to start a run list.</li>}
+        </ol>
+      )}
 
       <footer className="schedule-footer">
         <button className="button" disabled={!service} onClick={() => setAnnouncing(true)}>

@@ -23,6 +23,7 @@ import type { OutputMode } from '../../shared/types'
 import { MOD, MODE_KEYS } from '../lib/shortcuts'
 import { selectStreamState, useOperatorStore } from '../store'
 import { AlertsPanel } from './AlertsPanel'
+import { LayoutMenu } from './LayoutMenu'
 import { SharingBar } from './SharingBar'
 
 const MODE_ICONS: Record<OutputMode, LucideIcon> = { show: Monitor, black: Square, clear: Eraser, logo: Image }
@@ -271,6 +272,7 @@ export function Toolbar() {
       <SharingBar />
 
       <div className="toolbar-actions">
+        <LayoutMenu />
         <button className="toolbar-search" onClick={() => setPaletteOpen(true)} title={`Search songs, verses and actions (${MOD}K)`}>
           <Search size={15} aria-hidden="true" />
           <span>Search</span>

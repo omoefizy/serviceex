@@ -1,4 +1,4 @@
-import { Inbox as InboxIcon, Laptop, Lock, RotateCw, Send, Wifi, X } from 'lucide-react'
+import { BellRing, Copy, Inbox as InboxIcon, Laptop, Lock, RotateCw, Send, Unplug, Wifi, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { formatBytes } from '../../shared/sharing'
 import type { SharePeer, TransferProgress } from '../../shared/types'
@@ -7,27 +7,47 @@ import {
   canDropOnDevice,
   droppedSources,
   errorText,
+  sendCueTo,
   sendTo,
+  SHARED_ITEM_DRAG_TYPE,
   showMessage,
   startSharing,
+  updateShared,
   useSharingStore,
 } from '../lib/sharing'
 import { useOperatorStore } from '../store'
+import { CueTray } from './CueTray'
 import { InboxPanel } from './InboxPanel'
 
-/** A device on the network: drop files or items on it to send them; click an unpaired one to pair. */
+/**
+ * A device on the network: drop files or items on it to send them, or a shared service item to make it that
+ * device's; click an unpaired one to pair. It shows the title of what that computer has live.
+ */
 function DeviceChip({ peer }: { peer: SharePeer }) {
   const [over, setOver] = useState(false)
-  const status = peer.online ? (peer.paired ? 'Paired' : 'Not paired yet: click to pair') : 'Paired, not on the network right now'
+  const status = peer.disconnected
+    ? 'Disconnected in Settings'
+    : peer.online
+      ? peer.paired
+        ? 'Online'
+        : 'Not paired yet: click to pair'
+      : 'Offline'
+  const live = peer.liveTitle ? ` Live: ${peer.liveTitle}.` : ''
   return (
     <button
       type="button"
       className={`device-chip${peer.paired ? ' paired' : ''}${peer.online ? '' : ' offline'}${over ? ' drag-over' : ''}`}
-      title={`${peer.name}: ${status}. Drop files or items here to send them.`}
+      title={`${peer.name}: ${status}.${live} Drop files or items here to send them, or a shared service item to give it to this device.`}
       onClick={() => {
         if (!peer.paired && peer.online) beginPairing(peer).catch(console.error)
       }}
       onDragOver={(e) => {
+        if (e.dataTransfer.types.includes(SHARED_ITEM_DRAG_TYPE) && peer.paired) {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'link'
+          setOver(true)
+          return
+        }
         if (!canDropOnDevice(e) || !peer.online) return
         e.preventDefault()
         e.dataTransfer.dropEffect = 'copy'
@@ -35,6 +55,14 @@ function DeviceChip({ peer }: { peer: SharePeer }) {
       }}
       onDragLeave={() => setOver(false)}
       onDrop={(e) => {
+        const shared = e.dataTransfer.getData(SHARED_ITEM_DRAG_TYPE)
+        if (shared && peer.paired) {
+          e.preventDefault()
+          e.stopPropagation()
+          setOver(false)
+          updateShared(shared, { ownerDevice: peer.id }).then(() => showMessage(`Given to ${peer.name}.`), console.error)
+          return
+        }
         if (!canDropOnDevice(e) || !peer.online) return
         e.preventDefault()
         e.stopPropagation()
@@ -47,7 +75,8 @@ function DeviceChip({ peer }: { peer: SharePeer }) {
       <span className={`device-dot${peer.online ? ' online' : ''}`} aria-hidden="true" />
       <Laptop size={13} aria-hidden="true" />
       <span className="device-name">{peer.name}</span>
-      {peer.paired && <Lock size={11} aria-label="Paired" />}
+      {peer.disconnected ? <Unplug size={11} aria-label="Disconnected" /> : peer.paired && <Lock size={11} aria-label="Paired" />}
+      {peer.liveTitle && <span className="device-live">{peer.liveTitle}</span>}
     </button>
   )
 }
@@ -214,11 +243,23 @@ function SendMenu() {
   }, [menu])
 
   if (!menu) return null
-  const online = peers.filter((p) => p.online)
+  const online = peers.filter((p) => p.online && !p.disconnected)
   const choose = (peer: SharePeer) => {
     useSharingStore.setState({ sendMenu: null })
     sendTo(peer, menu.sources).catch(console.error)
   }
+  const chooseCue = (peer: SharePeer) => {
+    useSharingStore.setState({ sendMenu: null })
+    if (menu.cue) sendCueTo(peer, menu.cue).catch(console.error)
+  }
+  const devices = (onChoose: (peer: SharePeer) => void) =>
+    online.map((peer) => (
+      <button key={peer.id} type="button" role="menuitem" onClick={() => onChoose(peer)}>
+        <Laptop size={15} aria-hidden="true" />
+        <span>{peer.name}</span>
+        {peer.paired ? <Lock size={12} aria-label="Paired" /> : <span className="hint">pair first</span>}
+      </button>
+    ))
   return (
     <div
       ref={ref}
@@ -228,7 +269,7 @@ function SendMenu() {
       style={{ left: Math.min(menu.x, window.innerWidth - 240), top: Math.min(menu.y, window.innerHeight - 200) }}
     >
       <div className="send-menu-title">
-        <Send size={13} aria-hidden="true" /> Send to
+        <Send size={13} aria-hidden="true" /> {menu.cue ? 'Send to device' : 'Send to'}
       </div>
       {!enabled ? (
         <button
@@ -243,14 +284,19 @@ function SendMenu() {
         </button>
       ) : online.length === 0 ? (
         <span className="send-menu-empty">No other ServiceEx computers found on this network</span>
+      ) : menu.cue && menu.sources.length > 0 ? (
+        <>
+          <div className="send-menu-group">
+            <BellRing size={12} aria-hidden="true" /> As a cue, to their tray
+          </div>
+          {devices(chooseCue)}
+          <div className="send-menu-group">
+            <Copy size={12} aria-hidden="true" /> A copy, to their Inbox
+          </div>
+          {devices(choose)}
+        </>
       ) : (
-        online.map((peer) => (
-          <button key={peer.id} type="button" role="menuitem" onClick={() => choose(peer)}>
-            <Laptop size={15} aria-hidden="true" />
-            <span>{peer.name}</span>
-            {peer.paired ? <Lock size={12} aria-label="Paired" /> : <span className="hint">pair first</span>}
-          </button>
-        ))
+        devices(menu.cue ? chooseCue : choose)
       )}
     </div>
   )
@@ -265,6 +311,7 @@ export function SharingBar() {
   const inboxOpen = useSharingStore((s) => s.inboxOpen)
   const transfers = useSharingStore((s) => s.transfers)
   const message = useSharingStore((s) => s.message)
+  const chips = useOperatorStore((s) => s.settings.sharingDeviceChips)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => startSharing(), [])
@@ -296,7 +343,7 @@ export function SharingBar() {
 
   return (
     <>
-      {enabled && (
+      {enabled && chips && (
         <div className="device-bar" role="group" aria-label="Computers on the local network">
           <Wifi size={14} className="device-bar-icon" aria-label="Local network sharing is on" />
           {shown.length === 0 ? (
@@ -333,6 +380,7 @@ export function SharingBar() {
           {inboxOpen && <InboxPanel />}
         </div>
       )}
+      <CueTray />
       <PairDialog />
       <PairCode />
       <SendMenu />

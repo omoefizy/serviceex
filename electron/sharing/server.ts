@@ -23,8 +23,13 @@ import {
   responseAad,
   type SealedHeader,
   type SealedResponse,
+  type SecureOp,
   type SecureOps,
+  type SecureReply,
 } from './protocol'
+
+/** Operations the server leaves to its owner: presence, cues, the shared service and library sync. */
+export type ExtraOp = Exclude<SecureOp, 'ping' | 'offer' | 'chunk' | 'finish'>
 
 export interface ServerOptions {
   peers: PeerStore
@@ -39,6 +44,8 @@ export interface ServerOptions {
   onReceived(item: InboxItem): void
   /** How long a code stays good: 2 minutes by default. */
   pairingTimeoutMs?: number
+  /** Answers the other sealed operations; the request was opened and checked, and comes from a paired device. */
+  handle?(op: ExtraOp, from: { id: string; name: string }, header: Record<string, unknown>, body: Buffer): Promise<object | SecureReply>
 }
 
 interface PairingSession {
@@ -297,8 +304,11 @@ export class ShareServer {
     const host = remoteHost(req)
     if (host && host !== peer.host) this.options.peers.update(peer.id, { host }).catch(console.error)
 
-    const answer = await this.run(peer.id, peer.name, header, body)
-    const sealed = seal(channelKey(peer.secret, peer.id, myId, 'response'), responseAad(peer.id, myId, header.nonce), answer)
+    const answer: object | SecureReply = peer.disconnected
+      ? ({ ok: false, error: `${this.options.deviceName()} has disconnected from this computer in its Settings.`, code: 'disconnected' } satisfies SealedResponse<object>)
+      : await this.run(peer.id, peer.name, header, body)
+    const reply = 'body' in answer && Buffer.isBuffer(answer.body) ? (answer as SecureReply) : { response: answer, body: Buffer.alloc(0) }
+    const sealed = seal(channelKey(peer.secret, peer.id, myId, 'response'), responseAad(peer.id, myId, header.nonce), reply.response, reply.body)
     res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': sealed.length })
     res.end(sealed)
   }
@@ -317,7 +327,7 @@ export class ShareServer {
     this.nonces.set(key, now)
   }
 
-  private async run(fromId: string, fromName: string, header: SealedHeader & Record<string, unknown>, body: Buffer): Promise<object> {
+  private async run(fromId: string, fromName: string, header: SealedHeader & Record<string, unknown>, body: Buffer): Promise<object | SecureReply> {
     switch (header.op) {
       case 'ping':
         return { ok: true, name: this.options.deviceName() } satisfies SealedResponse<SecureOps['ping']['response']>
@@ -327,6 +337,14 @@ export class ShareServer {
         return this.chunk(fromId, header, body)
       case 'finish':
         return this.finish(fromId, fromName, header)
+      case 'presence':
+      case 'cue':
+      case 'serviceJoin':
+      case 'serviceSync':
+      case 'libraryIndex':
+      case 'libraryChunk':
+        if (this.options.handle) return this.options.handle(header.op, { id: fromId, name: fromName }, header, body)
+        return { ok: false, error: 'That is not turned on here', code: 'off' } satisfies SealedResponse<object>
       default:
         return { ok: false, error: 'Unknown request', code: 'bad' } satisfies SealedResponse<object>
     }

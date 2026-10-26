@@ -40,6 +40,9 @@ const SECTIONS = [
   'Live PowerPoint diagnostics',
   'Live highlighting',
   'Sharing',
+  'Devices',
+  'Library sync',
+  'Layouts',
   'Autosave and backups',
 ]
 

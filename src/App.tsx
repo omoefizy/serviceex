@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { layoutById, showsPanel } from '../shared/layouts'
 import { CommandPalette } from './components/CommandPalette'
 import { LivePreview } from './components/LivePreview'
 import { LowerThirdPanel } from './components/LowerThirdPanel'
@@ -17,6 +18,7 @@ import { Splitter } from './components/Splitter'
 import { ThemeEditor } from './components/ThemeEditor'
 import { Toolbar } from './components/Toolbar'
 import { highlightKey, toggleHighlightMode } from './lib/highlights'
+import { cycleLayout, switchLayout } from './lib/layouts'
 import { nudgeVerse, stepVerseSize } from './lib/scriptureAdjust'
 import { focusLowerThirdHeadline, isTyping, MODE_KEYS } from './lib/shortcuts'
 import { slideTranslation } from './lib/translations'
@@ -51,8 +53,17 @@ const LIBRARY_TABS = [
   { id: 'media', label: 'Media' },
 ] as const
 
+/** Keeps a panel mounted (so it keeps its state, and the listener keeps listening) while the layout hides it. */
+function Slot({ show, children }: { show: boolean; children: ReactNode }) {
+  return (
+    <div className="layout-slot" hidden={!show}>
+      {children}
+    </div>
+  )
+}
+
 function App() {
-  const [libraryTab, setLibraryTab] = useState<(typeof LIBRARY_TABS)[number]['id']>('songs')
+  const [chosenTab, setLibraryTab] = useState<(typeof LIBRARY_TABS)[number]['id']>('songs')
   const [sizes, setSizes] = usePersistentState('worshipdeck.panelSizes', DEFAULT_SIZES, isPanelSizes)
   const [scheduleCollapsed, setScheduleCollapsed] = usePersistentState('worshipdeck.scheduleCollapsed', false, isBoolean)
   const editingSongId = useOperatorStore((s) => s.editingSongId)
@@ -61,6 +72,20 @@ function App() {
   const streamPanelOpen = useOperatorStore((s) => s.streamPanelOpen)
   const paletteOpen = useOperatorStore((s) => s.paletteOpen)
   const appearance = useOperatorStore((s) => s.settings.appearance)
+  const layout = useOperatorStore((s) => layoutById(s.settings.layouts, s.settings.activeLayoutId))
+  const libraryTabs = LIBRARY_TABS.filter((tab) => showsPanel(layout, tab.id))
+  const libraryTab = libraryTabs.some((tab) => tab.id === chosenTab) ? chosenTab : (libraryTabs[0]?.id ?? chosenTab)
+  // Editors and Settings open in the centre whatever the layout, so they can always be reached.
+  const centreOpen = editingSongId !== null || themeEditorOpen || settingsOpen || streamPanelOpen
+  const show = {
+    library: libraryTabs.length > 0,
+    centre: showsPanel(layout, 'slides') || centreOpen,
+    live: showsPanel(layout, 'live'),
+    points: showsPanel(layout, 'points'),
+    listener: showsPanel(layout, 'listener'),
+    schedule: showsPanel(layout, 'schedule'),
+  }
+  const previewColumn = show.live || show.points || show.listener
 
   const resize = (key: keyof PanelSizes) => (value: number) => setSizes((current) => ({ ...current, [key]: value }))
 
@@ -105,6 +130,7 @@ function App() {
     let lastStage = ''
     let lastStream = ''
     let lastPowerPoint = ''
+    let lastLive = ''
     const send = () => {
       const s = useOperatorStore.getState()
       const output = selectOutputState(s)
@@ -130,6 +156,14 @@ function App() {
       if (powerPointJson !== lastPowerPoint) {
         lastPowerPoint = powerPointJson
         window.api.livePowerPoint.sync(powerPoint)
+      }
+      // The title of what is live, title only, for the other computers' device chips; library sync waits while a slide is live.
+      const slideLive = s.live.slideIndex !== null && s.live.mode === 'show'
+      const live = { title: s.live.slideIndex !== null ? s.live.title : null, slideLive }
+      const liveJson = JSON.stringify(live)
+      if (liveJson !== lastLive) {
+        lastLive = liveJson
+        window.api.sharing.setLive(live)
       }
     }
     send()
@@ -184,6 +218,21 @@ function App() {
       if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'l') {
         e.preventDefault()
         focusLowerThirdHeadline()
+        return
+      }
+      // Cmd+Alt+1 to 9 (Ctrl+Alt+1 to 9) switch to that layout; Cmd+Shift+L (Ctrl+Shift+L) to the next one.
+      const layoutDigit = /^Digit([1-9])$/.exec(e.code)
+      if (layoutDigit && mod && e.altKey && !e.shiftKey) {
+        const target = st.settings.layouts[Number(layoutDigit[1]) - 1]
+        if (target) {
+          e.preventDefault()
+          switchLayout(target.id).catch(console.error)
+        }
+        return
+      }
+      if (mod && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'l') {
+        e.preventDefault()
+        cycleLayout(1).catch(console.error)
         return
       }
       // Live highlighting: Esc clears the live slide's marks, Cmd+H (Ctrl+H) toggles highlight mode, 1 to 5 pick a color.
@@ -254,13 +303,13 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  // The columns the layout shows, each with the splitter after it. Without the centre the preview column takes the room.
   const columns = [
-    `${sizes.library}px`,
-    'auto',
-    'minmax(360px, 1fr)',
-    'auto',
-    `${sizes.preview}px`,
-    ...(scheduleCollapsed ? ['auto'] : ['auto', `${sizes.schedule}px`]),
+    ...(show.library ? [`${sizes.library}px`, 'auto'] : []),
+    ...(show.centre ? ['minmax(360px, 1fr)'] : []),
+    ...(show.centre && previewColumn ? ['auto'] : []),
+    ...(previewColumn ? [show.centre ? `${sizes.preview}px` : 'minmax(260px, 1fr)'] : []),
+    ...(show.schedule ? (scheduleCollapsed ? ['auto'] : [...(show.centre || previewColumn ? ['auto'] : []), show.centre || previewColumn ? `${sizes.schedule}px` : '1fr']) : []),
   ].join(' ')
 
   return (
@@ -269,82 +318,96 @@ function App() {
         <Toolbar />
       </PanelBoundary>
       <main className="operator" style={{ gridTemplateColumns: columns }}>
-        <div className="library">
-          <div className="library-tabs" role="tablist">
-            {LIBRARY_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                role="tab"
-                aria-selected={libraryTab === tab.id}
-                className={`library-tab${libraryTab === tab.id ? ' active' : ''}`}
-                onClick={() => setLibraryTab(tab.id)}
-              >
-                {tab.label}
-              </button>
-            ))}
+        <Slot show={show.library}>
+          <div className="library">
+            <div className="library-tabs" role="tablist">
+              {libraryTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  role="tab"
+                  aria-selected={libraryTab === tab.id}
+                  className={`library-tab${libraryTab === tab.id ? ' active' : ''}`}
+                  onClick={() => setLibraryTab(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            {/* All stay mounted so each keeps its search text when switching tabs. */}
+            <div className="library-page" hidden={libraryTab !== 'songs'}>
+              <PanelBoundary name="Songs">
+                <SongList />
+              </PanelBoundary>
+            </div>
+            <div className="library-page" hidden={libraryTab !== 'scripture'}>
+              <PanelBoundary name="Scripture">
+                <ScripturePanel />
+              </PanelBoundary>
+            </div>
+            <div className="library-page" hidden={libraryTab !== 'presentations'}>
+              <PanelBoundary name="Presentations">
+                <PresentationsPanel />
+              </PanelBoundary>
+            </div>
+            <div className="library-page" hidden={libraryTab !== 'media'}>
+              <PanelBoundary name="Media">
+                <MediaPanel />
+              </PanelBoundary>
+            </div>
           </div>
-          {/* All stay mounted so each keeps its search text when switching tabs. */}
-          <div className="library-page" hidden={libraryTab !== 'songs'}>
-            <PanelBoundary name="Songs">
-              <SongList />
+          <Splitter label="Resize library" value={sizes.library} min={LIMITS.library[0]} max={LIMITS.library[1]} direction={1} onChange={resize('library')} />
+        </Slot>
+        <Slot show={show.centre}>
+          {editingSongId !== null ? (
+            <PanelBoundary key="songEditor" name="Song editor">
+              <SongEditor key={editingSongId} songId={editingSongId} />
             </PanelBoundary>
-          </div>
-          <div className="library-page" hidden={libraryTab !== 'scripture'}>
-            <PanelBoundary name="Scripture">
-              <ScripturePanel />
+          ) : themeEditorOpen ? (
+            <PanelBoundary key="themes" name="Themes">
+              <ThemeEditor />
             </PanelBoundary>
-          </div>
-          <div className="library-page" hidden={libraryTab !== 'presentations'}>
-            <PanelBoundary name="Presentations">
-              <PresentationsPanel />
+          ) : settingsOpen ? (
+            <PanelBoundary key="settings" name="Settings">
+              <SettingsPanel />
             </PanelBoundary>
-          </div>
-          <div className="library-page" hidden={libraryTab !== 'media'}>
-            <PanelBoundary name="Media">
-              <MediaPanel />
+          ) : streamPanelOpen ? (
+            <PanelBoundary key="stream" name="Stream">
+              <StreamPanel />
             </PanelBoundary>
-          </div>
+          ) : (
+            <PanelBoundary key="slides" name="Slides">
+              <SlideGrid />
+            </PanelBoundary>
+          )}
+        </Slot>
+        <Slot show={show.centre && previewColumn}>
+          <Splitter label="Resize live output" value={sizes.preview} min={LIMITS.preview[0]} max={LIMITS.preview[1]} direction={-1} onChange={resize('preview')} />
+        </Slot>
+        <div className="preview-column" hidden={!previewColumn}>
+          <Slot show={show.live}>
+            <PanelBoundary name="Output controls">
+              <LivePreview />
+            </PanelBoundary>
+          </Slot>
+          <Slot show={show.points}>
+            <PanelBoundary name="Lower third">
+              <LowerThirdPanel />
+            </PanelBoundary>
+          </Slot>
+          <Slot show={show.listener}>
+            <PanelBoundary name="Listener">
+              <ListenerPanel />
+            </PanelBoundary>
+          </Slot>
         </div>
-        <Splitter label="Resize library" value={sizes.library} min={LIMITS.library[0]} max={LIMITS.library[1]} direction={1} onChange={resize('library')} />
-        {editingSongId !== null ? (
-          <PanelBoundary key="songEditor" name="Song editor">
-            <SongEditor key={editingSongId} songId={editingSongId} />
+        <Slot show={show.schedule}>
+          {!scheduleCollapsed && (show.centre || previewColumn) && (
+            <Splitter label="Resize schedule" value={sizes.schedule} min={LIMITS.schedule[0]} max={LIMITS.schedule[1]} direction={-1} onChange={resize('schedule')} />
+          )}
+          <PanelBoundary name="Schedule">
+            <SchedulePanel collapsed={scheduleCollapsed} onCollapsedChange={setScheduleCollapsed} />
           </PanelBoundary>
-        ) : themeEditorOpen ? (
-          <PanelBoundary key="themes" name="Themes">
-            <ThemeEditor />
-          </PanelBoundary>
-        ) : settingsOpen ? (
-          <PanelBoundary key="settings" name="Settings">
-            <SettingsPanel />
-          </PanelBoundary>
-        ) : streamPanelOpen ? (
-          <PanelBoundary key="stream" name="Stream">
-            <StreamPanel />
-          </PanelBoundary>
-        ) : (
-          <PanelBoundary key="slides" name="Slides">
-            <SlideGrid />
-          </PanelBoundary>
-        )}
-        <Splitter label="Resize live output" value={sizes.preview} min={LIMITS.preview[0]} max={LIMITS.preview[1]} direction={-1} onChange={resize('preview')} />
-        <div className="preview-column">
-          <PanelBoundary name="Output controls">
-            <LivePreview />
-          </PanelBoundary>
-          <PanelBoundary name="Lower third">
-            <LowerThirdPanel />
-          </PanelBoundary>
-          <PanelBoundary name="Listener">
-            <ListenerPanel />
-          </PanelBoundary>
-        </div>
-        {!scheduleCollapsed && (
-          <Splitter label="Resize schedule" value={sizes.schedule} min={LIMITS.schedule[0]} max={LIMITS.schedule[1]} direction={-1} onChange={resize('schedule')} />
-        )}
-        <PanelBoundary name="Schedule">
-          <SchedulePanel collapsed={scheduleCollapsed} onCollapsedChange={setScheduleCollapsed} />
-        </PanelBoundary>
+        </Slot>
       </main>
       {paletteOpen && <CommandPalette />}
     </div>
