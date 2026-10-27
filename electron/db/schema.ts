@@ -118,6 +118,53 @@ export function initSchema(db: Database.Database): void {
     -- verses_fts, so it is always up to date.
     CREATE VIRTUAL TABLE IF NOT EXISTS verses_fts_vocab USING fts5vocab(verses_fts, 'row');
 
+    -- Sermons saved from listening sessions. sermon_date is an ISO date; created_at an ISO timestamp with milliseconds,
+    -- which the at_ms and start_ms of the rows below count from. status is 'recording' while the listener saves to it,
+    -- then 'saved'. key_points is a JSON array of strings; cleaned_transcript the AI's version, kept apart from the raw lines.
+    CREATE TABLE IF NOT EXISTS sermons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL DEFAULT '',
+      preacher TEXT NOT NULL DEFAULT '',
+      sermon_date TEXT NOT NULL,
+      series TEXT NOT NULL DEFAULT '',
+      church_name_snapshot TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      summary TEXT NOT NULL DEFAULT '',
+      key_points TEXT NOT NULL DEFAULT '[]',
+      cleaned_transcript TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'saved'
+    );
+
+    CREATE TABLE IF NOT EXISTS sermon_segments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sermon_id INTEGER NOT NULL REFERENCES sermons(id) ON DELETE CASCADE,
+      start_ms INTEGER NOT NULL,
+      text TEXT NOT NULL,
+      is_final INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS sermon_segments_sermon ON sermon_segments (sermon_id, start_ms);
+
+    -- source is 'detected' (heard by the listener) or 'manual'.
+    CREATE TABLE IF NOT EXISTS sermon_scriptures (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sermon_id INTEGER NOT NULL REFERENCES sermons(id) ON DELETE CASCADE,
+      reference TEXT NOT NULL,
+      at_ms INTEGER NOT NULL,
+      source TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS sermon_scriptures_sermon ON sermon_scriptures (sermon_id);
+
+    CREATE TABLE IF NOT EXISTS sermon_statements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sermon_id INTEGER NOT NULL REFERENCES sermons(id) ON DELETE CASCADE,
+      text TEXT NOT NULL,
+      at_ms INTEGER NOT NULL,
+      pinned INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS sermon_statements_sermon ON sermon_statements (sermon_id);
+
     -- App-wide choices such as the default theme per content type.
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,

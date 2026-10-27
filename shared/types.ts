@@ -864,6 +864,10 @@ export interface AppSettings {
   lowerThirdPoints: string[]
   /** wd-media:// URL of the church logo, shown by Logo theme images without a picture of their own; null for the placeholder. */
   logoUrl: string | null
+  /** The church's name, as typed in Settings, Church profile; used in sermon exports. Empty for none. */
+  churchName: string
+  /** A line at the foot of exported sermon pages, such as an address or website. Empty for none. */
+  churchFooter: string
   appearance: 'system' | 'dark' | 'light'
   /** Whether the song editor keeps unsaved edits as drafts. */
   autosaveDrafts: boolean
@@ -1617,6 +1621,7 @@ export interface WorshipDeckApi {
   fonts: FontsApi
   sharing: SharingApi
   license: LicenseApi
+  sermons: SermonsApi
   /** Cmd+H on macOS, caught by the main process before the app menu hides the app, to toggle highlight mode. */
   onToggleHighlight(listener: () => void): () => void
   /** Cmd+Plus and Cmd+Minus (Ctrl+Plus and Minus), caught by the main process before they zoom the window: +1 or -1. */
@@ -1645,6 +1650,130 @@ export interface PanelErrorReport {
 export interface LogApi {
   /** Appends the report to logs/panel-errors.log in the app data folder. */
   panelError(report: PanelErrorReport): Promise<void>
+}
+
+// ---------- Sermons ----------
+
+export type SermonStatus = 'recording' | 'saved'
+
+/** A sermon in the list: no transcript. */
+export interface SermonSummary {
+  id: number
+  /** Empty for an untitled sermon. */
+  title: string
+  preacher: string
+  /** ISO date, YYYY-MM-DD. */
+  date: string
+  series: string
+  status: SermonStatus
+  createdAt: string
+  updatedAt: string
+}
+
+/** One final line of the transcript; `startMs` counts from when recording started. */
+export interface SermonSegment {
+  id: number
+  startMs: number
+  text: string
+  isFinal: boolean
+}
+
+export interface SermonScripture {
+  id: number
+  /** Such as "John 3:16-18". */
+  reference: string
+  atMs: number
+  /** Heard by the listener, or added by hand. */
+  source: 'detected' | 'manual'
+}
+
+export interface SermonStatement {
+  id: number
+  text: string
+  atMs: number
+  pinned: boolean
+}
+
+export interface Sermon extends SermonSummary {
+  /** The church name when the sermon was recorded, so later exports keep it if Settings change. */
+  churchName: string
+  notes: string
+  /** AI summary; empty until notes are generated. */
+  summary: string
+  /** AI key points; empty until notes are generated. */
+  keyPoints: string[]
+  /** The AI's cleaned transcript, paragraphs separated by blank lines; empty until cleaned. The raw one is kept. */
+  cleanedTranscript: string
+  segments: SermonSegment[]
+  scriptures: SermonScripture[]
+  statements: SermonStatement[]
+}
+
+/** What the start dialog asks for; everything is optional. */
+export interface SermonInput {
+  title?: string
+  preacher?: string
+  date?: string
+  series?: string
+}
+
+/** Fields the detail view edits. */
+export interface SermonPatch {
+  title?: string
+  preacher?: string
+  date?: string
+  series?: string
+  notes?: string
+  keyPoints?: string[]
+  summary?: string
+}
+
+/** What an export includes. */
+export interface SermonExportOptions {
+  /** The summary and key points. */
+  summary: boolean
+  scriptures: boolean
+  transcript: boolean
+  /** Uses the cleaned transcript, when there is one, in place of the raw one. */
+  cleaned: boolean
+}
+
+/** A saved file, or null when the save dialog was cancelled. */
+export type SermonExportResult = { ok: true; path: string | null } | { ok: false; error: string }
+
+export interface SermonsApi {
+  /** Newest date first. */
+  list(): Promise<SermonSummary[]>
+  /** Matches the title, the preacher and the transcript. */
+  search(query: string): Promise<SermonSummary[]>
+  get(id: number): Promise<Sermon | null>
+  /** A new sermon in the 'recording' state, dated today unless a date is given, with the church name from Settings. */
+  create(input: SermonInput): Promise<Sermon>
+  update(id: number, patch: SermonPatch): Promise<Sermon | null>
+  delete(id: number): Promise<void>
+  /** Past preachers, most recent first, for the start dialog. */
+  preachers(): Promise<string[]>
+  /** Adds a final transcript line to a sermon (the listener saves its own lines in the main process). */
+  appendSegment(id: number, text: string): Promise<void>
+  /** A reference heard by the listener or added by hand; one heard again is not added twice. */
+  addScripture(id: number, reference: string, source: SermonScripture['source']): Promise<void>
+  removeScripture(id: number, scriptureId: number): Promise<void>
+  /** A statement shown or pinned while listening; pinning one already saved marks it pinned. */
+  addStatement(id: number, text: string, pinned: boolean): Promise<void>
+  setStatementPinned(id: number, statementId: number, pinned: boolean): Promise<void>
+  removeStatement(id: number, statementId: number): Promise<void>
+  /** Marks a recording saved; an untitled sermon with nothing in it is removed. */
+  finish(id: number): Promise<void>
+  exportText(id: number, format: 'txt' | 'md', options: SermonExportOptions): Promise<SermonExportResult>
+  exportPdf(id: number, options: SermonExportOptions): Promise<SermonExportResult>
+  /** The sermon's slides as one announcement, for the schedule: key points, pinned statements and scripture. */
+  exportSlides(id: number): Promise<AnnouncementPayload | null>
+  /** The same slides as a PowerPoint file, through a save dialog. */
+  exportPptx(id: number): Promise<SermonExportResult>
+  /** Whether the AI buttons can work: AI on and a key (or service) available. */
+  aiAvailable(): Promise<boolean>
+  cleanTranscript(id: number): Promise<AiResult<Sermon>>
+  generateNotes(id: number): Promise<AiResult<Sermon>>
 }
 
 // ---------- Plan ----------
@@ -1700,6 +1829,16 @@ export interface AiTasks {
    * and at most 3 come back. Always uses Claude Haiku.
    */
   findScriptureReferences: { input: { transcript: string }; output: { references: string[] } }
+  /**
+   * Punctuation, sentences and paragraphs (blank lines between them) for one stretch of sermon transcript, with filler
+   * sounds removed. The main process rejects any answer that adds or changes a word.
+   */
+  cleanTranscript: { input: { transcript: string }; output: { transcript: string } }
+  /**
+   * A summary of at most 120 words and 5 to 8 key points from a sermon transcript, using only what was said. The
+   * scripture list comes from the sermon's saved references, never from the AI.
+   */
+  sermonNotes: { input: { transcript: string }; output: { summary: string; points: string[] } }
 }
 
 export type AiTask = keyof AiTasks
@@ -1812,8 +1951,11 @@ export interface SpeechApi {
   testConnection(): Promise<SpeechResult<{ model: string }>>
   /** Asks the operating system for microphone access where it needs asking (macOS); resolves to whether it is allowed. */
   micAccess(): Promise<boolean>
-  /** Connects the speech engine; audio sent with pushAudio is transcribed until stop. */
-  start(): Promise<SpeechResult<null>>
+  /**
+   * Connects the speech engine; audio sent with pushAudio is transcribed until stop. With a sermon (one in the
+   * 'recording' state), each final line is saved to it as it is heard, and stopping marks it saved.
+   */
+  start(options?: { sermonId?: number }): Promise<SpeechResult<null>>
   stop(): Promise<void>
   /** 100 ms of 16 kHz mono 16-bit little-endian PCM. */
   pushAudio(chunk: ArrayBuffer): void

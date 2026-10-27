@@ -1,4 +1,5 @@
 import {
+  BookOpenText,
   Cast,
   Check,
   ChevronDown,
@@ -233,6 +234,8 @@ export function Toolbar() {
   const toggleStage = useOperatorStore((s) => s.toggleStage)
   const streamPanelOpen = useOperatorStore((s) => s.streamPanelOpen)
   const openStreamPanel = useOperatorStore((s) => s.openStreamPanel)
+  const sermonsOpen = useOperatorStore((s) => s.sermonsOpen)
+  const openSermons = useOperatorStore((s) => s.openSermons)
   const streamOpen = useOperatorStore((s) => s.streamOpen)
 
   const status = onAir ? 'live' : mode === 'show' ? 'ready' : mode
@@ -310,6 +313,15 @@ export function Toolbar() {
             {streamOpen && <span className="toolbar-icon-dot" aria-hidden="true" />}
           </button>
         </span>
+        <button
+          className={`icon-button toolbar-icon${sermonsOpen ? ' active' : ''}`}
+          aria-pressed={sermonsOpen}
+          aria-label="Sermons"
+          title="Sermons: saved listening sessions, their transcripts and exports"
+          onClick={() => openSermons(!sermonsOpen)}
+        >
+          <BookOpenText size={18} />
+        </button>
         <span title={can('themes.editor') ? undefined : upgradeNote('themes.editor')}>
           <button
             className={`icon-button toolbar-icon${themeEditorOpen ? ' active' : ''}`}

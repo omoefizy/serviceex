@@ -83,3 +83,60 @@ describe('plans', () => {
     }
   })
 })
+
+describe('cleanTranscript', () => {
+  const RAW = 'um so we were uh talking about the garden gate it it sticks in the rain and you have to lift it a little'
+
+  const reply = (transcript: string) =>
+    create.mockResolvedValue({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ transcript }) }] })
+
+  it('keeps a version with punctuation and paragraphs that drops only filler', async () => {
+    const cleaned = 'So we were talking about the garden gate.\n\nIt sticks in the rain, and you have to lift it a little.'
+    reply(cleaned)
+    expect(await runTask('cleanTranscript', { transcript: RAW })).toEqual({ ok: true, value: { transcript: cleaned } })
+  })
+
+  it('refuses a version that adds or changes words', async () => {
+    reply('So we were talking about the old garden gate. It sticks when it rains.')
+    const result = await runTask('cleanTranscript', { transcript: RAW })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.message).toMatch(/changed the wording.*“old”/)
+  })
+
+  it('refuses a heading line, which lyrics would allow as a section label', async () => {
+    reply('[Introduction]\nSo we were talking about the garden gate.')
+    expect((await runTask('cleanTranscript', { transcript: RAW })).ok).toBe(false)
+  })
+})
+
+describe('sermonNotes', () => {
+  const TRANSCRIPT =
+    'This morning we look at the lighthouse keeper. She climbed the stairs every evening, even when no ships came. ' +
+    'Faithfulness is mostly unseen. The light mattered most on the nights she felt it mattered least.'
+
+  const reply = (summary: string, points: string[]) =>
+    create.mockResolvedValue({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ summary, points }) }] })
+
+  it('keeps notes that use only what was said, and the summary within 120 words', async () => {
+    reply(`The lighthouse keeper climbed every evening. ${'Faithfulness is mostly unseen. '.repeat(40)}`, ['Faithfulness is mostly unseen.', 'Keep the light on.'])
+    const result = await runTask('sermonNotes', { transcript: TRANSCRIPT })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.value.summary.split(/\s+/).length).toBeLessThanOrEqual(120)
+      expect(result.value.points).toEqual(['Faithfulness is mostly unseen.', 'Keep the light on.'])
+    }
+  })
+
+  it('refuses notes that bring in a name or a number that was not said', async () => {
+    reply('A talk on faithfulness.', ['As Captain Reyes said, keep the light on.'])
+    expect((await runTask('sermonNotes', { transcript: TRANSCRIPT })).ok).toBe(false)
+    reply('A talk on faithfulness.', ['She climbed 300 stairs each evening.'])
+    expect((await runTask('sermonNotes', { transcript: TRANSCRIPT })).ok).toBe(false)
+  })
+
+  it('keeps at most 8 key points', async () => {
+    reply('A talk on faithfulness.', Array.from({ length: 12 }, () => 'Faithfulness is mostly unseen.'))
+    const result = await runTask('sermonNotes', { transcript: TRANSCRIPT })
+    expect(result.ok && result.value.points).toHaveLength(8)
+  })
+})

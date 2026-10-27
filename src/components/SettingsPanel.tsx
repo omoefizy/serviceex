@@ -86,6 +86,44 @@ import { ScriptureDisplayForm } from './ScriptureDisplay'
 import { ThemeDefaultsForm } from './ThemeEditor'
 import { UpgradeNote } from './UpgradeNote'
 
+/** The church's name and the footer line for exports, saved when the field is left. */
+function ChurchProfileFields() {
+  const churchName = useOperatorStore((s) => s.settings.churchName)
+  const churchFooter = useOperatorStore((s) => s.settings.churchFooter)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const [name, setName] = useState(churchName)
+  const [footer, setFooter] = useState(churchFooter)
+  useEffect(() => setName(churchName), [churchName])
+  useEffect(() => setFooter(churchFooter), [churchFooter])
+  return (
+    <>
+      <label className="field">
+        <span>Church name</span>
+        <input
+          className="input"
+          value={name}
+          maxLength={200}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => name !== churchName && updateSettings({ churchName: name }).catch(console.error)}
+        />
+      </label>
+      <label className="field">
+        <span>
+          Footer line <small>optional, such as an address or website, at the foot of each exported page</small>
+        </span>
+        <input
+          className="input"
+          value={footer}
+          maxLength={200}
+          onChange={(e) => setFooter(e.target.value)}
+          onBlur={() => footer !== churchFooter && updateSettings({ churchFooter: footer }).catch(console.error)}
+        />
+      </label>
+      <p className="hint">Used on sermon exports. Each sermon keeps the church name it was recorded with.</p>
+    </>
+  )
+}
+
 function Section({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
     <section className="settings-section">
@@ -1983,7 +2021,9 @@ export function SettingsPanel() {
         </label>
       </Section>
 
-      <Section icon={<Image size={16} aria-hidden="true" />} title="Logo">
+      <Section icon={<Image size={16} aria-hidden="true" />} title="Church profile">
+        <ChurchProfileFields />
+        <span className="field-label">Church logo</span>
         <div className="settings-logo">
           <div className="settings-logo-preview">
             {settings.logoUrl ? <img src={settings.logoUrl} alt="Current logo" /> : <span className="hint">Placeholder logo</span>}
@@ -2005,7 +2045,7 @@ export function SettingsPanel() {
             )}
           </div>
         </div>
-        <p className="hint">Shown when you press Logo (L). A transparent PNG works best.</p>
+        <p className="hint">Shown when you press Logo (L), and at the top of sermon PDFs. A transparent PNG works best.</p>
       </Section>
 
       <Section icon={<Palette size={16} aria-hidden="true" />} title="Default themes">

@@ -1,12 +1,15 @@
-import { Eraser, Mic, Quote, Square, X } from 'lucide-react'
+import { BookOpenText, Eraser, Mic, Quote, Square, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { SpeechEngineId, SpeechMode } from '../../shared/types'
+import { can } from '../../shared/features'
+import { sermonTitle } from '../../shared/sermons'
+import type { SermonInput, SpeechEngineId, SpeechMode } from '../../shared/types'
 import { useListener, type ListenerStatus } from '../lib/listener'
 import type { MicDevice, MicState, SignalAdvice } from '../lib/mic'
 import { useDetectionDebug } from '../lib/scriptureDetection'
 import { useOperatorStore } from '../store'
 import { LevelMeter } from './LevelMeter'
 import { QuoteModal } from './QuoteModal'
+import { StartSermonModal } from './StartSermonModal'
 
 const MODE_LABELS: Record<SpeechMode, string> = { cloud: 'Cloud', offline: 'Offline', reconnecting: 'Reconnecting' }
 
@@ -150,6 +153,7 @@ export function ListenerPanel() {
     inputState,
     reading,
     advice,
+    sermon,
     start,
     stop,
     clear,
@@ -175,6 +179,22 @@ export function ListenerPanel() {
   const [quoting, setQuoting] = useState<string | null>(null)
   /** Shows what scripture detection is doing; off by default. */
   const [debugging, setDebugging] = useState(false)
+  /** The Start Sermon dialog, asked before listening when sermons can be saved. */
+  const [asking, setAsking] = useState(false)
+  const openSermons = useOperatorStore((s) => s.openSermons)
+
+  /** Creates the sermon, then listens into it; if it cannot be created, listening starts without one. */
+  async function startSermon(input: SermonInput) {
+    setAsking(false)
+    let created: { id: number; title: string } | undefined
+    try {
+      const sermon = await window.api.sermons.create(input)
+      created = { id: sermon.id, title: sermonTitle(sermon) }
+    } catch (err) {
+      console.error('Could not create the sermon; listening without saving it', err)
+    }
+    await start(created)
+  }
 
   // Shows the floating button for a selection inside the transcript, and hides it when the selection goes.
   useEffect(() => {
@@ -236,7 +256,12 @@ export function ListenerPanel() {
             <Square size={14} aria-hidden="true" /> Stop
           </button>
         ) : (
-          <button type="button" className="button primary" disabled={status === 'stopping' || notReady !== null} onClick={() => start()}>
+          <button
+            type="button"
+            className="button primary"
+            disabled={status === 'stopping' || notReady !== null}
+            onClick={() => (can('sermon.save') ? setAsking(true) : void start())}
+          >
             <Mic size={15} aria-hidden="true" /> Start Listening
           </button>
         )}
@@ -255,6 +280,15 @@ export function ListenerPanel() {
           </button>
         )}
       </div>
+      {running && sermon && (
+        <p className="listener-sermon hint">
+          <BookOpenText size={13} aria-hidden="true" /> Saving to{' '}
+          <button type="button" className="link-button" title="Open the Sermons screen" onClick={() => openSermons(true)}>
+            {sermon.title}
+          </button>
+        </p>
+      )}
+      {asking && <StartSermonModal onStart={(input) => void startSermon(input)} onCancel={() => setAsking(false)} />}
       {running && (input || inputState) && (
         <InputLine input={input} state={inputState} advice={advice} channel={micChannel} waitingFor={micDeviceName} />
       )}

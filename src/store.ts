@@ -245,6 +245,8 @@ interface OperatorState {
   outputTestPattern: boolean
   /** The Stream panel (preview, logos and stream settings) in the centre column. */
   streamPanelOpen: boolean
+  /** The Sermons screen (saved listening sessions) in the centre column. */
+  sermonsOpen: boolean
   lowerThirdTemplates: LowerThirdTemplate[]
   /** What is typed in the Lower Third panel; Enter shows it. */
   lowerThirdDraft: LowerThirdLine
@@ -363,6 +365,7 @@ interface OperatorState {
   /** Replaces the sermon's points (one per line); Next Point then starts from the first. */
   queueLowerThirdPoints(points: string[]): Promise<void>
   openStreamPanel(open: boolean): void
+  openSermons(open: boolean): void
   /** Closes the song editor, theme editor and settings so the slide grid shows. */
   showGrid(): void
   mediaChanged(): void
@@ -481,6 +484,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lowerThirdSavedLines: [],
   lowerThirdPoints: [],
   logoUrl: null,
+  churchName: '',
+  churchFooter: '',
   appearance: 'system',
   autosaveDrafts: true,
   backupFolder: null,
@@ -558,6 +563,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   streamTestPattern: false,
   outputTestPattern: false,
   streamPanelOpen: false,
+  sermonsOpen: false,
   lowerThirdTemplates: [],
   lowerThirdDraft: { headline: '', body: '' },
   lowerThirdHistory: [],
@@ -861,7 +867,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
 
   // The song editor, theme editor, settings and the Stream panel share the centre panel, so opening one closes the others.
   editSong(id) {
-    set(id === null ? { editingSongId: null } : { editingSongId: id, themeEditorOpen: false, settingsOpen: false, streamPanelOpen: false })
+    set(id === null ? { editingSongId: null } : { editingSongId: id, themeEditorOpen: false, settingsOpen: false, streamPanelOpen: false, sermonsOpen: false })
   },
 
   async loadThemes() {
@@ -1012,15 +1018,19 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
 
   openThemeEditor(open) {
     if (open && !can('themes.editor')) return
-    set(open ? { themeEditorOpen: true, editingSongId: null, settingsOpen: false, streamPanelOpen: false } : { themeEditorOpen: false })
+    set(open ? { themeEditorOpen: true, editingSongId: null, settingsOpen: false, streamPanelOpen: false, sermonsOpen: false } : { themeEditorOpen: false })
   },
 
   openSettings(open) {
-    set(open ? { settingsOpen: true, editingSongId: null, themeEditorOpen: false, streamPanelOpen: false } : { settingsOpen: false })
+    set(open ? { settingsOpen: true, editingSongId: null, themeEditorOpen: false, streamPanelOpen: false, sermonsOpen: false } : { settingsOpen: false })
   },
 
   openStreamPanel(open) {
-    set(open ? { streamPanelOpen: true, editingSongId: null, themeEditorOpen: false, settingsOpen: false } : { streamPanelOpen: false })
+    set(open ? { streamPanelOpen: true, editingSongId: null, themeEditorOpen: false, settingsOpen: false, sermonsOpen: false } : { streamPanelOpen: false })
+  },
+
+  openSermons(open) {
+    set(open ? { sermonsOpen: true, editingSongId: null, themeEditorOpen: false, settingsOpen: false, streamPanelOpen: false } : { sermonsOpen: false })
   },
 
   setPaletteOpen(open) {
@@ -1109,7 +1119,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   showGrid() {
-    set({ editingSongId: null, themeEditorOpen: false, settingsOpen: false, streamPanelOpen: false })
+    set({ editingSongId: null, themeEditorOpen: false, settingsOpen: false, streamPanelOpen: false, sermonsOpen: false })
   },
 
   mediaChanged() {

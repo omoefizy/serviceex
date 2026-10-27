@@ -53,6 +53,8 @@ const DEFAULTS: AppSettings = {
   lowerThirdSavedLines: [],
   lowerThirdPoints: [],
   logoUrl: null,
+  churchName: '',
+  churchFooter: '',
   appearance: 'system',
   autosaveDrafts: true,
   backupFolder: null,
@@ -143,6 +145,8 @@ const KEYS: Record<keyof AppSettings, string> = {
   lowerThirdSavedLines: 'lowerThird.savedLines',
   lowerThirdPoints: 'lowerThird.points',
   logoUrl: 'output.logoUrl',
+  churchName: 'church.name',
+  churchFooter: 'church.footer',
   appearance: 'ui.appearance',
   autosaveDrafts: 'editor.autosaveDrafts',
   backupFolder: 'backup.folder',
@@ -463,6 +467,11 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     }
     case 'presentationEngine':
       return value === 'auto' || value === 'powerpoint' || value === 'libreoffice' ? v : undefined
+    case 'churchName':
+    case 'churchFooter':
+      // Printed on exports, so plain characters on one line.
+      // eslint-disable-next-line no-control-regex
+      return typeof value === 'string' && value.length <= 1000 ? (value.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, 200) as never) : undefined
     case 'quoteSpeakerName':
       return typeof value === 'string' && value.length <= 100 ? (value.trim() as never) : undefined
     case 'aiModel':

@@ -9,6 +9,7 @@ import { MediaPanel } from './components/MediaPanel'
 import { PanelBoundary } from './components/PanelBoundary'
 import { PresentationsPanel } from './components/PresentationsPanel'
 import { SchedulePanel } from './components/SchedulePanel'
+import { SermonsPanel } from './components/SermonsPanel'
 import { ScripturePanel } from './components/ScripturePanel'
 import { SettingsPanel } from './components/SettingsPanel'
 import { SlideGrid } from './components/SlideGrid'
@@ -71,6 +72,7 @@ function App() {
   const themeEditorOpen = useOperatorStore((s) => s.themeEditorOpen)
   const settingsOpen = useOperatorStore((s) => s.settingsOpen)
   const streamPanelOpen = useOperatorStore((s) => s.streamPanelOpen)
+  const sermonsOpen = useOperatorStore((s) => s.sermonsOpen)
   const paletteOpen = useOperatorStore((s) => s.paletteOpen)
   const appearance = useOperatorStore((s) => s.settings.appearance)
   const layout = useOperatorStore((s) => layoutById(s.settings.layouts, s.settings.activeLayoutId))
@@ -78,7 +80,7 @@ function App() {
   const libraryTabs = LIBRARY_TABS.filter((tab) => showsPanel(layout, tab.id) && (tab.id !== 'media' || can('mediaLibrary')))
   const libraryTab = libraryTabs.some((tab) => tab.id === chosenTab) ? chosenTab : (libraryTabs[0]?.id ?? chosenTab)
   // Editors and Settings open in the centre whatever the layout, so they can always be reached.
-  const centreOpen = editingSongId !== null || themeEditorOpen || settingsOpen || streamPanelOpen
+  const centreOpen = editingSongId !== null || themeEditorOpen || settingsOpen || streamPanelOpen || sermonsOpen
   const show = {
     library: libraryTabs.length > 0,
     centre: showsPanel(layout, 'slides') || centreOpen,
@@ -375,6 +377,10 @@ function App() {
           ) : streamPanelOpen ? (
             <PanelBoundary key="stream" name="Stream">
               <StreamPanel />
+            </PanelBoundary>
+          ) : sermonsOpen ? (
+            <PanelBoundary key="sermons" name="Sermons">
+              <SermonsPanel />
             </PanelBoundary>
           ) : (
             <PanelBoundary key="slides" name="Slides">

@@ -31,7 +31,7 @@ const SECTIONS = [
   'Plan',
   'Appearance',
   'Output',
-  'Logo',
+  'Church profile',
   'Default themes',
   'AI and listening',
   'Sermon listener',

@@ -3,6 +3,7 @@ import { appendFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import type { SpeechEngineId, SpeechEvent, SpeechKeyStatus, SpeechMode, SpeechPerformance, SpeechResult, WhisperProgress, WhisperStatus } from '../../shared/types'
 import { can, CLOUD_NOT_CONNECTED, upgradeNote } from '../../shared/features'
+import { appendSegment, finishSermon, isRecording } from '../db/sermons'
 import { getAppSettings, setAppSettings } from '../db/settings'
 import { DEVELOPER_ONLY, developerMode, hasProviderKey, keyProvider, missingKeyMessage, readProviderKey } from '../keys'
 import { clearSecret, encryptionAvailable, hasSecret, saveSecret } from '../secrets'
@@ -54,6 +55,8 @@ interface Session {
   /** A new engine for this session, and the mode to report once it is listening (for single-engine modes). */
   build(session: Session): { engine: SpeechEngine; mode: Extract<SpeechEvent, { type: 'mode' }> | null }
   save: ((line: string) => void) | null
+  /** The sermon each final line is saved to, as it is heard; null when not recording one. */
+  sermonId: number | null
   engine: SpeechEngine | null
   /** The engine being replaced, which may still send its last lines. */
   retiring: SpeechEngine | null
@@ -200,19 +203,44 @@ function rms(pcm: Uint8Array): number {
   return samples ? Math.sqrt(sum / samples) : 0
 }
 
-/** Lets go of the session (its engine is stopped by the caller, or has stopped itself). */
-function endSession(s: Session) {
+/**
+ * Lets go of the session (its engine is stopped by the caller, or has stopped itself). Its sermon is marked saved,
+ * unless `finish` is false because the caller does that once the engine has written its last lines.
+ */
+function endSession(s: Session, finish = true) {
   if (session !== s) return
   session = null
   if (s.watchdog) clearInterval(s.watchdog)
   if (powerSaveBlocker.isStarted(s.blocker)) powerSaveBlocker.stop(s.blocker)
+  if (finish) finishRecording(s)
+}
+
+/** Marks the session's sermon saved. Lines the engine still sends are saved to it all the same. */
+function finishRecording(s: Session) {
+  if (s.sermonId === null) return
+  try {
+    finishSermon(s.sermonId)
+  } catch (error) {
+    console.error('Could not finish the sermon recording', error)
+  }
+}
+
+/** Saves a final line to the session's sermon. A database problem is logged; listening carries on. */
+function recordLine(s: Session, text: string) {
+  if (s.sermonId === null) return
+  try {
+    appendSegment(s.sermonId, text)
+  } catch (error) {
+    console.error('Could not save a sermon transcript line', error)
+  }
 }
 
 async function stopEngine(): Promise<void> {
   const current = session
   if (!current) return
-  endSession(current)
+  endSession(current, false)
   await current.engine?.stop().catch(console.error)
+  finishRecording(current)
 }
 
 /** Forwards an engine's events while it is the session's engine (lines also while it finishes, being replaced). */
@@ -235,6 +263,7 @@ function wire(s: Session, engine: SpeechEngine) {
     s.recent = []
     s.send({ type: 'final', text })
     s.save?.(text)
+    recordLine(s, text)
   })
   engine.onStatus((status) => {
     // While restarting, the chip shows Restarting; the new engine's own steps are not passed on.
@@ -437,7 +466,7 @@ export function registerSpeechIpc(): void {
     return true
   })
 
-  ipcMain.handle('speech:start', async (event): Promise<SpeechResult<null>> => {
+  ipcMain.handle('speech:start', async (event, options: unknown): Promise<SpeechResult<null>> => {
     // The same window asking again means it reloaded and lost track of the old session; replace it.
     if (session && session.sender === event.sender) await stopEngine()
     if (session) return { ok: false, error: speechError('busy', 'The listener is already running.') }
@@ -495,11 +524,16 @@ export function registerSpeechIpc(): void {
       return { engine: auto, mode: null }
     }
 
+    // Only a sermon the renderer has just started, still recording, takes the lines.
+    const requested = (options as { sermonId?: unknown } | null | undefined)?.sermonId
+    const sermonId = Number.isInteger(requested) && can('sermon.save') && isRecording(requested as number) ? (requested as number) : null
+
     const s: Session = {
       sender,
       send,
       build,
       save: getAppSettings().saveTranscripts ? await transcriptWriter() : null,
+      sermonId,
       engine: null,
       retiring: null,
       held: null,

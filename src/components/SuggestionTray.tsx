@@ -1,5 +1,6 @@
-import { BookOpen, Eye, ListPlus, Pencil, PanelBottom, Send, X } from 'lucide-react'
+import { BookOpen, Eye, ListPlus, Pencil, PanelBottom, Pin, Send, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { pinStatement, useListener } from '../lib/listener'
 import { useSuggestions, type ScriptureSuggestion, type StatementSuggestion } from '../lib/scriptureDetection'
 import { canSendCues, openCueMenu, useSharingStore } from '../lib/sharing'
 import { focusLowerThirdHeadline } from '../lib/shortcuts'
@@ -33,6 +34,9 @@ export function SuggestionTray() {
   const [editing, setEditing] = useState<StatementSuggestion | null>(null)
   /** Statements saved to the schedule this session, so the button says so. */
   const [scheduled, setScheduled] = useState<Set<number>>(new Set())
+  /** Statements pinned to the sermon being recorded, so the button says so. */
+  const [pinned, setPinned] = useState<Set<number>>(new Set())
+  const recording = useListener((st) => st.sermon)
   const [error, setError] = useState<string | null>(null)
   // Re-renders when sharing turns on or off, for Send to device.
   useSharingStore((st) => st.status?.enabled)
@@ -176,6 +180,20 @@ export function SuggestionTray() {
                     <ListPlus size={13} aria-hidden="true" /> {scheduled.has(s.id) ? 'Added' : 'Add to Schedule'}
                   </button>
                 </span>
+                {recording && (
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={pinned.has(s.id)}
+                    title={`Pin it to the sermon “${recording.title}”, for its slides and exports`}
+                    onClick={() => {
+                      pinStatement(s.text)
+                      setPinned((ids) => new Set(ids).add(s.id))
+                    }}
+                  >
+                    <Pin size={13} aria-hidden="true" /> {pinned.has(s.id) ? 'Pinned' : 'Pin to Sermon'}
+                  </button>
+                )}
                 {sendable && (
                   <button
                     type="button"

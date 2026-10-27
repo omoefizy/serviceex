@@ -1,11 +1,13 @@
-// The live sermon listener: microphone in, transcript out. The transcript lives in memory only (this store);
-// the main process writes it to a file just when "Save transcripts" is on.
+// The live sermon listener: microphone in, transcript out. The transcript lives in memory here; when a sermon is
+// being recorded the main process saves each final line to it as it is heard (interim words are never saved), and
+// this file saves the scripture the listener detects and the statements shown or pinned. The main process also writes
+// a text file just when "Save transcripts" is on.
 
 import { create } from 'zustand'
 import type { AppSettings, SpeechMode, SpeechPerformance, SpeechStatus } from '../../shared/types'
 import { useOperatorStore } from '../store'
 import { SignalWatch, startMic, type MicCapture, type MicDevice, type MicDsp, type MicReading, type MicState, type SignalAdvice } from './mic'
-import { detectFromPartial, detectScripture, resetDetection } from './scriptureDetection'
+import { detectFromPartial, detectScripture, resetDetection, useSuggestions } from './scriptureDetection'
 import { collectStatementText } from './statements'
 
 export type ListenerStatus = SpeechStatus | 'starting'
@@ -48,7 +50,10 @@ interface ListenerState {
   reading: MicReading | null
   /** What is wrong with the signal, most serious first. */
   advice: SignalAdvice[]
-  start(): Promise<void>
+  /** The sermon this session records into, and its title for the panel; null when not recording one. */
+  sermon: { id: number; title: string } | null
+  /** Starts listening; with a sermon (just created, still recording) its transcript, scripture and statements are saved. */
+  start(sermon?: { id: number; title: string }): Promise<void>
   stop(): Promise<void>
   clear(): void
   dismissNotice(): void
@@ -92,6 +97,19 @@ const STATUS_LOG: Partial<Record<SpeechStatus, string>> = {
 }
 const MODE_LOG: Record<SpeechMode, string> = { cloud: 'Cloud', offline: 'Offline', reconnecting: 'Reconnecting' }
 
+/** Marks a sermon saved (the main process does this too when a session ends; once more is harmless). */
+function finishSermon(id: number) {
+  window.api.sermons.finish(id).catch(console.error)
+}
+
+/** The session is over: its sermon is finished and nothing more is saved to it. */
+function endRecording() {
+  const { sermon } = useListener.getState()
+  if (!sermon) return
+  useListener.setState({ sermon: null })
+  finishSermon(sermon.id)
+}
+
 function releaseMic() {
   mic?.stop()
   mic = null
@@ -116,10 +134,16 @@ export const useListener = create<ListenerState>((set, get) => ({
   inputState: null,
   reading: null,
   advice: [],
+  sermon: null,
 
-  async start() {
-    if (get().status !== 'idle' && get().status !== 'error') return
+  async start(sermon) {
+    if (get().status !== 'idle' && get().status !== 'error') {
+      // Not started, so the sermon made for this start keeps nothing.
+      if (sermon) finishSermon(sermon.id)
+      return
+    }
     set({
+      sermon: sermon ?? null,
       status: 'starting',
       error: null,
       performance: null,
@@ -179,17 +203,23 @@ export const useListener = create<ListenerState>((set, get) => ({
     } catch (error) {
       set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
       addLog(`Error: ${get().error}`)
+      endRecording()
       return
     }
     // Stop was pressed while the microphone opened.
-    if (get().status !== 'starting') return releaseMic()
-    const started = await window.api.speech.start()
+    if (get().status !== 'starting') {
+      endRecording()
+      return releaseMic()
+    }
+    const started = await window.api.speech.start(sermon ? { sermonId: sermon.id } : undefined)
     if (!started.ok) {
       releaseMic()
       set({ status: 'error', error: started.error.message })
       addLog(`Error: ${started.error.message}`)
+      endRecording()
       return
     }
+    if (sermon) addLog(`Saving to the sermon “${sermon.title}”.`)
     if (!mic) {
       // Stopped while connecting.
       await window.api.speech.stop()
@@ -205,6 +235,7 @@ export const useListener = create<ListenerState>((set, get) => ({
     await window.api.speech.stop()
     // The engine reports idle when it has closed; if it never connected there is nothing to wait for.
     if (get().status === 'stopping') set({ status: 'idle' })
+    endRecording()
   },
 
   clear() {
@@ -233,7 +264,10 @@ window.api?.speech.onEvent((event) => {
       if (useListener.getState().status !== event.status && STATUS_LOG[event.status]) addLog(STATUS_LOG[event.status]!)
       set(event.status === 'idle' || event.status === 'error' ? { status: event.status, partial: '', mode: null, warning: null, restarting: null } : { status: event.status })
       // The engine stopped on its own (an error or a dropped connection): let go of the microphone too.
-      if (event.status === 'idle' || event.status === 'error') releaseMic()
+      if (event.status === 'idle' || event.status === 'error') {
+        releaseMic()
+        endRecording()
+      }
       break
     case 'error':
       set({ error: event.error.message })
@@ -272,4 +306,33 @@ useOperatorStore.subscribe((state, previous) => {
   const next = dspOf(state.settings)
   const before = dspOf(previous.settings)
   if (mic && (Object.keys(next) as (keyof MicDsp)[]).some((key) => next[key] !== before[key])) mic.configure(next)
+})
+
+// ---------- Saving to the sermon ----------
+
+/** Scripture cards already saved, by id, so a card is saved once (a fuller reading of it is saved as well). */
+const savedCards = new Map<number, string>()
+
+/** Pins a statement to the sermon being recorded, for its slides and exports. */
+export function pinStatement(text: string): void {
+  const { sermon } = useListener.getState()
+  if (sermon) window.api.sermons.addStatement(sermon.id, text, true).catch(console.error)
+}
+
+// While a sermon records: each scripture card the listener suggests, and each statement sent to the preview.
+useSuggestions.subscribe((state, previous) => {
+  const { sermon } = useListener.getState()
+  if (!sermon) {
+    savedCards.clear()
+    return
+  }
+  for (const suggestion of state.suggestions) {
+    if (suggestion.type !== 'scripture' || savedCards.get(suggestion.id) === suggestion.label) continue
+    savedCards.set(suggestion.id, suggestion.label)
+    window.api.sermons.addScripture(sermon.id, suggestion.label, 'detected').catch(console.error)
+  }
+  if (state.previewedId !== null && state.previewedId !== previous.previewedId) {
+    const shown = state.suggestions.find((s) => s.id === state.previewedId)
+    if (shown?.type === 'statement') window.api.sermons.addStatement(sermon.id, shown.text, false).catch(console.error)
+  }
 })

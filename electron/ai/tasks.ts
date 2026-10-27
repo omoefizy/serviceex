@@ -4,6 +4,7 @@
 import { can, upgradeNote, type FeatureKey } from '../../shared/features'
 import { findSection, parseLyrics } from '../../shared/lyrics'
 import { formatReference, parseReference } from '../../shared/parseReference'
+import { KEY_POINTS, limitWords, SUMMARY_MAX_WORDS } from '../../shared/sermons'
 import { MAX_STATEMENT_WORDS, verbatimStatements } from '../../shared/statements'
 import type { AiModel, AiResult, AiTask, AiTasks } from '../../shared/types'
 import { getVerse, listBooks } from '../db/bible'
@@ -12,6 +13,10 @@ import { fail, readyClient, toAiError } from './client'
 
 /** Longest input accepted per text field; well past a long song or a full bulletin. */
 const MAX_INPUT_CHARS = 20_000
+/** A whole sermon transcript for notes: about three hours of speech. */
+export const MAX_SERMON_CHARS = 150_000
+/** cleanTranscript takes a transcript in pieces of about this size, so each answer stays short and checkable. */
+export const CLEAN_CHUNK_CHARS = 6_000
 
 /** A check failure the operator should see as is. */
 class TaskError extends Error {}
@@ -31,10 +36,10 @@ interface TaskDefinition<T extends AiTask> {
   check(output: unknown, input: AiTasks[T]['input']): AiTasks[T]['output']
 }
 
-function textField(input: unknown, field: string): string {
+function textField(input: unknown, field: string, max = MAX_INPUT_CHARS): string {
   const value = (input as Record<string, unknown> | null)?.[field]
   if (typeof value !== 'string' || !value.trim()) throw new Error(`Missing ${field}`)
-  if (value.length > MAX_INPUT_CHARS) throw new Error(`${field} is longer than ${MAX_INPUT_CHARS} characters`)
+  if (value.length > max) throw new Error(`${field} is longer than ${max} characters`)
   return value.trim()
 }
 
@@ -59,14 +64,15 @@ function words(text: string): string[] {
 
 /**
  * Words in the cleaned lyrics that the original does not have (enough of). Dropping words is allowed (chords,
- * page numbers, website text, repeated choruses); adding or changing one is not. Section label lines are skipped.
+ * page numbers, website text, repeated choruses); adding or changing one is not. Section label lines are skipped
+ * unless `labels` is false (a transcript has none, so a label line would be new words).
  */
-function addedWords(original: string, cleaned: string): string[] {
+function addedWords(original: string, cleaned: string, labels = true): string[] {
   const available = new Map<string, number>()
   for (const word of words(original)) available.set(word, (available.get(word) ?? 0) + 1)
   const added: string[] = []
   for (const line of cleaned.split('\n')) {
-    if (/^\s*\[[^\]]+\]\s*$/.test(line)) continue
+    if (labels && /^\s*\[[^\]]+\]\s*$/.test(line)) continue
     for (const word of words(line)) {
       const left = available.get(word) ?? 0
       if (left > 0) available.set(word, left - 1)
@@ -355,6 +361,70 @@ const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
     // Only passages that exist in the Bible database; finding none is a normal answer.
     check: (output) => ({ references: existingReferences((output as { references?: unknown }).references).slice(0, 3) }),
   },
+
+  cleanTranscript: {
+    system: [
+      'You tidy one stretch of a sermon transcript from speech recognition, for a church to keep as a record.',
+      '',
+      'Add punctuation and capital letters, split it into sentences, and group the sentences into paragraphs of about',
+      'three to six sentences, with a blank line between paragraphs. Remove filler sounds such as "um", "uh", "er" and',
+      '"ah", and words stammered twice in a row.',
+      '',
+      'Keep every other word exactly as spoken, with its meaning. Do not add, reword, correct, translate, summarise or',
+      'reorder words. Do not add headings, labels, speaker names, scripture text or numbers written as digits. When a',
+      'word looks misheard, leave it as it is. The stretch may start or end in the middle of a sentence; leave it so.',
+    ].join('\n'),
+    parseInput: (input) => ({ transcript: textField(input, 'transcript', CLEAN_CHUNK_CHARS * 2) }),
+    prompt: ({ transcript }) => `Transcript:\n\n${transcript}`,
+    schema: object({ transcript: { type: 'string' } }),
+    maxTokens: 6000,
+    effort: 'low',
+    check: (output, input) => {
+      const { transcript } = output as { transcript?: unknown }
+      if (typeof transcript !== 'string' || !transcript.trim()) throw new TaskError('The AI returned no transcript. Try again.')
+      const cleaned = transcript.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+      const added = addedWords(input.transcript, cleaned, false)
+      if (added.length > 0) {
+        const sample = [...new Set(added)].slice(0, 5).map((w) => `“${w}”`).join(', ')
+        throw new TaskError(`The AI changed the wording (${sample}), so its version was not used. Try again.`)
+      }
+      return { transcript: cleaned }
+    },
+  },
+
+  sermonNotes: {
+    system: [
+      'You write notes on a sermon from its transcript, for a church to keep with the recording. The transcript comes',
+      'from speech recognition and may mishear words.',
+      '',
+      `Write a summary of at most ${SUMMARY_MAX_WORDS} words, then ${KEY_POINTS.min} to ${KEY_POINTS.max} key points in the order the`,
+      'sermon makes them, each one sentence of at most twenty words.',
+      '',
+      'Use only what the speaker said. Do not add teaching, stories, scripture, names, places, numbers or dates that',
+      'are not in the transcript, and do not guess at the speaker\'s name or role. Do not quote or list Bible',
+      'references; the app adds those itself.',
+    ].join('\n'),
+    parseInput: (input) => ({ transcript: textField(input, 'transcript', MAX_SERMON_CHARS) }),
+    prompt: ({ transcript }) => `Transcript:\n\n${transcript}`,
+    schema: object({ summary: { type: 'string' }, points: { type: 'array', items: { type: 'string' } } }),
+    maxTokens: 4000,
+    effort: 'medium',
+    check: (output, input) => {
+      const { summary, points } = output as { summary?: unknown; points?: unknown }
+      const kept = Array.isArray(points)
+        ? points.filter((p): p is string => typeof p === 'string').map((p) => p.trim()).filter(Boolean).slice(0, KEY_POINTS.max)
+        : []
+      if (typeof summary !== 'string' || !summary.trim() || kept.length === 0) throw new TaskError('The AI returned no notes. Try again.')
+      const short = limitWords(summary, SUMMARY_MAX_WORDS)
+      // Rewording is the point here, but numbers, dates, links and names must all come from the transcript.
+      const invented = inventedFacts(input.transcript, [short, ...kept], true)
+      if (invented.length > 0) {
+        const sample = invented.slice(0, 5).map((w) => `“${w}”`).join(', ')
+        throw new TaskError(`The AI added details that were not said (${sample}), so its notes were not used. Try again.`)
+      }
+      return { summary: short, points: kept }
+    },
+  },
 }
 
 export const isAiTask = (value: unknown): value is AiTask => typeof value === 'string' && value in TASKS
@@ -367,6 +437,8 @@ export const TASK_FEATURES: Record<AiTask, FeatureKey> = {
   sermonToSlides: 'ai.sermonPoints',
   buildAnnouncement: 'ai.announcements',
   pickStatements: 'ai.statements',
+  cleanTranscript: 'sermon.ai.cleanup',
+  sermonNotes: 'sermon.ai.cleanup',
 }
 
 /** Server-side refusal fallback: Sonnet 5.5 supports the "default" form; Haiku 5.5 has no fallback. */

@@ -14,6 +14,7 @@ import { registerMediaIpc } from './ipc/media'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerStageIpc, sendLastStageState } from './ipc/stage'
 import { registerAiIpc } from './ipc/ai'
+import { registerSermonIpc } from './ipc/sermons'
 import { registerSpeechIpc } from './ipc/speech'
 import { startBackupSchedule } from './backup'
 import { getAppSettings } from './db/settings'
@@ -361,6 +362,7 @@ app.whenReady().then(() => {
   startBackupSchedule()
   registerAiIpc()
   registerSpeechIpc()
+  registerSermonIpc()
   registerOutputIpc(() => outputWin, setOutputOpen)
   registerStreamIpc(() => streamWin, setStreamOpen)
   // The PowerShell and AppleScript the PowerPoint engines and Live PowerPoint run.

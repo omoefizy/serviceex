@@ -29,6 +29,7 @@ import type {
   SharingApi,
   SharingEvent,
   LicenseApi,
+  SermonsApi,
   WorshipDeckApi,
 } from '../shared/types'
 
@@ -258,7 +259,7 @@ const speech: SpeechApi = {
   clearKey: () => ipcRenderer.invoke('speech:clearKey'),
   testConnection: () => ipcRenderer.invoke('speech:test'),
   micAccess: () => ipcRenderer.invoke('speech:micAccess'),
-  start: () => ipcRenderer.invoke('speech:start'),
+  start: (options) => ipcRenderer.invoke('speech:start', options),
   stop: () => ipcRenderer.invoke('speech:stop'),
   pushAudio: (chunk) => ipcRenderer.send('speech:audio', new Uint8Array(chunk)),
   setMicMuted: (muted) => ipcRenderer.send('speech:micMuted', muted === true),
@@ -347,6 +348,30 @@ const license: LicenseApi = {
   },
 }
 
+const sermons: SermonsApi = {
+  list: () => ipcRenderer.invoke('sermons:list'),
+  search: (query) => ipcRenderer.invoke('sermons:search', query),
+  get: (id) => ipcRenderer.invoke('sermons:get', id),
+  create: (input) => ipcRenderer.invoke('sermons:create', input),
+  update: (id, patch) => ipcRenderer.invoke('sermons:update', id, patch),
+  delete: (id) => ipcRenderer.invoke('sermons:delete', id),
+  preachers: () => ipcRenderer.invoke('sermons:preachers'),
+  appendSegment: (id, text) => ipcRenderer.invoke('sermons:appendSegment', id, text),
+  addScripture: (id, reference, source) => ipcRenderer.invoke('sermons:addScripture', id, reference, source),
+  removeScripture: (id, scriptureId) => ipcRenderer.invoke('sermons:removeScripture', id, scriptureId),
+  addStatement: (id, text, pinned) => ipcRenderer.invoke('sermons:addStatement', id, text, pinned),
+  setStatementPinned: (id, statementId, pinned) => ipcRenderer.invoke('sermons:setStatementPinned', id, statementId, pinned),
+  removeStatement: (id, statementId) => ipcRenderer.invoke('sermons:removeStatement', id, statementId),
+  finish: (id) => ipcRenderer.invoke('sermons:finish', id),
+  exportText: (id, format, options) => ipcRenderer.invoke('sermons:exportText', id, format, options),
+  exportPdf: (id, options) => ipcRenderer.invoke('sermons:exportPdf', id, options),
+  exportSlides: (id) => ipcRenderer.invoke('sermons:exportSlides', id),
+  exportPptx: (id) => ipcRenderer.invoke('sermons:exportPptx', id),
+  aiAvailable: () => ipcRenderer.invoke('sermons:aiAvailable'),
+  cleanTranscript: (id) => ipcRenderer.invoke('sermons:cleanTranscript', id),
+  generateNotes: (id) => ipcRenderer.invoke('sermons:generateNotes', id),
+}
+
 const api: WorshipDeckApi = {
   songs,
   bible,
@@ -367,6 +392,7 @@ const api: WorshipDeckApi = {
   fonts,
   sharing,
   license,
+  sermons,
   onToggleHighlight(listener) {
     const handler = () => listener()
     ipcRenderer.on('highlight:toggle', handler)
