@@ -14,6 +14,7 @@ import {
   unmarkSlide,
   wordAt,
   wordsBetween,
+  type MarkableSlide,
 } from '../shared/highlights'
 import { fromPlain } from '../shared/richText'
 import type { HighlightStyle, RichText } from '../shared/types'
@@ -50,7 +51,7 @@ beforeEach(() => {
 describe('marking words', () => {
   it('highlighting a word changes only that span', () => {
     const bold: RichText = { paragraphs: [{ spans: [{ text: 'For God', bold: true }, { text: ' so loved the world' }] }] }
-    const marked = markSlide({ text: VERSE, rich: bold }, word(0, 11, 16), YELLOW)
+    const marked = markSlide<MarkableSlide>({ text: VERSE, rich: bold }, word(0, 11, 16), YELLOW)
     expect(marked.rich?.paragraphs[0].spans).toEqual([
       { text: 'For God', bold: true },
       { text: ' so ' },

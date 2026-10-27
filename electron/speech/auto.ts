@@ -31,6 +31,8 @@ export interface LocalEngine extends SpeechEngine {
 
 export interface AutoOptions {
   hasCloudKey(): boolean
+  /** Why there is no cloud key, such as "Cloud listening is not connected yet"; "No Deepgram key is saved" by default. */
+  noKeyReason?: string
   /** A new cloud connection, or null when there is no key. */
   createCloud(): CloudEngine | null
   /** A new offline engine, or null when it cannot run (see localUnavailable). */
@@ -155,7 +157,7 @@ export class AutoEngine extends EngineEvents implements SpeechEngine {
       throw this.cloudError ?? speechError('network', online ? 'Could not reach Deepgram.' : 'There is no internet connection.')
     } else {
       const why = !hasKey
-        ? 'No Deepgram key is saved'
+        ? (this.options.noKeyReason ?? 'No Deepgram key is saved')
         : !online
           ? 'There is no internet connection'
           : this.keyRejected

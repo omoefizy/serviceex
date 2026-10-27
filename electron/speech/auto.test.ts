@@ -171,6 +171,23 @@ describe('AutoEngine', () => {
     expect(clouds).toHaveLength(0)
   })
 
+  it('listens offline when cloud listening is not connected, and never tries the cloud', async () => {
+    make({ hasCloudKey: () => false, noKeyReason: 'Cloud listening is not connected yet' })
+    await engine.start()
+    expect(modes).toEqual([{ mode: 'offline', reason: 'Cloud listening is not connected yet, so transcribing offline on this computer.', warning: null }])
+    await speak(40)
+    locals[0].say('The lantern supper starts at six in the long hall.')
+    expect(lines).toEqual(['The lantern supper starts at six in the long hall.'])
+    expect(clouds).toHaveLength(0)
+  })
+
+  it('says why instead of starting when cloud listening is not connected and no offline model is downloaded', async () => {
+    localAvailable = false
+    make({ hasCloudKey: () => false, noKeyReason: 'Cloud listening is not connected yet' })
+    await expect(engine.start()).rejects.toMatchObject({ message: 'Cloud listening is not connected yet, and no offline model is downloaded.' })
+    expect(clouds).toHaveLength(0)
+  })
+
   it('falls back to offline with the audio since the last cloud line, without repeating or losing words', async () => {
     await engine.start()
     await speak(6, () => clouds[0].send({ transcript: 'interim' }))

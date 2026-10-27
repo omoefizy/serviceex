@@ -33,7 +33,7 @@ const SECTIONS = [
   'Output',
   'Logo',
   'Default themes',
-  'AI',
+  'AI and listening',
   'Sermon listener',
   'Scripture detection',
   'Sermon quotes',
@@ -105,9 +105,18 @@ describe('Settings', () => {
     expect(settings.aiModel).toBe(DEFAULT_SETTINGS.aiModel)
     expect(settings.backupIntervalMinutes).toBe(0)
     expect(settings.alertMessages).toEqual([])
-    expect(settings.speechEngine).toBe('auto')
+    expect(settings.speechEngine).toBe(DEFAULT_SETTINGS.speechEngine)
     expect(themes.find((t) => t.name === 'Old custom')?.style.elements.length).toBeGreaterThan(0)
     expectPanelsToOpen(settings)
+  })
+
+  it('shows listening mode and no key fields outside developer builds', () => {
+    loadIntoStore()
+    const html = renderToString(createElement(SettingsPanel))
+    expect(html).toContain('Listening mode')
+    expect(html).toContain('Cloud listening hours: not connected yet')
+    expect(html).toMatch(/role="radio" aria-checked="true"[^>]*>.*Offline/)
+    expect(html).not.toMatch(/API key|own key|Developer key/i)
   })
 
   it('fills in keys the main process leaves out of its answer', async () => {

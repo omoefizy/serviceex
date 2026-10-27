@@ -2,6 +2,7 @@ import { DEFAULT_HIGHLIGHT, HIGHLIGHT_COLORS, HIGHLIGHT_KINDS } from '../../shar
 import { cleanLayouts, DEFAULT_LAYOUT_ID, PRESET_LAYOUTS } from '../../shared/layouts'
 import { sanitizeRichFor } from '../../shared/richText'
 import { clampOffset, clampSize } from '../../shared/scriptureLook'
+import { isKeyProvider } from '../../shared/features'
 import { DEFAULT_FONT } from '../../shared/themes'
 import type {
   AlertMessage,
@@ -59,7 +60,7 @@ const DEFAULTS: AppSettings = {
   lastBackupAt: null,
   aiEnabled: true,
   aiModel: 'claude-sonnet-5-5',
-  aiKeyProvider: 'own',
+  aiKeyProvider: 'developer_key',
   autoGoLiveOnNext: false,
   micDeviceId: null,
   micDeviceName: null,
@@ -70,8 +71,8 @@ const DEFAULTS: AppSettings = {
   micGateThresholdDb: -60,
   micProcessing: false,
   saveTranscripts: false,
-  speechEngine: 'auto',
-  speechKeyProvider: 'own',
+  speechEngine: 'whisper',
+  speechKeyProvider: 'developer_key',
   whisperModel: 'base.en',
   whisperSpeed: {},
   scriptureDetection: true,
@@ -488,7 +489,10 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
       return value === 'off' || value === 'sound' || value === 'flash' ? v : undefined
     case 'aiKeyProvider':
     case 'speechKeyProvider':
-      return value === 'own' || value === 'plan' ? v : undefined
+      // Older versions saved 'own' (now a developer key) and 'plan' (now the account service).
+      if (value === 'own') return 'developer_key' as never
+      if (value === 'plan') return 'service' as never
+      return isKeyProvider(value) ? v : undefined
     case 'speechEngine':
       return value === 'auto' || value === 'deepgram' || value === 'whisper' ? v : undefined
     case 'whisperModel':

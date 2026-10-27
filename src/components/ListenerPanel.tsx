@@ -43,6 +43,8 @@ function chipOf(status: ListenerStatus, mode: SpeechMode | null, reason: string,
 }
 
 const ENGINE_LABELS: Record<SpeechEngineId, string> = { auto: 'Auto', deepgram: 'Cloud only', whisper: 'Offline only' }
+/** Outside developer builds Settings offers only Cloud (which falls back to offline) and Offline. */
+const LISTENING_LABELS: Record<SpeechEngineId, string> = { auto: 'Cloud', deepgram: 'Cloud', whisper: 'Offline' }
 
 const INPUT_STATES: Record<Exclude<MicState, 'open'>, { label: string; why: string }> = {
   muted: { label: 'Muted', why: 'The system muted the input; silence is sent in its place until it is back.' },
@@ -161,6 +163,9 @@ export function ListenerPanel() {
   const whisperModel = useOperatorStore((s) => s.settings.whisperModel)
   /** What is missing before listening can start, or null when ready. */
   const [notReady, setNotReady] = useState<string | null>(null)
+  const [developerMode, setDeveloperMode] = useState(false)
+  /** Why Cloud listens offline instead, such as the account not being connected yet. */
+  const [cloudNotice, setCloudNotice] = useState<string | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
   /** Follow new text only while the operator has not scrolled up to read. */
   const following = useRef(true)
@@ -194,7 +199,11 @@ export function ListenerPanel() {
   }, [])
 
   useEffect(() => {
-    window.api.speech.status().then((s) => setNotReady(s.readyHint), console.error)
+    window.api.speech.status().then((s) => {
+      setNotReady(s.readyHint)
+      setDeveloperMode(s.developerMode)
+      setCloudNotice(s.cloudNotice)
+    }, console.error)
   }, [status, speechEngine, whisperModel])
 
   useLayoutEffect(() => {
@@ -211,8 +220,8 @@ export function ListenerPanel() {
       <header className="panel-header">
         <h2>Listener</h2>
         <span className="listener-engine">
-          {ENGINE_LABELS[speechEngine]}
-          {speechEngine !== 'deepgram' && ` · ${whisperModel}`}
+          {(developerMode ? ENGINE_LABELS : LISTENING_LABELS)[speechEngine]}
+          {(speechEngine !== 'deepgram' || !developerMode) && ` · ${whisperModel}`}
         </span>
         <span className={`listener-status ${chip.tone}`} role="status" title={chip.why} aria-label={`${chip.label}: ${chip.why}`}>
           <span className="listener-dot" aria-hidden="true" />
@@ -257,6 +266,7 @@ export function ListenerPanel() {
           </button>
         </p>
       )}
+      {cloudNotice && !notReady && !running && <p className="hint">{cloudNotice}</p>}
       {performance && (
         <p className={`speed-chip ${performance.keepingUp ? 'ok' : 'behind'}`} role="status">
           {performance.keepingUp ? 'Keeping up' : 'Falling behind'} · {performance.realTimeFactor.toFixed(2)}× real time

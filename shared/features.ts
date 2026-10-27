@@ -32,6 +32,18 @@ export const FEATURE_KEYS = Object.keys(FEATURES) as FeatureKey[]
 
 export const isFeatureKey = (value: unknown): value is FeatureKey => typeof value === 'string' && Object.prototype.hasOwnProperty.call(FEATURES, value)
 
+/**
+ * Where AI features and cloud listening get their access. "developer_key": a key saved on this computer, offered only
+ * in developer builds (SERVICEEX_DEV=1, or running unpackaged). "service": through the ServiceEx account, which is not
+ * connected yet, so it gives no access and cloud listening falls back to offline.
+ */
+export type KeyProvider = 'developer_key' | 'service'
+
+export const isKeyProvider = (value: unknown): value is KeyProvider => value === 'developer_key' || value === 'service'
+
+export const CLOUD_NOT_CONNECTED = 'Cloud listening is not connected yet. Use offline listening or sign in later.'
+export const AI_NOT_CONNECTED = 'AI features are not connected yet. Sign in later.'
+
 /** What the licence allows for this run of the app. */
 export interface Entitlements {
   plan: string

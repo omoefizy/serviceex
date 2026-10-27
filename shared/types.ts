@@ -1,7 +1,7 @@
 // Types shared by the main process, the preload script and the renderer.
 // Keep this file free of runtime code: it is imported with `import type` only.
 
-import type { Entitlements } from './features'
+import type { Entitlements, KeyProvider } from './features'
 import type { LicenseStatus } from './license'
 
 /** How a song's sections play and how its slides are cut. */
@@ -876,7 +876,7 @@ export interface AppSettings {
   /** Turns every AI feature off; when false the main process makes no AI requests at all. */
   aiEnabled: boolean
   aiModel: AiModel
-  /** Where the Anthropic key comes from: the operator's own key, or one included in the plan (not available yet). */
+  /** Where AI gets its access: a developer key (developer builds only) or the ServiceEx account (not connected yet). */
   aiKeyProvider: KeyProvider
   /** Cmd+Down stages the next schedule item in the preview; with this on it also goes live, as it used to. */
   autoGoLiveOnNext: boolean
@@ -900,7 +900,7 @@ export interface AppSettings {
   saveTranscripts: boolean
   /** Auto (cloud, falling back to offline), cloud only (Deepgram), or offline only (whisper.cpp). */
   speechEngine: SpeechEngineId
-  /** Where the Deepgram key comes from: the operator's own key, or one included in the plan (not available yet). */
+  /** Where cloud listening gets its access: a developer key (developer builds only) or the ServiceEx account (not connected yet). */
   speechKeyProvider: KeyProvider
   /** The whisper.cpp model the offline engine uses. */
   whisperModel: WhisperModelId
@@ -1649,8 +1649,7 @@ export interface LogApi {
 
 // ---------- Plan ----------
 
-/** "own": the operator's key, saved encrypted on this computer. "plan": a key included in the plan, for later. */
-export type KeyProvider = 'own' | 'plan'
+export type { KeyProvider } from './features'
 
 export interface LicenseApi {
   /** The plan, its features and expiry as read at startup. */
@@ -1745,6 +1744,8 @@ export interface AiStatus {
   hasKey: boolean
   /** Whether the OS can encrypt the key (Keychain, DPAPI, or a Linux keyring). */
   encryptionAvailable: boolean
+  /** A developer build (SERVICEEX_DEV=1, or unpackaged): the only one where keys can be saved and used. */
+  developerMode: boolean
 }
 
 export interface AiApi {
@@ -1781,6 +1782,10 @@ export interface SpeechKeyStatus {
   readyHint: string | null
   hasKey: boolean
   encryptionAvailable: boolean
+  /** A developer build (SERVICEEX_DEV=1, or unpackaged): the only one where keys can be saved and used. */
+  developerMode: boolean
+  /** Why cloud listening falls back to offline, such as the account not being connected yet; null when it can run. */
+  cloudNotice: string | null
   /** Where saved transcripts go. */
   transcriptsFolder: string
 }

@@ -1,6 +1,7 @@
 // The Anthropic client, main process only. The API key is stored encrypted by ../secrets (safeStorage) as
 // <userData>/anthropic-key.enc; it is never sent to the renderer, never read from the environment or a plain
-// file, and never lives in the repository. Which key is used comes from the provider chosen in Settings (see ../keys).
+// file, and never lives in the repository. Which key is used comes from the provider chosen in Settings (see ../keys);
+// outside developer builds that is the ServiceEx account, which is not connected yet, so there is no client.
 
 import Anthropic from '@anthropic-ai/sdk'
 import { net } from 'electron'
@@ -13,7 +14,7 @@ export { encryptionAvailable }
 
 /** Cached so requests do not decrypt the key each time; dropped whenever the key or its provider changes. */
 let client: Anthropic | null = null
-let clientProvider: KeyProvider = 'own'
+let clientProvider: KeyProvider = 'developer_key'
 
 export function hasApiKey(): boolean {
   return hasSecret('anthropic-key')
@@ -50,6 +51,7 @@ export const fail = (code: AiError['code'], message: string, extra: Partial<AiEr
 /** Checks AI is on, a key is saved and the machine is online; resolves to the client when ready. */
 export async function readyClient(): Promise<AiResult<Anthropic>> {
   if (!getAppSettings().aiEnabled) return fail('disabled', 'AI features are turned off in Settings.')
+  if (keyProvider('anthropic') === 'service') return fail('no_key', missingKeyMessage('anthropic'))
   if (!encryptionAvailable()) return fail('no_encryption', 'This system cannot store the API key securely.')
   const ready = await getClient()
   if (!ready) return fail('no_key', missingKeyMessage('anthropic'))

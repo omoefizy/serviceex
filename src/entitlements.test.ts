@@ -86,7 +86,8 @@ describe('a feature the plan does not include', () => {
     expect(settings.match(/<li class="off"/g)).toHaveLength(FEATURE_KEYS.length)
     expect(settings).toContain(note('listener.cloud'))
     expect(settings).toContain(note('listener.offline'))
-    expect(settings).toMatch(/role="radio"[^>]*disabled=""[^>]*>.*Auto/)
+    expect(settings).toMatch(/role="radio"[^>]*disabled=""[^>]*>.*Cloud/)
+    expect(settings).toMatch(/role="radio"[^>]*disabled=""[^>]*>.*Offline/)
   })
 
   it('does not start from the store', async () => {

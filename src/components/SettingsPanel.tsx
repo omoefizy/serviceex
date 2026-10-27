@@ -165,18 +165,18 @@ function PlanSection() {
 }
 
 const KEY_PROVIDERS: { value: KeyProvider; label: string }[] = [
-  { value: 'own', label: 'Use my own key' },
-  { value: 'plan', label: 'Included in plan (coming later)' },
+  { value: 'developer_key', label: 'Developer key' },
+  { value: 'service', label: 'ServiceEx account (not connected yet)' },
 ]
 
-/** Where a service's key comes from. Keys included in a plan are not available yet, so that choice is disabled. */
+/** Where a service's key comes from, in developer builds. The account is not connected yet, so it gives no access. */
 function KeyProviderField({ value, onChange }: { value: KeyProvider; onChange(value: KeyProvider): void }) {
   return (
     <label className="field">
       <span>Key</span>
       <select className="input" value={value} onChange={(e) => onChange(e.target.value as KeyProvider)}>
         {KEY_PROVIDERS.map((p) => (
-          <option key={p.value} value={p.value} disabled={p.value === 'plan'}>
+          <option key={p.value} value={p.value}>
             {p.label}
           </option>
         ))}
@@ -185,13 +185,86 @@ function KeyProviderField({ value, onChange }: { value: KeyProvider; onChange(va
   )
 }
 
+/** `features`: the plan features a mode can run with; any one of them will do. Cloud falls back to offline. */
+const LISTENING_MODES: { value: SpeechEngineId; label: string; icon: ReactNode; hint: string; features: FeatureKey[] }[] = [
+  {
+    value: 'auto',
+    label: 'Cloud',
+    features: ['listener.cloud', 'listener.offline'],
+    icon: <Cloud size={15} aria-hidden="true" />,
+    hint: 'Transcribes in the cloud, and switches to offline listening on this computer if the connection drops.',
+  },
+  {
+    value: 'whisper',
+    label: 'Offline',
+    features: ['listener.offline'],
+    icon: <HardDrive size={15} aria-hidden="true" />,
+    hint: 'Transcribes on this computer: nothing leaves it, and no internet or account is needed once a model is downloaded.',
+  },
+]
+
+/** Listening mode, the AI switch and, once the account is connected, its cloud listening hours. No keys here. */
+function AiListeningSection() {
+  const settings = useOperatorStore((s) => s.settings)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const [status, setStatus] = useState<SpeechKeyStatus | null>(null)
+
+  useEffect(() => {
+    window.api.speech.status().then(setStatus, console.error)
+  }, [settings.speechEngine, settings.speechKeyProvider])
+
+  // Cloud only, offered in developer builds, shows as Cloud.
+  const mode = settings.speechEngine === 'whisper' ? 'whisper' : 'auto'
+  return (
+    <Section icon={<Sparkles size={16} aria-hidden="true" />} title="AI and listening">
+      <div className="field">
+        <span>Listening mode</span>
+        <div className="segmented" role="radiogroup" aria-label="Listening mode">
+          {LISTENING_MODES.map((m) => (
+            <button
+              key={m.value}
+              type="button"
+              role="radio"
+              aria-checked={mode === m.value}
+              className={mode === m.value ? 'active' : ''}
+              disabled={!m.features.some(can)}
+              onClick={() => updateSettings({ speechEngine: m.value })}
+            >
+              {m.icon}
+              {m.label}
+            </button>
+          ))}
+        </div>
+        <span className="hint">{LISTENING_MODES.find((m) => m.value === mode)?.hint}</span>
+        {mode === 'auto' && status?.cloudNotice && (
+          <span className="hint" role="status">
+            {status.cloudNotice}
+          </span>
+        )}
+        {!can('listener.cloud') && <UpgradeNote feature="listener.cloud" />}
+        {!can('listener.offline') && <UpgradeNote feature="listener.offline" />}
+      </div>
+      <p className="hint">Cloud listening hours: not connected yet</p>
+
+      <label className="inline-check">
+        <input type="checkbox" checked={settings.aiEnabled} onChange={(e) => updateSettings({ aiEnabled: e.target.checked })} />
+        Use AI features
+      </label>
+      <p className="hint">When this is off, WorshipDeck sends nothing to Anthropic.</p>
+    </Section>
+  )
+}
+
 const AI_MODELS: { value: AiModel; label: string }[] = [
   { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (recommended)' },
   { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 (faster and cheaper)' },
 ]
 
-/** API key, model and an off switch. The key is typed here once and goes to the main process; it is never shown again. */
-function AiSection() {
+/**
+ * Developer builds only: the Anthropic key and model. The key is typed here once and goes to the main process; it is
+ * never shown again.
+ */
+function AiDeveloperSection() {
   const settings = useOperatorStore((s) => s.settings)
   const updateSettings = useOperatorStore((s) => s.updateSettings)
   const [status, setStatus] = useState<AiStatus | null>(null)
@@ -232,14 +305,10 @@ function AiSection() {
     setResult(tested.ok ? { ok: true, text: `Connected. ${tested.value.model} is ready.` } : { ok: false, text: tested.error.message })
   }
 
+  if (!status?.developerMode) return null
   return (
-    <Section icon={<Sparkles size={16} aria-hidden="true" />} title="AI">
-      <label className="inline-check">
-        <input type="checkbox" checked={settings.aiEnabled} onChange={(e) => updateSettings({ aiEnabled: e.target.checked })} />
-        Use AI features
-      </label>
-      <p className="hint">When this is off, WorshipDeck sends nothing to Anthropic.</p>
-
+    <Section icon={<KeyRound size={16} aria-hidden="true" />} title="AI developer key">
+      <p className="hint">Shown only in developer builds (SERVICEEX_DEV=1, or running unpackaged).</p>
       <KeyProviderField value={settings.aiKeyProvider} onChange={(aiKeyProvider) => updateSettings({ aiKeyProvider })} />
 
       {status && !status.encryptionAvailable && (
@@ -464,8 +533,8 @@ const TEST_SECONDS = 10
 const formatDb = (db: number) => `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`
 
 /**
- * Input, Deepgram key and transcript saving for the sermon listener. The key is typed here once and goes to the
- * main process; it is never shown again.
+ * Input, offline models and transcript saving for the sermon listener, and in developer builds the engine and the
+ * Deepgram key. The key is typed here once and goes to the main process; it is never shown again.
  */
 function ListenerSection() {
   const settings = useOperatorStore((s) => s.settings)
@@ -817,37 +886,37 @@ function ListenerSection() {
         the sound desk or a lectern microphone; turn it on for a laptop or room microphone. Applies the next time the input opens.
       </p>
 
-      <div className="field">
-        <span>Speech engine</span>
-        <div className="segmented" role="radiogroup" aria-label="Speech engine">
-          {SPEECH_ENGINES.map((engine) => (
-            <button
-              key={engine.value}
-              type="button"
-              role="radio"
-              aria-checked={settings.speechEngine === engine.value}
-              className={settings.speechEngine === engine.value ? 'active' : ''}
-              disabled={!engine.features.some(can)}
-              onClick={() => updateSettings({ speechEngine: engine.value })}
-            >
-              {engine.icon}
-              {engine.label}
-            </button>
-          ))}
+      {status?.developerMode && (
+        <div className="field">
+          <span>Speech engine</span>
+          <div className="segmented" role="radiogroup" aria-label="Speech engine">
+            {SPEECH_ENGINES.map((engine) => (
+              <button
+                key={engine.value}
+                type="button"
+                role="radio"
+                aria-checked={settings.speechEngine === engine.value}
+                className={settings.speechEngine === engine.value ? 'active' : ''}
+                disabled={!engine.features.some(can)}
+                onClick={() => updateSettings({ speechEngine: engine.value })}
+              >
+                {engine.icon}
+                {engine.label}
+              </button>
+            ))}
+          </div>
+          <span className="hint">
+            {SPEECH_ENGINES.find((e) => e.value === settings.speechEngine)?.hint}
+          </span>
         </div>
-        <span className="hint">
-          {SPEECH_ENGINES.find((e) => e.value === settings.speechEngine)?.hint}
-        </span>
-        {!can('listener.cloud') && <UpgradeNote feature="listener.cloud" />}
-        {!can('listener.offline') && <UpgradeNote feature="listener.offline" />}
-      </div>
+      )}
 
-      {settings.speechEngine !== 'deepgram' && <WhisperModels />}
+      {(settings.speechEngine !== 'deepgram' || !status?.developerMode) && <WhisperModels />}
 
-      {settings.speechEngine !== 'whisper' && status && !status.encryptionAvailable && (
+      {status?.developerMode && settings.speechEngine !== 'whisper' && !status.encryptionAvailable && (
         <p className="error">This system cannot encrypt the key (no keychain or keyring), so it cannot be saved.</p>
       )}
-      {settings.speechEngine !== 'whisper' && (
+      {status?.developerMode && settings.speechEngine !== 'whisper' && (
         <>
           <KeyProviderField value={settings.speechKeyProvider} onChange={(speechKeyProvider) => updateSettings({ speechKeyProvider })} />
           <form className="field" onSubmit={handleSave}>
@@ -1943,7 +2012,8 @@ export function SettingsPanel() {
         <ThemeDefaultsForm />
       </Section>
 
-      <AiSection />
+      <AiListeningSection />
+      <AiDeveloperSection />
 
       <ListenerSection />
 
