@@ -230,7 +230,7 @@ export function exportFileName(sermon: Pick<Sermon, 'title' | 'date'>, extension
   return `${base || 'Sermon'}.${extension}`
 }
 
-/** A scripture slide's text: the verses, then the reference on its own {line} (shown in the reference color). */
+/** A scripture slide's text: the verses, then the reference under them in the reference color. */
 export interface SlidePassage {
   reference: string
   /** The verse text, or null when it is too long for one slide or not in the Bible database. */
@@ -240,22 +240,98 @@ export interface SlidePassage {
 /** Verse text longer than this goes on the slide as the reference alone, so each slide stays one readable idea. */
 export const SLIDE_VERSE_WORDS = 60
 
+/** The words on the last slide, above the church name. */
+export const CLOSING_LINE = 'Thank you for joining us'
+
+/** One slide of a sermon deck, the same for the PowerPoint file and the schedule. */
+export type DeckSlide =
+  | { kind: 'title'; title: string; lines: string[] }
+  | { kind: 'scripture'; reference: string; text: string | null }
+  | { kind: 'statement'; text: string }
+  | { kind: 'point'; text: string }
+  | { kind: 'closing'; text: string; lines: string[] }
+
+const oneParagraph = (text: string) => text.replace(/\s*\n\s*/g, ' ').trim()
+
 /**
- * One idea per slide: each key point, each pinned statement in quote marks, and each scripture reference (with its
- * words when they fit). Slides are separated by blank lines, as an announcement body.
+ * The sermon's slides, one idea each: a title slide (title, preacher, date, church), each scripture reference saved
+ * on the sermon (with its words when they fit), each pinned statement, each key point, and a closing slide.
  */
-export function sermonSlideTexts(sermon: Pick<Sermon, 'keyPoints' | 'statements'>, passages: SlidePassage[]): string[] {
-  const oneParagraph = (text: string) => text.replace(/\s*\n\s*/g, ' ').trim()
-  const slides: string[] = []
-  for (const point of sermon.keyPoints) if (point.trim()) slides.push(oneParagraph(point))
-  for (const statement of sermon.statements) {
-    if (statement.pinned && statement.text.trim()) slides.push(`“${oneParagraph(statement.text).replace(/^["“”]+|["“”]+$/g, '')}”`)
-  }
+export function sermonDeck(
+  sermon: Pick<Sermon, 'title' | 'preacher' | 'date' | 'churchName' | 'keyPoints' | 'statements'>,
+  passages: SlidePassage[],
+): DeckSlide[] {
+  const church = sermon.churchName.trim()
+  const slides: DeckSlide[] = [
+    { kind: 'title', title: sermonTitle(sermon), lines: [sermon.preacher.trim(), sermon.date ? longDate(sermon.date) : '', church].filter(Boolean) },
+  ]
   for (const passage of passages) {
     const words = passage.text ? oneParagraph(passage.text) : ''
-    slides.push(words && wordCount(words) <= SLIDE_VERSE_WORDS ? `${words}\n{${passage.reference}}` : passage.reference)
+    slides.push({ kind: 'scripture', reference: passage.reference, text: words && wordCount(words) <= SLIDE_VERSE_WORDS ? words : null })
   }
+  for (const statement of sermon.statements) {
+    const text = oneParagraph(statement.text).replace(/^["“”]+|["“”]+$/g, '')
+    if (statement.pinned && text) slides.push({ kind: 'statement', text })
+  }
+  for (const point of sermon.keyPoints) if (point.trim()) slides.push({ kind: 'point', text: oneParagraph(point) })
+  slides.push({ kind: 'closing', text: CLOSING_LINE, lines: church ? [church] : [] })
   return slides
+}
+
+/** Slides with something from the sermon on them: all but the title and closing slides. */
+export const deckContentCount = (deck: DeckSlide[]) => deck.filter((slide) => slide.kind !== 'title' && slide.kind !== 'closing').length
+
+/** How many slides a sermon has beyond its title and closing slides, without looking up verse text. */
+export const sermonContentCount = (sermon: Parameters<typeof sermonDeck>[0] & Pick<Sermon, 'scriptures'>) =>
+  deckContentCount(sermonDeck(sermon, scriptureList(sermon).map((reference) => ({ reference, text: null }))))
+
+/**
+ * The deck as announcement slide texts for the schedule, after the announcement's own title slide. Slides are
+ * separated by blank lines; a {line} at the end of a slide shows in the reference color.
+ */
+export function deckSlideTexts(deck: DeckSlide[]): string[] {
+  return deck.flatMap((slide) => {
+    switch (slide.kind) {
+      case 'title':
+        return []
+      case 'scripture':
+        return [slide.text ? `${slide.text}\n{${slide.reference}}` : slide.reference]
+      case 'statement':
+        return [`“${slide.text}”`]
+      case 'point':
+        return [slide.text]
+      case 'closing':
+        return [[slide.text, ...slide.lines.map((line) => `{${line}}`)].join('\n')]
+    }
+  })
+}
+
+/**
+ * The largest font size, in points, from `max` down to `min`, at which `text` fits a box `width` by `height` inches
+ * when wrapped at spaces. Widths are estimated for a sans-serif face (with room to spare), so the words never run out
+ * of the box even where PowerPoint does not apply its own shrink-to-fit.
+ */
+export function fitFontSize(text: string, width: number, height: number, max: number, min: number): number {
+  const lineCount = (size: number) => {
+    const perLine = Math.max(1, Math.floor((width * 72) / (size * 0.56)))
+    let lines = 0
+    for (const paragraph of text.split('\n')) {
+      let used = 0
+      lines += 1
+      for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+        // A word longer than a line breaks across lines.
+        const length = Math.min(word.length, perLine)
+        if (used > 0 && used + 1 + length > perLine) {
+          lines += 1
+          used = length
+        } else used += (used > 0 ? 1 : 0) + length
+        if (word.length > perLine) lines += Math.ceil(word.length / perLine) - 1
+      }
+    }
+    return lines
+  }
+  for (let size = max; size > min; size -= 2) if ((lineCount(size) * size * 1.2) / 72 <= height) return size
+  return min
 }
 
 /** Trims a summary to `max` words, ending at the last full sentence that fits when there is one. */
@@ -267,18 +343,33 @@ export function limitWords(text: string, max: number): string {
   return end > cut.length / 2 ? cut.slice(0, end + 1) : `${cut}…`
 }
 
-/** Splits a long transcript into chunks of about `size` characters, at sentence ends where possible. */
-export function transcriptChunks(text: string, size: number): string[] {
+/** cleanTranscript and generateNotes send a transcript in chunks of at most this many words, one request each. */
+export const CHUNK_WORDS = 1500
+
+/**
+ * Splits a transcript into chunks of at most `maxWords` words, without overlap, breaking only at sentence ends. A
+ * single sentence longer than that (speech recognition can run on without full stops) is cut between words, so no
+ * chunk is ever longer than `maxWords`.
+ */
+export function transcriptChunks(text: string, maxWords = CHUNK_WORDS): string[] {
   const chunks: string[] = []
-  let rest = text.trim()
-  while (rest.length > size) {
-    const window = rest.slice(0, size)
-    const sentence = Math.max(window.lastIndexOf('. '), window.lastIndexOf('? '), window.lastIndexOf('! '))
-    const space = window.lastIndexOf(' ')
-    const at = sentence > size / 2 ? sentence + 1 : space > 0 ? space : size
-    chunks.push(rest.slice(0, at).trim())
-    rest = rest.slice(at).trim()
+  let current: string[] = []
+  let count = 0
+  const flush = () => {
+    if (current.length > 0) chunks.push(current.join(' '))
+    current = []
+    count = 0
   }
-  if (rest) chunks.push(rest)
+  // A sentence ends at . ! ? or … (and any closing quote or bracket after it) followed by a space.
+  for (const sentence of text.trim().split(/(?<=[.!?…]["'”’)\]]*)\s+/)) {
+    const words = sentence.split(/\s+/).filter(Boolean)
+    if (words.length === 0) continue
+    if (count + words.length > maxWords) flush()
+    // An overlong sentence: whole chunks of it first; the rest starts the next chunk.
+    while (words.length > maxWords) chunks.push(words.splice(0, maxWords).join(' '))
+    current.push(words.join(' '))
+    count += words.length
+  }
+  flush()
   return chunks
 }

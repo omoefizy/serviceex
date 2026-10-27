@@ -57,6 +57,19 @@ describe('Sermons screen', () => {
     })
   })
 
+  it('keeps Settings in the toolbar, pinned after the screens list that scrolls', () => {
+    const html = renderToString(createElement(Toolbar))
+    const nav = /<nav class="toolbar-nav"[^>]*>([\s\S]*?)<\/nav>/.exec(html)
+    expect(nav).not.toBeNull()
+    // Every screen added so far is in the list.
+    for (const label of ['Stage display', 'Stream', 'Sermons', 'Themes']) expect(nav![1]).toContain(`aria-label="${label}"`)
+    // Settings is not inside the scrolling list but right after it, and says its shortcut.
+    expect(nav![1]).not.toContain('aria-label="Settings"')
+    const after = html.slice(html.indexOf('</nav>'))
+    expect(after).toMatch(/^<\/nav><button[^>]*toolbar-settings[^>]*aria-label="Settings"/)
+    expect(after).toMatch(/title="Settings \((⌘|Ctrl\+),\)"/)
+  })
+
   it('asks for the sermon with optional fields and a Skip button', () => {
     const html = renderToString(createElement(StartSermonModal, { onStart: () => undefined, onCancel: () => undefined }))
     for (const text of ['Start sermon', 'Title', 'Preacher', 'Series', 'Date', 'Skip', 'Start Listening']) expect(html).toContain(text)

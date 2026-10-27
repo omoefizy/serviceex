@@ -1766,14 +1766,47 @@ export interface SermonsApi {
   finish(id: number): Promise<void>
   exportText(id: number, format: 'txt' | 'md', options: SermonExportOptions): Promise<SermonExportResult>
   exportPdf(id: number, options: SermonExportOptions): Promise<SermonExportResult>
-  /** The sermon's slides as one announcement, for the schedule: key points, pinned statements and scripture. */
-  exportSlides(id: number): Promise<AnnouncementPayload | null>
-  /** The same slides as a PowerPoint file, through a save dialog. */
+  /**
+   * The sermon's slides as one announcement, for the schedule: its title slide, then scripture, pinned statements, key
+   * points and a closing slide (see sermonDeck in shared/sermons).
+   */
+  exportSlides(id: number): Promise<AnnouncementPayload>
+  /** The same slides as a PowerPoint file, through a save dialog, with the church logo on the title slide. */
   exportPptx(id: number): Promise<SermonExportResult>
   /** Whether the AI buttons can work: AI on and a key (or service) available. */
   aiAvailable(): Promise<boolean>
-  cleanTranscript(id: number): Promise<AiResult<Sermon>>
-  generateNotes(id: number): Promise<AiResult<Sermon>>
+  /** Cleans the transcript a part at a time (about 1,500 words each), sending progress to onAiProgress. */
+  cleanTranscript(id: number): Promise<AiResult<SermonAiOutcome>>
+  /** Summary and key points; a long sermon is summarised a part at a time first. */
+  generateNotes(id: number): Promise<AiResult<SermonAiOutcome>>
+  /** Stops the running clean or notes job for a sermon after the part being worked on; what is done is kept. */
+  cancelAi(id: number): Promise<void>
+  /** Progress of cleanTranscript and generateNotes. Returns a function that stops listening. */
+  onAiProgress(listener: (progress: SermonAiProgress) => void): () => void
+}
+
+/** Where a sermon AI job is: cleaning part `done` of `total`, summarising a part, or writing the final notes. */
+export interface SermonAiProgress {
+  sermonId: number
+  step: 'clean' | 'summarise' | 'notes'
+  done: number
+  total: number
+}
+
+export interface SermonAiOutcome {
+  sermon: Sermon
+  /** Parts finished, of all parts. */
+  done: number
+  total: number
+  /**
+   * Parts (numbered from 1) the AI could not do after every try. Cleaning keeps their words as spoken; notes leave
+   * them out of the summary.
+   */
+  failedParts: number[]
+  /** Stopped by Cancel; finished parts are kept. */
+  cancelled: boolean
+  /** Why the last failed part failed, when one did. */
+  error: AiError | null
 }
 
 // ---------- Plan ----------
@@ -1839,6 +1872,13 @@ export interface AiTasks {
    * scripture list comes from the sermon's saved references, never from the AI.
    */
   sermonNotes: { input: { transcript: string }; output: { summary: string; points: string[] } }
+  /**
+   * A few lines on one part of a long sermon (a summary of at most 60 words and up to 3 points), for sermonNotesFromParts.
+   * Like sermonNotes, it may reword but not add names, numbers or dates.
+   */
+  summarizePart: { input: { transcript: string }; output: { summary: string; points: string[] } }
+  /** The summary and key points of a long sermon from the short summaries of its parts, in order (see summarizePart). */
+  sermonNotesFromParts: { input: { parts: string }; output: { summary: string; points: string[] } }
 }
 
 export type AiTask = keyof AiTasks

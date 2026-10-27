@@ -7,7 +7,10 @@ import {
   rawParagraphs,
   sermonFooter,
   sermonHtml,
-  sermonSlideTexts,
+  deckSlideTexts,
+  fitFontSize,
+  sermonContentCount,
+  sermonDeck,
   sermonText,
   transcriptChunks,
   UNTITLED_SERMON,
@@ -129,23 +132,41 @@ describe('PDF page', () => {
 })
 
 describe('slides', () => {
-  it('makes one slide per key point, pinned statement and reference', () => {
-    const slides = sermonSlideTexts(sermon(), [
-      { reference: 'Matthew 5:13 KJV', text: 'Short verse words.' },
-      { reference: 'Matthew 5:14-16', text: null },
-    ])
-    expect(slides).toEqual([
-      'Small things carry flavour.',
-      'Light is meant to be seen.',
-      '“A pinch is enough to change the whole pot.”',
+  const passages = [
+    { reference: 'Matthew 5:13 KJV', text: 'Short verse words.' },
+    { reference: 'Matthew 5:14-16', text: null },
+  ]
+
+  it('makes a title slide, then scripture, pinned statements, key points and a closing slide', () => {
+    const deck = sermonDeck(sermon(), passages)
+    expect(deck.map((slide) => slide.kind)).toEqual(['title', 'scripture', 'scripture', 'statement', 'point', 'point', 'closing'])
+    expect(deck[0]).toMatchObject({ title: 'Salt and Light', lines: ['Juno Halvorsen', expect.stringMatching(/2026/), 'Cedar Hill Gathering'] })
+    expect(deckSlideTexts(deck)).toEqual([
       'Short verse words.\n{Matthew 5:13 KJV}',
       'Matthew 5:14-16',
+      '“A pinch is enough to change the whole pot.”',
+      'Small things carry flavour.',
+      'Light is meant to be seen.',
+      'Thank you for joining us\n{Cedar Hill Gathering}',
     ])
   })
 
   it('shows a long passage as its reference alone', () => {
-    const [slide] = sermonSlideTexts(sermon({ keyPoints: [], statements: [] }), [{ reference: 'Psalm 1', text: 'word '.repeat(80) }])
-    expect(slide).toBe('Psalm 1')
+    const deck = sermonDeck(sermon({ keyPoints: [], statements: [] }), [{ reference: 'Psalm 1', text: 'word '.repeat(80) }])
+    expect(deck[1]).toEqual({ kind: 'scripture', reference: 'Psalm 1', text: null })
+  })
+
+  it('counts only the slides with something from the sermon on them', () => {
+    expect(sermonContentCount(sermon())).toBe(5)
+    expect(sermonContentCount(sermon({ keyPoints: [], scriptures: [], statements: [{ id: 1, text: 'Not pinned.', atMs: 0, pinned: false }] }))).toBe(0)
+  })
+
+  it('picks a font size that fits the box', () => {
+    expect(fitFontSize('Short.', 8.8, 4.4, 40, 12)).toBe(40)
+    const long = 'many words here '.repeat(60)
+    const size = fitFontSize(long, 8.8, 4.4, 40, 12)
+    expect(size).toBeLessThan(40)
+    expect(size).toBeGreaterThanOrEqual(12)
   })
 })
 
@@ -164,9 +185,16 @@ describe('helpers', () => {
 
   it('splits a long transcript into pieces at sentence ends, losing nothing', () => {
     const text = Array.from({ length: 300 }, (_, i) => `Sentence number ${i} is here.`).join(' ')
-    const chunks = transcriptChunks(text, 1000)
-    expect(chunks.length).toBeGreaterThan(5)
-    expect(chunks.every((c) => c.length <= 1000 && c.endsWith('.'))).toBe(true)
+    const chunks = transcriptChunks(text, 200)
+    expect(chunks.length).toBe(8)
+    expect(chunks.every((c) => c.split(' ').length <= 200 && c.endsWith('.'))).toBe(true)
+    expect(chunks.join(' ')).toBe(text)
+  })
+
+  it('cuts a run-on transcript without full stops between words, never past the limit', () => {
+    const text = Array.from({ length: 450 }, (_, i) => `w${i}`).join(' ')
+    const chunks = transcriptChunks(text, 200)
+    expect(chunks.map((c) => c.split(' ').length)).toEqual([200, 200, 50])
     expect(chunks.join(' ')).toBe(text)
   })
 })

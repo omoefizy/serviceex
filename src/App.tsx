@@ -212,6 +212,12 @@ function App() {
         st.panicPowerPoint()
         return
       }
+      // Cmd+, (Ctrl+,) opens Settings from anywhere, even while typing, as in most desktop apps.
+      if (mod && !e.altKey && !e.shiftKey && e.key === ',') {
+        e.preventDefault()
+        st.openSettings(true)
+        return
+      }
       // Cmd+K (Ctrl+K) opens the command palette from anywhere.
       if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
         e.preventDefault()

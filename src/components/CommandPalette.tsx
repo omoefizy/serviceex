@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BookOpen,
+  BookOpenText,
   Eraser,
   Image,
   Monitor,
@@ -64,7 +65,8 @@ function actionCommands(): Command[] {
     { id: 'prev-slide', group: 'Actions', label: 'Previous live slide', shortcut: '←', icon: ArrowLeft, run: () => st().previousSlide() },
     { id: 'next-item', group: 'Actions', label: 'Stage the next schedule item', shortcut: `${MOD}↓`, icon: SkipForward, run: () => st().nextItem() },
     { id: 'themes', group: 'Actions', label: 'Open themes', icon: Palette, feature: 'themes.editor', run: () => st().openThemeEditor(true) },
-    { id: 'settings', group: 'Actions', label: 'Open settings', icon: Settings, run: () => st().openSettings(true) },
+    { id: 'settings', group: 'Actions', label: 'Open settings', shortcut: `${MOD},`, icon: Settings, run: () => st().openSettings(true) },
+    { id: 'sermons', group: 'Actions', label: 'Open sermons', icon: BookOpenText, run: () => st().openSermons(true) },
     {
       id: 'stage',
       group: 'Actions',

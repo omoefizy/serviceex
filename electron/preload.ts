@@ -29,6 +29,7 @@ import type {
   SharingApi,
   SharingEvent,
   LicenseApi,
+  SermonAiProgress,
   SermonsApi,
   WorshipDeckApi,
 } from '../shared/types'
@@ -370,6 +371,12 @@ const sermons: SermonsApi = {
   aiAvailable: () => ipcRenderer.invoke('sermons:aiAvailable'),
   cleanTranscript: (id) => ipcRenderer.invoke('sermons:cleanTranscript', id),
   generateNotes: (id) => ipcRenderer.invoke('sermons:generateNotes', id),
+  cancelAi: (id) => ipcRenderer.invoke('sermons:cancelAi', id),
+  onAiProgress(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, progress: SermonAiProgress) => listener(progress)
+    ipcRenderer.on('sermons:aiProgress', handler)
+    return () => ipcRenderer.off('sermons:aiProgress', handler)
+  },
 }
 
 const api: WorshipDeckApi = {

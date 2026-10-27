@@ -155,10 +155,13 @@ button {
 
 /* ---------- Toolbar ---------- */
 
+/* One row when there is room. A narrow window wraps the controls onto a second row rather than pushing the last of
+   them (Settings) past the window edge, where body { overflow: hidden } would cut them off. */
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-2) var(--space-4);
   min-height: 56px;
   padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--border);
@@ -632,10 +635,32 @@ button {
   outline-offset: 2px;
 }
 
+/* May shrink below its contents: the screens list then scrolls and Settings, after it, stays in view. */
 .toolbar-actions {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  margin-left: auto;
+}
+
+.toolbar-actions > *:not(.toolbar-nav) {
+  flex-shrink: 0;
+}
+
+/* Icon buttons only: their tooltips are native, so scrolling clips nothing. Popups (Layouts) stay outside it. */
+.toolbar-nav {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.toolbar-nav > * {
+  flex-shrink: 0;
 }
 
 .toolbar-search {
@@ -4045,6 +4070,15 @@ button {
   gap: var(--space-2);
   padding-top: var(--space-3);
   border-top: 1px solid var(--border);
+}
+
+.sermon-ai-progress {
+  align-items: center;
+}
+
+.sermon-ai-progress progress {
+  width: 140px;
+  accent-color: var(--accent);
 }
 
 .sermon-section h3 {

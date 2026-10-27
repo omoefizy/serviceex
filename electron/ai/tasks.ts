@@ -11,12 +11,11 @@ import { getVerse, listBooks } from '../db/bible'
 import { getAppSettings } from '../db/settings'
 import { fail, readyClient, toAiError } from './client'
 
-/** Longest input accepted per text field; well past a long song or a full bulletin. */
+/**
+ * Longest input accepted per text field; well past a long song, a full bulletin or one sermon chunk (CHUNK_WORDS
+ * words). A whole sermon is never sent at once: see ../sermons/ai.
+ */
 const MAX_INPUT_CHARS = 20_000
-/** A whole sermon transcript for notes: about three hours of speech. */
-export const MAX_SERMON_CHARS = 150_000
-/** cleanTranscript takes a transcript in pieces of about this size, so each answer stays short and checkable. */
-export const CLEAN_CHUNK_CHARS = 6_000
 
 /** A check failure the operator should see as is. */
 class TaskError extends Error {}
@@ -164,6 +163,42 @@ function existingReferences(references: unknown): string[] {
     }
   }
   return kept
+}
+
+// ---------- Sermon notes ----------
+
+/** summarizePart's limits: a few lines per part, so the final request from all the parts stays small. */
+export const PART_SUMMARY_WORDS = 60
+export const PART_POINTS = 3
+
+const NOTES_FORMAT = [
+  `Write a summary of at most ${SUMMARY_MAX_WORDS} words, then ${KEY_POINTS.min} to ${KEY_POINTS.max} key points in the order the`,
+  'sermon makes them, each one sentence of at most twenty words.',
+].join('\n')
+
+const NOTES_RULES = [
+  'Use only what the speaker said. Do not add teaching, stories, scripture, names, places, numbers or dates that',
+  "are not in the text, and do not guess at the speaker's name or role. Do not quote or list Bible",
+  'references; the app adds those itself.',
+].join('\n')
+
+const NOTES_SCHEMA = object({ summary: { type: 'string' }, points: { type: 'array', items: { type: 'string' } } })
+
+/** A summary and points from the reply, cut to size, with nothing in them that `source` does not say. */
+function checkNotes(output: unknown, source: string, maxPoints: number, maxWords: number): { summary: string; points: string[] } {
+  const { summary, points } = output as { summary?: unknown; points?: unknown }
+  const kept = Array.isArray(points)
+    ? points.filter((p): p is string => typeof p === 'string').map((p) => p.trim()).filter(Boolean).slice(0, maxPoints)
+    : []
+  if (typeof summary !== 'string' || !summary.trim() || kept.length === 0) throw new TaskError('The AI returned no notes. Try again.')
+  const short = limitWords(summary, maxWords)
+  // Rewording is the point here, but numbers, dates, links and names must all come from the source.
+  const invented = inventedFacts(source, [short, ...kept], true)
+  if (invented.length > 0) {
+    const sample = invented.slice(0, 5).map((w) => `“${w}”`).join(', ')
+    throw new TaskError(`The AI added details that were not said (${sample}), so its notes were not used. Try again.`)
+  }
+  return { summary: short, points: kept }
 }
 
 // ---------- Tasks ----------
@@ -374,10 +409,11 @@ const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
       'reorder words. Do not add headings, labels, speaker names, scripture text or numbers written as digits. When a',
       'word looks misheard, leave it as it is. The stretch may start or end in the middle of a sentence; leave it so.',
     ].join('\n'),
-    parseInput: (input) => ({ transcript: textField(input, 'transcript', CLEAN_CHUNK_CHARS * 2) }),
+    parseInput: (input) => ({ transcript: textField(input, 'transcript') }),
     prompt: ({ transcript }) => `Transcript:\n\n${transcript}`,
     schema: object({ transcript: { type: 'string' } }),
-    maxTokens: 6000,
+    // A chunk of 1,500 words comes back as about 2,000 tokens, with room for thinking.
+    maxTokens: 8000,
     effort: 'low',
     check: (output, input) => {
       const { transcript } = output as { transcript?: unknown }
@@ -397,33 +433,49 @@ const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
       'You write notes on a sermon from its transcript, for a church to keep with the recording. The transcript comes',
       'from speech recognition and may mishear words.',
       '',
-      `Write a summary of at most ${SUMMARY_MAX_WORDS} words, then ${KEY_POINTS.min} to ${KEY_POINTS.max} key points in the order the`,
-      'sermon makes them, each one sentence of at most twenty words.',
+      NOTES_FORMAT,
       '',
-      'Use only what the speaker said. Do not add teaching, stories, scripture, names, places, numbers or dates that',
-      'are not in the transcript, and do not guess at the speaker\'s name or role. Do not quote or list Bible',
-      'references; the app adds those itself.',
+      NOTES_RULES,
     ].join('\n'),
-    parseInput: (input) => ({ transcript: textField(input, 'transcript', MAX_SERMON_CHARS) }),
+    parseInput: (input) => ({ transcript: textField(input, 'transcript') }),
     prompt: ({ transcript }) => `Transcript:\n\n${transcript}`,
-    schema: object({ summary: { type: 'string' }, points: { type: 'array', items: { type: 'string' } } }),
+    schema: NOTES_SCHEMA,
     maxTokens: 4000,
     effort: 'medium',
-    check: (output, input) => {
-      const { summary, points } = output as { summary?: unknown; points?: unknown }
-      const kept = Array.isArray(points)
-        ? points.filter((p): p is string => typeof p === 'string').map((p) => p.trim()).filter(Boolean).slice(0, KEY_POINTS.max)
-        : []
-      if (typeof summary !== 'string' || !summary.trim() || kept.length === 0) throw new TaskError('The AI returned no notes. Try again.')
-      const short = limitWords(summary, SUMMARY_MAX_WORDS)
-      // Rewording is the point here, but numbers, dates, links and names must all come from the transcript.
-      const invented = inventedFacts(input.transcript, [short, ...kept], true)
-      if (invented.length > 0) {
-        const sample = invented.slice(0, 5).map((w) => `“${w}”`).join(', ')
-        throw new TaskError(`The AI added details that were not said (${sample}), so its notes were not used. Try again.`)
-      }
-      return { summary: short, points: kept }
-    },
+    check: (output, input) => checkNotes(output, input.transcript, KEY_POINTS.max, SUMMARY_MAX_WORDS),
+  },
+
+  summarizePart: {
+    system: [
+      'You are given one part of a long sermon transcript, from speech recognition, which may mishear words. The part',
+      'may start or end in the middle of a sentence. Write what this part says, for notes on the whole sermon made later:',
+      `a summary of at most ${PART_SUMMARY_WORDS} words, and at most ${PART_POINTS} main points, each one sentence of at most twenty words.`,
+      '',
+      NOTES_RULES,
+    ].join('\n'),
+    parseInput: (input) => ({ transcript: textField(input, 'transcript') }),
+    prompt: ({ transcript }) => `Part of the transcript:\n\n${transcript}`,
+    schema: NOTES_SCHEMA,
+    maxTokens: 2000,
+    effort: 'low',
+    check: (output, input) => checkNotes(output, input.transcript, PART_POINTS, PART_SUMMARY_WORDS),
+  },
+
+  sermonNotesFromParts: {
+    system: [
+      'You write notes on a long sermon for a church to keep with the recording. You are given short summaries of its',
+      'parts, in the order they were preached, each followed by its main points.',
+      '',
+      NOTES_FORMAT,
+      '',
+      NOTES_RULES.replace('what the speaker said', 'what the part summaries say'),
+    ].join('\n'),
+    parseInput: (input) => ({ parts: textField(input, 'parts') }),
+    prompt: ({ parts }) => `Part summaries:\n\n${parts}`,
+    schema: NOTES_SCHEMA,
+    maxTokens: 4000,
+    effort: 'medium',
+    check: (output, input) => checkNotes(output, input.parts, KEY_POINTS.max, SUMMARY_MAX_WORDS),
   },
 }
 
@@ -439,6 +491,8 @@ export const TASK_FEATURES: Record<AiTask, FeatureKey> = {
   pickStatements: 'ai.statements',
   cleanTranscript: 'sermon.ai.cleanup',
   sermonNotes: 'sermon.ai.cleanup',
+  summarizePart: 'sermon.ai.cleanup',
+  sermonNotesFromParts: 'sermon.ai.cleanup',
 }
 
 /** Server-side refusal fallback: Sonnet 5.5 supports the "default" form; Haiku 5.5 has no fallback. */

@@ -2,9 +2,10 @@ import { BookOpenText, Download, FileText, ListPlus, Pin, PinOff, Plus, Presenta
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import { can, upgradeNote, type FeatureKey } from '../../shared/features'
 import { formatReference, parseReference } from '../../shared/parseReference'
-import { DEFAULT_EXPORT, longDate, rawParagraphs, sermonTitle, textParagraphs, UNTITLED_SERMON } from '../../shared/sermons'
-import type { AiError, Sermon, SermonExportOptions, SermonExportResult, SermonPatch, SermonSummary } from '../../shared/types'
+import { DEFAULT_EXPORT, longDate, rawParagraphs, sermonContentCount, sermonTitle, textParagraphs, UNTITLED_SERMON } from '../../shared/sermons'
+import type { AiError, AiResult, Sermon, SermonAiOutcome, SermonAiProgress, SermonExportOptions, SermonExportResult, SermonPatch, SermonSummary } from '../../shared/types'
 import { useListener } from '../lib/listener'
+import { outcomeMessage, progressLabel } from '../lib/sermonAi'
 import { useOperatorStore } from '../store'
 import { AiButton } from './AiButton'
 
@@ -142,6 +143,7 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [aiError, setAiError] = useState<AiError | null>(null)
+  const [progress, setProgress] = useState<SermonAiProgress | null>(null)
   const [newReference, setNewReference] = useState('')
   /** Whether a field is being typed in, so a refresh while recording does not overwrite it. */
   const editing = useRef(false)
@@ -168,6 +170,16 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
     reload().catch((err) => setError(String(err)))
     window.api.sermons.aiAvailable().then((ok) => setAiAvailable(ok === true), console.error)
   }, [reload])
+
+  // Progress of this sermon's clean or notes job, sent by the main process.
+  useEffect(() => {
+    const off = window.api.sermons.onAiProgress?.((next) => {
+      if (next.sermonId === id) setProgress(next)
+    })
+    return () => {
+      if (typeof off === 'function') off()
+    }
+  }, [id])
 
   // A sermon being recorded is read again every few seconds.
   const recording = sermon?.status === 'recording'
@@ -211,23 +223,56 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
     return result.path ? `${what} saved to ${result.path}` : null
   }
 
-  async function runAi(label: string, task: () => Promise<{ ok: true; value: Sermon } | { ok: false; error: AiError }>) {
+  /** Runs a clean or notes job, showing its progress; the updated sermon on success, null when it failed. */
+  async function aiJob(task: 'clean' | 'notes'): Promise<Sermon | null> {
     setAiError(null)
-    await run(label, async () => {
-      const answer = await task()
-      if (!answer.ok) {
-        setAiError(answer.error)
-        return
-      }
-      editing.current = false
-      apply(answer.value)
+    let answer: AiResult<SermonAiOutcome>
+    try {
+      answer = await (task === 'clean' ? window.api.sermons.cleanTranscript(id) : window.api.sermons.generateNotes(id))
+    } finally {
+      setProgress(null)
+    }
+    if (!answer.ok) {
+      setAiError(answer.error)
       return null
+    }
+    editing.current = false
+    apply(answer.value.sermon)
+    const note = outcomeMessage(task, answer.value)
+    if (note) setMessage(note)
+    return answer.value.sermon
+  }
+
+  async function runAi(task: 'clean' | 'notes') {
+    await run(task, async () => {
+      await aiJob(task)
     })
   }
 
+  /**
+   * Before a slide export: offers to make key points first when there are none and AI can, then asks before
+   * exporting a deck with nothing but its title and closing slides. False when the operator cancels.
+   */
+  async function readyForSlides(): Promise<boolean> {
+    let current = sermon!
+    const canGenerate = aiAvailable && can('sermon.ai.cleanup') && current.segments.length > 0
+    if (current.keyPoints.length === 0 && canGenerate) {
+      if (window.confirm('This sermon has no key points yet. Generate them from the transcript with AI before exporting?\n\nOK generates them first. Cancel exports without them.')) {
+        current = (await aiJob('notes')) ?? current
+      }
+    }
+    if (sermonContentCount(current) > 0) return true
+    return window.confirm('This sermon has no key points, scriptures or statements yet. Generate notes first.\n\nOK exports only the title and closing slides. Cancel goes back.')
+  }
+
+  async function exportPptx() {
+    if (!(await readyForSlides())) return null
+    return saved(await window.api.sermons.exportPptx(id), 'PowerPoint')
+  }
+
   async function addSlides() {
+    if (!(await readyForSlides())) return null
     const payload = await window.api.sermons.exportSlides(id)
-    if (!payload) return 'There is nothing to make slides from yet: generate or type key points, pin statements or add scripture.'
     await addToSchedule('announcement', null, payload)
     const count = payload.body.split(/\n\s*\n/).length
     return `Added “${payload.title}” to ${service?.name ?? 'the schedule'}: a title slide and ${count} slide${count === 1 ? '' : 's'}.`
@@ -309,7 +354,7 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
               busy={busy === 'notes'}
               disabledReason={sermon.segments.length === 0 ? 'There is no transcript yet' : busy ? 'Wait for the current task' : null}
               tooltip="A short summary and 5 to 8 key points, from what was said only"
-              onClick={() => void runAi('notes', () => window.api.sermons.generateNotes(id))}
+              onClick={() => void runAi('notes')}
             />
             <AiButton
               feature="sermon.ai.cleanup"
@@ -318,8 +363,17 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
               busy={busy === 'clean'}
               disabledReason={sermon.segments.length === 0 ? 'There is no transcript yet' : busy ? 'Wait for the current task' : null}
               tooltip="Punctuation and paragraphs, filler sounds removed; every word kept. The raw transcript is kept too."
-              onClick={() => void runAi('clean', () => window.api.sermons.cleanTranscript(id))}
+              onClick={() => void runAi('clean')}
             />
+          </div>
+        )}
+        {progress && (
+          <div className="settings-row sermon-ai-progress" role="status" aria-live="polite">
+            <progress max={progress.total} value={progress.step === 'notes' ? progress.total : progress.done - 1} />
+            <span>{progressLabel(progress)}…</span>
+            <button type="button" className="button" onClick={() => void window.api.sermons.cancelAi(id)} title="Stop after the part being worked on; what is done is kept">
+              <X size={14} aria-hidden="true" /> Cancel
+            </button>
           </div>
         )}
         {aiError && (
@@ -464,15 +518,15 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
             <FileText size={14} aria-hidden="true" /> Markdown (.md)
           </GatedButton>
         </div>
-        <p className="hint">Slides use the key points, pinned statements and scripture, one idea each, with the default announcement theme.</p>
+        <p className="hint">Slides: a title slide, then scripture, pinned statements and key points, one idea each, and a closing slide. In the schedule they use the default announcement theme.</p>
         <div className="settings-row sermon-export-buttons">
           <span title={service ? undefined : 'Create or open a service first'}>
             <GatedButton feature="sermon.export.slides" busy={busy !== null || !service} onClick={() => void run('slides', addSlides)}>
               <ListPlus size={14} aria-hidden="true" /> Add Slides to {service?.name ?? 'the Schedule'}
             </GatedButton>
           </span>
-          <GatedButton feature="sermon.export.slides" busy={busy !== null} onClick={() => void run('pptx', async () => saved(await window.api.sermons.exportPptx(id), 'PowerPoint'))}>
-            <Presentation size={14} aria-hidden="true" /> Export as PowerPoint (.pptx)
+          <GatedButton feature="sermon.export.slides" busy={busy !== null} onClick={() => void run('pptx', exportPptx)}>
+            <Presentation size={14} aria-hidden="true" /> {busy === 'pptx' && progress ? 'Making key points…' : 'Export as PowerPoint (.pptx)'}
           </GatedButton>
         </div>
       </section>

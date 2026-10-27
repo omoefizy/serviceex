@@ -22,7 +22,7 @@ import {
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { can, upgradeNote } from '../../shared/features'
 import type { OutputMode } from '../../shared/types'
-import { MOD, MODE_KEYS } from '../lib/shortcuts'
+import { IS_MAC, MOD, MODE_KEYS } from '../lib/shortcuts'
 import { selectStreamState, useOperatorStore } from '../store'
 import { AlertsPanel } from './AlertsPanel'
 import { LayoutMenu } from './LayoutMenu'
@@ -287,58 +287,62 @@ export function Toolbar() {
           <span>Search</span>
           <kbd>{MOD}K</kbd>
         </button>
-        {/* Disabled buttons show no tooltip, so the plan's note sits on a wrapper. */}
-        <span title={can('stageDisplay') ? undefined : upgradeNote('stageDisplay')}>
+        {/* The screens scroll sideways when the window is narrow; Settings stays after them, always in view. */}
+        <nav className="toolbar-nav" aria-label="Screens">
+          {/* Disabled buttons show no tooltip, so the plan's note sits on a wrapper. */}
+          <span title={can('stageDisplay') ? undefined : upgradeNote('stageDisplay')}>
+            <button
+              className={`icon-button toolbar-icon${stageOpen ? ' active' : ''}`}
+              aria-pressed={stageOpen}
+              aria-label="Stage display"
+              disabled={!stageOpen && !can('stageDisplay')}
+              title={!can('stageDisplay') ? undefined : stageOpen ? 'Close the stage display' : 'Open the stage display for the worship leader'}
+              onClick={() => toggleStage().catch(console.error)}
+            >
+              <MonitorPlay size={18} />
+            </button>
+          </span>
+          <span title={can('multiOutput') ? undefined : upgradeNote('multiOutput')}>
+            <button
+              className={`icon-button toolbar-icon${streamPanelOpen ? ' active' : ''}`}
+              aria-pressed={streamPanelOpen}
+              aria-label="Stream"
+              disabled={!streamPanelOpen && !can('multiOutput')}
+              title={!can('multiOutput') ? undefined : streamOpen ? 'Stream output, logos and key (the Stream output is open)' : 'Stream output, logos and key'}
+              onClick={() => openStreamPanel(!streamPanelOpen)}
+            >
+              <Cast size={18} />
+              {streamOpen && <span className="toolbar-icon-dot" aria-hidden="true" />}
+            </button>
+          </span>
           <button
-            className={`icon-button toolbar-icon${stageOpen ? ' active' : ''}`}
-            aria-pressed={stageOpen}
-            aria-label="Stage display"
-            disabled={!stageOpen && !can('stageDisplay')}
-            title={!can('stageDisplay') ? undefined : stageOpen ? 'Close the stage display' : 'Open the stage display for the worship leader'}
-            onClick={() => toggleStage().catch(console.error)}
+            className={`icon-button toolbar-icon${sermonsOpen ? ' active' : ''}`}
+            aria-pressed={sermonsOpen}
+            aria-label="Sermons"
+            title="Sermons: saved listening sessions, their transcripts and exports"
+            onClick={() => openSermons(!sermonsOpen)}
           >
-            <MonitorPlay size={18} />
+            <BookOpenText size={18} />
           </button>
-        </span>
-        <span title={can('multiOutput') ? undefined : upgradeNote('multiOutput')}>
-          <button
-            className={`icon-button toolbar-icon${streamPanelOpen ? ' active' : ''}`}
-            aria-pressed={streamPanelOpen}
-            aria-label="Stream"
-            disabled={!streamPanelOpen && !can('multiOutput')}
-            title={!can('multiOutput') ? undefined : streamOpen ? 'Stream output, logos and key (the Stream output is open)' : 'Stream output, logos and key'}
-            onClick={() => openStreamPanel(!streamPanelOpen)}
-          >
-            <Cast size={18} />
-            {streamOpen && <span className="toolbar-icon-dot" aria-hidden="true" />}
-          </button>
-        </span>
+          <span title={can('themes.editor') ? undefined : upgradeNote('themes.editor')}>
+            <button
+              className={`icon-button toolbar-icon${themeEditorOpen ? ' active' : ''}`}
+              aria-pressed={themeEditorOpen}
+              aria-label="Themes"
+              disabled={!can('themes.editor')}
+              title={can('themes.editor') ? 'Themes' : undefined}
+              onClick={() => openThemeEditor(!themeEditorOpen)}
+            >
+              <Palette size={18} />
+            </button>
+          </span>
+        </nav>
         <button
-          className={`icon-button toolbar-icon${sermonsOpen ? ' active' : ''}`}
-          aria-pressed={sermonsOpen}
-          aria-label="Sermons"
-          title="Sermons: saved listening sessions, their transcripts and exports"
-          onClick={() => openSermons(!sermonsOpen)}
-        >
-          <BookOpenText size={18} />
-        </button>
-        <span title={can('themes.editor') ? undefined : upgradeNote('themes.editor')}>
-          <button
-            className={`icon-button toolbar-icon${themeEditorOpen ? ' active' : ''}`}
-            aria-pressed={themeEditorOpen}
-            aria-label="Themes"
-            disabled={!can('themes.editor')}
-            title={can('themes.editor') ? 'Themes' : undefined}
-            onClick={() => openThemeEditor(!themeEditorOpen)}
-          >
-            <Palette size={18} />
-          </button>
-        </span>
-        <button
-          className={`icon-button toolbar-icon${settingsOpen ? ' active' : ''}`}
+          className={`icon-button toolbar-icon toolbar-settings${settingsOpen ? ' active' : ''}`}
           aria-pressed={settingsOpen}
           aria-label="Settings"
-          title="Settings"
+          aria-keyshortcuts={IS_MAC ? 'Meta+,' : 'Control+,'}
+          title={`Settings (${MOD},)`}
           onClick={() => openSettings(!settingsOpen)}
         >
           <Settings size={18} />

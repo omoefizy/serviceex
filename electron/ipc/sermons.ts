@@ -2,10 +2,9 @@ import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electro
 import { writeFile } from 'node:fs/promises'
 import { requireFeature } from '../../shared/features'
 import { parseReference } from '../../shared/parseReference'
-import { exportFileName, rawTranscript, scriptureList, sermonSlideTexts, sermonText, sermonTitle, SLIDE_VERSE_WORDS, transcriptChunks } from '../../shared/sermons'
-import type { AiResult, AnnouncementPayload, Sermon, SermonExportOptions, SermonExportResult } from '../../shared/types'
+import { deckSlideTexts, exportFileName, rawTranscript, scriptureList, sermonDeck, sermonText, sermonTitle, SLIDE_VERSE_WORDS, type DeckSlide } from '../../shared/sermons'
+import type { AiResult, AnnouncementPayload, Sermon, SermonAiOutcome, SermonAiProgress, SermonExportOptions, SermonExportResult } from '../../shared/types'
 import { encryptionAvailable, fail } from '../ai/client'
-import { CLEAN_CHUNK_CHARS, runTask } from '../ai/tasks'
 import { getRange } from '../db/bible'
 import {
   addScripture,
@@ -28,6 +27,7 @@ import {
 import { getAppSettings } from '../db/settings'
 import { hasProviderKey, keyProvider } from '../keys'
 import { mediaFilePath } from '../media'
+import { cleanInChunks, jobControl, notesInChunks } from '../sermons/ai'
 import { renderSermonPdf, renderSermonPptx } from '../sermons/export'
 
 // Arguments arrive from the renderer, so check their shape before they reach the database or the disk. Transcripts
@@ -69,8 +69,8 @@ async function saveAs(event: IpcMainInvokeEvent, defaultPath: string, filters: E
   }
 }
 
-/** The sermon's slides: key points, pinned statements, then each reference with its words from the local Bible when they fit. */
-function slideTexts(sermon: Sermon): string[] {
+/** The sermon's deck (see sermonDeck), each reference with its words from the local Bible when they fit on a slide. */
+function deck(sermon: Sermon): DeckSlide[] {
   const version = getAppSettings().scriptureDefaultVersion
   const passages = scriptureList(sermon).map((reference) => {
     const ref = parseReference(reference)
@@ -79,7 +79,7 @@ function slideTexts(sermon: Sermon): string[] {
     const words = ref && ref.verseStart !== null ? verses.map((v) => v.text).join(' ') : ''
     return { reference: words ? `${reference} ${version}` : reference, text: words.split(/\s+/).length <= SLIDE_VERSE_WORDS ? words || null : null }
   })
-  return sermonSlideTexts(sermon, passages)
+  return sermonDeck(sermon, passages)
 }
 
 /** AI is on, and a key is saved where the chosen provider can use it. Says nothing about the network. */
@@ -87,31 +87,56 @@ function aiAvailable(): boolean {
   return getAppSettings().aiEnabled && keyProvider('anthropic') !== 'service' && encryptionAvailable() && hasProviderKey('anthropic')
 }
 
-async function cleanTranscript(id: number): Promise<AiResult<Sermon>> {
+/** The clean or notes job running for each sermon, so Cancel can reach it. One at a time per sermon. */
+const jobs = new Map<number, { cancel(): void }>()
+
+async function runJob(event: IpcMainInvokeEvent, id: number, job: (control: ReturnType<typeof jobControl>) => Promise<AiResult<SermonAiOutcome>>): Promise<AiResult<SermonAiOutcome>> {
   requireFeature('sermon.ai.cleanup')
-  const sermon = mustGet(id)
-  const raw = rawTranscript(sermon.segments)
-  if (!raw) return fail('bad_request', 'This sermon has no transcript to clean.')
-  const cleaned: string[] = []
-  // One piece at a time: each answer is checked word for word against its own piece.
-  for (const chunk of transcriptChunks(raw, CLEAN_CHUNK_CHARS)) {
-    const answer = await runTask('cleanTranscript', { transcript: chunk })
-    if (!answer.ok) return answer
-    cleaned.push(answer.value.transcript)
+  if (jobs.has(id)) return fail('bad_request', 'An AI task is already running for this sermon. Wait for it or cancel it.')
+  const control = jobControl((step, done, total) => {
+    const progress: SermonAiProgress = { sermonId: id, step, done, total }
+    if (!event.sender.isDestroyed()) event.sender.send('sermons:aiProgress', progress)
+  })
+  jobs.set(id, control)
+  try {
+    return await job(control)
+  } catch (error) {
+    console.error('Sermon AI job failed', error)
+    return fail('unavailable', error instanceof Error ? error.message : String(error))
+  } finally {
+    jobs.delete(id)
   }
-  setCleanedTranscript(id, cleaned.join('\n\n'))
-  return { ok: true, value: mustGet(id) }
 }
 
-async function generateNotes(id: number): Promise<AiResult<Sermon>> {
-  requireFeature('sermon.ai.cleanup')
-  const sermon = mustGet(id)
-  const transcript = sermon.cleanedTranscript.trim() || rawTranscript(sermon.segments)
-  if (!transcript) return fail('bad_request', 'This sermon has no transcript to summarise.')
-  const answer = await runTask('sermonNotes', { transcript })
-  if (!answer.ok) return answer
-  // The scripture list is the sermon's own saved references, never the AI's.
-  return { ok: true, value: updateSermon(id, { summary: answer.value.summary, keyPoints: answer.value.points }) ?? mustGet(id) }
+/** Cleans the transcript a chunk at a time and saves it, keeping any chunk the AI could not do as spoken. */
+function cleanTranscript(event: IpcMainInvokeEvent, id: number): Promise<AiResult<SermonAiOutcome>> {
+  return runJob(event, id, async (control) => {
+    const raw = rawTranscript(mustGet(id).segments)
+    if (!raw) return fail('bad_request', 'This sermon has no transcript to clean.')
+    const { transcript, ...outcome } = await cleanInChunks(raw, control)
+    // Nothing cleaned: an error says why; a cancel before the first chunk leaves things as they were.
+    if (outcome.done === 0) {
+      if (outcome.error) return { ok: false, error: outcome.error }
+      return { ok: true, value: { ...outcome, sermon: mustGet(id) } }
+    }
+    setCleanedTranscript(id, transcript)
+    return { ok: true, value: { ...outcome, sermon: mustGet(id) } }
+  })
+}
+
+/** Summary and key points, made from short summaries of each chunk when the sermon is long. */
+function generateNotes(event: IpcMainInvokeEvent, id: number): Promise<AiResult<SermonAiOutcome>> {
+  return runJob(event, id, async (control) => {
+    const sermon = mustGet(id)
+    const transcript = sermon.cleanedTranscript.trim() || rawTranscript(sermon.segments)
+    if (!transcript) return fail('bad_request', 'This sermon has no transcript to summarise.')
+    const { notes, ...outcome } = await notesInChunks(transcript, control)
+    if (!notes) return { ok: true, value: { ...outcome, sermon } }
+    if (!notes.ok) return notes
+    // The scripture list is the sermon's own saved references, never the AI's.
+    const saved = updateSermon(id, { summary: notes.value.summary, keyPoints: notes.value.points }) ?? mustGet(id)
+    return { ok: true, value: { ...outcome, sermon: saved } }
+  })
 }
 
 export function registerSermonIpc(): void {
@@ -162,20 +187,25 @@ export function registerSermonIpc(): void {
     )
   })
 
-  ipcMain.handle('sermons:exportSlides', (_event, id: unknown): AnnouncementPayload | null => {
+  // Both slide exports come from the same deck. The renderer asks before exporting one with nothing but its title.
+  ipcMain.handle('sermons:exportSlides', (_event, id: unknown): AnnouncementPayload => {
     requireFeature('sermon.export.slides')
     const sermon = mustGet(assertId(id))
-    const slides = slideTexts(sermon)
-    return slides.length > 0 ? { title: sermonTitle(sermon), body: slides.join('\n\n'), titleSlide: true } : null
+    // The announcement makes the title slide itself.
+    return { title: sermonTitle(sermon), body: deckSlideTexts(deck(sermon)).join('\n\n'), titleSlide: true }
   })
 
   ipcMain.handle('sermons:exportPptx', (event, id: unknown) => {
     requireFeature('sermon.export.slides')
     const sermon = mustGet(assertId(id))
-    return saveAs(event, exportFileName(sermon, 'pptx'), [{ name: 'PowerPoint', extensions: ['pptx'] }], () => renderSermonPptx(sermon, slideTexts(sermon)))
+    const { logoUrl } = getAppSettings()
+    return saveAs(event, exportFileName(sermon, 'pptx'), [{ name: 'PowerPoint', extensions: ['pptx'] }], () =>
+      renderSermonPptx(sermonTitle(sermon), deck(sermon), logoUrl ? mediaFilePath(logoUrl) : null),
+    )
   })
 
   ipcMain.handle('sermons:aiAvailable', () => aiAvailable())
-  ipcMain.handle('sermons:cleanTranscript', (_event, id: unknown) => cleanTranscript(assertId(id)))
-  ipcMain.handle('sermons:generateNotes', (_event, id: unknown) => generateNotes(assertId(id)))
+  ipcMain.handle('sermons:cleanTranscript', (event, id: unknown) => cleanTranscript(event, assertId(id)))
+  ipcMain.handle('sermons:generateNotes', (event, id: unknown) => generateNotes(event, assertId(id)))
+  ipcMain.handle('sermons:cancelAi', (_event, id: unknown) => jobs.get(assertId(id))?.cancel())
 }

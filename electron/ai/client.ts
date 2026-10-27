@@ -59,8 +59,21 @@ export async function readyClient(): Promise<AiResult<Anthropic>> {
   return { ok: true, value: ready }
 }
 
-/** Turns an SDK error into a message for the operator; most specific classes first. */
+/** The reason Anthropic gave in an error reply, such as "prompt is too long: 210000 tokens > 200000 maximum". */
+function apiReason(error: InstanceType<typeof Anthropic.APIError>): string {
+  const body = error.error as { error?: { message?: unknown } } | undefined
+  const reason = typeof body?.error?.message === 'string' ? body.error.message : ''
+  return reason.trim().replace(/[.\s]+$/, '')
+}
+
+/** Turns an SDK error into a message for the operator; most specific classes first. The details go to the log. */
 export function toAiError(error: unknown): { ok: false; error: AiError } {
+  if (error instanceof Anthropic.APIError) {
+    // The status, request id and Anthropic's reason; never the request itself, which holds the transcript.
+    console.error('AI request failed', { status: error.status, requestId: error.requestID, name: error.name, reason: apiReason(error) || error.message })
+  } else {
+    console.error('AI request failed', error)
+  }
   if (error instanceof Anthropic.AuthenticationError) {
     return fail('invalid_key', 'Anthropic rejected the API key. Check it in Settings.')
   }
@@ -81,7 +94,14 @@ export function toAiError(error: unknown): { ok: false; error: AiError } {
     )
   }
   if (error instanceof Anthropic.BadRequestError) {
-    return fail('bad_request', 'Anthropic could not process that request. It may be too long.')
+    const reason = apiReason(error)
+    if (/too long|too many tokens|context (window|length)|maximum/i.test(reason)) {
+      return fail('bad_request', `The text sent to Anthropic was too long for one request (${reason}).`)
+    }
+    return fail('bad_request', reason ? `Anthropic could not process that request: ${reason}.` : 'Anthropic could not process that request.')
+  }
+  if (error instanceof Anthropic.APIError && error.status === 413) {
+    return fail('bad_request', 'The text sent to Anthropic was too long for one request.')
   }
   if (error instanceof Anthropic.InternalServerError) {
     return fail('unavailable', 'Anthropic is busy or having trouble right now. Try again shortly.')
@@ -95,10 +115,10 @@ export function toAiError(error: unknown): { ok: false; error: AiError } {
   }
   if (error instanceof Anthropic.APIError) {
     if (error.status === 402) return fail('billing', 'The Anthropic account has a billing problem.')
-    return fail('unavailable', `Anthropic returned an error (${error.status ?? 'unknown'}). Try again shortly.`)
+    const reason = apiReason(error)
+    return fail('unavailable', `Anthropic returned an error (${error.status ?? 'unknown'}${reason ? `: ${reason}` : ''}). Try again shortly.`)
   }
-  console.error('AI request failed', error)
-  return fail('unavailable', 'The AI request failed unexpectedly.')
+  return fail('unavailable', `The AI request failed unexpectedly${error instanceof Error && error.message ? `: ${error.message}` : ''}.`)
 }
 
 /** A free check that the key works and can use the chosen model: looks the model up without generating anything. */
