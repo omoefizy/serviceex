@@ -15,7 +15,8 @@ import { registerSettingsIpc } from './ipc/settings'
 import { registerStageIpc, sendLastStageState } from './ipc/stage'
 import { registerAiIpc } from './ipc/ai'
 import { registerSermonIpc } from './ipc/sermons'
-import { registerSpeechIpc } from './ipc/speech'
+import { registerSpeechIpc, stopListening } from './ipc/speech'
+import { registerAccountIpc } from './ipc/account'
 import { startBackupSchedule } from './backup'
 import { getAppSettings } from './db/settings'
 import { registerMediaProtocol, registerMediaScheme } from './media'
@@ -293,14 +294,15 @@ app.on('window-all-closed', () => {
   }
 })
 
-// PowerPoint's slide show and copies end before quitting, giving it a few seconds at most.
-let livePowerPointClosed = false
+// Before quitting, PowerPoint's slide show and copies end, and the listener saves its last lines and closes its cloud
+// listening session (so no more time is billed), giving them a few seconds at most.
+let quitTasksDone = false
 app.on('before-quit', (event) => {
-  if (livePowerPointClosed || !livePowerPoint) return
+  if (quitTasksDone) return
   event.preventDefault()
-  livePowerPointClosed = true
+  quitTasksDone = true
   const timeout = new Promise((resolve) => setTimeout(resolve, 6000))
-  Promise.race([livePowerPoint.close(), timeout])
+  Promise.race([Promise.allSettled([livePowerPoint?.close(), stopListening()]), timeout])
     .catch(console.error)
     .finally(() => app.quit())
 })
@@ -321,10 +323,11 @@ app.on('activate', () => {
   }
 })
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // First: what the licence allows is fixed now, for this whole run, before any feature starts.
-  loadLicense()
+  await loadLicense()
   registerLicenseIpc()
+  registerAccountIpc()
   seedBuiltinThemes()
   seedBuiltinLowerThirds()
   registerMediaProtocol()

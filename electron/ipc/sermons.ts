@@ -26,6 +26,7 @@ import {
 } from '../db/sermons'
 import { getAppSettings } from '../db/settings'
 import { hasProviderKey, keyProvider } from '../keys'
+import { signedIn } from '../service/registry'
 import { mediaFilePath } from '../media'
 import { cleanInChunks, jobControl, notesInChunks } from '../sermons/ai'
 import { renderSermonPdf, renderSermonPptx } from '../sermons/export'
@@ -82,9 +83,11 @@ function deck(sermon: Sermon): DeckSlide[] {
   return sermonDeck(sermon, passages)
 }
 
-/** AI is on, and a key is saved where the chosen provider can use it. Says nothing about the network. */
+/** AI is on, and the chosen provider can be used: signed in to the account, or a developer key saved. Says nothing about the network. */
 function aiAvailable(): boolean {
-  return getAppSettings().aiEnabled && keyProvider('anthropic') !== 'service' && encryptionAvailable() && hasProviderKey('anthropic')
+  if (!getAppSettings().aiEnabled) return false
+  if (keyProvider('anthropic') === 'service') return signedIn()
+  return encryptionAvailable() && hasProviderKey('anthropic')
 }
 
 /** The clean or notes job running for each sermon, so Cancel can reach it. One at a time per sermon. */

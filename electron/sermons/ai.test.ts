@@ -12,6 +12,7 @@ vi.mock('../ai/client', () => ({
   toAiError: (error: unknown) => ({ ok: false, error: { code: 'unavailable', message: String(error) } }),
 }))
 vi.mock('../db/settings', () => ({ getAppSettings: () => ({ aiEnabled: true, aiModel: 'claude-sonnet-5-5' }) }))
+vi.mock('../keys', () => ({ keyProvider: () => 'developer_key' }))
 vi.mock('../db/bible', () => ({ getVerse: () => null, listBooks: () => [] }))
 
 const { cleanInChunks, jobControl, notesInChunks, CHUNK_RETRIES } = await import('./ai')

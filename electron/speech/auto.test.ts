@@ -363,4 +363,43 @@ describe('AutoEngine', () => {
     await stopEngine()
     expect(lines).toEqual(['Amen.'])
   })
+
+  it('cutCloud: in Cloud only too, hands over to offline from the last cloud line and never tries the cloud again', async () => {
+    make({ cloudOnly: true })
+    await engine.start()
+    await speak(5, () => clouds[0].send({}))
+    clouds[0].final('The Lord is my shepherd.', 0.5, 3)
+    expect(engine.usingCloud).toBe(true)
+    engine.cutCloud('Cloud listening hours ran out, so listening carries on offline on this computer.')
+    await vi.advanceTimersByTimeAsync(10)
+    expect(clouds[0].aborted).toBe(true)
+    expect(engine.usingCloud).toBe(false)
+    expect(modes.at(-1)).toMatchObject({ mode: 'offline', warning: 'Cloud listening hours ran out, so listening carries on offline on this computer.' })
+    // From the end of the last cloud line: two seconds.
+    expect(locals[0].heard).toBeCloseTo(2, 1)
+    await speak(60)
+    expect(clouds).toHaveLength(1)
+    locals[0].say('I shall not want.')
+    expect(lines).toEqual(['The Lord is my shepherd.', 'I shall not want.'])
+  })
+
+  it('cutCloud while already offline keeps listening offline, with the notice, and stops the background retries', async () => {
+    await engine.start()
+    clouds[0].drop()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(modeNames().at(-1)).toBe('offline')
+    engine.cutCloud('Lost contact with ServiceEx, so listening carries on offline on this computer.')
+    expect(modes.at(-1)).toMatchObject({ mode: 'offline', warning: 'Lost contact with ServiceEx, so listening carries on offline on this computer.' })
+    await speak(60)
+    expect(clouds).toHaveLength(1)
+  })
+
+  it('starts offline with a warning when there are no listening hours', async () => {
+    make({ hasCloudKey: () => false, noKeyReason: 'There are no cloud listening hours left', noKeyWarning: 'There are no cloud listening hours left. Listening carries on offline.' })
+    await engine.start()
+    expect(modes).toEqual([
+      { mode: 'offline', reason: 'There are no cloud listening hours left, so transcribing offline on this computer.', warning: 'There are no cloud listening hours left. Listening carries on offline.' },
+    ])
+    expect(clouds).toHaveLength(0)
+  })
 })

@@ -3,6 +3,7 @@
 
 import type { Entitlements, KeyProvider } from './features'
 import type { LicenseStatus } from './license'
+import type { AccountApi } from './account'
 
 /** How a song's sections play and how its slides are cut. */
 export interface SongArrangement {
@@ -880,7 +881,7 @@ export interface AppSettings {
   /** Turns every AI feature off; when false the main process makes no AI requests at all. */
   aiEnabled: boolean
   aiModel: AiModel
-  /** Where AI gets its access: a developer key (developer builds only) or the ServiceEx account (not connected yet). */
+  /** Where AI gets its access: a developer key (developer builds only) or the ServiceEx account. */
   aiKeyProvider: KeyProvider
   /** Cmd+Down stages the next schedule item in the preview; with this on it also goes live, as it used to. */
   autoGoLiveOnNext: boolean
@@ -904,7 +905,7 @@ export interface AppSettings {
   saveTranscripts: boolean
   /** Auto (cloud, falling back to offline), cloud only (Deepgram), or offline only (whisper.cpp). */
   speechEngine: SpeechEngineId
-  /** Where cloud listening gets its access: a developer key (developer builds only) or the ServiceEx account (not connected yet). */
+  /** Where cloud listening gets its access: a developer key (developer builds only) or the ServiceEx account. */
   speechKeyProvider: KeyProvider
   /** The whisper.cpp model the offline engine uses. */
   whisperModel: WhisperModelId
@@ -1621,6 +1622,7 @@ export interface WorshipDeckApi {
   fonts: FontsApi
   sharing: SharingApi
   license: LicenseApi
+  account: AccountApi
   sermons: SermonsApi
   /** Cmd+H on macOS, caught by the main process before the app menu hides the app, to toggle highlight mode. */
   onToggleHighlight(listener: () => void): () => void
@@ -1814,7 +1816,7 @@ export interface SermonAiOutcome {
 export type { KeyProvider } from './features'
 
 export interface LicenseApi {
-  /** The plan, its features and expiry as read at startup. */
+  /** The licence as checked at startup, which decides this run's features. The licence as it is now is in the account state. */
   status(): Promise<LicenseStatus>
   /** What this run of the app allows, asked synchronously as the operator window starts; null if it cannot be asked. */
   entitlements(): Entitlements | null
@@ -1963,7 +1965,7 @@ export interface SpeechKeyStatus {
   encryptionAvailable: boolean
   /** A developer build (SERVICEEX_DEV=1, or unpackaged): the only one where keys can be saved and used. */
   developerMode: boolean
-  /** Why cloud listening falls back to offline, such as the account not being connected yet; null when it can run. */
+  /** Why cloud listening falls back to offline, such as not being signed in to the account; null when it can run. */
   cloudNotice: string | null
   /** Where saved transcripts go. */
   transcriptsFolder: string

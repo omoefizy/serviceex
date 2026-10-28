@@ -1,130 +1,126 @@
-// The licence kept on this computer and what it allows. There are no payments and no online checks yet: the default
-// licence is the Founder plan with every feature, and the signature is kept for when licences are issued and signed.
+// The licence on this computer: a token the ServiceEx server signs (Ed25519) when the computer is activated, checked
+// here with the public key built into the app (see electron/service/licenseToken). It holds the plan, the seats and
+// two dates:
+//  - offline_valid_until, 14 days after it was issued. The app refreshes the token whenever it is online; a computer
+//    kept offline longer than that falls back to the free features until it next connects.
+//  - updates_until. Past it, the installed version keeps working with everything it had; only newer updates stop.
 //
-// Offline friendly: the licence is read once at startup (see electron/license), so a feature never turns off during a
-// service. After the expiry date the plan keeps working for the grace period, so a renewal that could not be checked
-// because of a poor connection never stops a service. Nothing here touches the output windows.
+// What a licence allows is decided once at startup (see electron/license), so a feature never turns off during a
+// service. Nothing here touches the output windows.
 
-import { FEATURE_KEYS, isFeatureKey, type Entitlements, type FeatureKey } from './features'
+import { FREE_FEATURES, FREE_PLAN, planOf, type Entitlements, type FeatureKey } from './features'
 
-export const FOUNDER_PLAN = 'Founder'
-
-export const DEFAULT_GRACE_DAYS = 30
-export const GRACE_DAYS_LIMITS = [0, 365] as const
-
-export interface License {
-  plan: string
-  /** The features the plan includes. The Founder plan includes every feature, whatever is listed. */
-  features: FeatureKey[]
-  /** How many computers may use it. */
+/** The signed part of a licence token, as the server writes it. */
+export interface LicenseTokenPayload {
+  typ: 'serviceex-license'
+  license_id: string
+  account_id: string
+  product_id: string
   seats: number
-  organization: string
-  /** ISO dates (YYYY-MM-DD); a null expiry never expires. */
-  issuedAt: string
-  expiresAt: string | null
-  /** Days the plan keeps working after the expiry date. */
-  graceDays: number
-  /** For signed licences later; null for now. */
-  signature: string | null
-  /** The key typed in Settings, Plan, later; null for now. */
-  licenseKey: string | null
+  machine_id: string
+  updates_until: string
+  updates_expired: boolean
+  issued_at: string
+  offline_valid_until: string
+  iat: number
+  exp: number
 }
 
-export const FOUNDER_LICENSE: License = {
-  plan: FOUNDER_PLAN,
-  features: [...FEATURE_KEYS],
-  seats: 1,
-  organization: '',
-  issuedAt: '2026-01-01',
-  expiresAt: null,
-  graceDays: DEFAULT_GRACE_DAYS,
-  signature: null,
-  licenseKey: null,
-}
+/** Why a token was not accepted. */
+export type TokenProblem = 'malformed' | 'bad_signature' | 'expired' | 'wrong_machine' | 'no_key'
 
-const isoDate = (value: unknown) =>
-  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) ? value : undefined
+export type TokenCheck = { valid: true; payload: LicenseTokenPayload } | { valid: false; reason: TokenProblem; payload: LicenseTokenPayload | null }
 
-const text = (value: unknown, max: number) => (typeof value === 'string' && value.length <= max ? value.trim() : undefined)
-
-/** A licence read from disk with each field checked; null when it is not a licence at all. Unknown features are dropped. */
-export function cleanLicense(value: unknown): License | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
-  const l = value as Record<string, unknown>
-  const plan = text(l.plan, 60)
-  if (!plan) return null
-  const seats = typeof l.seats === 'number' && Number.isInteger(l.seats) && l.seats > 0 && l.seats <= 10_000 ? l.seats : 1
-  const grace = typeof l.graceDays === 'number' && Number.isFinite(l.graceDays) ? Math.round(l.graceDays) : DEFAULT_GRACE_DAYS
-  return {
-    plan,
-    features: Array.isArray(l.features) ? [...new Set(l.features.filter(isFeatureKey))] : [],
-    seats,
-    organization: text(l.organization, 200) ?? '',
-    issuedAt: isoDate(l.issuedAt) ?? FOUNDER_LICENSE.issuedAt,
-    expiresAt: isoDate(l.expiresAt) ?? null,
-    graceDays: Math.min(GRACE_DAYS_LIMITS[1], Math.max(GRACE_DAYS_LIMITS[0], grace)),
-    signature: text(l.signature, 4096) || null,
-    licenseKey: text(l.licenseKey, 500) || null,
-  }
-}
-
-/** Active, past expiry but within the grace period, or expired. */
-export type LicenseState = 'active' | 'grace' | 'expired'
+/**
+ * - none: no licence on this computer (free features).
+ * - active: a valid token.
+ * - offline_expired: a genuine token whose 14 days offline ran out; free features until the app is online again.
+ * - invalid: a token that failed its check (tampered, for another computer, or no key to check it with).
+ * - revoked: the server said the licence was revoked or refunded.
+ */
+export type LicenseState = 'none' | 'active' | 'offline_expired' | 'invalid' | 'revoked'
 
 export interface LicenseStatus {
-  plan: string
-  organization: string
-  seats: number
-  issuedAt: string
-  expiresAt: string | null
-  graceDays: number
-  /** The last day of the grace period, when there is an expiry date. */
-  graceEndsAt: string | null
   state: LicenseState
+  plan: string
+  productId: string | null
+  licenseId: string | null
+  /** Computers the licence allows, and how many are activated (as of the last time the app was online). */
+  seats: number | null
+  seatsUsed: number | null
+  updatesUntil: string | null
+  /** Past updates_until: the app keeps working; only newer updates are not included. */
+  updatesExpired: boolean
+  issuedAt: string | null
+  offlineValidUntil: string | null
   /** What this run of the app allows: fixed at startup. */
   features: FeatureKey[]
-  hasLicenseKey: boolean
-  /** A sentence for Settings, Plan, when something needs attention. */
+  /** A sentence for Settings, Account, when something needs attention. */
   message: string | null
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000
+/** What is saved beside the token: details the server sent for display only. They are not signed and decide nothing. */
+export interface StoredLicense {
+  token: string
+  seatsUsed: number | null
+  /** The last time the server confirmed the licence (ISO time). */
+  checkedAt: string | null
+}
 
-/** Adds days to an ISO date. */
-const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10)
+export const NO_LICENSE: LicenseStatus = {
+  state: 'none',
+  plan: FREE_PLAN,
+  productId: null,
+  licenseId: null,
+  seats: null,
+  seatsUsed: null,
+  updatesUntil: null,
+  updatesExpired: false,
+  issuedAt: null,
+  offlineValidUntil: null,
+  features: [...FREE_FEATURES],
+  message: null,
+}
+
+const PROBLEMS: Record<TokenProblem, string> = {
+  malformed: 'The licence saved on this computer could not be read. Sign in again to restore it.',
+  bad_signature: 'The licence saved on this computer failed its signature check, so it was not used. Sign in again to restore it.',
+  wrong_machine: 'The licence saved here belongs to another computer. Sign in again to activate this one.',
+  expired: 'This computer has been offline for more than 14 days, so the licence needs checking. Connect to the internet and it will refresh by itself.',
+  no_key: 'This build has no licence key to check licences with.',
+}
+
+/** What a checked token allows, at `now`. A token that fails its check gives the free features, never an error. */
+export function licenseStatusOf(check: TokenCheck, stored: Pick<StoredLicense, 'seatsUsed'> | null, now = new Date()): LicenseStatus {
+  const p = check.payload
+  if (!p || (!check.valid && check.reason !== 'expired')) {
+    return { ...NO_LICENSE, state: 'invalid', message: PROBLEMS[check.valid ? 'malformed' : check.reason] }
+  }
+  const { plan, features } = planOf(p.product_id)
+  const updatesExpired = p.updates_expired || Date.parse(p.updates_until) <= now.getTime()
+  const base: LicenseStatus = {
+    state: check.valid ? 'active' : 'offline_expired',
+    plan,
+    productId: p.product_id,
+    licenseId: p.license_id,
+    seats: p.seats,
+    seatsUsed: stored?.seatsUsed ?? null,
+    updatesUntil: p.updates_until,
+    updatesExpired,
+    issuedAt: p.issued_at,
+    offlineValidUntil: p.offline_valid_until,
+    features: check.valid ? [...features] : [...FREE_FEATURES],
+    message: null,
+  }
+  if (!check.valid) return { ...base, message: PROBLEMS.expired }
+  if (updatesExpired) return { ...base, message: 'Updates expired, app keeps working. Renew updates in Plans and Credits to get newer versions.' }
+  return base
+}
+
+export const entitlementsOf = (status: LicenseStatus): Entitlements => ({ plan: status.plan, features: status.features })
 
 /** Today as an ISO date, in local time like the dates the operator sees. */
 export function today(now = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
-
-/**
- * What a licence allows on `day`. The licence counts through its expiry date and the grace period after it; once
- * that has passed, only the core of the app (songs, scripture, slides and the output) works.
- */
-export function evaluateLicense(license: License, day: string = today()): LicenseStatus {
-  const graceEndsAt = license.expiresAt ? addDays(license.expiresAt, license.graceDays) : null
-  const state: LicenseState = !license.expiresAt || day <= license.expiresAt ? 'active' : graceEndsAt && day <= graceEndsAt ? 'grace' : 'expired'
-  const included = license.plan === FOUNDER_PLAN ? [...FEATURE_KEYS] : license.features
-  return {
-    plan: license.plan,
-    organization: license.organization,
-    seats: license.seats,
-    issuedAt: license.issuedAt,
-    expiresAt: license.expiresAt,
-    graceDays: license.graceDays,
-    graceEndsAt,
-    state,
-    features: state === 'expired' ? [] : included,
-    hasLicenseKey: license.licenseKey !== null,
-    message:
-      state === 'grace'
-        ? `The ${license.plan} plan expired on ${license.expiresAt}. Everything keeps working until ${graceEndsAt}.`
-        : state === 'expired'
-          ? `The ${license.plan} plan expired on ${license.expiresAt}. Plan features are off until it is renewed.`
-          : null,
-  }
-}
-
-export const entitlementsOf = (status: LicenseStatus): Entitlements => ({ plan: status.plan, features: status.features })

@@ -5,6 +5,7 @@ import { CommandPalette } from './components/CommandPalette'
 import { LivePreview } from './components/LivePreview'
 import { LowerThirdPanel } from './components/LowerThirdPanel'
 import { ListenerPanel } from './components/ListenerPanel'
+import { PlansModal } from './components/PlansModal'
 import { MediaPanel } from './components/MediaPanel'
 import { PanelBoundary } from './components/PanelBoundary'
 import { PresentationsPanel } from './components/PresentationsPanel'
@@ -25,6 +26,7 @@ import { nudgeVerse, stepVerseSize } from './lib/scriptureAdjust'
 import { focusLowerThirdHeadline, isTyping, MODE_KEYS } from './lib/shortcuts'
 import { slideTranslation } from './lib/translations'
 import { usePersistentState } from './lib/usePersistentState'
+import { usePlansOpen } from './lib/account'
 import {
   selectBrowsingLive,
   selectLiveSlide,
@@ -74,6 +76,7 @@ function App() {
   const streamPanelOpen = useOperatorStore((s) => s.streamPanelOpen)
   const sermonsOpen = useOperatorStore((s) => s.sermonsOpen)
   const paletteOpen = useOperatorStore((s) => s.paletteOpen)
+  const plansOpen = usePlansOpen()
   const appearance = useOperatorStore((s) => s.settings.appearance)
   const layout = useOperatorStore((s) => layoutById(s.settings.layouts, s.settings.activeLayoutId))
   // A tab whose feature the plan leaves out is not shown.
@@ -424,6 +427,7 @@ function App() {
         </Slot>
       </main>
       {paletteOpen && <CommandPalette />}
+      {plansOpen && <PlansModal />}
     </div>
   )
 }

@@ -1,7 +1,5 @@
 import {
-  BadgeCheck,
   BookOpen,
-  Check,
   Cloud,
   Copy,
   Download,
@@ -13,7 +11,6 @@ import {
   KeyRound,
   LayoutPanelLeft,
   Library,
-  Lock,
   Mic,
   MicOff,
   Monitor,
@@ -59,8 +56,7 @@ import type {
   WhisperStatus,
 } from '../../shared/types'
 import { HIGHLIGHT_COLORS, HIGHLIGHT_KINDS } from '../../shared/highlights'
-import { can, FEATURE_KEYS, FEATURES, hasFeature, type FeatureKey } from '../../shared/features'
-import type { LicenseStatus } from '../../shared/license'
+import { can, hasFeature, type FeatureKey } from '../../shared/features'
 import { createLayout, deleteLayout, duplicateLayout, LAYOUT_PANELS, renameLayout, updateLayout } from '../../shared/layouts'
 import { formatBytes } from '../../shared/sharing'
 import { useOperatorStore } from '../store'
@@ -85,6 +81,8 @@ import { LevelMeter } from './LevelMeter'
 import { ScriptureDisplayForm } from './ScriptureDisplay'
 import { ThemeDefaultsForm } from './ThemeEditor'
 import { UpgradeNote } from './UpgradeNote'
+import { AccountSection, BalanceLines } from './AccountSection'
+import { useAccount } from '../lib/account'
 
 /** The church's name and the footer line for exports, saved when the field is left. */
 function ChurchProfileFields() {
@@ -149,65 +147,12 @@ const INTERVALS: { value: AppSettings['backupIntervalMinutes']; label: string }[
   { value: 60, label: 'Every hour' },
 ]
 
-/** The plan from the licence on this computer: what it includes and when it ends. Licence keys come later. */
-function PlanSection() {
-  const [status, setStatus] = useState<LicenseStatus | null>(null)
-
-  useEffect(() => {
-    window.api.license.status().then(setStatus, console.error)
-  }, [])
-
-  return (
-    <Section icon={<BadgeCheck size={16} aria-hidden="true" />} title="Plan">
-      {status && (
-        <dl className="plan-summary">
-          <dt>Plan</dt>
-          <dd>{status.plan}</dd>
-          {status.organization && (
-            <>
-              <dt>Organization</dt>
-              <dd>{status.organization}</dd>
-            </>
-          )}
-          <dt>Computers</dt>
-          <dd>{status.seats}</dd>
-          <dt>Issued</dt>
-          <dd>{status.issuedAt}</dd>
-          <dt>Expires</dt>
-          <dd>{status.expiresAt ? `${status.expiresAt} (then ${status.graceDays} days of grace)` : 'Never'}</dd>
-        </dl>
-      )}
-      {status?.message && <p className={status.state === 'expired' ? 'error' : 'hint'}>{status.message}</p>}
-
-      <ul className="plan-features" aria-label="Features">
-        {FEATURE_KEYS.map((feature) => (
-          <li key={feature} className={can(feature) ? '' : 'off'} title={FEATURES[feature].description}>
-            {can(feature) ? <Check size={13} aria-label="Included" /> : <Lock size={13} aria-label="Not included" />}
-            {FEATURES[feature].label}
-          </li>
-        ))}
-      </ul>
-      <p className="hint">A change to the plan takes effect the next time WorshipDeck starts, never during a service.</p>
-
-      <form className="field" onSubmit={(e) => e.preventDefault()}>
-        <label htmlFor="license-key">License key</label>
-        <div className="settings-row">
-          <input id="license-key" className="input settings-key" disabled placeholder="License keys are coming in a later version" />
-          <button type="submit" className="button" disabled>
-            <KeyRound size={15} aria-hidden="true" /> Activate
-          </button>
-        </div>
-      </form>
-    </Section>
-  )
-}
-
 const KEY_PROVIDERS: { value: KeyProvider; label: string }[] = [
   { value: 'developer_key', label: 'Developer key' },
-  { value: 'service', label: 'ServiceEx account (not connected yet)' },
+  { value: 'service', label: 'ServiceEx account' },
 ]
 
-/** Where a service's key comes from, in developer builds. The account is not connected yet, so it gives no access. */
+/** Where a service's key comes from, in developer builds: a key saved here, or the ServiceEx account (Settings, Account). */
 function KeyProviderField({ value, onChange }: { value: KeyProvider; onChange(value: KeyProvider): void }) {
   return (
     <label className="field">
@@ -241,8 +186,9 @@ const LISTENING_MODES: { value: SpeechEngineId; label: string; icon: ReactNode; 
   },
 ]
 
-/** Listening mode, the AI switch and, once the account is connected, its cloud listening hours. No keys here. */
+/** Listening mode, the AI switch and the account's cloud listening hours. No keys here. */
 function AiListeningSection() {
+  const account = useAccount()
   const settings = useOperatorStore((s) => s.settings)
   const updateSettings = useOperatorStore((s) => s.updateSettings)
   const [status, setStatus] = useState<SpeechKeyStatus | null>(null)
@@ -282,7 +228,7 @@ function AiListeningSection() {
         {!can('listener.cloud') && <UpgradeNote feature="listener.cloud" />}
         {!can('listener.offline') && <UpgradeNote feature="listener.offline" />}
       </div>
-      <p className="hint">Cloud listening hours: not connected yet</p>
+      {account?.signedIn ? <BalanceLines account={account} /> : <p className="hint">Cloud listening hours: sign in to ServiceEx in Account above.</p>}
 
       <label className="inline-check">
         <input type="checkbox" checked={settings.aiEnabled} onChange={(e) => updateSettings({ aiEnabled: e.target.checked })} />
@@ -1962,7 +1908,7 @@ export function SettingsPanel() {
       {error && <p className="error">{error}</p>}
       {message && <p className="hint">{message}</p>}
 
-      <PlanSection />
+      <AccountSection />
 
       <Section icon={<SunMoon size={16} aria-hidden="true" />} title="Appearance">
         <div className="segmented" role="radiogroup" aria-label="Appearance">

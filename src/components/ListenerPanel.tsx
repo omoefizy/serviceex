@@ -1,8 +1,11 @@
 import { BookOpenText, Eraser, Mic, Quote, Square, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { formatHours, isLowBalance } from '../../shared/account'
 import { can } from '../../shared/features'
+import { shortDate } from '../../shared/serviceErrors'
 import { sermonTitle } from '../../shared/sermons'
 import type { SermonInput, SpeechEngineId, SpeechMode } from '../../shared/types'
+import { openPlans, useAccount } from '../lib/account'
 import { useListener, type ListenerStatus } from '../lib/listener'
 import type { MicDevice, MicState, SignalAdvice } from '../lib/mic'
 import { useDetectionDebug } from '../lib/scriptureDetection'
@@ -165,6 +168,9 @@ export function ListenerPanel() {
   const saving = useOperatorStore((s) => s.settings.saveTranscripts)
   const speechEngine = useOperatorStore((s) => s.settings.speechEngine)
   const whisperModel = useOperatorStore((s) => s.settings.whisperModel)
+  const account = useAccount()
+  /** The account's cloud listening hours, shown when listening may use the cloud. */
+  const balance = account?.signedIn && speechEngine !== 'whisper' ? account.balance : null
   /** What is missing before listening can start, or null when ready. */
   const [notReady, setNotReady] = useState<string | null>(null)
   const [developerMode, setDeveloperMode] = useState(false)
@@ -301,6 +307,20 @@ export function ListenerPanel() {
         </p>
       )}
       {cloudNotice && !notReady && !running && <p className="hint">{cloudNotice}</p>}
+      {balance && (
+        <p className="hint listener-balance">
+          Cloud hours left: {formatHours(balance.totalSeconds)}
+          {balance.nearestExpiry && ` · ${formatHours(balance.nearestExpiry.seconds)} expire on ${shortDate(balance.nearestExpiry.expiresAt)}`}{' '}
+          <button type="button" className="link-button" onClick={() => openPlans(true)}>
+            Buy hours
+          </button>
+        </p>
+      )}
+      {isLowBalance(balance) && (
+        <p className="listener-warning" role="status">
+          Less than 30 minutes of cloud listening left. When it runs out, listening carries on offline on this computer.
+        </p>
+      )}
       {performance && (
         <p className={`speed-chip ${performance.keepingUp ? 'ok' : 'behind'}`} role="status">
           {performance.keepingUp ? 'Keeping up' : 'Falling behind'} · {performance.realTimeFactor.toFixed(2)}× real time

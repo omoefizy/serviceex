@@ -1,7 +1,7 @@
 // The Anthropic client, main process only. The API key is stored encrypted by ../secrets (safeStorage) as
 // <userData>/anthropic-key.enc; it is never sent to the renderer, never read from the environment or a plain
 // file, and never lives in the repository. Which key is used comes from the provider chosen in Settings (see ../keys);
-// outside developer builds that is the ServiceEx account, which is not connected yet, so there is no client.
+// outside developer builds that is the ServiceEx account, whose requests go through ./service instead of a client.
 
 import Anthropic from '@anthropic-ai/sdk'
 import { net } from 'electron'

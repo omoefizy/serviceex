@@ -1,17 +1,43 @@
-// The licence on this computer: the Founder plan by default, the grace period after expiry, and a licence file that
-// is missing or broken never stopping the app.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+// The licence on this computer: a token signed by the (fake) ServiceEx server, checked offline. A genuine token works
+// for 14 days offline; a tampered one, one for another computer, or a broken file is never used and gives the free
+// plan; expired updates keep every feature. The ids, dates and keys are invented.
+import { generateKeyPairSync } from 'node:crypto'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('electron', () => ({ app: { getPath: () => os.tmpdir() }, ipcMain: { handle: vi.fn(), on: vi.fn() } }))
+const electron = vi.hoisted(() => ({ app: { isPackaged: true, getPath: () => '/nowhere' }, ipcMain: { handle: () => undefined, on: () => undefined } }))
+vi.mock('electron', () => electron)
+vi.mock('./keys', () => ({ developerMode: () => false }))
+const machine = vi.hoisted(() => ({ id: 'wd1-machine-of-grace-chapel-0001' }))
+vi.mock('./service/machineId', () => ({ machineId: async () => machine.id }))
+// The fake server's key stands in for the one built into the app.
+const keyHolder = vi.hoisted(() => ({ pem: '' }))
+vi.mock('./service/config', () => ({
+  get LICENSE_PUBLIC_KEY_PEM() {
+    return keyHolder.pem
+  },
+  MACHINE_ID_SALT: 'test-salt',
+}))
 
-const { can, FEATURE_KEYS, setEntitlements } = await import('../shared/features')
-const { cleanLicense, evaluateLicense, FOUNDER_LICENSE } = await import('../shared/license')
-const { loadLicense, readLicense } = await import('./license')
+const { FakeServiceServer } = await import('./service/fakeServer.test-helper')
+const server = new FakeServiceServer()
+keyHolder.pem = server.publicKeyPem
 
+const { can, FEATURE_KEYS, FREE_FEATURES, includes, setEntitlements } = await import('../shared/features')
+const { licenseStatusOf } = await import('../shared/license')
+const { verifyLicenseToken, publicKeyFromPem } = await import('./service/licenseToken')
+const { loadLicense } = await import('./license')
+
+const DAY = 24 * 3600 * 1000
+const issued = new Date('2026-10-01T10:00:00.000Z')
 let folder: string
+let license: ReturnType<typeof server.addLicense>
+
+beforeAll(() => {
+  license = server.addLicense('pro_license', 1)
+})
 
 beforeEach(() => {
   folder = mkdtempSync(path.join(os.tmpdir(), 'worshipdeck-license-'))
@@ -22,61 +48,79 @@ afterEach(() => {
   setEntitlements(null)
 })
 
-const basic = { ...FOUNDER_LICENSE, plan: 'Basic', features: ['alerts', 'stageDisplay'], expiresAt: '2026-06-30', graceDays: 30 }
+const check = (token: string, now: Date, machineId = machine.id) => verifyLicenseToken(token, server.publicKey, { now, machineId })
 
-describe('licence', () => {
-  it('is the Founder plan with every feature when there is no licence file, and writes one to the app data folder', () => {
-    const status = loadLicense(folder)
-    expect(status.plan).toBe('Founder')
-    expect(status.state).toBe('active')
-    expect(status.expiresAt).toBeNull()
-    expect(status.features).toEqual(FEATURE_KEYS)
-    expect(FEATURE_KEYS.every(can)).toBe(true)
-    const saved = JSON.parse(readFileSync(path.join(folder, 'license.json'), 'utf8'))
-    expect(saved).toMatchObject({ plan: 'Founder', seats: 1, organization: '', graceDays: 30, signature: null })
-    expect(saved.issuedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+describe('offline grace', () => {
+  it('keeps a genuine token working for 14 days offline, then falls back to the free features until it is refreshed', () => {
+    const token = server.tokenFor(license, machine.id, issued)
+    const day13 = new Date(issued.getTime() + 13 * DAY)
+    const day15 = new Date(issued.getTime() + 15 * DAY)
+
+    const within = licenseStatusOf(check(token, day13), { seatsUsed: 1 }, day13)
+    expect(within).toMatchObject({ state: 'active', plan: 'Pro', seats: 1, seatsUsed: 1, offlineValidUntil: '2026-10-15T10:00:00.000Z' })
+    expect(within.features).toEqual(FEATURE_KEYS)
+
+    const after = licenseStatusOf(check(token, day15), { seatsUsed: 1 }, day15)
+    expect(check(token, day15)).toMatchObject({ valid: false, reason: 'expired' })
+    expect(after).toMatchObject({ state: 'offline_expired', plan: 'Pro', features: [...FREE_FEATURES] })
+    expect(after.message).toMatch(/offline for more than 14 days/)
+  })
+})
+
+describe('a token that fails its check', () => {
+  it('is rejected when its payload is changed, even with a plausible signature', () => {
+    const token = server.tokenFor(license, machine.id, issued)
+    const [header, body, signature] = token.split('.')
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'))
+    // More seats and ten more years of updates, keeping the original signature.
+    const forged = Buffer.from(JSON.stringify({ ...payload, seats: 50, updates_until: '2036-10-01T00:00:00.000Z' })).toString('base64url')
+    const tampered = `${header}.${forged}.${signature}`
+
+    expect(check(tampered, issued)).toEqual({ valid: false, reason: 'bad_signature', payload: null })
+    const status = licenseStatusOf(check(tampered, issued), null, issued)
+    expect(status).toMatchObject({ state: 'invalid', plan: 'Free', seats: null, updatesUntil: null })
+    expect(status.message).toMatch(/failed its signature check/)
   })
 
-  it('falls back to the Founder plan when the licence file is broken', () => {
-    writeFileSync(path.join(folder, 'license.json'), '{not json')
-    expect(readLicense(folder)).toEqual(FOUNDER_LICENSE)
-    writeFileSync(path.join(folder, 'license.json'), '"a string"')
-    expect(loadLicense(folder).plan).toBe('Founder')
-    expect(FEATURE_KEYS.every(can)).toBe(true)
+  it('is rejected when signed with another key, made for another computer, or not a token at all', () => {
+    const stranger = generateKeyPairSync('ed25519').privateKey
+    const payload = JSON.parse(Buffer.from(server.tokenFor(license, machine.id, issued).split('.')[1], 'base64url').toString('utf8'))
+    expect(check(server.signToken(payload, stranger), issued).valid).toBe(false)
+    expect(check(server.tokenFor(license, 'wd1-another-computer-0002', issued), issued)).toMatchObject({ valid: false, reason: 'wrong_machine' })
+    expect(check('not.a.token', issued)).toMatchObject({ valid: false, reason: 'malformed' })
+    expect(verifyLicenseToken(server.tokenFor(license, machine.id, issued), null, { now: issued, machineId: machine.id })).toMatchObject({ reason: 'no_key' })
+    expect(publicKeyFromPem('-----BEGIN PUBLIC KEY-----\nnope\n-----END PUBLIC KEY-----')).toBeNull()
+  })
+})
+
+describe('expired updates', () => {
+  it('keep every feature and say the app keeps working', () => {
+    const lapsed = { ...license, updates_until: '2026-09-01T00:00:00.000Z' }
+    const status = licenseStatusOf(check(server.tokenFor(lapsed, machine.id, issued), issued), null, issued)
+    expect(status).toMatchObject({ state: 'active', updatesExpired: true, features: FEATURE_KEYS })
+    expect(status.message).toMatch(/^Updates expired, app keeps working/)
+  })
+})
+
+describe('at startup', () => {
+  it('fixes this run’s features from a valid saved token', async () => {
+    writeFileSync(path.join(folder, 'serviceex-license.json'), JSON.stringify({ token: server.tokenFor(license, machine.id), seatsUsed: 1, checkedAt: null }))
+    const status = await loadLicense(folder)
+    expect(status).toMatchObject({ state: 'active', plan: 'Pro' })
+    expect(FEATURE_KEYS.every(includes)).toBe(true)
   })
 
-  it('switches off the features a plan leaves out, at load', () => {
-    writeFileSync(path.join(folder, 'license.json'), JSON.stringify({ ...basic, expiresAt: null, organization: 'Grace Church', seats: 3 }))
-    const status = loadLicense(folder)
-    expect(status).toMatchObject({ plan: 'Basic', organization: 'Grace Church', seats: 3, features: ['alerts', 'stageDisplay'] })
-    expect(can('alerts')).toBe(true)
-    expect(can('themes.editor')).toBe(false)
-  })
-
-  it('keeps every feature through the grace period after expiry, then turns plan features off', () => {
-    const license = cleanLicense(basic)!
-    expect(evaluateLicense(license, '2026-06-30')).toMatchObject({ state: 'active', features: ['alerts', 'stageDisplay'], message: null })
-    const grace = evaluateLicense(license, '2026-07-30')
-    expect(grace).toMatchObject({ state: 'grace', features: ['alerts', 'stageDisplay'], graceEndsAt: '2026-07-30' })
-    expect(grace.message).toContain('keeps working until 2026-07-30')
-    expect(evaluateLicense(license, '2026-07-31')).toMatchObject({ state: 'expired', features: [] })
-  })
-
-  it('gives the Founder plan every feature, even ones its saved list is missing', () => {
-    expect(evaluateLicense({ ...FOUNDER_LICENSE, features: [] }).features).toEqual(FEATURE_KEYS)
-  })
-
-  it('checks every field read from disk', () => {
-    expect(cleanLicense(null)).toBeNull()
-    expect(cleanLicense({ plan: '' })).toBeNull()
-    expect(cleanLicense({ plan: 'Basic', features: ['alerts', 'teleport', 7], seats: -2, graceDays: 9999, expiresAt: 'soon', signature: '' })).toEqual({
-      ...FOUNDER_LICENSE,
-      plan: 'Basic',
-      features: ['alerts'],
-      seats: 1,
-      graceDays: 365,
-      expiresAt: null,
-      signature: null,
-    })
+  it('gives the free plan for no licence, a broken file or a tampered token, and still blocks nothing', async () => {
+    expect(await loadLicense(folder)).toMatchObject({ state: 'none', plan: 'Free' })
+    writeFileSync(path.join(folder, 'serviceex-license.json'), '{not json')
+    expect(await loadLicense(folder)).toMatchObject({ state: 'none', plan: 'Free' })
+    const [h, , s] = server.tokenFor(license, machine.id).split('.')
+    writeFileSync(path.join(folder, 'serviceex-license.json'), JSON.stringify({ token: `${h}.${Buffer.from('{"typ":"serviceex-license"}').toString('base64url')}.${s}` }))
+    expect(await loadLicense(folder)).toMatchObject({ state: 'invalid', plan: 'Free' })
+    expect(includes('themes.editor')).toBe(false)
+    // ENFORCE_ENTITLEMENTS is false: nothing is blocked.
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    expect(can('themes.editor')).toBe(true)
+    info.mockRestore()
   })
 })

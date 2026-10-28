@@ -12,6 +12,8 @@ export default defineConfig({
         // Shortcut of `build.lib.entry`.
         entry: 'electron/main.ts',
         vite: {
+          // The ServiceEx server address, fixed at build time (see electron/service/config.ts).
+          define: { __SERVICEEX_API_URL__: JSON.stringify(process.env.SERVICEEX_API_URL ?? '') },
           build: {
             rollupOptions: {
               // Native module: load it from node_modules at runtime instead of bundling it.

@@ -11,6 +11,9 @@ import { checkDeepgramKey, DEEPGRAM_MODEL, DeepgramEngine } from '../speech/deep
 import { AutoEngine, reconnectDelay } from '../speech/auto'
 import { isSpeechError, speechError, type SpeechEngine } from '../speech/engine'
 import { WhisperEngine, whisperServerPath } from '../speech/whisper'
+import { isServiceError } from '../service/client'
+import { startServiceListening, type CloudCut, type ServiceListening } from '../service/listening'
+import { serviceAccount, signedIn } from '../service/registry'
 import {
   cancelDownload,
   deleteModel,
@@ -82,6 +85,10 @@ interface Session {
   watchdog: ReturnType<typeof setInterval> | null
   /** Keeps the computer from suspending the app while listening. */
   blocker: number
+  /** The cloud listening session on the ServiceEx account; null with a developer key, offline, or when it could not start. */
+  service: ServiceListening | null
+  /** Why the cloud may not be used again this session (the hours ran out, say); engines built after it listen offline. */
+  cloudCut: CloudCut | null
 }
 
 /** The session listening, if any. One at a time. */
@@ -91,12 +98,15 @@ let testRunning = false
 
 const transcriptsFolder = () => path.join(app.getPath('userData'), 'transcripts')
 
-/** Cloud listening through the ServiceEx account, which is not connected yet: it gives no key. */
-const cloudNotConnected = () => keyProvider('deepgram') === 'service'
+/** Cloud listening goes through the ServiceEx account (always, outside developer builds). */
+const serviceMode = () => keyProvider('deepgram') === 'service'
+
+/** The account gives no cloud listening: not signed in. */
+const cloudNotConnected = () => serviceMode() && !signedIn()
 
 /**
- * The engine Settings chooses. Cloud only through the account, which is not connected yet, runs as Auto: it says why
- * and listens offline instead of failing.
+ * The engine Settings chooses. Cloud only through the account while signed out runs as Auto: it says why and listens
+ * offline instead of failing.
  */
 function chosenEngine(): SpeechEngineId {
   const { speechEngine } = getAppSettings()
@@ -115,6 +125,7 @@ function offlineProblem(): string | null {
 /** Why the cloud engine cannot run, or null when it can. */
 function cloudProblem(): string | null {
   if (!can('listener.cloud')) return upgradeNote('listener.cloud')
+  if (serviceMode()) return signedIn() ? null : CLOUD_NOT_CONNECTED
   return hasProviderKey('deepgram') ? null : missingKeyMessage('deepgram')
 }
 
@@ -170,6 +181,19 @@ function whisperStatus(): WhisperStatus {
   }
 }
 
+/** Why the cloud session could not open, for the mode chip and the warning beneath it. */
+function serviceStartProblem(error: unknown): { reason: string; warning: string } {
+  if (isServiceError(error) && error.code === 'no_credit') {
+    return { reason: 'There are no cloud listening hours left', warning: error.message }
+  }
+  if (isServiceError(error) && error.code === 'offline') {
+    return { reason: 'ServiceEx could not be reached', warning: 'ServiceEx could not be reached, so listening is offline on this computer.' }
+  }
+  if (!isServiceError(error)) console.error('Cloud listening could not start', error)
+  const why = isServiceError(error) ? error.message.replace(/\.$/, '') : 'Cloud listening could not start'
+  return { reason: 'Cloud listening could not start', warning: `${why}. Listening is offline on this computer.` }
+}
+
 const failed = (error: unknown): SpeechResult<never> => ({
   ok: false,
   error: isSpeechError(error) ? error : speechError('engine', error instanceof Error ? error.message : String(error)),
@@ -204,15 +228,30 @@ function rms(pcm: Uint8Array): number {
 }
 
 /**
- * Lets go of the session (its engine is stopped by the caller, or has stopped itself). Its sermon is marked saved,
- * unless `finish` is false because the caller does that once the engine has written its last lines.
+ * Lets go of the session (its engine is stopped by the caller, or has stopped itself), and closes its cloud session.
+ * Its sermon is marked saved, unless `finish` is false because the caller does that once the engine has written its
+ * last lines.
  */
 function endSession(s: Session, finish = true) {
   if (session !== s) return
   session = null
   if (s.watchdog) clearInterval(s.watchdog)
   if (powerSaveBlocker.isStarted(s.blocker)) powerSaveBlocker.stop(s.blocker)
+  void endService(s)
   if (finish) finishRecording(s)
+}
+
+/** Closes the session's cloud session (once), then reads the hours left again. */
+function endService(s: Session): Promise<void> {
+  if (!s.service) return Promise.resolve()
+  return s.service.end().then(() => serviceAccount()?.account.balanceChanged())
+}
+
+/** The cloud may not be used again this session: the engine carries on offline, with the reason shown. */
+function cutCloud(s: Session, cut: CloudCut) {
+  if (s.cloudCut) return
+  s.cloudCut = cut
+  if (s.engine instanceof AutoEngine) s.engine.cutCloud(cut.message)
 }
 
 /** Marks the session's sermon saved. Lines the engine still sends are saved to it all the same. */
@@ -241,7 +280,11 @@ async function stopEngine(): Promise<void> {
   endSession(current, false)
   await current.engine?.stop().catch(console.error)
   finishRecording(current)
+  await endService(current)
 }
+
+/** Stops listening as the app quits: the last lines are saved and the cloud session is closed. */
+export const stopListening = (): Promise<void> => stopEngine()
 
 /** Forwards an engine's events while it is the session's engine (lines also while it finishes, being replaced). */
 function wire(s: Session, engine: SpeechEngine) {
@@ -374,7 +417,11 @@ async function transcribeTest(pcm: Uint8Array): Promise<SpeechResult<{ text: str
   const speechEngine = chosenEngine()
   const key = await cloudKey()
   const binary = whisperServerPath()
-  const cloud = speechEngine === 'deepgram' || (speechEngine === 'auto' && key !== null && (net.isOnline() || offlineProblem() !== null))
+  // With the account, the test listens offline: a cloud test would need a billed listening session.
+  const cloud = !serviceMode() && (speechEngine === 'deepgram' || (speechEngine === 'auto' && key !== null && (net.isOnline() || offlineProblem() !== null)))
+  if (serviceMode() && offlineProblem()) {
+    return { ok: false, error: speechError('engine', 'Signed in to ServiceEx, the transcript test listens offline. Download an offline model first.') }
+  }
   let engine: SpeechEngine
   let name: string
   if (cloud) {
@@ -481,7 +528,7 @@ export function registerSpeechIpc(): void {
     const problem = notReadyReason()
     if (problem) return { ok: false, error: speechError(engineNotInPlan() ? 'not_in_plan' : speechEngine === 'deepgram' ? 'no_key' : 'engine', problem) }
     const key = await cloudKey()
-    if (speechEngine === 'deepgram' && !key) return { ok: false, error: speechError('no_key', missingKeyMessage('deepgram')) }
+    if (speechEngine === 'deepgram' && !key && !serviceMode()) return { ok: false, error: speechError('no_key', missingKeyMessage('deepgram')) }
     const reportSpeed = (s: Session, performance: SpeechPerformance) => {
       s.behind = !performance.keepingUp
       send({ type: 'performance', performance })
@@ -494,6 +541,7 @@ export function registerSpeechIpc(): void {
       return binary && !offlineProblem() ? new WhisperEngine(binary, modelPath(whisperModel), whisperModel) : null
     }
 
+    let serviceProblem: { reason: string; warning: string } | null = null
     const build: Session['build'] = (s) => {
       if (speechEngine === 'whisper') {
         const whisper = createLocal()
@@ -502,13 +550,19 @@ export function registerSpeechIpc(): void {
         const reason = 'Offline only (whisper.cpp on this computer), as set in Settings.'
         return { engine: whisper, mode: { type: 'mode', mode: 'offline', reason, warning: null } }
       }
-      // Auto, or Cloud only: the same supervisor, which reconnects Deepgram (and in Auto falls back to offline).
-      const cloudOnly = speechEngine === 'deepgram'
+      // Auto, or Cloud only: the same supervisor, which reconnects Deepgram (and in Auto falls back to offline). With
+      // the account, the cloud also gives way to offline when the server stops it (the hours ran out), even in Cloud only.
+      const service = s.service
+      const viaService = serviceMode()
+      const cloudOnly = speechEngine === 'deepgram' && (!viaService || (service !== null && !s.cloudCut))
       const auto = new AutoEngine({
-        hasCloudKey: () => key !== null,
-        noKeyReason: cloudNotConnected() ? 'Cloud listening is not connected yet' : undefined,
-        createCloud: () => (key ? new DeepgramEngine(key) : null),
-        createLocal: cloudOnly ? () => null : createLocal,
+        hasCloudKey: () => (viaService ? service !== null && !s.cloudCut : key !== null),
+        noKeyReason: s.cloudCut
+          ? 'Cloud listening stopped'
+          : (serviceProblem?.reason ?? (cloudNotConnected() ? 'You are not signed in to ServiceEx' : undefined)),
+        noKeyWarning: s.cloudCut?.message ?? serviceProblem?.warning,
+        createCloud: () => (viaService ? (service && !s.cloudCut ? new DeepgramEngine(() => service.token()) : null) : key ? new DeepgramEngine(key) : null),
+        createLocal: cloudOnly && !viaService ? () => null : createLocal,
         localUnavailable: (offlineProblem() ?? '').toLowerCase().includes('download')
           ? 'no offline model is downloaded'
           : 'the offline engine is not available',
@@ -550,11 +604,34 @@ export function registerSpeechIpc(): void {
       checkedAt: Date.now(),
       watchdog: null,
       blocker: powerSaveBlocker.start('prevent-app-suspension'),
+      service: null,
+      cloudCut: null,
     }
     session = s
     // Stop listening if the window that started it closes or crashes.
     sender.once('destroyed', () => session === s && void stopEngine())
     sender.once('render-process-gone', () => session === s && void stopEngine())
+    // With the account, open the cloud session first. If it cannot open (no hours left, the server unreachable),
+    // listening starts offline and says why.
+    const linked = serviceAccount()
+    if (speechEngine !== 'whisper' && serviceMode() && can('listener.cloud') && linked?.account.isSignedIn()) {
+      try {
+        s.service = await startServiceListening({
+          client: linked.client,
+          machineId: await linked.machineId(),
+          cloudInUse: () => s.engine instanceof AutoEngine && s.engine.usingCloud,
+          onBalance: (seconds) => linked.account.setBalanceSeconds(seconds),
+          onCut: (cut) => cutCloud(s, cut),
+        })
+      } catch (error) {
+        serviceProblem = serviceStartProblem(error)
+      }
+      if (session !== s) {
+        // Stopped while the cloud session opened.
+        void s.service?.end()
+        return { ok: true, value: null }
+      }
+    }
     try {
       await launch(s)
     } catch (error) {

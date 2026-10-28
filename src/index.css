@@ -759,7 +759,85 @@ button {
   margin: 0;
 }
 
-/* Settings, Plan */
+/* Settings, Account */
+.settings-subheading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.account-code {
+  width: 9ch;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2em;
+}
+
+/* Plans and Credits */
+.plans-modal {
+  width: min(720px, 100%);
+}
+
+.plans-modal .panel-header {
+  padding: 0;
+  border: 0;
+}
+
+.plans-group h3 {
+  margin: 0 0 var(--space-2);
+  font-size: 14px;
+}
+
+.plans-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plans-list li {
+  display: grid;
+  grid-template-columns: 1fr max-content max-content;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.plans-list li > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plans-price {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.plans-orders {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.plans-orders th,
+.plans-orders td {
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.plans-orders th {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
 .plan-summary {
   display: grid;
   grid-template-columns: max-content 1fr;

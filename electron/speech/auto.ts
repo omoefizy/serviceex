@@ -12,6 +12,9 @@
 //    8, then every 10 seconds) and all audio since the last line is kept (up to 5 minutes) and sent again.
 // Partial text is dropped at a switch (it is spoken again by the engine taking over), and the first line after a
 // switch has any words repeated from the line before it removed.
+//
+// cutCloud() ends cloud use for the rest of the session (with the ServiceEx account: the listening hours ran out). It
+// hands over to the offline engine the same way as a lost connection, so no line is lost, even in Cloud only.
 
 import type { SpeechError, SpeechMode, SpeechPerformance } from '../../shared/types'
 import type { DeepgramResult } from './deepgram'
@@ -31,8 +34,10 @@ export interface LocalEngine extends SpeechEngine {
 
 export interface AutoOptions {
   hasCloudKey(): boolean
-  /** Why there is no cloud key, such as "Cloud listening is not connected yet"; "No Deepgram key is saved" by default. */
+  /** Why there is no cloud key, such as "You are not signed in to ServiceEx"; "No Deepgram key is saved" by default. */
   noKeyReason?: string
+  /** Shown prominently while listening offline because there is no cloud key, such as "No listening hours left". */
+  noKeyWarning?: string
   /** A new cloud connection, or null when there is no key. */
   createCloud(): CloudEngine | null
   /** A new offline engine, or null when it cannot run (see localUnavailable). */
@@ -130,10 +135,52 @@ export class AutoEngine extends EngineEvents implements SpeechEngine {
   private attempt = 0
   /** Why nothing transcribes, and the warning shown meanwhile. */
   private pause: { why: string; warning: string | null } | null = null
+  /** Cloud only, until cutCloud: then the offline engine takes over whatever the setting. */
+  private cloudOnly: boolean
+  /** Why the cloud may not be used again this session (see cutCloud); null while it may. */
+  private cloudCut: string | null = null
 
   constructor(private readonly options: AutoOptions) {
     super()
     this.localProblem = options.localUnavailable
+    this.cloudOnly = options.cloudOnly === true
+  }
+
+  /** Whether a cloud connection is open (in use, or being proved stable in the background), for billing. */
+  get usingCloud(): boolean {
+    return this.active?.kind === 'cloud' || this.shadow !== null
+  }
+
+  private hasCloud(): boolean {
+    return this.cloudCut === null && this.options.hasCloudKey()
+  }
+
+  /**
+   * Stops using the cloud for the rest of the session and carries on offline from the end of the last cloud line.
+   * `message` is shown prominently while listening goes on. Without an offline engine, listening stops with it.
+   */
+  cutCloud(message: string): void {
+    if (this.stopped || this.cloudCut !== null) return
+    this.cloudCut = message
+    this.cloudOnly = false
+    if (this.retryTimer) clearTimeout(this.retryTimer)
+    this.retryTimer = null
+    this.dropShadow()
+    const active = this.active
+    if (active?.kind === 'cloud') {
+      this.cloudLost(active, message)
+      return
+    }
+    if (active?.kind === 'local') {
+      this.pause = null
+      this.setMode('offline', message, message)
+      return
+    }
+    // Nothing was transcribing (the cloud was reconnecting): the offline engine takes over from where the text stopped.
+    this.gapStart ??= this.resumePoint()
+    void this.useLocal(this.gapStart, message, message).then((ok) => {
+      if (!ok && !this.stopped) this.fail(`${message.replace(/\.$/, '')}. Listening stopped because ${this.localProblem}.`)
+    })
   }
 
   onMode(listener: (change: ModeChange) => void) {
@@ -148,12 +195,12 @@ export class AutoEngine extends EngineEvents implements SpeechEngine {
 
   async start(): Promise<void> {
     this.emitStatus('connecting')
-    const hasKey = this.options.hasCloudKey()
+    const hasKey = this.hasCloud()
     const online = this.options.isOnline()
     const cloud = hasKey && online ? this.options.createCloud() : null
     if (cloud && (await this.useCloud(cloud, 0))) {
-      this.setMode('cloud', this.options.cloudOnly ? 'Cloud only (Deepgram), as set in Settings.' : 'Transcribing with Deepgram in the cloud.')
-    } else if (this.options.cloudOnly) {
+      this.setMode('cloud', this.cloudOnly ? 'Cloud only (Deepgram), as set in Settings.' : 'Transcribing with Deepgram in the cloud.')
+    } else if (this.cloudOnly) {
       throw this.cloudError ?? speechError('network', online ? 'Could not reach Deepgram.' : 'There is no internet connection.')
     } else {
       const why = !hasKey
@@ -163,7 +210,8 @@ export class AutoEngine extends EngineEvents implements SpeechEngine {
           : this.keyRejected
             ? 'Deepgram rejected the API key'
             : 'Deepgram could not be reached'
-      if (!(await this.useLocal(0, `${why}, so transcribing offline on this computer.`))) {
+      const warning = hasKey ? null : (this.options.noKeyWarning ?? null)
+      if (!(await this.useLocal(0, `${why}, so transcribing offline on this computer.`, warning))) {
         if (!hasKey || this.keyRejected) throw speechError('engine', `${why}, and ${this.localProblem}.`)
         this.enterPause(`${why}, and ${this.localProblem}`)
       }
@@ -278,7 +326,7 @@ export class AutoEngine extends EngineEvents implements SpeechEngine {
       if (this.cloudError.code === 'auth') this.keyRejected = true
       return false
     }
-    if (this.stopped) {
+    if (this.stopped || this.cloudCut !== null) {
       engine.abort()
       return false
     }
@@ -332,12 +380,14 @@ export class AutoEngine extends EngineEvents implements SpeechEngine {
     this.dedupeNext = true
     // Keep the audio from here until an engine takes over.
     this.gapStart = this.resumePoint()
-    if (this.options.cloudOnly) {
+    if (this.cloudOnly) {
       this.enterPause(why.replace(/\.$/, ''))
       return
     }
-    this.setMode('reconnecting', `${why} Starting the offline engine.`)
-    void this.useLocal(this.gapStart, `${why} Transcribing offline; retrying the cloud every 15 seconds.`).then((ok) => {
+    const cut = this.cloudCut
+    this.setMode('reconnecting', `${why} Starting the offline engine.`, cut)
+    const reason = cut ?? `${why} Transcribing offline; retrying the cloud every 15 seconds.`
+    void this.useLocal(this.gapStart, reason, cut).then((ok) => {
       if (!ok && !this.stopped) this.enterPause(`${why.replace(/\.$/, '')}, and ${this.localProblem}`)
       else this.scheduleRetry()
     })
@@ -347,11 +397,11 @@ export class AutoEngine extends EngineEvents implements SpeechEngine {
   private enterPause(why: string) {
     this.active = null
     if (this.gapStart === null) this.gapStart = this.resumePoint()
-    if (this.keyRejected || !this.options.hasCloudKey()) return this.fail(`${why}.`)
+    if (this.keyRejected || !this.hasCloud()) return this.fail(`${why}.`)
     this.attempt = 0
     this.pause = {
       why,
-      warning: this.options.cloudOnly
+      warning: this.cloudOnly
         ? null
         : `${why}, so transcription is paused. It resumes when the cloud is back; download an offline model in Settings to keep going without the internet.`,
     }
@@ -371,7 +421,7 @@ export class AutoEngine extends EngineEvents implements SpeechEngine {
   }
 
   private scheduleRetry() {
-    if (this.stopped || this.retryTimer || this.active?.kind === 'cloud' || this.shadow || !this.options.hasCloudKey() || this.keyRejected) return
+    if (this.stopped || this.retryTimer || this.active?.kind === 'cloud' || this.shadow || !this.hasCloud() || this.keyRejected) return
     // In the background every 15 seconds while offline works; with backoff while nothing transcribes.
     const delay = this.active ? RETRY_MS : reconnectDelay(this.attempt++)
     this.retryTimer = setTimeout(() => {
@@ -392,7 +442,7 @@ export class AutoEngine extends EngineEvents implements SpeechEngine {
   }
 
   private async retryCloud() {
-    if (this.stopped || this.active?.kind === 'cloud' || this.shadow) return
+    if (this.stopped || this.active?.kind === 'cloud' || this.shadow || !this.hasCloud()) return
     const cloud = this.options.isOnline() ? this.options.createCloud() : null
     if (!cloud) {
       // No network yet: try again later.
@@ -410,7 +460,7 @@ export class AutoEngine extends EngineEvents implements SpeechEngine {
         this.attempt = 0
         this.setMode(
           'cloud',
-          this.options.cloudOnly ? 'Reconnected to Deepgram.' : 'The cloud connection is back.',
+          this.cloudOnly ? 'Reconnected to Deepgram.' : 'The cloud connection is back.',
           missed ? 'Some words were missed while the connection was down.' : null,
         )
       } else this.retryFailed(this.cloudError?.message.replace(/\.$/, '') ?? 'no answer')
@@ -424,7 +474,7 @@ export class AutoEngine extends EngineEvents implements SpeechEngine {
       this.scheduleRetry()
       return
     }
-    if (this.stopped || this.active?.kind !== 'local') {
+    if (this.stopped || this.active?.kind !== 'local' || !this.hasCloud()) {
       cloud.abort()
       return
     }
@@ -486,7 +536,7 @@ export class AutoEngine extends EngineEvents implements SpeechEngine {
   // ---------- Offline ----------
 
   /** Starts the offline engine reading the timeline from `resumeFrom`. False when it cannot run. */
-  private async useLocal(resumeFrom: number, reason: string): Promise<boolean> {
+  private async useLocal(resumeFrom: number, reason: string, warning: string | null = null): Promise<boolean> {
     const engine = this.options.createLocal()
     if (!engine) return false
     const active: ActiveLocal = { kind: 'local', engine, ready: false, pending: this.audioFrom(resumeFrom).chunks, detach: () => undefined }
@@ -518,7 +568,7 @@ export class AutoEngine extends EngineEvents implements SpeechEngine {
     this.lastFinalEnd = null
     this.gapStart = null
     this.pause = null
-    this.setMode('offline', reason)
+    this.setMode('offline', reason, warning)
     return true
   }
 

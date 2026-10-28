@@ -1,6 +1,7 @@
 // Where the AI features and the speech engines get their keys. "developer_key" is a key saved encrypted by ./secrets,
-// and is offered only in developer builds (see developerMode). "service" is access through the ServiceEx account; that
-// is not connected yet, so it gives no key. Outside developer builds the provider is always "service".
+// and is offered only in developer builds (see developerMode). "service" is access through the ServiceEx account
+// (./service): it gives no key here, because the server holds them (see ./ai/service and ./service/listening).
+// Outside developer builds the provider is always "service".
 
 import { app } from 'electron'
 import { AI_NOT_CONNECTED, CLOUD_NOT_CONNECTED, type KeyProvider } from '../shared/features'

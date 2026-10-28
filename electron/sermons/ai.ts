@@ -6,6 +6,7 @@ import { CHUNK_WORDS, transcriptChunks } from '../../shared/sermons'
 import type { AiError, AiResult, AiTask, AiTasks, SermonAiProgress } from '../../shared/types'
 import { fail } from '../ai/client'
 import { runTask } from '../ai/tasks'
+import { keyProvider } from '../keys'
 
 /** The pause between chunks, so a long sermon does not hit the rate limit. */
 export const CHUNK_DELAY_MS = 750
@@ -15,6 +16,11 @@ export const CHUNK_RETRIES = 2
 const BACKOFF_MS = 2000
 /** The longest wait a rate limit may ask for before a retry. */
 const MAX_WAIT_MS = 60_000
+/**
+ * Words per cleaning chunk through the ServiceEx account, whose cleaning task takes at most 8,000 characters: about
+ * 1,000 words of speech. The chunks are made the same way, only smaller.
+ */
+export const SERVICE_CHUNK_WORDS = 1000
 
 /** Errors every other try and chunk would hit too (AI off, no key, billing), so the job stops at once. */
 const FATAL: AiError['code'][] = ['disabled', 'not_in_plan', 'no_key', 'invalid_key', 'no_encryption', 'billing']
@@ -86,7 +92,7 @@ export interface ChunkedOutcome {
  * hit, the chunks not reached are kept as spoken too, so the cleaned transcript never loses words.
  */
 export async function cleanInChunks(raw: string, control: JobControl): Promise<ChunkedOutcome & { transcript: string }> {
-  const chunks = transcriptChunks(raw)
+  const chunks = transcriptChunks(raw, keyProvider('anthropic') === 'service' ? SERVICE_CHUNK_WORDS : CHUNK_WORDS)
   const parts: string[] = []
   const outcome: ChunkedOutcome = { done: 0, total: chunks.length, failedParts: [], cancelled: false, error: null }
   for (const [index, chunk] of chunks.entries()) {

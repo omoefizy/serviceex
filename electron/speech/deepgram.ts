@@ -1,9 +1,10 @@
-// Deepgram streaming speech-to-text, main process only. The API key is passed in by the caller (decrypted from
-// safeStorage) and only ever goes into the Authorization header of requests to api.deepgram.com.
+// Deepgram streaming speech-to-text, main process only. It connects with either a developer API key (decrypted from
+// safeStorage by the caller) or, through the ServiceEx account, a short lived token fetched for each connection. Either
+// only ever goes into the Authorization header of requests to api.deepgram.com.
 
 import { net } from 'electron'
 import type { SpeechError } from '../../shared/types'
-import { EngineEvents, speechError, type SpeechEngine } from './engine'
+import { EngineEvents, isSpeechError, speechError, type SpeechEngine } from './engine'
 
 export const DEEPGRAM_MODEL = 'nova-3'
 
@@ -48,6 +49,9 @@ export async function checkDeepgramKey(apiKey: string): Promise<SpeechError | nu
   return null
 }
 
+/** A developer key, or a function that fetches a fresh short lived token for each connection (ServiceEx account). */
+export type DeepgramAuth = string | (() => Promise<string>)
+
 export class DeepgramEngine extends EngineEvents implements SpeechEngine {
   private socket: WebSocket | null = null
   private queue: Uint8Array[] = []
@@ -58,8 +62,10 @@ export class DeepgramEngine extends EngineEvents implements SpeechEngine {
   private stopping = false
   /** Resolves stop() once the session has ended. */
   private closed: (() => void) | null = null
+  /** Fetching a token before the socket opens. */
+  private starting = false
 
-  constructor(private readonly apiKey: string) {
+  constructor(private readonly auth: DeepgramAuth) {
     super()
   }
 
@@ -75,8 +81,32 @@ export class DeepgramEngine extends EngineEvents implements SpeechEngine {
     this.socket?.close()
   }
 
-  start(): Promise<void> {
-    if (this.socket) return Promise.reject(speechError('busy', 'Already listening.'))
+  async start(): Promise<void> {
+    if (this.socket || this.starting) throw speechError('busy', 'Already listening.')
+    this.stopping = false
+    this.emitStatus('connecting')
+    let header: string
+    if (typeof this.auth === 'string') header = `Token ${this.auth}`
+    else {
+      this.starting = true
+      try {
+        header = `Bearer ${await this.auth()}`
+      } catch (error) {
+        this.emitStatus('error')
+        throw isSpeechError(error) ? error : speechError('network', error instanceof Error && error.message ? error.message : 'Could not get a cloud listening token.')
+      } finally {
+        this.starting = false
+      }
+      // Stopped while the token was on its way.
+      if (this.stopping) {
+        this.emitStatus('idle')
+        return
+      }
+    }
+    return this.connect(header)
+  }
+
+  private connect(authorization: string): Promise<void> {
     const params = new URLSearchParams({
       model: DEEPGRAM_MODEL,
       language: 'en',
@@ -90,10 +120,8 @@ export class DeepgramEngine extends EngineEvents implements SpeechEngine {
       endpointing: '300',
       utterance_end_ms: '1000',
     })
-    this.stopping = false
-    this.emitStatus('connecting')
     // The main process has Node's WebSocket, which takes request headers; this project's DOM typings do not know that.
-    const init = { headers: { Authorization: `Token ${this.apiKey}` } }
+    const init = { headers: { Authorization: authorization } }
     const socket = new WebSocket(`${LISTEN_URL}?${params}`, init as unknown as string[])
     socket.binaryType = 'arraybuffer'
     this.socket = socket
@@ -111,9 +139,15 @@ export class DeepgramEngine extends EngineEvents implements SpeechEngine {
           this.emitStatus('idle')
           resolve()
         } else if (!opened) {
-          // The handshake failed, and the socket does not say why, so ask Deepgram about the key.
+          // The handshake failed, and the socket does not say why, so ask Deepgram about the key. A token from the
+          // account is checked by the server instead, and lasts only a minute, so a retry fetches a new one.
           this.emitStatus('error')
-          checkDeepgramKey(this.apiKey).then(
+          if (typeof this.auth !== 'string') {
+            reject(speechError('network', 'Could not open the cloud listening connection.'))
+            this.closed?.()
+            return
+          }
+          checkDeepgramKey(this.auth).then(
             (problem) => reject(problem ?? speechError('engine', 'Deepgram refused the streaming connection.')),
             () => reject(speechError('network', 'Could not reach Deepgram. Check the internet connection.')),
           )
@@ -145,7 +179,12 @@ export class DeepgramEngine extends EngineEvents implements SpeechEngine {
 
   async stop(): Promise<void> {
     const socket = this.socket
-    if (!socket || this.stopping) return
+    if (!socket) {
+      // Possibly still fetching its token: it will not connect.
+      this.stopping = true
+      return
+    }
+    if (this.stopping) return
     this.stopping = true
     this.emitStatus('stopping')
     if (socket.readyState !== WebSocket.OPEN) {

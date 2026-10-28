@@ -28,7 +28,7 @@ const { SettingsPanel } = await import('./components/SettingsPanel')
 const { ThemeEditor } = await import('./components/ThemeEditor')
 
 const SECTIONS = [
-  'Plan',
+  'Account',
   'Appearance',
   'Output',
   'Church profile',
@@ -114,7 +114,7 @@ describe('Settings', () => {
     loadIntoStore()
     const html = renderToString(createElement(SettingsPanel))
     expect(html).toContain('Listening mode')
-    expect(html).toContain('Cloud listening hours: not connected yet')
+    expect(html).toContain('Cloud listening hours: sign in to ServiceEx in Account above.')
     expect(html).toMatch(/role="radio" aria-checked="true"[^>]*>.*Offline/)
     expect(html).not.toMatch(/API key|own key|Developer key/i)
   })

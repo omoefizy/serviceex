@@ -1,7 +1,8 @@
 // AI tasks. The renderer sends a task name and its input; the prompts, output schemas and checks live here,
-// so the renderer cannot steer the model with its own instructions.
+// so the renderer cannot steer the model with its own instructions. With the ServiceEx account (always, outside
+// developer builds) a task goes through the server instead (see ./service), and its answer gets the same checks.
 
-import { can, upgradeNote, type FeatureKey } from '../../shared/features'
+import { can, FEATURES, upgradeNote, type FeatureKey } from '../../shared/features'
 import { findSection, parseLyrics } from '../../shared/lyrics'
 import { formatReference, parseReference } from '../../shared/parseReference'
 import { KEY_POINTS, limitWords, SUMMARY_MAX_WORDS } from '../../shared/sermons'
@@ -9,7 +10,9 @@ import { MAX_STATEMENT_WORDS, verbatimStatements } from '../../shared/statements
 import type { AiModel, AiResult, AiTask, AiTasks } from '../../shared/types'
 import { getVerse, listBooks } from '../db/bible'
 import { getAppSettings } from '../db/settings'
+import { keyProvider } from '../keys'
 import { fail, readyClient, toAiError } from './client'
+import { runServiceTask, SERVICE_ROUTES, type Route } from './service'
 
 /**
  * Longest input accepted per text field; well past a long song, a full bulletin or one sermon chunk (CHUNK_WORDS
@@ -512,6 +515,8 @@ export async function runTask<T extends AiTask>(task: T, input: unknown): Promis
     return fail('bad_request', error instanceof Error ? error.message : 'Invalid input')
   }
 
+  if (keyProvider('anthropic') === 'service') return runThroughService(task, definition, parsed)
+
   const ready = await readyClient()
   if (!ready.ok) return ready
   const model = definition.model ?? getAppSettings().aiModel
@@ -540,6 +545,24 @@ export async function runTask<T extends AiTask>(task: T, input: unknown): Promis
   if (!text || text.type !== 'text') return fail('bad_request', 'The AI returned no answer.')
   try {
     return { ok: true, value: definition.check(JSON.parse(text.text), parsed) }
+  } catch (error) {
+    return fail('bad_request', error instanceof TaskError ? error.message : 'The AI answer could not be used. Try again.')
+  }
+}
+
+/** A task through the ServiceEx account: the server's answer, read into the task's shape, then the task's own checks. */
+async function runThroughService<T extends AiTask>(
+  task: T,
+  definition: TaskDefinition<T>,
+  input: AiTasks[T]['input'],
+): Promise<AiResult<AiTasks[T]['output']>> {
+  if (!getAppSettings().aiEnabled) return fail('disabled', 'AI features are turned off in Settings.')
+  const route = SERVICE_ROUTES[task] as Route<T> | undefined
+  if (!route) return fail('unavailable', `${FEATURES[TASK_FEATURES[task]].label} is not available through the ServiceEx account yet.`)
+  const answer = await runServiceTask(route.task, route.text(input), route.options)
+  if (!answer.ok) return answer
+  try {
+    return { ok: true, value: definition.check(route.parse(answer.value), input) }
   } catch (error) {
     return fail('bad_request', error instanceof TaskError ? error.message : 'The AI answer could not be used. Try again.')
   }

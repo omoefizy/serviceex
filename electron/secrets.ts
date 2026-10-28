@@ -1,13 +1,13 @@
-// API keys, encrypted with Electron's safeStorage (Keychain on macOS, DPAPI on Windows, the keyring on Linux) and
-// kept as <userData>/<name>.enc. Main process only: keys are never sent to the renderer, never read from the
-// environment or a plain file, and never live in the repository.
+// API keys and the ServiceEx account session, encrypted with Electron's safeStorage (Keychain on macOS, DPAPI on
+// Windows, the keyring on Linux) and kept as <userData>/<name>.enc. Main process only: they are never sent to the
+// renderer, never read from the environment or a plain file, and never live in the repository.
 
 import { app, safeStorage } from 'electron'
 import { existsSync } from 'node:fs'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-export type SecretName = 'anthropic-key' | 'deepgram-key'
+export type SecretName = 'anthropic-key' | 'deepgram-key' | 'serviceex-session'
 
 const secretFile = (name: SecretName) => path.join(app.getPath('userData'), `${name}.enc`)
 

@@ -10,6 +10,7 @@ vi.mock('./client', () => ({
   toAiError: (error: unknown) => ({ ok: false, error: { code: 'unavailable', message: String(error) } }),
 }))
 vi.mock('../db/settings', () => ({ getAppSettings: () => settings }))
+vi.mock('../keys', () => ({ keyProvider: () => 'developer_key' }))
 vi.mock('../db/bible', () => ({ getVerse: () => null, listBooks: () => [] }))
 
 const { runTask } = await import('./tasks')
@@ -71,14 +72,33 @@ describe('cleanLyrics', () => {
 })
 
 describe('plans', () => {
-  it('refuses a task whose feature the plan leaves out, before asking Claude', async () => {
-    const { setEntitlements } = await import('../../shared/features')
+  it('refuses a task whose feature the plan leaves out, before asking Claude, once plan limits are enforced', async () => {
+    const { ENFORCE_ENTITLEMENTS, setEntitlementEnforcement, setEntitlements } = await import('../../shared/features')
     setEntitlements({ plan: 'Basic', features: ['ai.statements'] })
+    setEntitlementEnforcement(true)
     try {
       const result = await runTask('cleanLyrics', { lyrics: 'Amazing grace' })
-      expect(result).toEqual({ ok: false, error: { code: 'not_in_plan', message: 'AI lyrics cleaner is not included in the Basic plan. See Settings, Plan.' } })
+      expect(result).toEqual({ ok: false, error: { code: 'not_in_plan', message: 'AI lyrics cleaner is not included in the Basic plan. See Settings, Account.' } })
       expect(create).not.toHaveBeenCalled()
     } finally {
+      setEntitlementEnforcement(ENFORCE_ENTITLEMENTS)
+      setEntitlements(null)
+    }
+  })
+
+  it('runs the task while ENFORCE_ENTITLEMENTS is false, and logs what it would have blocked', async () => {
+    const { ENFORCE_ENTITLEMENTS, setEntitlements } = await import('../../shared/features')
+    expect(ENFORCE_ENTITLEMENTS).toBe(false)
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    setEntitlements({ plan: 'Basic', features: ['ai.statements'] })
+    create.mockResolvedValue({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ lyrics: 'Amazing grace', order: [] }) }] })
+    try {
+      const result = await runTask('cleanLyrics', { lyrics: 'Amazing grace' })
+      expect(result.ok).toBe(true)
+      expect(create).toHaveBeenCalled()
+      expect(info).toHaveBeenCalledWith(expect.stringContaining('would block "ai.lyricsCleaner"'))
+    } finally {
+      info.mockRestore()
       setEntitlements(null)
     }
   })

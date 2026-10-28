@@ -33,6 +33,7 @@ import type {
   SermonsApi,
   WorshipDeckApi,
 } from '../shared/types'
+import type { AccountApi, AccountState } from '../shared/account'
 
 // --------- Expose some API to the Renderer process ---------
 contextBridge.exposeInMainWorld('ipcRenderer', {
@@ -349,6 +350,24 @@ const license: LicenseApi = {
   },
 }
 
+// The account's tokens stay in the main process; the renderer gets its state and the results of each action.
+const account: AccountApi = {
+  state: () => ipcRenderer.invoke('account:state'),
+  requestCode: (email) => ipcRenderer.invoke('account:requestCode', email),
+  verifyCode: (email, code) => ipcRenderer.invoke('account:verifyCode', email, code),
+  signOut: () => ipcRenderer.invoke('account:signOut'),
+  refresh: () => ipcRenderer.invoke('account:refresh'),
+  deactivate: () => ipcRenderer.invoke('account:deactivate'),
+  products: () => ipcRenderer.invoke('account:products'),
+  orders: () => ipcRenderer.invoke('account:orders'),
+  buy: (productId) => ipcRenderer.invoke('account:buy', productId),
+  onChanged(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, state: AccountState) => listener(state)
+    ipcRenderer.on('account:changed', handler)
+    return () => ipcRenderer.off('account:changed', handler)
+  },
+}
+
 const sermons: SermonsApi = {
   list: () => ipcRenderer.invoke('sermons:list'),
   search: (query) => ipcRenderer.invoke('sermons:search', query),
@@ -399,6 +418,7 @@ const api: WorshipDeckApi = {
   fonts,
   sharing,
   license,
+  account,
   sermons,
   onToggleHighlight(listener) {
     const handler = () => listener()

@@ -1,5 +1,5 @@
 // Keys only in developer builds: packaged without SERVICEEX_DEV, a saved key is never read and AI and cloud listening
-// say the account is not connected yet. Older saved providers move to the new values. The key below is invented.
+// go through the account, asking to sign in instead of for a key. Older saved providers move to the new values. The key below is invented.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const electron = vi.hoisted(() => ({ app: { isPackaged: true, getPath: () => '/nowhere' }, net: { isOnline: () => true } }))
@@ -51,7 +51,7 @@ describe('a packaged build without SERVICEEX_DEV', () => {
     expect(await readProviderKey('anthropic')).toBeNull()
   })
 
-  it('says the account is not connected yet instead of asking for a key', async () => {
+  it('asks to sign in to the account instead of for a key', async () => {
     expect(missingKeyMessage('deepgram')).toBe(CLOUD_NOT_CONNECTED)
     expect(missingKeyMessage('anthropic')).toBe(AI_NOT_CONNECTED)
     expect(await readyClient()).toEqual({ ok: false, error: { code: 'no_key', message: AI_NOT_CONNECTED } })
