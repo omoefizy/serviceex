@@ -1,10 +1,11 @@
 // The sharing controls in the operator window: received PowerPoint files import in the mode the operator chose, the
 // incoming chip with Decline, Cancel and Dismiss on transfers, pairing by a typed address, and the hint shown when no
 // other computer can be found or Windows has the network set to Public.
-import { createElement } from 'react'
+import { createElement, Profiler } from 'react'
 import { renderToString } from 'react-dom/server'
+import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { IncomingTransfer, SharingEvent, TransferProgress } from '../shared/types'
+import type { IncomingTransfer, InboxItem, SharePeer, SharingEvent, TransferProgress } from '../shared/types'
 
 let listener: ((event: SharingEvent) => void) | null = null
 const calls: { method: string; args: unknown[] }[] = []
@@ -49,7 +50,7 @@ const { applyAcceptResult, beginPairingAt, cancelTransfer, declineIncoming, dism
   './lib/sharing'
 )
 const { chosenImportMode, IMPORT_MODE_KEY } = await import('./lib/presentations')
-const { IncomingChip, NetworkHint } = await import('./components/SharingBar')
+const { IncomingChip, NetworkHint, SharingBar } = await import('./components/SharingBar')
 
 const sender = 'c'.repeat(32)
 const incoming = (patch: Partial<IncomingTransfer> = {}): IncomingTransfer => ({
@@ -206,5 +207,72 @@ describe('the no devices hint', () => {
 
   it('shows nothing while other computers are found on a Private network', () => {
     expect(renderToString(createElement(NetworkHint, { noDevices: false, publicNetworks: [], onDismiss: () => {} }))).toBe('')
+  })
+})
+
+describe('the sharing bar', () => {
+  // Tells React the renders below run inside act().
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+  const peer = (patch: Partial<SharePeer> = {}): SharePeer => ({
+    id: 'b'.repeat(32),
+    name: 'Sanctuary booth',
+    online: true,
+    paired: true,
+    trusted: false,
+    disconnected: false,
+    liveTitle: 'Amazing Grace',
+    hosting: null,
+    ...patch,
+  })
+  const received = (id: string): InboxItem => ({ id, senderId: sender, senderName: 'Youth room', name: `${id}.serviceex`, size: 1024, kind: 'package', receivedAt: '2026-10-25T09:00:00.000Z' })
+  const initial = useSharingStore.getState()
+  // The mount, and one each for the six loads it starts; a selector returning a new value each time loops past 50.
+  const MAX_COMMITS = 8
+
+  /** Mounts the bar, lets the loads started on mount settle, and counts the commits it took. */
+  async function mount(): Promise<{ commits: number; renderer: ReactTestRenderer }> {
+    let commits = 0
+    let renderer!: ReactTestRenderer
+    await act(async () => {
+      // Stops a render loop here, as a failure, instead of letting it hang the run.
+      const onRender = () => {
+        if (++commits > MAX_COMMITS * 5) throw new Error(`SharingBar rendered ${commits} times`)
+      }
+      renderer = create(createElement(Profiler, { id: 'bar', onRender }, createElement(SharingBar)))
+    })
+    return { commits, renderer }
+  }
+
+  beforeEach(() => {
+    useSharingStore.setState(initial, true)
+    vi.restoreAllMocks()
+  })
+
+  it('settles in a few renders with devices, transfers and Inbox items', async () => {
+    const peers = [peer(), peer({ id: 'f'.repeat(32), name: 'Youth room', paired: false, liveTitle: null })]
+    const inbox = [received('one'), received('two'), received('three')]
+    vi.spyOn(window.api.sharing, 'peers').mockResolvedValue(peers)
+    vi.spyOn(window.api.sharing, 'inbox').mockResolvedValue(inbox)
+    useSharingStore.setState({ peers, inbox, transfers: [transfer(), transfer({ id: '9'.repeat(32), state: 'preparing' })], incoming: [incoming()] })
+
+    const { commits, renderer } = await mount()
+    const text = JSON.stringify(renderer.toJSON())
+    expect(text).toContain('Sanctuary booth')
+    expect(text).toContain('Sunday.serviceex')
+    expect(text).toContain('Easter.pptx')
+    expect(renderer.root.findByProps({ 'aria-label': 'Inbox, 3 items' })).toBeTruthy()
+    expect(commits).toBeLessThanOrEqual(MAX_COMMITS)
+    act(() => renderer.unmount())
+  })
+
+  it('settles in a few renders with nothing shared yet and no status loaded', async () => {
+    vi.spyOn(window.api.sharing, 'status').mockReturnValue(new Promise(() => {}))
+
+    const { commits, renderer } = await mount()
+    expect(useSharingStore.getState().status).toBeNull()
+    expect(renderer.toJSON()).toBeNull()
+    expect(commits).toBeLessThanOrEqual(MAX_COMMITS)
+    act(() => renderer.unmount())
   })
 })

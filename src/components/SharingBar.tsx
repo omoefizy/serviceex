@@ -91,6 +91,9 @@ function DeviceChip({ peer }: { peer: SharePeer }) {
   )
 }
 
+/** One empty list for every render: a new `[]` from a store selector re-renders forever. */
+const NO_NETWORKS: string[] = []
+
 const percentOf = (done: number, size: number) => (size > 0 ? Math.floor((done / size) * 100) : 0)
 
 function TransferChip({ transfer }: { transfer: TransferProgress }) {
@@ -418,7 +421,7 @@ export function SharingBar() {
   const inboxOpen = useSharingStore((s) => s.inboxOpen)
   const transfers = useSharingStore((s) => s.transfers)
   const incoming = useSharingStore((s) => s.incoming)
-  const publicNetworks = useSharingStore((s) => s.status?.publicNetworks ?? [])
+  const publicNetworks = useSharingStore((s) => s.status?.publicNetworks ?? NO_NETWORKS)
   const [hintHidden, setHintHidden] = useState(false)
   const message = useSharingStore((s) => s.message)
   const chips = useOperatorStore((s) => s.settings.sharingDeviceChips)
