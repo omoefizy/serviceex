@@ -7,7 +7,7 @@
 
 import type { KeyObject } from 'node:crypto'
 import type { AccountResult, AccountState, AiAllowance, CheckoutProgress, ListeningBalance, Order, Product, ProductKind } from '../../shared/account'
-import { licenseStatusOf, NO_LICENSE, type LicenseStatus, type StoredLicense } from '../../shared/license'
+import { licenseStatusOf, NO_ACCOUNT_LICENSE, NO_LICENSE, type LicenseStatus, type StoredLicense } from '../../shared/license'
 import { serviceErrorMessage } from '../../shared/serviceErrors'
 import { isServiceError, ServiceError, type ServiceClient } from './client'
 import { readPayload, verifyLicenseToken } from './licenseToken'
@@ -30,6 +30,8 @@ export interface AccountDeps {
   appVersion: string
   /** The key licence tokens are checked with, or null when this build has none. */
   publicKey(): KeyObject | null
+  /** The id tokens must name for that key (packaged builds), or null to accept any. */
+  keyId?(): string | null
   /** Compares the server's published key with the one the app checks with (and, in developer builds, may adopt it). */
   checkServerKey?(pem: string): string | null
   configured(): boolean
@@ -81,6 +83,11 @@ export class AccountService {
   /** Bumped by each purchase, so an older purchase's checks stop when a new one starts. */
   private checkoutRun = 0
   private productCache: Product[] | null = null
+  /**
+   * Whether activating is worth asking for when the server cannot list the account's licences: once per sign in (or
+   * app start signed in) and per successful purchase, so an account without a licence is not asked about repeatedly.
+   */
+  private activationDue = false
 
   constructor(private readonly deps: AccountDeps) {}
 
@@ -119,6 +126,7 @@ export class AccountService {
     const session = await this.deps.client.currentSession()
     this.signedIn = session !== null
     this.email = session?.email ?? null
+    this.activationDue = this.signedIn
     this.license = await this.checkSavedLicense()
     this.changed()
     if (this.signedIn) void this.refresh()
@@ -138,7 +146,7 @@ export class AccountService {
   async checkSavedLicense(): Promise<LicenseStatus> {
     const stored = await this.deps.licenses.load().catch(() => null)
     if (!stored) return NO_LICENSE
-    const check = verifyLicenseToken(stored.token, this.deps.publicKey(), { machineId: await this.deps.machineId(), now: this.now() })
+    const check = verifyLicenseToken(stored.token, this.deps.publicKey(), { machineId: await this.deps.machineId(), now: this.now(), keyId: this.deps.keyId?.() })
     return licenseStatusOf(check, stored, this.now())
   }
 
@@ -181,6 +189,7 @@ export class AccountService {
       return failure(error)
     }
     this.signedIn = true
+    this.activationDue = true
     this.email = (await this.deps.client.currentSession())?.email ?? address
     this.notice = null
     this.changed()
@@ -198,6 +207,7 @@ export class AccountService {
     this.allowance = null
     this.checkout = null
     this.notice = null
+    this.activationDue = false
     // The licence stays on this computer and keeps working offline; the seat is freed only by Deactivate.
     this.changed()
     return this.state()
@@ -234,7 +244,10 @@ export class AccountService {
     if (problem) throw new AccountNotice(problem)
   }
 
-  /** Refreshes this computer's licence token, or activates the computer when it has none. */
+  /**
+   * Refreshes this computer's licence token, or activates the computer when the account has a licence. An account
+   * without one is the free plan, not a problem: nothing is logged or shown as an error.
+   */
   async syncLicense(): Promise<void> {
     const machineId = await this.deps.machineId()
     const stored = await this.deps.licenses.load().catch(() => null)
@@ -252,19 +265,17 @@ export class AccountService {
           if (!isServiceError(error) || !(error.code === 'not_found' || (error.code === 'seat_limit' && error.details.reason === 'not_activated'))) throw error
         }
       }
+      if (!(await this.accountHasLicense())) return await this.noLicense()
+      this.activationDue = false
       await this.keep(
         await this.deps.client.request<LicenseAnswer>('POST', '/licenses/activate', {
           body: { machine_id: machineId, platform: this.deps.platform, app_version: this.deps.appVersion },
+          quiet: ['not_found'],
         }),
       )
     } catch (error) {
       if (!isServiceError(error)) throw error
-      if (error.code === 'not_found') {
-        // The account has no licence: the free plan.
-        await this.deps.licenses.clear()
-        this.license = NO_LICENSE
-        return
-      }
+      if (error.code === 'not_found') return await this.noLicense()
       if (error.code === 'license_revoked') {
         await this.deps.licenses.clear()
         this.license = { ...NO_LICENSE, state: 'revoked', message: error.message }
@@ -280,12 +291,35 @@ export class AccountService {
     }
   }
 
+  /** From the account's licence list; a server without the list leaves it to activationDue. */
+  private async accountHasLicense(): Promise<boolean> {
+    try {
+      const answer = await this.deps.client.request<{ licenses?: unknown[] }>('GET', '/licenses', { quiet: ['not_found'] })
+      if (Array.isArray(answer?.licenses)) return answer.licenses.length > 0
+    } catch (error) {
+      if (!isServiceError(error) || error.code !== 'not_found') throw error
+    }
+    return this.activationDue
+  }
+
+  /** The account has no licence: the free plan. */
+  private async noLicense() {
+    await this.deps.licenses.clear()
+    this.license = NO_ACCOUNT_LICENSE
+  }
+
   /** Saves a token from the server, but only one that passes the same check as at startup. */
   private async keep(answer: LicenseAnswer): Promise<void> {
-    const check = verifyLicenseToken(answer.license_token, this.deps.publicKey(), { machineId: await this.deps.machineId(), now: this.now() })
+    const check = verifyLicenseToken(answer.license_token, this.deps.publicKey(), { machineId: await this.deps.machineId(), now: this.now(), keyId: this.deps.keyId?.() })
     if (!check.valid) {
       console.error('The licence token from the server did not pass its check', check.reason)
-      throw new AccountNotice(check.reason === 'no_key' ? 'This build has no licence key to check licences with.' : 'The licence from ServiceEx could not be checked, so it was not saved.')
+      throw new AccountNotice(
+        check.reason === 'no_key'
+          ? 'This build has no licence key to check licences with.'
+          : check.reason === 'unknown_key'
+            ? 'This licence was signed with a newer key than this version of WorshipDeck knows. Update WorshipDeck to use it.'
+            : 'The licence from ServiceEx could not be checked, so it was not saved.',
+      )
     }
     const stored: StoredLicense = { token: answer.license_token, seatsUsed: answer.license.active_seats, checkedAt: this.now().toISOString() }
     await this.deps.licenses.save(stored)
@@ -445,6 +479,7 @@ export class AccountService {
         const answer = await this.deps.client.request<{ result: string; order: { status: string } }>('POST', '/checkout/verify', { body: { reference } })
         if (answer.order.status === 'paid') {
           this.finishCheckout(run, 'paid', 'Payment received. Thank you.')
+          this.activationDue = true
           await this.refresh()
           return
         }

@@ -27,7 +27,7 @@ keyHolder.pem = server.publicKeyPem
 
 const { can, FEATURE_KEYS, FREE_FEATURES, includes, setEntitlements } = await import('../shared/features')
 const { licenseStatusOf } = await import('../shared/license')
-const { verifyLicenseToken, publicKeyFromPem } = await import('./service/licenseToken')
+const { keyIdOf, verifyLicenseToken, publicKeyFromPem } = await import('./service/licenseToken')
 const { loadLicense } = await import('./license')
 
 const DAY = 24 * 3600 * 1000
@@ -122,5 +122,23 @@ describe('at startup', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
     expect(can('themes.editor')).toBe(true)
     info.mockRestore()
+  })
+
+  it('asks for an update when a token names a key this version does not know', async () => {
+    const payload = JSON.parse(Buffer.from(server.tokenFor(license, machine.id).split('.')[1], 'base64url').toString('utf8'))
+    const token = server.signToken(payload, server.keys.privateKey, 'ed25519-aNewerKey012')
+    writeFileSync(path.join(folder, 'serviceex-license.json'), JSON.stringify({ token, seatsUsed: 1, checkedAt: null }))
+    const status = await loadLicense(folder)
+    expect(status).toMatchObject({ state: 'invalid', plan: 'Free' })
+    expect(status.message).toMatch(/Update WorshipDeck/)
+  })
+})
+
+describe('the built-in key', () => {
+  it('is the production Ed25519 key, with the id the server gives it', async () => {
+    const config = await vi.importActual<typeof import('./service/config')>('./service/config')
+    const key = publicKeyFromPem(config.LICENSE_PUBLIC_KEY_PEM)
+    expect(key).not.toBeNull()
+    expect(keyIdOf(key!)).toBe('ed25519-xuDBNVVVtmbR')
   })
 })

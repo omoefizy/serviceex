@@ -3,7 +3,7 @@
 
 import { app, BrowserWindow, ipcMain, net, shell } from 'electron'
 import type { AccountState } from '../../shared/account'
-import { adoptServerKey, licensePublicKey, licenseStore } from '../license'
+import { adoptServerKey, licenseKeyId, licensePublicKey, licenseStore } from '../license'
 import { encryptionAvailable } from '../secrets'
 import { AccountService } from '../service/account'
 import { ServiceClient } from '../service/client'
@@ -41,6 +41,7 @@ export function registerAccountIpc(): void {
     platform: platform(),
     appVersion: app.getVersion(),
     publicKey: () => licensePublicKey(),
+    keyId: licenseKeyId,
     checkServerKey: (pem) => adoptServerKey(pem),
     configured: () => apiBaseUrl() !== null,
     encryptionAvailable,

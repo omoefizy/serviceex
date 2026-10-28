@@ -27,7 +27,7 @@ export interface LicenseTokenPayload {
 }
 
 /** Why a token was not accepted. */
-export type TokenProblem = 'malformed' | 'bad_signature' | 'expired' | 'wrong_machine' | 'no_key'
+export type TokenProblem = 'malformed' | 'bad_signature' | 'expired' | 'wrong_machine' | 'no_key' | 'unknown_key'
 
 export type TokenCheck = { valid: true; payload: LicenseTokenPayload } | { valid: false; reason: TokenProblem; payload: LicenseTokenPayload | null }
 
@@ -82,12 +82,16 @@ export const NO_LICENSE: LicenseStatus = {
   message: null,
 }
 
+/** The account has bought no licence yet: the free plan, nothing wrong. */
+export const NO_ACCOUNT_LICENSE: LicenseStatus = { ...NO_LICENSE, message: 'No license on this account yet. Buy one in Plans and Credits.' }
+
 const PROBLEMS: Record<TokenProblem, string> = {
   malformed: 'The licence saved on this computer could not be read. Sign in again to restore it.',
   bad_signature: 'The licence saved on this computer failed its signature check, so it was not used. Sign in again to restore it.',
   wrong_machine: 'The licence saved here belongs to another computer. Sign in again to activate this one.',
   expired: 'This computer has been offline for more than 14 days, so the licence needs checking. Connect to the internet and it will refresh by itself.',
   no_key: 'This build has no licence key to check licences with.',
+  unknown_key: 'This licence was signed with a newer key than this version of WorshipDeck knows. Update WorshipDeck to use it.',
 }
 
 /** What a checked token allows, at `now`. A token that fails its check gives the free features, never an error. */

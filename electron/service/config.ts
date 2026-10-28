@@ -12,11 +12,12 @@ const BUILD_API_URL = typeof __SERVICEEX_API_URL__ === 'string' ? __SERVICEEX_AP
 
 /**
  * The Ed25519 public key licence tokens are checked with, as served by GET /.well-known/license-key (public_key_pem).
- * PLACEHOLDER: paste the production key before release. While it is empty, developer builds use the key the server
- * serves, and packaged builds treat every licence as unchecked (free features, nothing blocked while
- * ENFORCE_ENTITLEMENTS is false).
+ * Developer builds check with the key the server serves instead when it differs, so they work against a local server.
  */
-export const LICENSE_PUBLIC_KEY_PEM = ``
+export const LICENSE_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAxuDBNVVVtmbRycGSk4AzrHBxWctznn4TwEUEdAOXYRI=
+-----END PUBLIC KEY-----
+`
 
 /** Salt for the machine id, so the id sent to the server cannot be matched to the computer's own identifiers. */
 export const MACHINE_ID_SALT = 'serviceex.desktop.machine-id.v1'

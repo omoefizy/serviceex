@@ -26,11 +26,20 @@ export function publicKeyFromPem(pem: string): KeyObject | null {
   }
 }
 
-export function verifyLicenseToken(token: string, publicKey: KeyObject | null, opts: { now?: Date; machineId: string }): TokenCheck {
+/** The key's id as the server names it in each token's header: "ed25519-" and the first 12 characters of the key. */
+export function keyIdOf(key: KeyObject): string {
+  return `ed25519-${String(key.export({ format: 'jwk' }).x).slice(0, 12)}`
+}
+
+/**
+ * `keyId`, when given, is the id of the key the app checks with: a token naming another key was signed with a key this
+ * version does not know, so the app needs updating.
+ */
+export function verifyLicenseToken(token: string, publicKey: KeyObject | null, opts: { now?: Date; machineId: string; keyId?: string | null }): TokenCheck {
   const parts = token.split('.')
   const payload = readPayload(token)
   if (parts.length !== 3 || !payload) return { valid: false, reason: 'malformed', payload: null }
-  let header: { alg?: unknown }
+  let header: { alg?: unknown; kid?: unknown }
   try {
     header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'))
   } catch {
@@ -38,6 +47,7 @@ export function verifyLicenseToken(token: string, publicKey: KeyObject | null, o
   }
   if (header.alg !== 'EdDSA') return { valid: false, reason: 'malformed', payload: null }
   if (!publicKey) return { valid: false, reason: 'no_key', payload: null }
+  if (opts.keyId && typeof header.kid === 'string' && header.kid !== opts.keyId) return { valid: false, reason: 'unknown_key', payload: null }
   let signed = false
   try {
     signed = verify(null, Buffer.from(`${parts[0]}.${parts[1]}`), publicKey, Buffer.from(parts[2], 'base64url'))

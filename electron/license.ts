@@ -13,11 +13,11 @@ import { entitlementsOf, licenseStatusOf, NO_LICENSE, type LicenseStatus, type S
 import { developerMode } from './keys'
 import type { LicenseStore } from './service/account'
 import { LICENSE_PUBLIC_KEY_PEM } from './service/config'
-import { publicKeyFromPem, verifyLicenseToken } from './service/licenseToken'
+import { keyIdOf, publicKeyFromPem, verifyLicenseToken } from './service/licenseToken'
 import { machineId } from './service/machineId'
 
 const licenseFile = (folder: string) => path.join(folder, 'serviceex-license.json')
-/** Developer builds without a built-in key keep the server's key here (see adoptServerKey). */
+/** Developer builds keep the server's key here when it is not the built-in one (see adoptServerKey). */
 const devKeyFile = (folder: string) => path.join(folder, 'license-key.dev.pem')
 
 const isStored = (value: unknown): value is StoredLicense =>
@@ -42,36 +42,44 @@ export function licenseStore(folder = app.getPath('userData')): LicenseStore {
 const bundledKey = publicKeyFromPem(LICENSE_PUBLIC_KEY_PEM)
 let devKey: KeyObject | null | undefined
 
-/** The key tokens are checked with: the one built into the app, or in developer builds without one, the server's. */
+/**
+ * The key tokens are checked with: the one built into the app, or in developer builds, the key the server last
+ * published when it differs (a local or staging server).
+ */
 export function licensePublicKey(folder = app.getPath('userData')): KeyObject | null {
-  if (bundledKey) return bundledKey
-  if (!developerMode()) return null
+  if (!developerMode()) return bundledKey
   if (devKey === undefined) {
     const file = devKeyFile(folder)
     devKey = existsSync(file) ? publicKeyFromPem(readFileSync(file, 'utf8')) : null
   }
-  return devKey
+  return devKey ?? bundledKey
 }
+
+/** The id of the built-in key, which packaged builds expect in every token's header; null in developer builds. */
+export function licenseKeyId(): string | null {
+  return !developerMode() && bundledKey ? keyIdOf(bundledKey) : null
+}
+
+const same = (a: KeyObject, b: KeyObject) => a.export({ format: 'der', type: 'spki' }).equals(b.export({ format: 'der', type: 'spki' }))
 
 /**
  * Compares the key the server publishes with the one the app checks with. Returns a sentence when they differ. A
- * developer build without a built-in key adopts the server's key instead.
+ * developer build adopts the server's key instead.
  */
 export function adoptServerKey(pem: string, folder = app.getPath('userData')): string | null {
   const served = publicKeyFromPem(pem)
   if (!served) return null
-  const same = (a: KeyObject, b: KeyObject) => a.export({ format: 'der', type: 'spki' }).equals(b.export({ format: 'der', type: 'spki' }))
-  if (bundledKey) {
-    if (same(bundledKey, served)) return null
-    console.error('The licence key ServiceEx publishes does not match the one built into this app')
-    return 'The licence key ServiceEx uses does not match this version of WorshipDeck, so licences cannot be checked. Update WorshipDeck.'
+  if (developerMode()) {
+    const current = licensePublicKey(folder)
+    if (!current || !same(current, served)) {
+      devKey = served
+      writeFile(devKeyFile(folder), served.export({ format: 'pem', type: 'spki' }).toString()).catch(console.error)
+    }
+    return null
   }
-  if (!developerMode()) return null
-  if (!devKey || !same(devKey, served)) {
-    devKey = served
-    writeFile(devKeyFile(folder), served.export({ format: 'pem', type: 'spki' }).toString()).catch(console.error)
-  }
-  return null
+  if (!bundledKey || same(bundledKey, served)) return null
+  console.error('The licence key ServiceEx publishes does not match the one built into this app')
+  return 'The licence key ServiceEx uses does not match this version of WorshipDeck, so licences cannot be checked. Update WorshipDeck.'
 }
 
 let status: LicenseStatus | null = null
@@ -81,7 +89,7 @@ export async function loadLicense(folder = app.getPath('userData')): Promise<Lic
   try {
     const stored = await licenseStore(folder).load()
     status = stored
-      ? licenseStatusOf(verifyLicenseToken(stored.token, licensePublicKey(folder), { machineId: await machineId(folder) }), stored)
+      ? licenseStatusOf(verifyLicenseToken(stored.token, licensePublicKey(folder), { machineId: await machineId(folder), keyId: licenseKeyId() }), stored)
       : NO_LICENSE
   } catch (error) {
     console.error('Could not check the licence; using the free plan', error)

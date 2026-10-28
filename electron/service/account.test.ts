@@ -66,6 +66,7 @@ beforeEach(() => {
   server.balanceSeconds = 2 * 3600
   server.failWith = null
   server.expireAccessToken = false
+  server.listsLicenses = true
   setUp()
 })
 
@@ -94,7 +95,7 @@ describe('signing in', () => {
 
   it('is the free plan when the account has no licence', async () => {
     await signIn()
-    expect(account.state().license).toMatchObject({ state: 'none', plan: 'Free' })
+    expect(account.state().license).toMatchObject({ state: 'none', plan: 'Free', message: 'No license on this account yet. Buy one in Plans and Credits.' })
     expect(licenseFile).toBeNull()
   })
 
@@ -176,6 +177,53 @@ describe('errors', () => {
   it('call a server that cannot be reached offline', async () => {
     const down = new ServiceClient({ baseUrl: () => 'http://127.0.0.1:9', fetch: (url, init) => fetch(url, init), store: { load: async () => null, save: async () => undefined, clear: async () => undefined } })
     await expect(down.request('GET', '/products', { auth: false })).rejects.toMatchObject({ code: 'offline' })
+  })
+})
+
+describe('an account without a licence', () => {
+  const NO_LICENSE_YET = 'No license on this account yet. Buy one in Plans and Credits.'
+
+  it('reads the licence list and never asks to activate', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    await signIn()
+    await account.refresh()
+    expect(server.calls('/licenses/activate')).toHaveLength(0)
+    expect(account.state()).toMatchObject({ notice: null, license: { state: 'none', plan: 'Free', message: NO_LICENSE_YET } })
+    expect(logged).not.toHaveBeenCalled()
+    logged.mockRestore()
+  })
+
+  it('treats a 404 from activate as the free plan, asking once per sign in and again after a purchase', async () => {
+    // A server without the licence list: activate is the only way to find out, and it answers 404 not_found.
+    server.listsLicenses = false
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    expect((await signIn()).ok).toBe(true)
+    expect(server.calls('/licenses/activate')).toHaveLength(1)
+    expect(account.state()).toMatchObject({ notice: null, license: { state: 'none', plan: 'Free', message: NO_LICENSE_YET } })
+    expect(logged).not.toHaveBeenCalled()
+
+    expect(await account.refresh()).toMatchObject({ ok: true })
+    expect(await account.refresh()).toMatchObject({ ok: true })
+    expect(server.calls('/licenses/activate')).toHaveLength(1)
+    expect(account.state()).toMatchObject({ notice: null, license: { message: NO_LICENSE_YET } })
+
+    // A licence bought: the confirmed purchase activates this computer.
+    const bought = server.addLicense()
+    const paid = new Promise<void>((resolve) => {
+      const timer = setInterval(() => {
+        if (server.orders[0]?.status === 'pending') {
+          server.orders[0].status = 'paid'
+          clearInterval(timer)
+          resolve()
+        }
+      }, 5)
+    })
+    await account.buy('pro_license')
+    await paid
+    await vi.waitFor(() => expect(account.state().license).toMatchObject({ state: 'active', licenseId: bought.id }))
+    expect(server.calls('/licenses/activate')).toHaveLength(2)
+    expect(logged).not.toHaveBeenCalled()
+    logged.mockRestore()
   })
 })
 

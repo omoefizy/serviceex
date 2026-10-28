@@ -52,6 +52,8 @@ interface RequestOptions {
   query?: Record<string, string | undefined>
   /** Sends the access token; true by default. */
   auth?: boolean
+  /** Error codes that are an expected answer here, such as not_found for an account without a licence: not logged. */
+  quiet?: ServiceErrorCode[]
 }
 
 /** Renew an access token this long before it expires. */
@@ -184,7 +186,7 @@ export class ServiceClient {
             ? 'offline'
             : 'unavailable'
     // The server's message is for the log only; the operator sees the sentence for the code.
-    console.error(`ServiceEx ${method} ${path} failed`, { status: response.status, code, message: typeof error?.message === 'string' ? error.message : undefined })
+    if (!options.quiet?.includes(code)) console.error(`ServiceEx ${method} ${path} failed`, { status: response.status, code, message: typeof error?.message === 'string' ? error.message : undefined })
     const details = error?.details && typeof error.details === 'object' ? (error.details as Record<string, unknown>) : {}
     throw new ServiceError(code, details, response.status)
   }

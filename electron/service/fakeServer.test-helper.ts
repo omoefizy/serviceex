@@ -40,6 +40,8 @@ export class FakeServiceServer {
   billPerHeartbeat: number | null = null
   /** Orders by reference; a test marks one paid to finish a checkout. */
   orders: Json[] = []
+  /** Whether GET /licenses exists; false stands in for a server without the list. */
+  listsLicenses = true
   /** Answers every request with this error while set (to test the client's handling). */
   failWith: { status: number; code: string; message?: string; details?: Json } | null = null
   /** When set, the next response with this access token says it expired, once. */
@@ -66,14 +68,19 @@ export class FakeServiceServer {
     return this.keys.publicKey
   }
 
+  /** The key id the real server puts in each token's header. */
+  get kid(): string {
+    return `ed25519-${String(this.keys.publicKey.export({ format: 'jwk' }).x).slice(0, 12)}`
+  }
+
   get publicKeyPem(): string {
     return this.keys.publicKey.export({ format: 'pem', type: 'spki' }).toString()
   }
 
   /** A licence token as the server signs it. */
-  signToken(payload: Json, key: KeyObject = this.keys.privateKey): string {
+  signToken(payload: Json, key: KeyObject = this.keys.privateKey, kid = this.kid): string {
     const b64 = (value: string | Buffer) => Buffer.from(value).toString('base64url')
-    const header = b64(JSON.stringify({ alg: 'EdDSA', typ: 'JWT', kid: 'ed25519-fake' }))
+    const header = b64(JSON.stringify({ alg: 'EdDSA', typ: 'JWT', kid }))
     const body = b64(JSON.stringify(payload))
     return `${header}.${body}.${b64(sign(null, Buffer.from(`${header}.${body}`), key))}`
   }
@@ -182,7 +189,10 @@ export class FakeServiceServer {
       case 'POST /auth/logout':
         return send(204, null)
       case 'GET /.well-known/license-key':
-        return send(200, { alg: 'EdDSA', crv: 'Ed25519', kid: 'ed25519-fake', public_key_pem: this.publicKeyPem })
+        return send(200, { alg: 'EdDSA', crv: 'Ed25519', kid: this.kid, public_key_pem: this.publicKeyPem })
+      case 'GET /licenses':
+        if (!this.listsLicenses) return error(404, 'not_found')
+        return send(200, { licenses: this.licenses.map((l) => ({ ...this.view(l), status: l.status })) })
       case 'POST /licenses/activate': {
         const machine = String(body.machine_id)
         const license = this.licenses.find((l) => l.active.includes(machine)) ?? this.licenses.find((l) => l.status === 'active' && l.active.length < l.seats) ?? this.licenses[0]
