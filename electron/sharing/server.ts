@@ -5,12 +5,12 @@
 
 import { createHash } from 'node:crypto'
 import { createReadStream, existsSync } from 'node:fs'
-import { appendFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import http, { type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import path from 'node:path'
 import { limitBytes, safeFileName, shareProblem } from '../../shared/sharing'
-import type { InboxItem, PairedDevice, PairRequest } from '../../shared/types'
+import type { IncomingTransfer, InboxItem, PairedDevice, PairRequest } from '../../shared/types'
 import { channelKey, open, pairingCode, respondToPairing, sameBytes, seal, type PairingKeys } from './crypto'
 import type { Inbox } from './inbox'
 import type { PeerStore } from './peers'
@@ -29,7 +29,7 @@ import {
 } from './protocol'
 
 /** Operations the server leaves to its owner: presence, cues, the shared service and library sync. */
-export type ExtraOp = Exclude<SecureOp, 'ping' | 'offer' | 'chunk' | 'finish'>
+export type ExtraOp = Exclude<SecureOp, 'ping' | 'offer' | 'chunk' | 'finish' | 'cancel'>
 
 export interface ServerOptions {
   peers: PeerStore
@@ -42,6 +42,8 @@ export interface ServerOptions {
   /** A pairing finished (with the device), failed or timed out. */
   onPairEnded(pairingId: string, device: PairedDevice | null): void
   onReceived(item: InboxItem): void
+  /** A file is arriving, has got further, or has stopped arriving: for the incoming chip. */
+  onIncoming?(transfer: IncomingTransfer): void
   /** How long a code stays good: 2 minutes by default. */
   pairingTimeoutMs?: number
   /** Answers the other sealed operations; the request was opened and checked, and comes from a paired device. */
@@ -67,6 +69,9 @@ interface PartialMeta {
   size: number
   sha256: string
 }
+
+/** Partial files not added to for this long are deleted when the server starts: their sender gave up. */
+export const PARTIAL_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
 /** Sealed requests older or newer than this are refused; nonces are remembered for as long. */
 const CLOCK_WINDOW_MS = 60 * 60 * 1000
@@ -119,6 +124,8 @@ export class ShareServer {
   private readonly nonces = new Map<string, number>()
   /** Transfers with a chunk being written, so two never write at once. */
   private readonly busy = new Set<string>()
+  /** Transfers declined here, by incoming id, refused until the sender offers the file again. */
+  private readonly declined = new Set<string>()
 
   constructor(options: ServerOptions) {
     this.options = options
@@ -132,6 +139,7 @@ export class ShareServer {
   /** Starts listening on every local network interface. Port 0 picks a free one. Resolves to the port. */
   listen(port = 0, host = '0.0.0.0'): Promise<number> {
     if (this.server) return Promise.resolve(this.port as number)
+    this.prunePartials().catch((error: unknown) => console.error('Could not clear old partial transfers', error))
     const server = http.createServer((req, res) => {
       this.handle(req, res).catch((error: unknown) => {
         const status = error instanceof HttpError ? error.status : 500
@@ -158,6 +166,58 @@ export class ShareServer {
     if (!server) return
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+
+  /** Deletes partial transfers that have not grown for a week, and any half of a pair whose other half is gone. */
+  async prunePartials(maxAgeMs = PARTIAL_MAX_AGE_MS): Promise<void> {
+    const folder = this.options.inbox.partialFolder
+    let names: string[]
+    try {
+      names = await readdir(folder)
+    } catch {
+      return
+    }
+    const now = Date.now()
+    const bases = new Set(names.map((name) => name.replace(/\.(part|json)$/, '')))
+    for (const base of bases) {
+      if (this.busy.has(path.join(folder, `${base}.part`))) continue
+      const part = path.join(folder, `${base}.part`)
+      const meta = path.join(folder, `${base}.json`)
+      const [partTime, metaTime] = await Promise.all([part, meta].map((file) => stat(file).then((s) => s.mtimeMs, () => null)))
+      if (partTime === null || metaTime === null || now - partTime > maxAgeMs) {
+        await rm(part, { force: true })
+        await rm(meta, { force: true })
+      }
+    }
+  }
+
+  /** The operator declined a file arriving here: the sender is refused, and what arrived is deleted. */
+  async decline(incomingId: string): Promise<void> {
+    const match = /^([0-9a-f]{32})-([0-9a-f]{32})$/.exec(incomingId)
+    if (!match) throw new Error('Bad incoming id')
+    const [, fromId, transferId] = match
+    const { part, meta } = this.partialPaths(fromId, transferId)
+    const info = await this.readMeta(meta)
+    this.declined.add(incomingId)
+    if (info) this.report(fromId, transferId, info, 0, 'declined')
+    await this.discard(part, meta)
+  }
+
+  private async discard(part: string, meta: string): Promise<void> {
+    await rm(part, { force: true })
+    await rm(meta, { force: true })
+  }
+
+  private report(fromId: string, transferId: string, info: PartialMeta, received: number, state: IncomingTransfer['state']): void {
+    this.options.onIncoming?.({
+      id: `${fromId}-${transferId}`,
+      senderId: fromId,
+      senderName: this.options.peers.get(fromId)?.name ?? 'Another computer',
+      name: info.name,
+      size: info.size,
+      received,
+      state,
+    })
   }
 
   /** The operator closed the code without pairing. */
@@ -337,6 +397,8 @@ export class ShareServer {
         return this.chunk(fromId, header, body)
       case 'finish':
         return this.finish(fromId, fromName, header)
+      case 'cancel':
+        return this.cancel(fromId, header)
       case 'presence':
       case 'cue':
       case 'serviceJoin':
@@ -373,34 +435,54 @@ export class ShareServer {
     const problem = shareProblem(name, size, this.options.limitMb())
     if (problem) return { ok: false, error: problem, code: problem.includes('limit') ? 'size' : 'type' }
 
+    const transferId = header.transferId as string
+    const incomingId = `${fromId}-${transferId}`
+    const info: PartialMeta = { fromId, name, size, sha256 }
     const existing = await this.readMeta(meta)
     const same = existing && existing.name === name && existing.size === size && existing.sha256 === sha256 && existsSync(part)
-    if (same) {
+    if (same && !this.declined.has(incomingId)) {
       // Carry on from what arrived before the interruption.
       const have = (await stat(part)).size
-      if (have <= size) return { ok: true, offset: have }
+      if (have <= size) {
+        this.report(fromId, transferId, info, have, 'receiving')
+        return { ok: true, offset: have }
+      }
     }
+    // Offering the file again is asking again, after a decline too.
+    this.declined.delete(incomingId)
     await mkdir(this.options.inbox.partialFolder, { recursive: true })
     await writeFile(part, Buffer.alloc(0))
-    await writeFile(meta, JSON.stringify({ fromId, name, size, sha256 } satisfies PartialMeta))
+    await writeFile(meta, JSON.stringify(info))
+    this.report(fromId, transferId, info, 0, 'receiving')
     return { ok: true, offset: 0 }
   }
 
   private async chunk(fromId: string, header: Record<string, unknown>, body: Buffer): Promise<SealedResponse<SecureOps['chunk']['response']>> {
     const { part, meta } = this.partialPaths(fromId, header.transferId)
+    const incomingId = `${fromId}-${header.transferId as string}`
+    if (this.declined.has(incomingId)) return this.declinedAnswer()
     const info = await this.readMeta(meta)
     if (!info || !existsSync(part)) return { ok: false, error: 'Offer the file first', code: 'unknown' }
     const key = part
     if (this.busy.has(key)) return { ok: false, error: 'A chunk is already being written', code: 'offset' }
     this.busy.add(key)
     try {
-      const have = (await stat(part)).size
+      // Declined, or cancelled, since this chunk arrived: its file is already gone.
+      const have = await stat(part).then((info) => info.size, () => null)
+      if (this.declined.has(incomingId)) return this.declinedAnswer()
+      if (have === null) return { ok: false, error: 'Offer the file first', code: 'unknown' }
       // Only the next bytes in order; anything else tells the sender where to carry on from.
       if (header.offset !== have) return { ok: false, error: `Expected offset ${have}`, code: 'offset' }
       if (have + body.length > info.size || have + body.length > limitBytes(this.options.limitMb())) {
         return { ok: false, error: 'More bytes than were offered', code: 'size' }
       }
       await appendFile(part, body)
+      // Declined while this chunk was being written: the append made the file again.
+      if (this.declined.has(incomingId)) {
+        await this.discard(part, meta)
+        return this.declinedAnswer()
+      }
+      this.report(fromId, header.transferId as string, info, have + body.length, 'receiving')
       return { ok: true, offset: have + body.length }
     } finally {
       this.busy.delete(key)
@@ -409,18 +491,36 @@ export class ShareServer {
 
   private async finish(fromId: string, fromName: string, header: Record<string, unknown>): Promise<SealedResponse<SecureOps['finish']['response']>> {
     const { part, meta } = this.partialPaths(fromId, header.transferId)
+    const transferId = header.transferId as string
+    if (this.declined.has(`${fromId}-${transferId}`)) return this.declinedAnswer()
     const info = await this.readMeta(meta)
     if (!info || !existsSync(part)) return { ok: false, error: 'Offer the file first', code: 'unknown' }
     const have = (await stat(part)).size
     if (have !== info.size) return { ok: false, error: `Only ${have} of ${info.size} bytes arrived`, code: 'offset' }
     if ((await sha256File(part)) !== info.sha256) {
-      await rm(part, { force: true })
-      await rm(meta, { force: true })
+      await this.discard(part, meta)
+      this.report(fromId, transferId, info, 0, 'failed')
       return { ok: false, error: 'The file was damaged on the way (its checksum does not match). Send it again.', code: 'hash' }
     }
     const item = await this.options.inbox.add(part, info.name, info.size, { id: fromId, name: fromName })
     await rm(meta, { force: true })
+    this.report(fromId, transferId, info, info.size, 'done')
     this.options.onReceived(item)
     return { ok: true, received: true }
+  }
+
+  /** The sender stopped: what arrived is deleted. */
+  private async cancel(fromId: string, header: Record<string, unknown>): Promise<SealedResponse<SecureOps['cancel']['response']>> {
+    const { part, meta } = this.partialPaths(fromId, header.transferId)
+    const info = await this.readMeta(meta)
+    // A chunk still being written finds this and deletes what it wrote; offering the file again clears it.
+    this.declined.add(`${fromId}-${header.transferId as string}`)
+    await this.discard(part, meta)
+    if (info) this.report(fromId, header.transferId as string, info, 0, 'cancelled')
+    return { ok: true, cancelled: true }
+  }
+
+  private declinedAnswer(): { ok: false; error: string; code: 'declined' } {
+    return { ok: false, error: `${this.options.deviceName()} declined the file.`, code: 'declined' }
   }
 }

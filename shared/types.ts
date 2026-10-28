@@ -1348,8 +1348,22 @@ export interface TransferProgress {
   name: string
   sent: number
   size: number
-  state: 'preparing' | 'sending' | 'retrying' | 'done' | 'failed'
+  /** Preparing covers waiting in the queue; cancelled and declined ones never go on. */
+  state: 'preparing' | 'sending' | 'retrying' | 'done' | 'failed' | 'cancelled' | 'declined'
   error?: string
+}
+
+/** A file arriving from a paired device, for the incoming chip on the receiving computer. */
+export interface IncomingTransfer {
+  /** The sender's device id and its transfer id, joined by a dash. */
+  id: string
+  senderId: string
+  senderName: string
+  name: string
+  size: number
+  received: number
+  /** Stalled: nothing arrived for a while; it carries on if the sender sends again. */
+  state: 'receiving' | 'stalled' | 'done' | 'cancelled' | 'declined' | 'failed'
 }
 
 /** The receiving side of pairing: show this code until the other computer has typed it. */
@@ -1369,12 +1383,18 @@ export interface SharingStatus {
   addresses: string[]
   /** Why sharing could not start, if it could not. */
   error: string | null
+  /** Windows only: the networks this computer is on that Windows treats as Public, where it blocks other computers. */
+  publicNetworks: string[]
+  /** Windows only: the command an administrator can run to let other computers reach this one on Private networks. */
+  firewallCommand: string | null
 }
 
 export type SharingEvent =
   | { type: 'peers'; peers: SharePeer[] }
   | { type: 'inbox'; items: InboxItem[]; arrived: InboxItem | null }
   | { type: 'progress'; transfer: TransferProgress }
+  /** A file arriving here, and how far it has got. */
+  | { type: 'incoming'; transfer: IncomingTransfer }
   | { type: 'pairRequest'; request: PairRequest }
   | { type: 'pairEnded'; pairingId: string; paired: boolean }
   | { type: 'status'; status: SharingStatus }
@@ -1398,6 +1418,11 @@ export interface SharingApi {
   startPairing(peerId: string): Promise<{ pairingId: string }>
   /** Checks the typed code with the other computer and stores the shared key on both. */
   finishPairing(pairingId: string, code: string): Promise<PairedDevice>
+  /**
+   * Asks the computer at a typed address who it is, then to show a code, as startPairing does for a device found on
+   * the network. Rejects addresses outside the local network.
+   */
+  pairByAddress(host: string, port: string): Promise<{ pairingId: string; peerId: string; name: string }>
   /** The receiving side closes its code without pairing. */
   dismissPairing(pairingId: string): Promise<void>
   /** Reaches a paired device over the encrypted channel. Resolves with the round trip time, or what went wrong. */
@@ -1406,6 +1431,13 @@ export interface SharingApi {
   send(peerId: string, sources: ShareSource[]): Promise<void>
   /** Sends a failed transfer again, carrying on from what the other computer already has. */
   retry(transferId: string): Promise<void>
+  /**
+   * Stops a transfer: a queued one never starts, a running one stops and the other computer deletes what arrived, and
+   * a finished or failed one is cleared along with any package written for it.
+   */
+  cancel(transferId: string): Promise<void>
+  /** Refuses a file arriving here: the sender stops, and what arrived is deleted. */
+  decline(incomingId: string): Promise<void>
   /** The path of a file dropped on a device chip. */
   pathForFile(file: File): string
   inbox(): Promise<InboxItem[]>

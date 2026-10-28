@@ -8,7 +8,7 @@ import { open as openFile, stat } from 'node:fs/promises'
 import http from 'node:http'
 import { safeFileName, shareProblem } from '../../shared/sharing'
 import { channelKey, open, PairingInitiator, randomId, sameBytes, seal } from './crypto'
-import { CHUNK_BYTES, FROM_HEADER, requestAad, responseAad, type SealedResponse, type SecureOp, type SecureOps } from './protocol'
+import { CHUNK_BYTES, FROM_HEADER, ID_PATTERN, PROTOCOL_VERSION, requestAad, responseAad, type SealedResponse, type SecureOp, type SecureOps } from './protocol'
 
 /** Where another computer listens. */
 export interface Endpoint {
@@ -28,6 +28,16 @@ export class RefusedError extends Error {}
 
 /** The other computer could not be reached; worth retrying. */
 export class UnreachableError extends Error {}
+
+/** The other computer declined the file. */
+export class DeclinedError extends RefusedError {}
+
+/** This computer stopped the transfer. */
+export class CancelledError extends Error {
+  constructor(message = 'Cancelled') {
+    super(message)
+  }
+}
 
 /** What to tell the operator when a device cannot be reached. */
 export const TROUBLESHOOTING =
@@ -53,7 +63,15 @@ interface HttpAnswer {
   body: Buffer
 }
 
-function request(endpoint: Endpoint, method: 'GET' | 'POST', path: string, body: Buffer | null, headers: Record<string, string>, timeoutMs: number): Promise<HttpAnswer> {
+function request(
+  endpoint: Endpoint,
+  method: 'GET' | 'POST',
+  path: string,
+  body: Buffer | null,
+  headers: Record<string, string>,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<HttpAnswer> {
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
@@ -63,6 +81,7 @@ function request(endpoint: Endpoint, method: 'GET' | 'POST', path: string, body:
         path,
         headers: { ...headers, ...(body ? { 'content-length': String(body.length) } : {}) },
         timeout: timeoutMs,
+        signal,
       },
       (res) => {
         const chunks: Buffer[] = []
@@ -99,7 +118,7 @@ async function postJson<T>(endpoint: Endpoint, name: string, path: string, value
   return JSON.parse(answer.body.toString()) as T
 }
 
-/** Asks a computer who it is, without pairing. */
+/** Asks a computer who it is, without pairing. Refuses an answer that is not from ServiceEx. */
 export async function hello(endpoint: Endpoint, name = 'The other computer'): Promise<{ id: string; name: string; v: number }> {
   let answer: HttpAnswer
   try {
@@ -107,8 +126,18 @@ export async function hello(endpoint: Endpoint, name = 'The other computer'): Pr
   } catch (error) {
     throw unreachable(error, name)
   }
-  if (answer.status !== 200) throw new RefusedError(plainError(answer))
-  return JSON.parse(answer.body.toString()) as { id: string; name: string; v: number }
+  const where = `${endpoint.host}:${endpoint.port}`
+  const notServiceEx = new RefusedError(`Something answered at ${where}, but it is not ServiceEx. Check the address and port in the other computer's Settings, Sharing.`)
+  if (answer.status !== 200) throw notServiceEx
+  let value: Partial<{ id: unknown; name: unknown; v: unknown }>
+  try {
+    value = JSON.parse(answer.body.toString()) as typeof value
+  } catch {
+    throw notServiceEx
+  }
+  if (typeof value !== 'object' || value === null || typeof value.id !== 'string' || !ID_PATTERN.test(value.id)) throw notServiceEx
+  if (value.v !== PROTOCOL_VERSION) throw new RefusedError(`ServiceEx at ${where} is a different version. Update both computers to the same version.`)
+  return { id: value.id, name: (typeof value.name === 'string' ? value.name : '').slice(0, 40) || 'Unknown device', v: value.v }
 }
 
 // ---------- Pairing ----------
@@ -154,8 +183,9 @@ export async function secureRequest<Op extends SecureOp>(
   fields: SecureOps[Op]['request'],
   body?: Buffer,
   timeoutMs = 30_000,
+  signal?: AbortSignal,
 ): Promise<SealedResponse<SecureOps[Op]['response']>> {
-  return (await secureCall(target, myId, op, fields, body, timeoutMs)).header
+  return (await secureCall(target, myId, op, fields, body, timeoutMs, signal)).header
 }
 
 /** A sealed request whose answer may carry bytes after it (libraryChunk). */
@@ -166,13 +196,15 @@ export async function secureCall<Op extends SecureOp>(
   fields: SecureOps[Op]['request'],
   body?: Buffer,
   timeoutMs = 30_000,
+  signal?: AbortSignal,
 ): Promise<{ header: SealedResponse<SecureOps[Op]['response']>; body: Buffer }> {
   const nonce = randomId()
   const envelope = seal(channelKey(target.secret, myId, target.id, 'request'), requestAad(myId, target.id), { ...fields, op, nonce, ts: Date.now() }, body)
   let answer: HttpAnswer
   try {
-    answer = await request(target, 'POST', '/v1/secure', envelope, { 'content-type': 'application/octet-stream', [FROM_HEADER]: myId }, timeoutMs)
+    answer = await request(target, 'POST', '/v1/secure', envelope, { 'content-type': 'application/octet-stream', [FROM_HEADER]: myId }, timeoutMs, signal)
   } catch (error) {
+    if (signal?.aborted) throw new CancelledError()
     throw unreachable(error, target.name)
   }
   if (answer.status >= 500) throw new UnreachableError(`${target.name} had a problem: ${plainError(answer)}`)
@@ -194,9 +226,12 @@ export async function ping(target: PeerTarget, myId: string): Promise<number> {
 
 // ---------- Transfers ----------
 
-export async function sha256File(file: string): Promise<string> {
+export async function sha256File(file: string, signal?: AbortSignal): Promise<string> {
   const hash = createHash('sha256')
-  for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer)
+  for await (const chunk of createReadStream(file)) {
+    if (signal?.aborted) throw new CancelledError()
+    hash.update(chunk as Buffer)
+  }
   return hash.digest('hex')
 }
 
@@ -217,15 +252,44 @@ export interface SendOptions {
   retryDelayMs?: number
   /** Precomputed SHA-256 of the file. */
   sha256?: string
+  /** Stops the transfer; it then rejects with CancelledError, and the receiver is told to delete what arrived. */
+  signal?: AbortSignal
 }
 
-/** Sends a file in chunks. Network failures are retried, carrying on from the receiver's offset. */
+/** Waits, or rejects with CancelledError as soon as the signal aborts. */
+function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new CancelledError())
+    const done = () => {
+      clearTimeout(timer)
+      reject(new CancelledError())
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', done)
+      resolve()
+    }, ms)
+    signal?.addEventListener('abort', done, { once: true })
+  })
+}
+
+/** Turns a refusal into the error to throw: declined by the receiver, or refused for another reason. */
+const refusal = (answer: { error: string; code: string }) => (answer.code === 'declined' ? new DeclinedError(answer.error) : new RefusedError(answer.error))
+
+/**
+ * Sends a file in chunks. Network failures are retried, carrying on from the receiver's offset. Rejects with
+ * DeclinedError when the receiver declines it, and CancelledError when the signal aborts.
+ */
 export async function sendFile(target: PeerTarget, myId: string, file: string, options: SendOptions): Promise<void> {
+  const { signal } = options
+  const stopped = () => {
+    if (signal?.aborted) throw new CancelledError()
+  }
   const name = safeFileName(options.name)
   const { size } = await stat(file)
   const problem = shareProblem(name, size, options.limitMb)
   if (problem) throw new RefusedError(problem)
-  const sha256 = options.sha256 ?? (await sha256File(file))
+  const sha256 = options.sha256 ?? (await sha256File(file, signal))
+  stopped()
   const transferId = transferIdFor(myId, target.id, sha256, name, size)
   const chunkBytes = options.chunkBytes ?? CHUNK_BYTES
   const attempts = options.attempts ?? 5
@@ -234,44 +298,51 @@ export async function sendFile(target: PeerTarget, myId: string, file: string, o
   /** Runs a step, retrying when the other computer cannot be reached. */
   async function retrying<T>(step: () => Promise<T>, sent: number): Promise<T> {
     for (let attempt = 1; ; attempt++) {
+      stopped()
       try {
         return await step()
       } catch (error) {
         if (!(error instanceof UnreachableError) || attempt >= attempts) throw error
         options.onProgress?.(sent, size, true)
-        await new Promise((resolve) => setTimeout(resolve, delay * 2 ** (attempt - 1)))
+        await wait(delay * 2 ** (attempt - 1), signal)
       }
     }
   }
 
   const offer = async () => {
-    const answer = await secureRequest(target, myId, 'offer', { transferId, name, size, sha256 })
-    if (!answer.ok) throw new RefusedError(answer.error)
+    const answer = await secureRequest(target, myId, 'offer', { transferId, name, size, sha256 }, undefined, undefined, signal)
+    if (!answer.ok) throw refusal(answer)
     return answer.offset
   }
 
-  let offset = await retrying(offer, 0)
-  options.onProgress?.(offset, size, false)
-  const handle = await openFile(file, 'r')
   try {
-    while (offset < size) {
-      const length = Math.min(chunkBytes, size - offset)
-      const buffer = Buffer.alloc(length)
-      const { bytesRead } = await handle.read(buffer, 0, length, offset)
-      if (bytesRead !== length) throw new RefusedError(`${name} changed while it was being sent`)
-      const at = offset
-      offset = await retrying(async () => {
-        const answer = await secureRequest(target, myId, 'chunk', { transferId, offset: at }, buffer)
-        if (answer.ok) return answer.offset
-        // Out of step (the chunk arrived but its answer was lost, say): ask where to carry on from.
-        if (answer.code === 'offset' || answer.code === 'unknown') return offer()
-        throw new RefusedError(answer.error)
-      }, at)
-      options.onProgress?.(offset, size, false)
+    let offset = await retrying(offer, 0)
+    options.onProgress?.(offset, size, false)
+    const handle = await openFile(file, 'r')
+    try {
+      while (offset < size) {
+        const length = Math.min(chunkBytes, size - offset)
+        const buffer = Buffer.alloc(length)
+        const { bytesRead } = await handle.read(buffer, 0, length, offset)
+        if (bytesRead !== length) throw new RefusedError(`${name} changed while it was being sent`)
+        const at = offset
+        offset = await retrying(async () => {
+          const answer = await secureRequest(target, myId, 'chunk', { transferId, offset: at }, buffer, undefined, signal)
+          if (answer.ok) return answer.offset
+          // Out of step (the chunk arrived but its answer was lost, say): ask where to carry on from.
+          if (answer.code === 'offset' || answer.code === 'unknown') return offer()
+          throw refusal(answer)
+        }, at)
+        options.onProgress?.(offset, size, false)
+      }
+    } finally {
+      await handle.close()
     }
-  } finally {
-    await handle.close()
+    const done = await retrying(() => secureRequest(target, myId, 'finish', { transferId }, undefined, 120_000, signal), size)
+    if (!done.ok) throw refusal(done)
+  } catch (error) {
+    // Tell the receiver to delete what arrived. Best effort: it also clears old partial files on its own.
+    if (error instanceof CancelledError) await secureRequest(target, myId, 'cancel', { transferId }, undefined, 5_000).catch(() => {})
+    throw error
   }
-  const done = await retrying(() => secureRequest(target, myId, 'finish', { transferId }, undefined, 120_000), size)
-  if (!done.ok) throw new RefusedError(done.error)
 }

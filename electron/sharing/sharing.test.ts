@@ -1,14 +1,30 @@
 // Local network sharing end to end on this machine: a real receiving server on localhost, and the sending client.
 // Covers pairing with the 6 digit code, the file type allow list, the size limit, a transfer that is cut off and
-// carries on where it stopped (even after the receiver restarts), the hash check, and refusing unpaired devices.
+// carries on where it stopped (even after the receiver restarts), the hash check, and refusing unpaired devices;
+// pairing by a typed address, cancelling and declining a transfer, the incoming progress, and old partial files.
 import { createHash, getDiffieHellman, randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, utimes, writeFile } from 'node:fs/promises'
+import http from 'node:http'
+import type { AddressInfo } from 'node:net'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { shareKindOf, shareProblem } from '../../shared/sharing'
-import type { InboxItem, PairRequest } from '../../shared/types'
-import { completePairing, hello, ping, RefusedError, requestPairing, secureRequest, sendFile, sha256File, transferIdFor, type PeerTarget } from './client'
+import type { IncomingTransfer, InboxItem, PairRequest } from '../../shared/types'
+import {
+  CancelledError,
+  completePairing,
+  DeclinedError,
+  hello,
+  ping,
+  RefusedError,
+  requestPairing,
+  secureRequest,
+  sendFile,
+  sha256File,
+  transferIdFor,
+  type PeerTarget,
+} from './client'
 import { channelKey, PAIRING_PRIME_HEX, randomId, seal } from './crypto'
 import { FROM_HEADER, requestAad } from './protocol'
 import { Inbox } from './inbox'
@@ -28,6 +44,7 @@ interface Receiver {
   requests: PairRequest[]
   ended: { pairingId: string; paired: boolean }[]
   received: InboxItem[]
+  incoming: IncomingTransfer[]
   limitMb: number
 }
 
@@ -52,6 +69,7 @@ async function startReceiver(folder?: string, limitMb = 2048): Promise<Receiver>
     requests: [],
     ended: [],
     received: [],
+    incoming: [],
     limitMb,
   } as unknown as Receiver
   receiver.server = new ShareServer({
@@ -62,6 +80,7 @@ async function startReceiver(folder?: string, limitMb = 2048): Promise<Receiver>
     onPairRequest: (request) => receiver.requests.push(request),
     onPairEnded: (pairingId, device) => receiver.ended.push({ pairingId, paired: device !== null }),
     onReceived: (item) => receiver.received.push(item),
+    onIncoming: (transfer) => receiver.incoming.push(transfer),
   })
   receiver.port = await receiver.server.listen(0, '127.0.0.1')
   receivers.push(receiver)
@@ -145,6 +164,36 @@ describe('pairing', () => {
     expect(reopened.get(sender.me.id)?.secret.equals(receiver.peers.get(sender.me.id)!.secret)).toBe(true)
     await reopened.forget(sender.me.id)
     expect(new PeerStore(receiver.folder, plainCodec).list()).toEqual([])
+  })
+
+  it('pairs with a computer at a typed address and remembers where it was reached', async () => {
+    const receiver = await startReceiver()
+    const sender = await makeSender()
+    const endpoint = { host: '127.0.0.1', port: receiver.port }
+    // As Add by IP address does: ask who is there, then pair with that id and name.
+    const who = await hello(endpoint)
+    expect(who).toEqual({ id: receiver.peers.deviceId, name: 'Sanctuary booth', v: 1 })
+    const { pairingId } = await requestPairing(endpoint, who.name, { ...sender.me, port: 47820 })
+    const secret = await completePairing(endpoint, who, sender.me, pairingId, receiver.requests[0].code)
+    await sender.peers.add({ id: who.id, name: who.name, secret, ...endpoint })
+    await sender.peers.flushed()
+    // Both sides keep the address, for when the other cannot be found on the network.
+    expect(new PeerStore(receiver.folder, plainCodec).get(sender.me.id)).toMatchObject({ host: '127.0.0.1', port: 47820 })
+    expect(sender.peers.get(who.id)).toMatchObject({ host: '127.0.0.1', port: receiver.port })
+    expect(await ping({ id: who.id, name: who.name, secret, ...endpoint }, sender.me.id)).toBeGreaterThanOrEqual(0)
+  })
+
+  it('refuses an address where something other than ServiceEx answers, or nothing does', async () => {
+    const other = http.createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end('<html>Router login</html>'))
+    await new Promise<void>((resolve) => other.listen(0, '127.0.0.1', resolve))
+    const port = (other.address() as AddressInfo).port
+    try {
+      await expect(hello({ host: '127.0.0.1', port })).rejects.toThrow(/not ServiceEx/)
+    } finally {
+      await new Promise((resolve) => other.close(resolve))
+    }
+    // Closed now: it cannot be reached, with what to check.
+    await expect(hello({ host: '127.0.0.1', port })).rejects.toThrow(/firewall/)
   })
 
   it('saves overlapping changes one at a time and keeps the latest on disk', async () => {
@@ -383,5 +432,138 @@ describe('.serviceex packages', () => {
     await expect(writePackage(path.join(work, 'bad.serviceex'), contents, new Map([['media/0.exe', picture]]))).rejects.toThrow(/may not/)
     await writeFile(path.join(work, 'fake.serviceex'), 'PK not a package')
     await expect(readPackage(path.join(work, 'fake.serviceex'))).rejects.toThrow(/not a ServiceEx package/)
+  })
+})
+
+describe('stopping a transfer', () => {
+  it('reports progress to the receiver: who from, what, and how far', async () => {
+    const receiver = await startReceiver()
+    const sender = await makeSender()
+    const target = await pair(receiver, sender)
+    const file = await randomFile('Easter.pptx', 300_000)
+    await sendFile(target, sender.me.id, file, { name: 'Easter.pptx', limitMb: 10, chunkBytes: 100_000 })
+
+    const ids = new Set(receiver.incoming.map((t) => t.id))
+    expect(ids.size).toBe(1)
+    expect(receiver.incoming[0]).toMatchObject({ senderId: sender.me.id, senderName: 'Youth room', name: 'Easter.pptx', size: 300_000, received: 0, state: 'receiving' })
+    expect(receiver.incoming.map((t) => t.received)).toEqual([0, 100_000, 200_000, 300_000, 300_000])
+    expect(receiver.incoming.at(-1)?.state).toBe('done')
+  })
+
+  it('cancelled by the sender, stops and the receiver deletes what arrived', async () => {
+    const receiver = await startReceiver()
+    const sender = await makeSender()
+    const target = await pair(receiver, sender)
+    const file = await randomFile('Worship loop.mp4', 1_000_000)
+    const controller = new AbortController()
+    const sent: number[] = []
+    await expect(
+      sendFile(target, sender.me.id, file, {
+        name: 'Worship loop.mp4',
+        limitMb: 10,
+        chunkBytes: 100_000,
+        signal: controller.signal,
+        onProgress: (n) => {
+          sent.push(n)
+          if (n >= 300_000) controller.abort()
+        },
+      }),
+    ).rejects.toBeInstanceOf(CancelledError)
+
+    expect(sent.at(-1)).toBe(300_000)
+    expect(receiver.received).toEqual([])
+    expect(receiver.incoming.at(-1)).toMatchObject({ name: 'Worship loop.mp4', state: 'cancelled' })
+    expect(await readdir(receiver.inbox.partialFolder)).toEqual([])
+  })
+
+  it('cancelled before it starts, sends nothing', async () => {
+    const receiver = await startReceiver()
+    const sender = await makeSender()
+    const target = await pair(receiver, sender)
+    const file = await randomFile('Logo.png', 1000)
+    const controller = new AbortController()
+    controller.abort()
+    await expect(sendFile(target, sender.me.id, file, { name: 'Logo.png', limitMb: 10, signal: controller.signal })).rejects.toBeInstanceOf(CancelledError)
+    expect(receiver.incoming).toEqual([])
+  })
+
+  it('cancelled while waiting to retry, stops at once', async () => {
+    const receiver = await startReceiver()
+    const sender = await makeSender()
+    const target = await pair(receiver, sender)
+    const file = await randomFile('Logo.png', 1000)
+    await receiver.server.close()
+    const controller = new AbortController()
+    const started = Date.now()
+    const sending = sendFile(target, sender.me.id, file, {
+      name: 'Logo.png',
+      limitMb: 10,
+      retryDelayMs: 10_000,
+      signal: controller.signal,
+      onProgress: (_sent, _size, retrying) => retrying && controller.abort(),
+    })
+    await expect(sending).rejects.toBeInstanceOf(CancelledError)
+    expect(Date.now() - started).toBeLessThan(5_000)
+  })
+
+  it('declined by the receiver, stops the sender, deletes what arrived, and may be sent again', async () => {
+    const receiver = await startReceiver()
+    const sender = await makeSender()
+    const target = await pair(receiver, sender)
+    const file = await randomFile('Big video.mp4', 1_000_000)
+    let declined: Promise<void> | null = null
+    const sending = sendFile(target, sender.me.id, file, {
+      name: 'Big video.mp4',
+      limitMb: 10,
+      chunkBytes: 100_000,
+      onProgress: (n) => {
+        if (n >= 200_000 && !declined) declined = receiver.server.decline(receiver.incoming[0].id)
+      },
+    })
+    await expect(sending).rejects.toBeInstanceOf(DeclinedError)
+    await expect(sending).rejects.toThrow('Sanctuary booth declined the file.')
+    await declined
+    expect(receiver.incoming.at(-1)).toMatchObject({ name: 'Big video.mp4', state: 'declined' })
+    expect(receiver.received).toEqual([])
+    expect(await readdir(receiver.inbox.partialFolder)).toEqual([])
+
+    // Sending it again is asking again; it starts from nothing.
+    const progress: number[] = []
+    await sendFile(target, sender.me.id, file, { name: 'Big video.mp4', limitMb: 10, chunkBytes: 500_000, onProgress: (n) => progress.push(n) })
+    expect(progress[0]).toBe(0)
+    expect(receiver.received).toHaveLength(1)
+  })
+
+  it('leaves no partial file when a decline lands while a chunk is on its way, and refuses the rest', async () => {
+    const receiver = await startReceiver()
+    const sender = await makeSender()
+    const target = await pair(receiver, sender)
+    const transferId = randomId()
+    await secureRequest(target, sender.me.id, 'offer', { transferId, name: 'Loop.mp4', size: 2_000_000, sha256: 'a'.repeat(64) })
+    const id = `${sender.me.id}-${transferId}`
+    // Whichever lands first, nothing is left on disk.
+    await Promise.all([secureRequest(target, sender.me.id, 'chunk', { transferId, offset: 0 }, randomBytes(1_000_000)), receiver.server.decline(id)])
+    expect(await readdir(receiver.inbox.partialFolder)).toEqual([])
+    expect(await secureRequest(target, sender.me.id, 'chunk', { transferId, offset: 0 }, randomBytes(1000))).toMatchObject({ ok: false, code: 'declined' })
+  })
+})
+
+describe('old partial files', () => {
+  it('are deleted once a week old, or when half of the pair is gone; recent ones stay to carry on from', async () => {
+    const receiver = await startReceiver()
+    const folder = receiver.inbox.partialFolder
+    const { mkdir } = await import('node:fs/promises')
+    await mkdir(folder, { recursive: true })
+    const [old, recent, orphan] = [randomId(), randomId(), randomId()]
+    for (const id of [old, recent]) {
+      await writeFile(path.join(folder, `${id}.part`), 'bytes')
+      await writeFile(path.join(folder, `${id}.json`), '{}')
+    }
+    await writeFile(path.join(folder, `${orphan}.part`), 'bytes')
+    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000)
+    await utimes(path.join(folder, `${old}.part`), eightDaysAgo, eightDaysAgo)
+
+    await receiver.server.prunePartials()
+    expect((await readdir(folder)).sort()).toEqual([`${recent}.json`, `${recent}.part`])
   })
 })

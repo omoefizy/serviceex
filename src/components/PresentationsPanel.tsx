@@ -2,7 +2,7 @@ import { AlertTriangle, Columns2, FilePen, FolderOpen, Loader2, Plus, Trash2, Up
 import { useState } from 'react'
 import { can, upgradeNote } from '../../shared/features'
 import type { Presentation, PresentationMode } from '../../shared/types'
-import { droppedPaths, isFileDrag } from '../lib/presentations'
+import { droppedPaths, IMPORT_MODE_KEY, isFileDrag, isPresentationMode } from '../lib/presentations'
 import { openSendMenu, setShareDrag } from '../lib/sharing'
 import { usePersistentState } from '../lib/usePersistentState'
 import { useOperatorStore } from '../store'
@@ -204,11 +204,7 @@ export function PresentationsPanel() {
   const presentations = useOperatorStore((s) => s.presentations)
   const importPresentations = useOperatorStore((s) => s.importPresentations)
   /** How .pptx files import: Image mode unless Native mode was chosen. */
-  const [importMode, setImportMode] = usePersistentState<PresentationMode>(
-    'worshipdeck.pptxImportMode',
-    'image',
-    (v): v is PresentationMode => v === 'image' || v === 'native',
-  )
+  const [importMode, setImportMode] = usePersistentState<PresentationMode>(IMPORT_MODE_KEY, 'image', isPresentationMode)
   const [search, setSearch] = useState('')
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)

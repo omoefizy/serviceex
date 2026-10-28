@@ -10,6 +10,7 @@ import type {
   AcceptResult,
   Cue,
   CueDraft,
+  IncomingTransfer,
   InboxItem,
   ItemFilter,
   LibrarySyncStatus,
@@ -29,6 +30,7 @@ import type {
   TransferProgress,
 } from '../../shared/types'
 import { setScheduleTarget, useOperatorStore } from '../store'
+import { chosenImportMode } from './presentations'
 
 /** Drag data for library and schedule items that can be dropped on a device chip. */
 export const SHARE_DRAG_TYPE = 'application/x-serviceex-share'
@@ -48,6 +50,8 @@ interface SenderPairing {
   error: string | null
   /** Items to send once paired, when pairing started from a drop or Send to. */
   pending: ShareSource[]
+  /** The address typed in Settings, when pairing with a computer by address rather than from its chip. */
+  address?: { host: string; port: string }
 }
 
 interface SharingState {
@@ -55,6 +59,8 @@ interface SharingState {
   peers: SharePeer[]
   inbox: InboxItem[]
   transfers: TransferProgress[]
+  /** Files arriving from other computers. */
+  incoming: IncomingTransfer[]
   /** The code to show while another computer pairs with this one. */
   pairRequest: PairRequest | null
   /** This computer pairing with another. */
@@ -83,6 +89,7 @@ export const useSharingStore = create<SharingState>(() => ({
   peers: [],
   inbox: [],
   transfers: [],
+  incoming: [],
   pairRequest: null,
   pairing: null,
   inboxOpen: false,
@@ -118,7 +125,7 @@ export async function applyAcceptResult(result: Extract<AcceptResult, { status: 
   // Only the schedule list is refreshed; nothing is loaded into the preview or sent live.
   if (result.changed.includes('schedule') && st.service) await st.openService(st.service.id)
   if (result.presentations.length > 0) {
-    await st.importPresentations(result.presentations.map((p) => p.path))
+    await st.importPresentations(result.presentations.map((p) => p.path), chosenImportMode())
     for (const { replaceId } of result.presentations) if (replaceId !== null) await window.api.presentations.delete(replaceId)
     await st.loadPresentations()
   }
@@ -138,8 +145,22 @@ function onEvent(event: SharingEvent): void {
     case 'progress': {
       const { transfer } = event
       set((s) => ({ transfers: [...s.transfers.filter((t) => t.id !== transfer.id), transfer] }))
-      // Finished transfers leave the bar after a moment.
-      if (transfer.state === 'done') setTimeout(() => set((s) => ({ transfers: s.transfers.filter((t) => t.id !== transfer.id) })), 4000)
+      if (transfer.state === 'declined') showMessage(`${transfer.peerName} declined ${transfer.name}.`, true)
+      // Finished, cancelled and declined transfers leave the bar after a moment.
+      if (transfer.state === 'done' || transfer.state === 'cancelled' || transfer.state === 'declined') {
+        setTimeout(() => set((s) => ({ transfers: s.transfers.filter((t) => t.id !== transfer.id || isActiveTransfer(t)) })), 4000)
+      }
+      break
+    }
+    case 'incoming': {
+      const { transfer } = event
+      set((s) => ({ incoming: [...s.incoming.filter((t) => t.id !== transfer.id), transfer] }))
+      if (transfer.state === 'cancelled') showMessage(`${transfer.senderName} stopped sending ${transfer.name}.`)
+      if (transfer.state === 'failed') showMessage(`${transfer.name} from ${transfer.senderName} arrived damaged and was deleted. It can be sent again.`, true)
+      // A received file is in the Inbox, which says so; the chip goes after a moment, as do stopped ones.
+      if (transfer.state !== 'receiving' && transfer.state !== 'stalled') {
+        setTimeout(() => set((s) => ({ incoming: s.incoming.filter((t) => t.id !== transfer.id || t.state === 'receiving' || t.state === 'stalled') })), 4000)
+      }
       break
     }
     case 'pairRequest':
@@ -170,7 +191,7 @@ function onEvent(event: SharingEvent): void {
       if (event.changed.includes('media')) st.mediaChanged()
       if (event.changed.includes('themes')) st.loadThemes().catch(console.error)
       if (event.presentations.length > 0) {
-        st.importPresentations(event.presentations)
+        st.importPresentations(event.presentations, chosenImportMode())
           .then(() => st.loadPresentations())
           .catch(console.error)
       }
@@ -421,6 +442,75 @@ export async function beginPairing(peer: SharePeer, pending: ShareSource[] = [])
   } catch (error) {
     set((s) => (s.pairing?.peerId === peer.id ? { pairing: { ...s.pairing, busy: false, error: errorText(error) } } : {}))
   }
+}
+
+/**
+ * Starts pairing with the computer at a typed address: it is asked who it is, then to show a code, which goes in the
+ * same dialog as pairing from a chip.
+ */
+export async function beginPairingAt(host: string, port: string, pending: ShareSource[] = []): Promise<void> {
+  const address = { host, port }
+  set({ pairing: { peerId: '', peerName: host.trim(), pairingId: null, busy: true, error: null, pending, address } })
+  try {
+    const { pairingId, peerId, name } = await window.api.sharing.pairByAddress(host, port)
+    set((s) => (s.pairing?.address === address ? { pairing: { ...s.pairing, peerId, peerName: name, pairingId, busy: false } } : {}))
+  } catch (error) {
+    set((s) => (s.pairing?.address === address ? { pairing: { ...s.pairing, busy: false, error: errorText(error) } } : {}))
+  }
+}
+
+/** Stops a transfer from this computer; a queued one never starts, and the other computer deletes what arrived. */
+export async function cancelTransfer(id: string): Promise<void> {
+  try {
+    await window.api.sharing.cancel(id)
+  } catch (error) {
+    showMessage(errorText(error), true)
+  }
+}
+
+/** Clears a finished or failed transfer from the bar, and its package from this computer. */
+export function dismissTransfer(id: string): void {
+  set((s) => ({ transfers: s.transfers.filter((t) => t.id !== id) }))
+  window.api.sharing.cancel(id).catch(console.error)
+}
+
+/** Stops every transfer that has not finished. */
+export function cancelAllTransfers(): void {
+  for (const t of get().transfers) if (isActiveTransfer(t)) cancelTransfer(t.id).catch(console.error)
+}
+
+export const isActiveTransfer = (t: TransferProgress) => t.state === 'preparing' || t.state === 'sending' || t.state === 'retrying'
+
+/** Refuses a file arriving here: the sender stops, and what arrived is deleted. */
+export async function declineIncoming(id: string): Promise<void> {
+  try {
+    await window.api.sharing.decline(id)
+  } catch (error) {
+    showMessage(errorText(error), true)
+  }
+}
+
+/** Takes a stopped incoming chip off the bar. */
+export const dismissIncoming = (id: string) => set((s) => ({ incoming: s.incoming.filter((t) => t.id !== id) }))
+
+/** How long Sharing is on with no other computer online before the toolbar suggests what to check. */
+export const NO_DEVICES_HINT_MS = 10_000
+
+/** Whether the toolbar suggests troubleshooting: no other computer online since `quietSince`, for long enough. */
+export const showNoDevicesHint = (quietSince: number | null, now: number) => quietSince !== null && now - quietSince >= NO_DEVICES_HINT_MS
+
+/** The id of the troubleshooting steps in Settings, Devices. */
+export const TROUBLESHOOTING_ID = 'settings-devices-troubleshooting'
+
+/** Opens Settings at Devices, Troubleshooting, with the steps showing. */
+export function openTroubleshooting(): void {
+  useOperatorStore.getState().openSettings(true)
+  // Settings renders on the next frame.
+  requestAnimationFrame(() => {
+    const steps = document.getElementById(TROUBLESHOOTING_ID)
+    if (steps instanceof HTMLDetailsElement) steps.open = true
+    steps?.scrollIntoView({ block: 'start' })
+  })
 }
 
 /** Sends items to a device, pairing with it first when needed. */

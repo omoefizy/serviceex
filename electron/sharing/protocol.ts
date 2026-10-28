@@ -26,6 +26,8 @@ export interface SecureOps {
   chunk: { request: { transferId: string; offset: number }; response: { offset: number } }
   /** All bytes sent: the receiver checks the hash and puts the file in its Inbox. */
   finish: { request: { transferId: string }; response: { received: true } }
+  /** The sender stopped: the receiver deletes what arrived. */
+  cancel: { request: { transferId: string }; response: { cancelled: true } }
   /** Each computer tells the other, about once a second, the title of what it has live and the service it hosts. */
   presence: { request: PresenceInfo; response: PresenceInfo }
   /** A cue for the tray. It never goes live by itself. */
@@ -88,4 +90,4 @@ export interface SealedHeader {
 /** A sealed answer: the operation's response, or an error to show. */
 export type SealedResponse<T> =
   | ({ ok: true } & T)
-  | { ok: false; error: string; code: 'type' | 'size' | 'offset' | 'hash' | 'unknown' | 'bad' | 'off' | 'busy' | 'disconnected' }
+  | { ok: false; error: string; code: 'type' | 'size' | 'offset' | 'hash' | 'unknown' | 'bad' | 'off' | 'busy' | 'disconnected' | 'declined' }

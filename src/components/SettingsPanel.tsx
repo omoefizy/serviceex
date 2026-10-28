@@ -11,6 +11,7 @@ import {
   KeyRound,
   LayoutPanelLeft,
   Library,
+  Link2,
   Mic,
   MicOff,
   Monitor,
@@ -58,7 +59,7 @@ import type {
 import { HIGHLIGHT_COLORS, HIGHLIGHT_KINDS } from '../../shared/highlights'
 import { can, hasFeature, type FeatureKey } from '../../shared/features'
 import { createLayout, deleteLayout, duplicateLayout, LAYOUT_PANELS, renameLayout, updateLayout } from '../../shared/layouts'
-import { formatBytes } from '../../shared/sharing'
+import { DEFAULT_SHARE_PORT, formatBytes, parseShareAddress } from '../../shared/sharing'
 import { useOperatorStore } from '../store'
 import { dspOf, rememberDevice } from '../lib/listener'
 import {
@@ -76,7 +77,8 @@ import {
 } from '../lib/mic'
 import { IS_MAC, MOD } from '../lib/shortcuts'
 import { switchLayout } from '../lib/layouts'
-import { errorText, useSharingStore } from '../lib/sharing'
+import { beginPairingAt, errorText, TROUBLESHOOTING_ID, useSharingStore } from '../lib/sharing'
+import { usePersistentState } from '../lib/usePersistentState'
 import { LevelMeter } from './LevelMeter'
 import { ScriptureDisplayForm } from './ScriptureDisplay'
 import { ThemeDefaultsForm } from './ThemeEditor'
@@ -1529,6 +1531,21 @@ function DevicesSection() {
   const [tests, setTests] = useState<Record<string, { busy: boolean; text: string; ok: boolean }>>({})
   const [forgetting, setForgetting] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const status = useSharingStore((s) => s.status)
+  const publicNetworks = status?.publicNetworks ?? []
+  // The last address typed stays in the field, for pairing again or with the next computer on that network.
+  const isText = (v: unknown): v is string => typeof v === 'string'
+  const [host, setHost] = usePersistentState('serviceex.pairAddress', '', isText)
+  const [port, setPort] = usePersistentState('serviceex.pairPort', String(DEFAULT_SHARE_PORT), isText)
+  const [addressError, setAddressError] = useState<string | null>(null)
+
+  function pairByAddress(e: FormEvent) {
+    e.preventDefault()
+    const address = parseShareAddress(host, port)
+    if ('error' in address) return setAddressError(address.error)
+    setAddressError(null)
+    beginPairingAt(host, port).catch(console.error)
+  }
 
   // The list follows pairing, renaming and forgetting, wherever they happen.
   useEffect(() => {
@@ -1572,6 +1589,58 @@ function DevicesSection() {
           <span className="hint">Cues wait in the tray with Preview, Add to schedule and Dismiss. A cue never changes what is on the output.</span>
         </label>
       )}
+
+      {publicNetworks.length > 0 && (
+        <div className="error" role="alert">
+          <p>
+            Windows treats {publicNetworks.join(', ')} as a <strong>Public</strong> network, so it blocks other computers from reaching this one. If this is the
+            church's own network, set it to Private:
+          </p>
+          <ol>
+            <li>Open Windows Settings, then Network and internet.</li>
+            <li>Choose Wi-Fi or Ethernet, then the network in use (on Windows 10: Status, then Properties).</li>
+            <li>Under Network profile type, choose Private network.</li>
+          </ol>
+        </div>
+      )}
+
+      <form className="field" onSubmit={pairByAddress}>
+        <span>Add by IP address</span>
+        <div className="settings-row">
+          <input
+            className="input pair-address-input"
+            aria-label="IP address or .local name of the other computer"
+            placeholder="192.168.1.20"
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={253}
+            value={host}
+            onChange={(e) => {
+              setHost(e.target.value)
+              setAddressError(null)
+            }}
+          />
+          <input
+            className="input pair-port-input"
+            aria-label="Port"
+            inputMode="numeric"
+            maxLength={5}
+            value={port}
+            onChange={(e) => {
+              setPort(e.target.value.replace(/\D/g, ''))
+              setAddressError(null)
+            }}
+          />
+          <button type="submit" className="button" disabled={!settings.sharingEnabled || !host.trim()}>
+            <Link2 size={15} aria-hidden="true" /> Pair
+          </button>
+        </div>
+        {addressError && <p className="error">{addressError}</p>}
+        <span className="hint">
+          For a computer that does not appear as a chip. Its address and port are under Settings, Sharing on that computer. Only local network addresses work
+          (10.x, 172.16 to 172.31.x, 192.168.x, 169.254.x, or a name ending in .local). Once paired, the address is remembered with the device.
+        </span>
+      </form>
 
       <div className="field">
         <span>Paired computers</span>
@@ -1665,7 +1734,7 @@ function DevicesSection() {
         )}
       </div>
       {error && <p className="error">{error}</p>}
-      <details className="troubleshooting">
+      <details className="troubleshooting" id={TROUBLESHOOTING_ID}>
         <summary>Cannot see or reach the other computer?</summary>
         <ol>
           <li>Open ServiceEx on both computers and turn Sharing on in both. Each one should then show the other as a chip in the toolbar.</li>
@@ -1675,8 +1744,27 @@ function DevicesSection() {
           </li>
           <li>
             On Windows, allow ServiceEx through <strong>Windows Defender Firewall</strong>. Windows asks the first time Sharing is turned on: tick Private
-            networks and choose Allow. If that was missed, open Windows Security, Firewall and network protection, Allow an app through firewall, and tick
-            ServiceEx for Private. Also check the network is set to Private, not Public, in Settings, Network and internet.
+            networks and choose Allow (this needs an administrator). If that was missed, open Windows Security, Firewall and network protection, Allow an app
+            through firewall, choose Change settings, and tick ServiceEx for Private. The installer does not add this rule, because it installs without
+            administrator rights.
+            {status?.firewallCommand && (
+              <>
+                {' '}
+                An administrator can also add it from a Command Prompt opened with Run as administrator:
+                <code className="settings-path firewall-command">{status.firewallCommand}</code>
+                <button type="button" className="button" onClick={() => navigator.clipboard.writeText(status.firewallCommand ?? '').catch(console.error)}>
+                  <Copy size={15} aria-hidden="true" /> Copy command
+                </button>
+              </>
+            )}
+          </li>
+          <li>
+            On Windows, set the network to <strong>Private</strong>, not Public: Windows blocks other computers on Public networks whatever the firewall says.
+            Open Settings, Network and internet, choose Wi-Fi or Ethernet and the network in use, and under Network profile type choose Private network.
+          </li>
+          <li>
+            If the other computer still does not appear as a chip, use Add by IP address above with the address shown in its Settings, Sharing. Some networks
+            block the messages computers use to find each other but still let them connect.
           </li>
           <li>On a Mac, if the firewall is on, allow incoming connections for ServiceEx in System Settings, Network, Firewall, Options.</li>
           <li>Use Test connection, then Test sync, above. Both should answer within a second or two.</li>

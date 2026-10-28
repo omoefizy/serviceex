@@ -80,6 +80,9 @@
     ],
     "artifactName": "${productName}-Windows-${version}-Setup.${ext}"
   },
+  // Installs per user, without administrator rights, so it cannot add a Windows Firewall rule for Sharing (netsh needs
+  // an administrator; a per machine install would move existing installs). Windows asks to allow the app the first
+  // time Sharing listens, and Settings, Devices, Troubleshooting gives the manual steps and the netsh command.
   "nsis": {
     "oneClick": false,
     "perMachine": false,

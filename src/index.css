@@ -6151,6 +6151,57 @@ button {
   color: var(--live);
 }
 
+.transfer-chip.incoming {
+  background: var(--panel-raised);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.transfer-chip.declined,
+.transfer-chip.incoming.failed {
+  background: var(--live-soft);
+}
+
+.transfer-chip.cancelled {
+  opacity: 0.7;
+}
+
+.network-hint {
+  display: inline-flex;
+  flex-shrink: 1;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 460px;
+}
+
+.network-hint-text {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+.pair-address-input {
+  flex: 1;
+  min-width: 140px;
+}
+
+.pair-port-input {
+  width: 80px;
+  font-variant-numeric: tabular-nums;
+}
+
+.firewall-command {
+  display: block;
+  margin: var(--space-1) 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  user-select: all;
+}
+
+.network-hint .link-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .inbox-badge {
   position: absolute;
   top: 2px;

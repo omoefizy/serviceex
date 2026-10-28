@@ -9,12 +9,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { cleanCue, MAX_CUES } from '../../shared/cues'
 import { hasFeature, requireFeature } from '../../shared/features'
-import { formatBytes, safeFileName, shareProblem } from '../../shared/sharing'
+import { DEFAULT_SHARE_PORT, formatBytes, parseShareAddress, safeFileName, shareProblem } from '../../shared/sharing'
 import type {
   AcceptResult,
   AppSettings,
   ConflictChoice,
   Cue,
+  IncomingTransfer,
   InboxItem,
   LibrarySyncFile,
   LibrarySyncStatus,
@@ -25,13 +26,13 @@ import type {
   ShareSource,
   SharingEvent,
   SharingStatus,
-  TransferProgress,
 } from '../../shared/types'
 import { getAppSettings } from '../db/settings'
 import { getService } from '../db/services'
 import { setInboxResolver } from '../media'
 import { encryptionAvailable } from '../secrets'
 import { completePairing, hello, ping, RefusedError, requestPairing, secureRequest, sendFile, TROUBLESHOOTING, type Endpoint, type PeerTarget } from '../sharing/client'
+import { firewallCommand, publicNetworks } from '../sharing/network'
 import { randomId } from '../sharing/crypto'
 import { Discovery } from '../sharing/discovery'
 import { Inbox } from '../sharing/inbox'
@@ -43,24 +44,22 @@ import { PeerStore } from '../sharing/peers'
 import { ID_PATTERN, type PresenceInfo, type SecureOp, type SecureOps } from '../sharing/protocol'
 import { ShareServer } from '../sharing/server'
 import { SharedServiceSession } from '../sharing/sharedService'
+import { clearOldPackages, SEND_TEMP_PREFIX, TransferQueue, type PreparedFile } from '../sharing/transfers'
 
 /** Tried first so firewall rules and remembered addresses keep working; any free port if it is taken. */
-const PREFERRED_PORT = 47820
+const PREFERRED_PORT = DEFAULT_SHARE_PORT
 const MAX_SOURCES = 200
 /** Presence goes out about once a second; a device not heard from for this long shows offline. */
 const PRESENCE_MS = 1000
 const PRESENCE_STALE_MS = 3500
 /** Library sync runs on its own this often while it is on, besides Sync now. */
 const LIBRARY_SYNC_MS = 5 * 60 * 1000
-
-interface Transfer {
-  progress: TransferProgress
-  peerId: string
-  file: string
-  name: string
-  /** A package written for this transfer, deleted once it has gone. */
-  temp: string | null
-}
+/** An incoming file that has not grown for this long shows as stalled. */
+const INCOMING_STALL_MS = 30_000
+/** Incoming progress goes to the renderer at most this often per file. */
+const INCOMING_EMIT_MS = 250
+/** How long the Windows network check is reused before asking Windows again. */
+const NETWORK_CHECK_MS = 30_000
 
 /** Arguments arrive from the renderer, so check their shape. */
 function assertId(value: unknown, what = 'Device id'): string {
@@ -119,11 +118,9 @@ export function registerSharingIpc(getOperatorWindow: () => BrowserWindow | null
     return item ? inbox.filePath(item) : null
   })
 
-  const transfers = new Map<string, Transfer>()
   /** Pairings this computer started, waiting for the code. */
   const pairings = new Map<string, { peerId: string; name: string; endpoint: Endpoint }>()
   let startError: string | null = null
-  let queue: Promise<void> = Promise.resolve()
 
   const deviceName = () => getAppSettings().sharingDeviceName || computerName()
 
@@ -371,11 +368,47 @@ export function registerSharingIpc(getOperatorWindow: () => BrowserWindow | null
     }
   }
 
+  // Files arriving here, for the incoming chips.
+  const incoming = new Map<string, { transfer: IncomingTransfer; lastAt: number; emittedAt: number }>()
+  let stallTimer: NodeJS.Timeout | null = null
+
+  function onIncoming(transfer: IncomingTransfer): void {
+    const now = Date.now()
+    const known = incoming.get(transfer.id)
+    if (transfer.state !== 'receiving') {
+      incoming.delete(transfer.id)
+      emit({ type: 'incoming', transfer })
+    } else {
+      const entry = { transfer, lastAt: now, emittedAt: known?.emittedAt ?? 0 }
+      incoming.set(transfer.id, entry)
+      // Every chunk would be too many events; the first, a stalled one carrying on, and then a few a second.
+      if (!known || known.transfer.state !== 'receiving' || now - known.emittedAt >= INCOMING_EMIT_MS) {
+        entry.emittedAt = now
+        emit({ type: 'incoming', transfer })
+      }
+    }
+    if (incoming.size > 0 && !stallTimer) stallTimer = setInterval(checkStalled, 5_000)
+    if (incoming.size === 0 && stallTimer) {
+      clearInterval(stallTimer)
+      stallTimer = null
+    }
+  }
+
+  function checkStalled(): void {
+    for (const entry of incoming.values()) {
+      if (entry.transfer.state === 'receiving' && Date.now() - entry.lastAt > INCOMING_STALL_MS) {
+        entry.transfer = { ...entry.transfer, state: 'stalled' }
+        emit({ type: 'incoming', transfer: entry.transfer })
+      }
+    }
+  }
+
   const server = new ShareServer({
     peers,
     inbox,
     deviceName,
     limitMb: () => getAppSettings().sharingMaxSizeMb,
+    onIncoming,
     onPairRequest(request) {
       emit({ type: 'pairRequest', request })
       notify('Pairing request', `${request.deviceName} wants to pair. The code is showing in ServiceEx.`)
@@ -406,7 +439,30 @@ export function registerSharingIpc(getOperatorWindow: () => BrowserWindow | null
       .flat()
       .filter((a): a is os.NetworkInterfaceInfo => !!a && a.family === 'IPv4' && !a.internal)
       .map((a) => a.address)
-    return { enabled: getAppSettings().sharingEnabled, deviceId: peers.deviceId, deviceName: deviceName(), port: server.port, addresses, error: startError }
+    return {
+      enabled: getAppSettings().sharingEnabled,
+      deviceId: peers.deviceId,
+      deviceName: deviceName(),
+      port: server.port,
+      addresses,
+      error: startError,
+      publicNetworks: network.publicNetworks,
+      firewallCommand: firewallCommand(app.getPath('exe')),
+    }
+  }
+
+  /** The Windows networks set to Public, asked again at most every half minute; a change is sent as status. */
+  let network: { publicNetworks: string[]; checkedAt: number } = { publicNetworks: [], checkedAt: 0 }
+  function checkNetwork(): void {
+    if (process.platform !== 'win32' || Date.now() - network.checkedAt < NETWORK_CHECK_MS) return
+    network = { ...network, checkedAt: Date.now() }
+    publicNetworks()
+      .then((names) => {
+        const changed = names.join('\n') !== network.publicNetworks.join('\n')
+        network = { publicNetworks: names, checkedAt: Date.now() }
+        if (changed) emit({ type: 'status', status: status() })
+      })
+      .catch(console.error)
   }
 
   async function start(): Promise<void> {
@@ -419,6 +475,8 @@ export function registerSharingIpc(getOperatorWindow: () => BrowserWindow | null
       }
       discovery.start({ id: peers.deviceId, name: deviceName(), port })
       startError = null
+      checkNetwork()
+      clearOldPackages().catch(console.error)
       presenceTimer ??= setInterval(presenceTick, PRESENCE_MS)
       if (session.role === 'member') session.start()
       scheduleLibrarySync()
@@ -437,8 +495,12 @@ export function registerSharingIpc(getOperatorWindow: () => BrowserWindow | null
     session.stop()
     scheduleLibrarySync()
     discovery.stop()
+    await transfers.stop()
     await server.close()
     pairings.clear()
+    incoming.clear()
+    if (stallTimer) clearInterval(stallTimer)
+    stallTimer = null
     emit({ type: 'status', status: status() })
     emit({ type: 'peers', peers: peerList() })
   }
@@ -458,34 +520,18 @@ export function registerSharingIpc(getOperatorWindow: () => BrowserWindow | null
     return { id: record.id, name: record.name, secret: record.secret, host, port }
   }
 
-  function setProgress(transfer: Transfer, patch: Partial<TransferProgress>): void {
-    transfer.progress = { ...transfer.progress, ...patch }
-    emit({ type: 'progress', transfer: transfer.progress })
-  }
-
-  async function run(transfer: Transfer): Promise<void> {
-    try {
-      setProgress(transfer, { state: 'sending', error: undefined })
-      await sendFile(target(transfer.peerId), peers.deviceId, transfer.file, {
-        name: transfer.name,
-        limitMb: getAppSettings().sharingMaxSizeMb,
-        onProgress: (sent, size, retrying) => setProgress(transfer, { sent, size, state: retrying ? 'retrying' : 'sending' }),
-      })
-      setProgress(transfer, { state: 'done', sent: transfer.progress.size })
-      if (transfer.temp) await rm(transfer.temp, { recursive: true, force: true })
-      transfers.delete(transfer.progress.id)
-    } catch (error) {
-      setProgress(transfer, { state: 'failed', error: errorText(error) })
-    }
-  }
-
   /** Turns an item into a file to send: the file itself, or a package written for it. */
-  async function prepare(source: ShareSource): Promise<{ file: string; name: string; temp: string | null }> {
+  async function prepare(source: ShareSource): Promise<PreparedFile> {
     const packaged = async (selection: PackageSelection) => {
-      const temp = await mkdtemp(path.join(os.tmpdir(), 'serviceex-send-'))
+      const temp = await mkdtemp(path.join(os.tmpdir(), SEND_TEMP_PREFIX))
       const file = path.join(temp, 'package.serviceex')
-      const name = await buildPackage(selection, file)
-      return { file, name: `${safeFileName(name)}.serviceex`, temp }
+      try {
+        const name = await buildPackage(selection, file)
+        return { file, name: `${safeFileName(name)}.serviceex`, temp }
+      } catch (error) {
+        await rm(temp, { recursive: true, force: true })
+        throw error
+      }
     }
     switch (source.type) {
       case 'file':
@@ -505,6 +551,14 @@ export function registerSharingIpc(getOperatorWindow: () => BrowserWindow | null
     }
   }
 
+  const transfers = new TransferQueue({
+    prepare,
+    send: (peerId, prepared, signal, onProgress) =>
+      sendFile(target(peerId), peers.deviceId, prepared.file, { name: prepared.name, limitMb: getAppSettings().sharingMaxSizeMb, signal, onProgress }),
+    size: async (file) => (await stat(file)).size,
+    emit: (transfer) => emit({ type: 'progress', transfer }),
+  })
+
   async function send(peerId: string, sources: ShareSource[]): Promise<void> {
     requireOn()
     const peer = target(peerId)
@@ -516,30 +570,8 @@ export function registerSharingIpc(getOperatorWindow: () => BrowserWindow | null
       const problem = shareProblem(path.basename(source.path), (await stat(source.path)).size, limitMb)
       if (problem) throw new Error(problem)
     }
-    for (const source of sources) {
-      const id = randomId()
-      const placeholder: Transfer = {
-        progress: { id, peerId, peerName: peer.name, name: source.type === 'file' ? path.basename(source.path) : 'Preparing…', sent: 0, size: 0, state: 'preparing' },
-        peerId,
-        file: '',
-        name: '',
-        temp: null,
-      }
-      transfers.set(id, placeholder)
-      emit({ type: 'progress', transfer: placeholder.progress })
-      // One transfer at a time, in order.
-      queue = queue.then(async () => {
-        try {
-          const prepared = await prepare(source)
-          Object.assign(placeholder, prepared)
-          setProgress(placeholder, { name: prepared.name, size: (await stat(prepared.file)).size })
-        } catch (error) {
-          setProgress(placeholder, { state: 'failed', error: errorText(error) })
-          return
-        }
-        await run(placeholder)
-      })
-    }
+    // One transfer at a time, in order.
+    for (const source of sources) transfers.add(peerId, peer.name, source)
   }
 
   async function autoAccept(item: InboxItem): Promise<void> {
@@ -561,7 +593,10 @@ export function registerSharingIpc(getOperatorWindow: () => BrowserWindow | null
     return canceled || filePaths.length === 0 ? null : filePaths[0]
   }
 
-  ipcMain.handle('sharing:status', () => status())
+  ipcMain.handle('sharing:status', () => {
+    checkNetwork()
+    return status()
+  })
 
   ipcMain.handle('sharing:peers', () => {
     discovery.refresh()
@@ -609,6 +644,20 @@ export function registerSharingIpc(getOperatorWindow: () => BrowserWindow | null
     }
   })
 
+  ipcMain.handle('sharing:pairByAddress', async (_event, host: unknown, port: unknown) => {
+    requireOn()
+    if (typeof host !== 'string' || typeof port !== 'string') throw new TypeError('The address and port must be text')
+    const address = parseShareAddress(host, port)
+    if ('error' in address) throw new Error(address.error)
+    const endpoint = { host: address.host, port: address.port }
+    const who = await hello(endpoint, `${address.host}:${address.port}`)
+    if (who.id === peers.deviceId) throw new Error(`${address.host}:${address.port} is this computer. Type the other computer's address, shown in its Settings, Sharing.`)
+    const { pairingId } = await requestPairing(endpoint, who.name, { id: peers.deviceId, name: deviceName(), port: server.port })
+    // Pairing stores this address with the device, so it is reached here later even when it cannot be found.
+    pairings.set(pairingId, { peerId: who.id, name: who.name, endpoint })
+    return { pairingId, peerId: who.id, name: who.name }
+  })
+
   ipcMain.handle('sharing:dismissPairing', (_event, pairingId: unknown) => server.dismissPairing(assertId(pairingId, 'Pairing id')))
 
   ipcMain.handle('sharing:testConnection', async (_event, peerId: unknown) => {
@@ -628,11 +677,13 @@ export function registerSharingIpc(getOperatorWindow: () => BrowserWindow | null
 
   ipcMain.handle('sharing:send', (_event, peerId: unknown, sources: unknown) => send(assertId(peerId), assertSources(sources)))
 
-  ipcMain.handle('sharing:retry', (_event, transferId: unknown) => {
-    const transfer = transfers.get(assertId(transferId, 'Transfer id'))
-    if (!transfer || transfer.progress.state !== 'failed') return
-    if (!transfer.file) throw new Error('That item could not be prepared; send it again.')
-    queue = queue.then(() => run(transfer))
+  ipcMain.handle('sharing:retry', (_event, transferId: unknown) => transfers.retry(assertId(transferId, 'Transfer id')))
+
+  ipcMain.handle('sharing:cancel', (_event, transferId: unknown) => transfers.cancel(assertId(transferId, 'Transfer id')))
+
+  ipcMain.handle('sharing:decline', async (_event, incomingId: unknown) => {
+    if (typeof incomingId !== 'string' || !/^[0-9a-f]{32}-[0-9a-f]{32}$/.test(incomingId)) throw new TypeError('Bad incoming id')
+    await server.decline(incomingId)
   })
 
   ipcMain.handle('sharing:inbox', () => inbox.list())

@@ -1,13 +1,23 @@
-import { BellRing, Copy, Inbox as InboxIcon, Laptop, Lock, RotateCw, Send, Unplug, Wifi, X } from 'lucide-react'
+import { AlertTriangle, BellRing, CircleSlash, Copy, Download, Inbox as InboxIcon, Laptop, Lock, RotateCw, Send, Unplug, Wifi, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { formatBytes } from '../../shared/sharing'
-import type { SharePeer, TransferProgress } from '../../shared/types'
+import type { IncomingTransfer, SharePeer, TransferProgress } from '../../shared/types'
 import {
   beginPairing,
+  beginPairingAt,
   canDropOnDevice,
+  cancelAllTransfers,
+  cancelTransfer,
+  declineIncoming,
+  dismissIncoming,
+  dismissTransfer,
   droppedSources,
   errorText,
+  isActiveTransfer,
+  NO_DEVICES_HINT_MS,
+  openTroubleshooting,
   sendCueTo,
+  showNoDevicesHint,
   sendTo,
   SHARED_ITEM_DRAG_TYPE,
   showMessage,
@@ -81,24 +91,39 @@ function DeviceChip({ peer }: { peer: SharePeer }) {
   )
 }
 
+const percentOf = (done: number, size: number) => (size > 0 ? Math.floor((done / size) * 100) : 0)
+
 function TransferChip({ transfer }: { transfer: TransferProgress }) {
-  const percent = transfer.size > 0 ? Math.floor((transfer.sent / transfer.size) * 100) : 0
-  const dismiss = () => useSharingStore.setState((s) => ({ transfers: s.transfers.filter((t) => t.id !== transfer.id) }))
+  const percent = percentOf(transfer.sent, transfer.size)
   const label =
     transfer.state === 'preparing'
-      ? 'Preparing'
+      ? 'Waiting'
       : transfer.state === 'retrying'
         ? `Reconnecting ${percent}%`
         : transfer.state === 'done'
           ? 'Sent'
           : transfer.state === 'failed'
             ? 'Failed'
-            : `${percent}%`
+            : transfer.state === 'cancelled'
+              ? 'Cancelled'
+              : transfer.state === 'declined'
+                ? 'Declined'
+                : `${percent}%`
   return (
     <span className={`transfer-chip ${transfer.state}`} role="status" title={transfer.error ?? `${transfer.name} to ${transfer.peerName}, ${formatBytes(transfer.size)}`}>
       <Send size={11} aria-hidden="true" />
       <span className="transfer-name">{transfer.name}</span>
       <span className="transfer-state">{label}</span>
+      {isActiveTransfer(transfer) && (
+        <button
+          type="button"
+          className="transfer-action"
+          title={transfer.state === 'preparing' ? 'Take it out of the queue' : `Stop sending; ${transfer.peerName} deletes what arrived`}
+          onClick={() => cancelTransfer(transfer.id)}
+        >
+          <X size={11} aria-hidden="true" /> Cancel
+        </button>
+      )}
       {transfer.state === 'failed' && (
         <button
           type="button"
@@ -109,13 +134,91 @@ function TransferChip({ transfer }: { transfer: TransferProgress }) {
           <RotateCw size={11} aria-hidden="true" /> Retry
         </button>
       )}
-      {(transfer.state === 'failed' || transfer.state === 'done') && (
-        <button type="button" className="transfer-action" aria-label="Dismiss" onClick={dismiss}>
+      {!isActiveTransfer(transfer) && (
+        <button type="button" className="transfer-action" aria-label="Dismiss" onClick={() => dismissTransfer(transfer.id)}>
           <X size={11} aria-hidden="true" />
         </button>
       )}
     </span>
   )
+}
+
+/** A file arriving from another computer: who from, what, how far, and Decline. */
+export function IncomingChip({ transfer }: { transfer: IncomingTransfer }) {
+  const percent = percentOf(transfer.received, transfer.size)
+  const active = transfer.state === 'receiving' || transfer.state === 'stalled'
+  const label =
+    transfer.state === 'stalled'
+      ? `Waiting for ${transfer.senderName} ${percent}%`
+      : transfer.state === 'done'
+        ? 'In the Inbox'
+        : transfer.state === 'cancelled'
+          ? 'Stopped by sender'
+          : transfer.state === 'declined'
+            ? 'Declined'
+            : transfer.state === 'failed'
+              ? 'Damaged'
+              : `${percent}%`
+  return (
+    <span
+      className={`transfer-chip incoming ${transfer.state}`}
+      role="status"
+      title={`${transfer.name} (${formatBytes(transfer.size)}) from ${transfer.senderName}. It waits in the Inbox once it has arrived.`}
+    >
+      <Download size={11} aria-hidden="true" />
+      <span className="transfer-name">
+        {transfer.senderName}: {transfer.name}
+      </span>
+      <span className="transfer-state">{label}</span>
+      {active ? (
+        <button type="button" className="transfer-action" title={`Refuse it: ${transfer.senderName} stops, and what arrived is deleted`} onClick={() => declineIncoming(transfer.id)}>
+          <CircleSlash size={11} aria-hidden="true" /> Decline
+        </button>
+      ) : (
+        <button type="button" className="transfer-action" aria-label="Dismiss" onClick={() => dismissIncoming(transfer.id)}>
+          <X size={11} aria-hidden="true" />
+        </button>
+      )}
+    </span>
+  )
+}
+
+/**
+ * What to check when this computer cannot see the others: shown once Sharing has been on for a while with no other
+ * computer online, and at once on Windows when the network is set to Public.
+ */
+export function NetworkHint({ noDevices, publicNetworks, onDismiss }: { noDevices: boolean; publicNetworks: string[]; onDismiss(): void }) {
+  if (!noDevices && publicNetworks.length === 0) return null
+  const text =
+    publicNetworks.length > 0
+      ? `Windows treats ${publicNetworks.join(', ')} as a Public network and blocks other computers. Set it to Private.`
+      : 'No other computers found. Check the Windows firewall and that the network is Private, not Public.'
+  return (
+    <span className={`sharing-message network-hint${publicNetworks.length > 0 ? ' error' : ''}`} role="status" title={text}>
+      <AlertTriangle size={12} aria-hidden="true" />
+      <span className="network-hint-text">{text}</span>
+      <button type="button" className="link-button" onClick={openTroubleshooting}>
+        {publicNetworks.length > 0 ? 'How to fix' : 'Troubleshooting'}
+      </button>
+      <button type="button" className="transfer-action" aria-label="Hide this hint" onClick={onDismiss}>
+        <X size={11} aria-hidden="true" />
+      </button>
+    </span>
+  )
+}
+
+/** When no other computer has been online, or null while one is; it starts again when Sharing is turned on. */
+function useQuietSince(enabled: boolean, anyOnline: boolean): number | null {
+  const [since, setSince] = useState<number | null>(null)
+  const [, tick] = useState(0)
+  useEffect(() => {
+    setSince(enabled && !anyOnline ? Date.now() : null)
+    if (!enabled || anyOnline) return
+    // Renders again once the hint is due.
+    const timer = setTimeout(() => tick((n) => n + 1), NO_DEVICES_HINT_MS)
+    return () => clearTimeout(timer)
+  }, [enabled, anyOnline])
+  return since
 }
 
 /** This computer pairing with another: type the code the other one shows. */
@@ -146,6 +249,10 @@ function PairDialog() {
   }
 
   const again = () => {
+    if (pairing.address) {
+      beginPairingAt(pairing.address.host, pairing.address.port, pairing.pending).catch(console.error)
+      return
+    }
     const peer = useSharingStore.getState().peers.find((p) => p.id === pairing.peerId)
     if (peer) beginPairing(peer, pairing.pending).catch(console.error)
   }
@@ -170,7 +277,7 @@ function PairDialog() {
             />
           </>
         ) : (
-          pairing.busy && <p className="hint">Asking {pairing.peerName} to show a code…</p>
+          pairing.busy && <p className="hint">{pairing.address ? `Looking for ServiceEx at ${pairing.peerName}…` : `Asking ${pairing.peerName} to show a code…`}</p>
         )}
         {pairing.error && <p className="error">{pairing.error}</p>}
         <p className="hint">Pairing happens once. After that, files between the two computers are encrypted, and only paired computers can send.</p>
@@ -310,6 +417,9 @@ export function SharingBar() {
   const unseen = useSharingStore((s) => s.unseen)
   const inboxOpen = useSharingStore((s) => s.inboxOpen)
   const transfers = useSharingStore((s) => s.transfers)
+  const incoming = useSharingStore((s) => s.incoming)
+  const publicNetworks = useSharingStore((s) => s.status?.publicNetworks ?? [])
+  const [hintHidden, setHintHidden] = useState(false)
   const message = useSharingStore((s) => s.message)
   const chips = useOperatorStore((s) => s.settings.sharingDeviceChips)
   const ref = useRef<HTMLDivElement>(null)
@@ -340,6 +450,8 @@ export function SharingBar() {
   }, [inboxOpen])
 
   const shown = peers.filter((p) => p.online || p.paired)
+  const quietSince = useQuietSince(enabled, peers.some((p) => p.online && !p.disconnected))
+  const active = transfers.filter(isActiveTransfer).length
 
   return (
     <>
@@ -355,9 +467,18 @@ export function SharingBar() {
           )}
         </div>
       )}
+      {enabled && !hintHidden && <NetworkHint noDevices={showNoDevicesHint(quietSince, Date.now())} publicNetworks={publicNetworks} onDismiss={() => setHintHidden(true)} />}
+      {incoming.map((t) => (
+        <IncomingChip key={t.id} transfer={t} />
+      ))}
       {transfers.map((t) => (
         <TransferChip key={t.id} transfer={t} />
       ))}
+      {active > 1 && (
+        <button type="button" className="transfer-action" title="Stop every transfer not yet sent, and empty the queue" onClick={cancelAllTransfers}>
+          <X size={11} aria-hidden="true" /> Cancel all
+        </button>
+      )}
       {message && (
         <span className={`sharing-message${message.error ? ' error' : ''}`} role={message.error ? 'alert' : 'status'} title={message.text}>
           {message.text}
