@@ -1809,6 +1809,8 @@ export interface SermonAiOutcome {
   cancelled: boolean
   /** Why the last failed part failed, when one did. */
   error: AiError | null
+  /** The words the checks flagged in each failed part, for developer mode. */
+  flagged: { part: number; words: string[] }[]
 }
 
 // ---------- Plan ----------
@@ -1866,21 +1868,35 @@ export interface AiTasks {
   findScriptureReferences: { input: { transcript: string }; output: { references: string[] } }
   /**
    * Punctuation, sentences and paragraphs (blank lines between them) for one stretch of sermon transcript, with filler
-   * sounds removed. The main process rejects any answer that adds or changes a word.
+   * sounds removed. The main process rejects any answer that changes a content word, name or number, or more than a
+   * few small words (see wordingChanges). `strict` is the retry after such an answer: copy every word exactly.
    */
-  cleanTranscript: { input: { transcript: string }; output: { transcript: string } }
+  cleanTranscript: { input: { transcript: string; strict?: boolean }; output: { transcript: string } }
   /**
    * A summary of at most 120 words and 5 to 8 key points from a sermon transcript, using only what was said. The
-   * scripture list comes from the sermon's saved references, never from the AI.
+   * scripture list comes from the sermon's saved references, never from the AI. `sermon` is the sermon's own details,
+   * which the notes may use as well.
    */
-  sermonNotes: { input: { transcript: string }; output: { summary: string; points: string[] } }
+  sermonNotes: { input: { transcript: string; sermon?: SermonDetails }; output: { summary: string; points: string[] } }
   /**
    * A few lines on one part of a long sermon (a summary of at most 60 words and up to 3 points), for sermonNotesFromParts.
    * Like sermonNotes, it may reword but not add names, numbers or dates.
    */
-  summarizePart: { input: { transcript: string }; output: { summary: string; points: string[] } }
+  summarizePart: { input: { transcript: string; sermon?: SermonDetails }; output: { summary: string; points: string[] } }
   /** The summary and key points of a long sermon from the short summaries of its parts, in order (see summarizePart). */
-  sermonNotesFromParts: { input: { parts: string }; output: { summary: string; points: string[] } }
+  sermonNotesFromParts: { input: { parts: string; sermon?: SermonDetails }; output: { summary: string; points: string[] } }
+}
+
+/** A sermon's own details, sent with its transcript for notes; the notes may use their words and numbers. */
+export interface SermonDetails {
+  title: string
+  preacher: string
+  series: string
+  churchName: string
+  /** ISO date, YYYY-MM-DD. */
+  date: string
+  /** The saved scripture list, such as "John 3:16-18". */
+  scriptures: string[]
 }
 
 export type AiTask = keyof AiTasks
@@ -1914,6 +1930,8 @@ export interface AiError {
   message: string
   /** For rate limits: how long Anthropic asked to wait. */
   retryAfterSeconds?: number
+  /** When an answer failed the wording or fact check: the words it flagged, shown in developer mode to tune the check. */
+  flagged?: string[]
 }
 
 export type AiResult<T> = { ok: true; value: T } | { ok: false; error: AiError }

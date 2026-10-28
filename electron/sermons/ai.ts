@@ -1,9 +1,10 @@
 // Cleaning and notes for a whole sermon. A full transcript is far too long for one request, so it goes in chunks
-// (see transcriptChunks), one after another with a short pause between them, each tried again on failure. A chunk
-// that still fails does not fail the job: cleaning keeps that chunk's words as spoken, notes leave it out.
+// (see transcriptChunks), one after another with a short pause between them, each tried again on failure. A cleaned
+// chunk that changes words gets one more try with a stricter instruction. A chunk that still fails does not fail the
+// job: cleaning keeps that chunk's words as spoken, notes leave it out.
 
 import { CHUNK_WORDS, transcriptChunks } from '../../shared/sermons'
-import type { AiError, AiResult, AiTask, AiTasks, SermonAiProgress } from '../../shared/types'
+import type { AiError, AiResult, AiTask, AiTasks, SermonAiProgress, SermonDetails } from '../../shared/types'
 import { fail } from '../ai/client'
 import { runTask } from '../ai/tasks'
 import { keyProvider } from '../keys'
@@ -60,8 +61,16 @@ export function jobControl(progress: JobControl['progress']): JobControl & { can
 
 type Failure = { ok: false; error: AiError }
 
-/** One chunk's request, tried again up to CHUNK_RETRIES times: after 2 s, then 4 s, or as long as a rate limit asks. */
-async function withRetries<T extends AiTask>(task: T, input: AiTasks[T]['input'], control: JobControl): Promise<AiResult<AiTasks[T]['output']> & { fatal?: boolean }> {
+/**
+ * One chunk's request, tried again up to CHUNK_RETRIES times: after 2 s, then 4 s, or as long as a rate limit asks.
+ * With `retryChecks` false, an answer that failed its wording or fact check comes back at once for the caller to handle.
+ */
+async function withRetries<T extends AiTask>(
+  task: T,
+  input: AiTasks[T]['input'],
+  control: JobControl,
+  retryChecks = true,
+): Promise<AiResult<AiTasks[T]['output']> & { fatal?: boolean }> {
   let last: Failure | null = null
   for (let attempt = 0; attempt <= CHUNK_RETRIES; attempt++) {
     if (last) {
@@ -74,6 +83,7 @@ async function withRetries<T extends AiTask>(task: T, input: AiTasks[T]['input']
     last = answer
     console.error(`Sermon AI: ${task} failed (try ${attempt + 1} of ${CHUNK_RETRIES + 1})`, answer.error)
     if (FATAL.includes(answer.error.code)) return { ...answer, fatal: true }
+    if (answer.error.flagged && !retryChecks) return answer
   }
   return last ?? fail('unavailable', 'The AI request was cancelled.')
 }
@@ -84,17 +94,26 @@ export interface ChunkedOutcome {
   failedParts: number[]
   cancelled: boolean
   error: AiError | null
+  flagged: { part: number; words: string[] }[]
+}
+
+/** Notes a failed part: its number, why, and the words a check flagged in it. */
+function partFailed(outcome: ChunkedOutcome, part: number, error: AiError) {
+  outcome.failedParts.push(part)
+  outcome.error = error
+  if (error.flagged) outcome.flagged.push({ part, words: error.flagged })
 }
 
 /**
  * Cleans a raw transcript a chunk at a time. Each answer goes through cleanTranscript's word check against its own
- * chunk; a chunk that fails it, or every try, keeps its words as spoken. After Cancel, or an error every chunk would
+ * chunk; a chunk that fails it is tried once more with `strict` (copy every word exactly). A chunk that fails that
+ * too, or every try, keeps its words as spoken. After Cancel, or an error every chunk would
  * hit, the chunks not reached are kept as spoken too, so the cleaned transcript never loses words.
  */
 export async function cleanInChunks(raw: string, control: JobControl): Promise<ChunkedOutcome & { transcript: string }> {
   const chunks = transcriptChunks(raw, keyProvider('anthropic') === 'service' ? SERVICE_CHUNK_WORDS : CHUNK_WORDS)
   const parts: string[] = []
-  const outcome: ChunkedOutcome = { done: 0, total: chunks.length, failedParts: [], cancelled: false, error: null }
+  const outcome: ChunkedOutcome = { done: 0, total: chunks.length, failedParts: [], cancelled: false, error: null, flagged: [] }
   for (const [index, chunk] of chunks.entries()) {
     if (outcome.cancelled || (outcome.error && FATAL.includes(outcome.error.code))) {
       parts.push(chunk)
@@ -107,17 +126,19 @@ export async function cleanInChunks(raw: string, control: JobControl): Promise<C
       continue
     }
     control.progress('clean', index + 1, chunks.length)
-    const answer = await withRetries('cleanTranscript', { transcript: chunk }, control)
+    let answer = await withRetries('cleanTranscript', { transcript: chunk }, control, false)
+    if (!answer.ok && answer.error.flagged && !control.cancelled()) {
+      console.warn(`Sermon AI: part ${index + 1} changed words (${answer.error.flagged.join(' ')}); trying once more, strictly`)
+      await control.sleep(CHUNK_DELAY_MS)
+      if (!control.cancelled()) answer = await withRetries('cleanTranscript', { transcript: chunk, strict: true }, control, false)
+    }
     if (answer.ok) {
       parts.push(answer.value.transcript)
       outcome.done += 1
     } else {
       parts.push(chunk)
       // A retry cut short by Cancel is not a failure of the chunk.
-      if (!control.cancelled()) {
-        outcome.failedParts.push(index + 1)
-        outcome.error = answer.error
-      }
+      if (!control.cancelled()) partFailed(outcome, index + 1, answer.error)
     }
     if (control.cancelled()) outcome.cancelled = true
   }
@@ -132,14 +153,21 @@ const partLines = ({ summary, points }: { summary: string; points: string[] }) =
  * the notes are made from those short summaries, so the last request stays small (when even they add up past
  * CHUNK_WORDS, they are summarised again in groups first). A part that fails every try is left out.
  */
-export async function notesInChunks(transcript: string, control: JobControl): Promise<ChunkedOutcome & { notes: AiResult<{ summary: string; points: string[] }> | null }> {
+export async function notesInChunks(
+  transcript: string,
+  control: JobControl,
+  sermon?: SermonDetails,
+): Promise<ChunkedOutcome & { notes: AiResult<{ summary: string; points: string[] }> | null }> {
   const chunks = transcriptChunks(transcript)
-  const outcome: ChunkedOutcome = { done: 0, total: chunks.length, failedParts: [], cancelled: false, error: null }
+  const outcome: ChunkedOutcome = { done: 0, total: chunks.length, failedParts: [], cancelled: false, error: null, flagged: [] }
   if (chunks.length === 1) {
     control.progress('notes', 1, 1)
-    const notes = await withRetries('sermonNotes', { transcript: chunks[0] }, control)
+    const notes = await withRetries('sermonNotes', { transcript: chunks[0], sermon }, control)
     if (notes.ok) outcome.done = 1
-    else outcome.error = notes.error
+    else {
+      outcome.error = notes.error
+      if (notes.error.flagged) outcome.flagged.push({ part: 1, words: notes.error.flagged })
+    }
     return { ...outcome, cancelled: control.cancelled(), notes }
   }
 
@@ -148,13 +176,12 @@ export async function notesInChunks(transcript: string, control: JobControl): Pr
     if (index > 0) await control.sleep(CHUNK_DELAY_MS)
     if (control.cancelled()) return { ...outcome, cancelled: true, notes: null }
     control.progress('summarise', index + 1, chunks.length)
-    const answer = await withRetries('summarizePart', { transcript: chunk }, control)
+    const answer = await withRetries('summarizePart', { transcript: chunk, sermon }, control)
     if (answer.ok) {
       parts.push(partLines(answer.value))
       outcome.done += 1
     } else {
-      outcome.failedParts.push(index + 1)
-      outcome.error = answer.error
+      partFailed(outcome, index + 1, answer.error)
       if (answer.fatal) return { ...outcome, notes: answer }
     }
   }
@@ -167,7 +194,7 @@ export async function notesInChunks(transcript: string, control: JobControl): Pr
     for (const group of groups) {
       await control.sleep(CHUNK_DELAY_MS)
       if (control.cancelled()) return { ...outcome, cancelled: true, notes: null }
-      const answer = await withRetries('summarizePart', { transcript: group }, control)
+      const answer = await withRetries('summarizePart', { transcript: group, sermon }, control)
       if (!answer.ok) return { ...outcome, error: answer.error, notes: answer }
       shorter.push(partLines(answer.value))
     }
@@ -177,7 +204,7 @@ export async function notesInChunks(transcript: string, control: JobControl): Pr
   await control.sleep(CHUNK_DELAY_MS)
   if (control.cancelled()) return { ...outcome, cancelled: true, notes: null }
   control.progress('notes', chunks.length, chunks.length)
-  const notes = await withRetries('sermonNotesFromParts', { parts: parts.join('\n\n') }, control)
+  const notes = await withRetries('sermonNotesFromParts', { parts: parts.join('\n\n'), sermon }, control)
   if (!notes.ok) outcome.error = notes.error
   return { ...outcome, cancelled: control.cancelled(), notes }
 }

@@ -5,7 +5,7 @@ const create = vi.fn()
 const settings = { aiEnabled: true, aiModel: 'claude-sonnet-5-5', statementPicking: true }
 
 vi.mock('./client', () => ({
-  fail: (code: string, message: string) => ({ ok: false, error: { code, message } }),
+  fail: (code: string, message: string, extra = {}) => ({ ok: false, error: { code, message, ...extra } }),
   readyClient: async () => ({ ok: true, value: { beta: { messages: { create } } } }),
   toAiError: (error: unknown) => ({ ok: false, error: { code: 'unavailable', message: String(error) } }),
 }))
@@ -13,7 +13,7 @@ vi.mock('../db/settings', () => ({ getAppSettings: () => settings }))
 vi.mock('../keys', () => ({ keyProvider: () => 'developer_key' }))
 vi.mock('../db/bible', () => ({ getVerse: () => null, listBooks: () => [] }))
 
-const { runTask } = await import('./tasks')
+const { runTask, STRICT_CLEANING, wordingChanges } = await import('./tasks')
 
 const TRANSCRIPT =
   'Let me tell you about the night the power went out at camp. We sat in the dark and sang anyway. ' +
@@ -127,6 +127,55 @@ describe('cleanTranscript', () => {
     reply('[Introduction]\nSo we were talking about the garden gate.')
     expect((await runTask('cleanTranscript', { transcript: RAW })).ok).toBe(false)
   })
+
+  // 60 words of invented speech, so 2 percent allows one small word to differ.
+  const LONG =
+    'we walked down to the harbour before the sun came up and the boats were still tied at the quay ' +
+    'my grandfather said you want see the water before anyone else does he never hurried he stood there ' +
+    'and he waited and he watched the light come over the hill and then he turned around and went home for breakfast'
+
+  it('lets one small word differ in a long chunk, and says which words it flagged when more differ', async () => {
+    expect(LONG.split(' ')).toHaveLength(60)
+    const slip = LONG.replace('you want see', 'you want to see')
+    reply(slip)
+    expect(await runTask('cleanTranscript', { transcript: LONG })).toEqual({ ok: true, value: { transcript: slip } })
+
+    reply(slip.replace('down to the harbour', 'down the harbour'))
+    const result = await runTask('cleanTranscript', { transcript: LONG })
+    expect(result).toMatchObject({ ok: false, error: { flagged: ['-to', '+to'] } })
+    if (!result.ok) expect(result.error.message).not.toMatch(/try again/i)
+  })
+
+  it('refuses any changed content word, name or number, however long the chunk', async () => {
+    for (const changed of [
+      LONG.replace('grandfather', 'grandad'),
+      LONG.replace('harbour', 'Harbourside'),
+      LONG.replace('the boats', 'the 3 boats'),
+      LONG.replace('he never hurried', 'he never ever hurried'),
+      LONG.replace('went home for breakfast', 'went home'),
+    ]) {
+      reply(changed)
+      expect((await runTask('cleanTranscript', { transcript: LONG })).ok).toBe(false)
+    }
+  })
+
+  it('ignores punctuation, capitals, apostrophes, filler sounds and stammers', () => {
+    expect(wordingChanges('um i dont think think its uh over', 'I don\'t think it\'s over.')).toEqual({ rejected: [], small: [], words: 8 })
+  })
+
+  it('lets no word change inside a quoted verse', () => {
+    const raw = 'and he read for god so loved the world that he gave his only son and then he sat down ' + LONG
+    const quoted = 'And he read, “For God so loved world, that he gave his only son.” And then he sat down. ' + LONG
+    expect(wordingChanges(raw, quoted).rejected).toEqual(['-the'])
+    expect(wordingChanges(raw, quoted.replace('loved world', 'loved the world').replace('he sat down', 'he sat down the')).rejected).toEqual([])
+  })
+
+  it('asks for an exact copy on the strict try', async () => {
+    reply(RAW)
+    await runTask('cleanTranscript', { transcript: RAW, strict: true })
+    expect(create.mock.calls[0][0].messages[0].content).toBe(`Transcript (${STRICT_CLEANING}):\n\n${RAW}`)
+    expect(STRICT_CLEANING).toBe('copy every word exactly, change only punctuation, capitalization and paragraph breaks')
+  })
 })
 
 describe('sermonNotes', () => {
@@ -152,6 +201,50 @@ describe('sermonNotes', () => {
     expect((await runTask('sermonNotes', { transcript: TRANSCRIPT })).ok).toBe(false)
     reply('A talk on faithfulness.', ['She climbed 300 stairs each evening.'])
     expect((await runTask('sermonNotes', { transcript: TRANSCRIPT })).ok).toBe(false)
+  })
+
+  const DETAILS = {
+    title: 'Keeping the Light On',
+    preacher: 'Pastor Adaeze Okafor',
+    series: 'Harbour Lights',
+    churchName: 'Grace Chapel Port Harcourt',
+    date: '2026-10-31',
+    scriptures: ['Matthew 5:14-16', 'Psalms 119:105'],
+  }
+
+  it('sends the sermon’s details with the transcript, and never the product name', async () => {
+    reply('A talk on faithfulness.', ['Faithfulness is mostly unseen.'])
+    await runTask('sermonNotes', { transcript: TRANSCRIPT, sermon: DETAILS })
+    const request = create.mock.calls[0][0]
+    expect(request.messages[0].content).toBe(
+      'Sermon details (from the app, not the speaker):\nTitle: Keeping the Light On\nPreacher: Pastor Adaeze Okafor\nSeries: Harbour Lights\n' +
+        'Church: Grace Chapel Port Harcourt\nDate: Saturday, October 31, 2026\nScripture read: Matthew 5:14-16; Psalms 119:105\n\n' +
+        `Transcript:\n\n${TRANSCRIPT}`,
+    )
+    expect(JSON.stringify(request)).not.toMatch(/ServiceEx|WorshipDeck/i)
+  })
+
+  it('accepts words and numbers from the sermon’s details', async () => {
+    reply(
+      'Pastor Adaeze Okafor of Grace Chapel Port Harcourt spoke at Saturday’s service on 31 October 2026, in the Harbour Lights series.',
+      ['Matthew 5:15 says to keep the light on.', 'Psalms 119:105 calls the word a lamp.', 'Keeping the Light On means being faithful.'],
+    )
+    expect(await runTask('sermonNotes', { transcript: TRANSCRIPT, sermon: DETAILS })).toMatchObject({ ok: true })
+  })
+
+  it('still refuses names, numbers and places that are in neither the transcript nor the details', async () => {
+    for (const point of ['Pastor Okafor met Captain Reyes on the pier.', 'She climbed 300 stairs each evening.', 'John 3:16 shows this.', 'The keeper lived in Lagos.']) {
+      reply('A talk on faithfulness.', [point])
+      const result = await runTask('sermonNotes', { transcript: TRANSCRIPT, sermon: DETAILS })
+      expect(result).toMatchObject({ ok: false, error: { flagged: expect.any(Array) } })
+    }
+    reply('Faithfulness on Friday.', ['Faithfulness is mostly unseen.'])
+    expect(await runTask('sermonNotes', { transcript: TRANSCRIPT, sermon: DETAILS })).toMatchObject({ ok: false, error: { flagged: ['friday'] } })
+  })
+
+  it('reads a possessive as the word the speaker said', async () => {
+    reply('Plans for Saturday’s outreach.', ['Faithfulness is mostly unseen.'])
+    expect(await runTask('sermonNotes', { transcript: `${TRANSCRIPT} We meet again on saturday.` })).toMatchObject({ ok: true })
   })
 
   it('keeps at most 8 key points', async () => {

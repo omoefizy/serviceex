@@ -139,6 +139,7 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
   const [showCleaned, setShowCleaned] = useState(true)
   const [options, setOptions] = useState<SermonExportOptions>(DEFAULT_EXPORT)
   const [aiAvailable, setAiAvailable] = useState(false)
+  const [developerMode, setDeveloperMode] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -169,6 +170,7 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
   useEffect(() => {
     reload().catch((err) => setError(String(err)))
     window.api.sermons.aiAvailable().then((ok) => setAiAvailable(ok === true), console.error)
+    window.api.ai.status().then((s) => setDeveloperMode(s.developerMode), console.error)
   }, [reload])
 
   // Progress of this sermon's clean or notes job, sent by the main process.
@@ -238,7 +240,7 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
     }
     editing.current = false
     apply(answer.value.sermon)
-    const note = outcomeMessage(task, answer.value)
+    const note = outcomeMessage(task, answer.value, developerMode)
     if (note) setMessage(note)
     return answer.value.sermon
   }

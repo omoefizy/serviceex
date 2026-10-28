@@ -7,7 +7,7 @@ const create = vi.fn()
 const ready = vi.fn()
 
 vi.mock('../ai/client', () => ({
-  fail: (code: string, message: string) => ({ ok: false, error: { code, message } }),
+  fail: (code: string, message: string, extra = {}) => ({ ok: false, error: { code, message, ...extra } }),
   readyClient: () => ready(),
   toAiError: (error: unknown) => ({ ok: false, error: { code: 'unavailable', message: String(error) } }),
 }))
@@ -15,7 +15,8 @@ vi.mock('../db/settings', () => ({ getAppSettings: () => ({ aiEnabled: true, aiM
 vi.mock('../keys', () => ({ keyProvider: () => 'developer_key' }))
 vi.mock('../db/bible', () => ({ getVerse: () => null, listBooks: () => [] }))
 
-const { cleanInChunks, jobControl, notesInChunks, CHUNK_RETRIES } = await import('./ai')
+const { cleanInChunks, jobControl, notesInChunks } = await import('./ai')
+const { STRICT_CLEANING } = await import('../ai/tasks')
 
 // About 8,000 words of invented speech, as speech recognition writes it: lower case, full stops, no digits.
 const PHRASES = [
@@ -103,7 +104,7 @@ describe('cleaning in chunks', () => {
     expect(result.transcript.split('\n\n')).toHaveLength(6)
   })
 
-  it('keeps a chunk as spoken when the AI changes its words every time, and goes on with the rest', async () => {
+  it('keeps a chunk as spoken when the AI changes its words again on the strict try, and goes on with the rest', async () => {
     let third = ''
     fakeModel((request) => {
       if (taskOf(request) !== 'clean') return undefined
@@ -113,14 +114,31 @@ describe('cleaning in chunks', () => {
     })
     const job = control()
     const result = await cleanInChunks(SERMON, job)
-    expect(result).toMatchObject({ done: 5, total: 6, failedParts: [3], cancelled: false })
+    expect(result).toMatchObject({ done: 5, total: 6, failedParts: [3], cancelled: false, flagged: [{ part: 3, words: ['+hallelujah'] }] })
     expect(result.error?.message).toMatch(/changed the wording/)
-    // Three tries for the third chunk, with growing waits.
-    expect(create.mock.calls.filter(([request]) => userText(request).endsWith(third))).toHaveLength(CHUNK_RETRIES + 1)
-    expect(job.sleep).toHaveBeenCalledWith(2000)
-    expect(job.sleep).toHaveBeenCalledWith(4000)
+    // Two tries for the third chunk: as usual, then told to copy every word exactly. No backoff waits.
+    const tries = create.mock.calls.filter(([request]) => userText(request).endsWith(third)).map(([request]) => userText(request).split('\n\n')[0])
+    expect(tries).toEqual(['Transcript:', `Transcript (${STRICT_CLEANING}):`])
+    expect(job.sleep).not.toHaveBeenCalledWith(2000)
     expect(result.transcript.split('\n\n')[2]).toBe(third)
     expect(wordsOf(result.transcript)).toEqual(wordsOf(SERMON))
+  })
+
+  it('keeps the strict try when its only slip is one added "to"', async () => {
+    let third = ''
+    fakeModel((request) => {
+      if (taskOf(request) !== 'clean') return undefined
+      const [header, ...rest] = userText(request).split('\n\n')
+      const body = rest.join('\n\n')
+      if (!third && create.mock.calls.length === 3) third = body
+      if (body !== third) return undefined
+      // First a changed content word, then the exact copy with one small word slipped in.
+      return header === 'Transcript:' ? reply({ transcript: body.replace('lantern', 'candle') }) : reply({ transcript: body.replace('we start', 'we to start') })
+    })
+    const result = await cleanInChunks(SERMON, control())
+    expect(result).toMatchObject({ done: 6, total: 6, failedParts: [], flagged: [], error: null })
+    expect(result.transcript.split('\n\n')[2]).toContain('we to start')
+    expect(create).toHaveBeenCalledTimes(7)
   })
 
   it('stops at once on an error every chunk would hit, keeping the rest as spoken', async () => {
@@ -183,6 +201,17 @@ describe('notes in chunks', () => {
     expect(result.failedParts).toEqual([1])
     expect(result.notes?.ok).toBe(true)
     expect(result.error?.message).toMatch(/not said/)
+  })
+
+  it('sends the sermon’s details with every request, so notes may use them', async () => {
+    const sermon = { title: 'The River', preacher: 'Pastor Ines Moreau', series: '', churchName: 'Hillside Church', date: '2026-10-31', scriptures: ['Psalms 46:4'] }
+    fakeModel((request) => {
+      if (taskOf(request) === 'final') return reply({ summary: 'Pastor Ines Moreau preached on Saturday from Psalms 46:4.', points: ['the river keeps moving.'] })
+      return undefined
+    })
+    const result = await notesInChunks(SERMON, control(), sermon)
+    for (const [request] of create.mock.calls) expect(userText(request)).toContain('Preacher: Pastor Ines Moreau')
+    expect(result.notes).toMatchObject({ ok: true, value: { summary: 'Pastor Ines Moreau preached on Saturday from Psalms 46:4.' } })
   })
 
   it('makes a short sermon in one request', async () => {

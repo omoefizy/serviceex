@@ -2,7 +2,8 @@
 // tasks and answers in plain text; the functions here turn that text into the shape each app task returns, so the
 // same checks run on it as on a developer key's answer (no changed lyrics, no invented facts, references that exist).
 
-import type { AiError, AiResult, AiTask, AiTasks } from '../../shared/types'
+import { sermonDetailsText } from '../../shared/sermons'
+import type { AiError, AiResult, AiTask, AiTasks, SermonDetails } from '../../shared/types'
 import { isServiceError } from '../service/client'
 import { serviceAccount } from '../service/registry'
 import { fail } from './client'
@@ -15,7 +16,7 @@ type Options = Record<string, string | number | boolean>
 export interface Route<T extends AiTask> {
   task: ServiceAiTask
   text(input: AiTasks[T]['input']): string
-  options?: Options
+  options?: Options | ((input: AiTasks[T]['input']) => Options)
   /** The server's text as the raw output the app task's check expects. */
   parse(output: string): unknown
 }
@@ -124,10 +125,24 @@ export function notesFromText(output: string): { summary: string; points: string
 
 // ---------- Routes ----------
 
-const NOTES_OPTIONS = (summaryWords: number, points: number): Options => ({
-  format: `Only two parts. A line "Summary:" then one paragraph of at most ${summaryWords} words. Then a line "Points:" then at most ${points} points, one per line, each starting with "- ".`,
-  rules: 'Use only what was said. No scripture references, names, numbers or dates that are not in the text. No title, quotes or other headings.',
-})
+/** The server takes option values of at most this many characters. */
+const MAX_OPTION_CHARS = 500
+
+const NOTES_OPTIONS =
+  (summaryWords: number, points: number) =>
+  ({ sermon }: { sermon?: SermonDetails }): Options => {
+    const details = sermonDetailsText(sermon).slice(0, MAX_OPTION_CHARS)
+    return {
+      format: `Only two parts. A line "Summary:" then one paragraph of at most ${summaryWords} words. Then a line "Points:" then at most ${points} points, one per line, each starting with "- ".`,
+      rules:
+        'Use only what was said and the sermon details. No scripture references, names, numbers or dates that are not in the text or the details. No title, quotes or other headings.',
+      ...(details ? { sermon: details } : {}),
+    }
+  }
+
+const CLEANING_WORDING = 'Keep every word as spoken, even ones that look misheard. Only add punctuation, capitals and paragraphs, and remove filler sounds.'
+/** The second try for a chunk whose first answer changed words. */
+const STRICT_CLEANING_WORDING = 'Copy every word exactly, change only punctuation, capitalization and paragraph breaks. Do not fix words that look misheard.'
 
 /** How each app task goes through the server, for the tasks it offers. */
 export const SERVICE_ROUTES: { [T in AiTask]?: Route<T> } = {
@@ -145,7 +160,7 @@ export const SERVICE_ROUTES: { [T in AiTask]?: Route<T> } = {
   cleanTranscript: {
     task: 'cleanTranscriptChunk',
     text: ({ transcript }) => transcript,
-    options: { wording: 'Keep every word as spoken, even ones that look misheard. Only add punctuation, capitals and paragraphs, and remove filler sounds.' },
+    options: ({ strict }) => ({ wording: strict ? STRICT_CLEANING_WORDING : CLEANING_WORDING }),
     parse: (output) => ({ transcript: plain(output) }),
   },
   sermonNotes: { task: 'sermonNotes', text: ({ transcript }) => transcript, options: NOTES_OPTIONS(120, 8), parse: notesFromText },

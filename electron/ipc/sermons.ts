@@ -2,7 +2,7 @@ import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electro
 import { writeFile } from 'node:fs/promises'
 import { requireFeature } from '../../shared/features'
 import { parseReference } from '../../shared/parseReference'
-import { deckSlideTexts, exportFileName, rawTranscript, scriptureList, sermonDeck, sermonText, sermonTitle, SLIDE_VERSE_WORDS, type DeckSlide } from '../../shared/sermons'
+import { deckSlideTexts, exportFileName, rawTranscript, scriptureList, sermonDeck, sermonDetails, sermonText, sermonTitle, SLIDE_VERSE_WORDS, type DeckSlide } from '../../shared/sermons'
 import type { AiResult, AnnouncementPayload, Sermon, SermonAiOutcome, SermonAiProgress, SermonExportOptions, SermonExportResult } from '../../shared/types'
 import { encryptionAvailable, fail } from '../ai/client'
 import { getRange } from '../db/bible'
@@ -117,9 +117,10 @@ function cleanTranscript(event: IpcMainInvokeEvent, id: number): Promise<AiResul
     const raw = rawTranscript(mustGet(id).segments)
     if (!raw) return fail('bad_request', 'This sermon has no transcript to clean.')
     const { transcript, ...outcome } = await cleanInChunks(raw, control)
-    // Nothing cleaned: an error says why; a cancel before the first chunk leaves things as they were.
+    // Nothing cleaned: an error says why, unless parts were only kept as spoken because the AI changed their words;
+    // a cancel before the first chunk leaves things as they were.
     if (outcome.done === 0) {
-      if (outcome.error) return { ok: false, error: outcome.error }
+      if (outcome.error && outcome.flagged.length === 0) return { ok: false, error: outcome.error }
       return { ok: true, value: { ...outcome, sermon: mustGet(id) } }
     }
     setCleanedTranscript(id, transcript)
@@ -133,7 +134,7 @@ function generateNotes(event: IpcMainInvokeEvent, id: number): Promise<AiResult<
     const sermon = mustGet(id)
     const transcript = sermon.cleanedTranscript.trim() || rawTranscript(sermon.segments)
     if (!transcript) return fail('bad_request', 'This sermon has no transcript to summarise.')
-    const { notes, ...outcome } = await notesInChunks(transcript, control)
+    const { notes, ...outcome } = await notesInChunks(transcript, control, sermonDetails(sermon))
     if (!notes) return { ok: true, value: { ...outcome, sermon } }
     if (!notes.ok) return notes
     // The scripture list is the sermon's own saved references, never the AI's.

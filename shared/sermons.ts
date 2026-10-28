@@ -1,7 +1,7 @@
 // Sermons: what an export says and how it is laid out, apart from Electron, so it can be tested. Nothing here names a
 // church, preacher or role; every name comes from the sermon record or from Settings.
 
-import type { Sermon, SermonExportOptions, SermonSegment } from './types'
+import type { Sermon, SermonDetails, SermonExportOptions, SermonSegment } from './types'
 
 export const UNTITLED_SERMON = 'Untitled sermon'
 
@@ -22,6 +22,32 @@ export function longDate(iso: string, locale?: string): string {
   if (!match) return iso
   const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
   return date.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+/** The details sent with a sermon's transcript for notes. */
+export const sermonDetails = (sermon: Sermon): SermonDetails => ({
+  title: sermon.title,
+  preacher: sermon.preacher,
+  series: sermon.series,
+  churchName: sermon.churchName,
+  date: sermon.date,
+  scriptures: sermon.scriptures.map((s) => s.reference),
+})
+
+/** A sermon's details as lines for the AI, such as "Preacher: Ann Lee", with the date in English words; empty when there are none. */
+export function sermonDetailsText(sermon: SermonDetails | undefined): string {
+  if (!sermon) return ''
+  return [
+    ['Title', sermon.title],
+    ['Preacher', sermon.preacher],
+    ['Series', sermon.series],
+    ['Church', sermon.churchName],
+    ['Date', sermon.date ? longDate(sermon.date, 'en-US') : ''],
+    ['Scripture read', sermon.scriptures.join('; ')],
+  ]
+    .filter(([, value]) => value)
+    .map(([label, value]) => `${label}: ${value}`)
+    .join('\n')
 }
 
 /** A pause this long between lines starts a new paragraph of the raw transcript. */

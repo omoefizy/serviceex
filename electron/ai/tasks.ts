@@ -5,9 +5,9 @@
 import { can, FEATURES, upgradeNote, type FeatureKey } from '../../shared/features'
 import { findSection, parseLyrics } from '../../shared/lyrics'
 import { formatReference, parseReference } from '../../shared/parseReference'
-import { KEY_POINTS, limitWords, SUMMARY_MAX_WORDS } from '../../shared/sermons'
+import { KEY_POINTS, limitWords, sermonDetailsText, SUMMARY_MAX_WORDS } from '../../shared/sermons'
 import { MAX_STATEMENT_WORDS, verbatimStatements } from '../../shared/statements'
-import type { AiModel, AiResult, AiTask, AiTasks } from '../../shared/types'
+import type { AiModel, AiResult, AiTask, AiTasks, SermonDetails } from '../../shared/types'
 import { getVerse, listBooks } from '../db/bible'
 import { getAppSettings } from '../db/settings'
 import { keyProvider } from '../keys'
@@ -20,8 +20,23 @@ import { runServiceTask, SERVICE_ROUTES, type Route } from './service'
  */
 const MAX_INPUT_CHARS = 20_000
 
-/** A check failure the operator should see as is. */
-class TaskError extends Error {}
+/** A check failure the operator should see as is, with the words the check flagged when it was a wording or fact check. */
+class TaskError extends Error {
+  constructor(
+    message: string,
+    readonly flagged?: string[],
+  ) {
+    super(message)
+  }
+}
+
+/** A reply that failed its check (or could not be read) as the AI error the renderer gets. */
+const checkFailure = (error: unknown) =>
+  error instanceof TaskError
+    ? fail('bad_request', error.message, error.flagged ? { flagged: error.flagged } : {})
+    : fail('bad_request', 'The AI answer could not be used. Try again.')
+
+const quoteSample = (flagged: string[]) => [...new Set(flagged)].slice(0, 5).map((w) => `“${w}”`).join(', ')
 
 interface TaskDefinition<T extends AiTask> {
   system: string
@@ -84,6 +99,80 @@ function addedWords(original: string, cleaned: string, labels = true): string[] 
   return added
 }
 
+/** Sounds the cleaner may remove from a transcript. */
+const FILLERS = new Set(['um', 'umm', 'uh', 'uhh', 'uhm', 'er', 'erm', 'ah', 'hmm', 'mm', 'mhm', 'eh'])
+/** Small words a cleaned transcript may add or drop now and then, as speech recognition often mishears them. */
+const FUNCTION_WORDS = new Set(['a', 'an', 'the', 'to', 'of', 'and', 'in', 'on', 'is', 'are', 'that', 'it'])
+/** How many small-word differences a cleaned chunk may have, as a share of its words. */
+export const SMALL_WORD_SHARE = 0.02
+
+interface Token {
+  /** The word to compare: lower case, without punctuation or apostrophes, so "dont" and "Don't" match. */
+  key: string
+  /** Inside quotation marks in the cleaned text, such as a quoted verse, where no word may change. */
+  quoted: boolean
+}
+
+/** A text's words in order, each marked when it sits between double quotation marks. */
+function tokens(text: string): Token[] {
+  const out: Token[] = []
+  let quoted = false
+  for (const piece of text.replace(/[‘’ʼ]/g, "'").split(/[\s\-–—/]+/)) {
+    if (/^[^\p{L}\p{N}]*[“"]/u.test(piece)) quoted = true
+    const key = piece.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')
+    if (key) out.push({ key, quoted })
+    if (/[\p{L}\p{N}][^\p{L}\p{N}]*[”"][^\p{L}\p{N}]*$/u.test(piece) || /^[^\p{L}\p{N}]*”/u.test(piece)) quoted = false
+  }
+  return out
+}
+
+/**
+ * The differences between a transcript chunk and its cleaned version, from a word by word alignment (longest common
+ * subsequence). Punctuation and capitals do not count, nor do removed filler sounds and stammered repeats. A small word
+ * (FUNCTION_WORDS) added or dropped outside quotation marks is `small`; any other added, dropped or changed word,
+ * including names, numbers and anything in a quotation, is `rejected`. Words are marked "+" when added, "-" when dropped.
+ */
+export function wordingChanges(original: string, cleaned: string): { rejected: string[]; small: string[]; words: number } {
+  const a = tokens(original)
+  const b = tokens(cleaned)
+  const width = b.length + 1
+  // lcs[i * width + j]: the longest common run of a[i..] and b[j..].
+  const lcs = new Uint32Array((a.length + 1) * width)
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      lcs[i * width + j] = a[i].key === b[j].key ? lcs[(i + 1) * width + j + 1] + 1 : Math.max(lcs[(i + 1) * width + j], lcs[i * width + j + 1])
+    }
+  }
+  const rejected: string[] = []
+  const small: string[] = []
+  let i = 0
+  let j = 0
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i].key === b[j].key) {
+      i++
+      j++
+    } else if (j >= b.length || (i < a.length && lcs[(i + 1) * width + j] >= lcs[i * width + j + 1])) {
+      const { key } = a[i]
+      const stammer = key === a[i - 1]?.key || key === a[i + 1]?.key
+      const quoted = !!(b[j - 1]?.quoted || b[j]?.quoted)
+      if (!FILLERS.has(key) && !stammer) (FUNCTION_WORDS.has(key) && !quoted ? small : rejected).push(`-${key}`)
+      i++
+    } else {
+      const { key, quoted } = b[j]
+      ;(FUNCTION_WORDS.has(key) && !quoted ? small : rejected).push(`+${key}`)
+      j++
+    }
+  }
+  return { rejected, small, words: a.length }
+}
+
+/** The flagged words when a cleaned chunk changes more than wordingChanges allows; empty when it may be kept. */
+export function transcriptWordingProblems(original: string, cleaned: string): string[] {
+  const { rejected, small, words: count } = wordingChanges(original, cleaned)
+  if (rejected.length === 0 && small.length <= Math.floor(count * SMALL_WORD_SHARE)) return []
+  return [...rejected, ...small]
+}
+
 // ---------- Fact guard ----------
 
 /**
@@ -100,8 +189,11 @@ for (const [abbreviation, name] of Object.entries({
   tues: 'tuesday', thu: 'thursday', thur: 'thursday', thurs: 'thursday', fri: 'friday',
 })) DATE_WORDS[abbreviation] = name
 
+/** "Saturday's" says no more than "Saturday", so the fact check compares words without a possessive "'s". */
+const stem = (word: string) => word.replace(/'s$/, '')
+
 /** "Saturday" and "Sat." name the same day, so date words compare by their full name. */
-const dateWordsIn = (text: string) => words(text).flatMap((word) => (DATE_WORDS[word] ? [DATE_WORDS[word]] : []))
+const dateWordsIn = (text: string) => words(text).map(stem).flatMap((word) => (DATE_WORDS[word] ? [DATE_WORDS[word]] : []))
 
 /**
  * Details in the slides that the pasted message does not contain: numbers (dates, times, prices, phone
@@ -112,7 +204,7 @@ function inventedFacts(message: string, texts: string[], names: boolean): string
   const lower = message.toLowerCase()
   const numbers = new Set(message.match(/\d+/g) ?? [])
   const dates = new Set(dateWordsIn(message))
-  const messageWords = new Set(words(message))
+  const messageWords = new Set(words(message).map(stem))
   const invented: string[] = []
 
   for (const text of texts) {
@@ -126,7 +218,8 @@ function inventedFacts(message: string, texts: string[], names: boolean): string
     // message mentions them. "I" is always fine.
     for (const sentence of text.split(/(?<=[.!?:])\s+|\n+/)) {
       for (const word of sentence.split(/\s+/).slice(1)) {
-        const [key] = words(word)
+        const [word0] = words(word)
+        const key = word0 && stem(word0)
         if (key && key !== 'i' && /^[^\p{L}]*\p{Lu}/u.test(word) && !messageWords.has(key) && !DATE_WORDS[key]) {
           invented.push(word.replace(/^[^\p{L}]+|[^\p{L}\p{N}]+$/gu, ''))
         }
@@ -182,29 +275,68 @@ const NOTES_FORMAT = [
 const NOTES_RULES = [
   'Use only what the speaker said. Do not add teaching, stories, scripture, names, places, numbers or dates that',
   "are not in the text, and do not guess at the speaker's name or role. Do not quote or list Bible",
-  'references; the app adds those itself.',
+  'references; the app adds those itself. The sermon details, when given, may be used as they are written.',
 ].join('\n')
+
+const SERMON_DETAIL_CHARS = 200
+const MAX_SERMON_SCRIPTURES = 60
+
+/** The sermon's details from the input, when there are any, with every field a short string. */
+function sermonDetailsField(input: unknown): SermonDetails | undefined {
+  const value = (input as Record<string, unknown> | null)?.sermon
+  if (typeof value !== 'object' || value === null) return undefined
+  const fields = value as Record<string, unknown>
+  const text = (field: string) => (typeof fields[field] === 'string' ? (fields[field] as string).trim().slice(0, SERMON_DETAIL_CHARS) : '')
+  const scriptures = Array.isArray(fields.scriptures)
+    ? fields.scriptures.filter((s): s is string => typeof s === 'string' && !!s.trim()).map((s) => s.trim().slice(0, 60)).slice(0, MAX_SERMON_SCRIPTURES)
+    : []
+  return { title: text('title'), preacher: text('preacher'), series: text('series'), churchName: text('churchName'), date: text('date'), scriptures }
+}
+
+const withDetails = (sermon: SermonDetails | undefined, prompt: string) => {
+  const details = sermonDetailsText(sermon)
+  return details ? `Sermon details (from the app, not the speaker):\n${details}\n\n${prompt}` : prompt
+}
+
+/**
+ * Everything the notes may draw on besides the transcript: the sermon's details, its date as written and in words
+ * (weekday and month names), and every verse number in the saved scripture ranges.
+ */
+function detailsVocabulary(sermon: SermonDetails | undefined): string {
+  if (!sermon) return ''
+  const verses = sermon.scriptures.flatMap((reference) => {
+    const ref = parseReference(reference)
+    if (!ref || ref.verseStart === null || ref.verseEnd === null || ref.verseEnd - ref.verseStart > 200) return []
+    return Array.from({ length: ref.verseEnd - ref.verseStart + 1 }, (_, n) => String(ref.verseStart! + n))
+  })
+  return [sermonDetailsText(sermon), sermon.date, verses.join(' ')].join('\n')
+}
 
 const NOTES_SCHEMA = object({ summary: { type: 'string' }, points: { type: 'array', items: { type: 'string' } } })
 
-/** A summary and points from the reply, cut to size, with nothing in them that `source` does not say. */
-function checkNotes(output: unknown, source: string, maxPoints: number, maxWords: number): { summary: string; points: string[] } {
+/**
+ * A summary and points from the reply, cut to size, with nothing in them that `source` or the sermon's own details do
+ * not say.
+ */
+function checkNotes(output: unknown, source: string, sermon: SermonDetails | undefined, maxPoints: number, maxWords: number): { summary: string; points: string[] } {
   const { summary, points } = output as { summary?: unknown; points?: unknown }
   const kept = Array.isArray(points)
     ? points.filter((p): p is string => typeof p === 'string').map((p) => p.trim()).filter(Boolean).slice(0, maxPoints)
     : []
   if (typeof summary !== 'string' || !summary.trim() || kept.length === 0) throw new TaskError('The AI returned no notes. Try again.')
   const short = limitWords(summary, maxWords)
-  // Rewording is the point here, but numbers, dates, links and names must all come from the source.
-  const invented = inventedFacts(source, [short, ...kept], true)
+  // Rewording is the point here, but numbers, dates, links and names must all come from the source or the details.
+  const invented = inventedFacts(`${source}\n${detailsVocabulary(sermon)}`, [short, ...kept], true)
   if (invented.length > 0) {
-    const sample = invented.slice(0, 5).map((w) => `“${w}”`).join(', ')
-    throw new TaskError(`The AI added details that were not said (${sample}), so its notes were not used. Try again.`)
+    throw new TaskError(`The AI added details that were not said (${quoteSample(invented)}), so its notes were not used. Try again.`, invented)
   }
   return { summary: short, points: kept }
 }
 
 // ---------- Tasks ----------
+
+/** The instruction for a transcript chunk's second try, after its first answer changed words. */
+export const STRICT_CLEANING = 'copy every word exactly, change only punctuation, capitalization and paragraph breaks'
 
 const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
   cleanLyrics: {
@@ -412,8 +544,11 @@ const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
       'reorder words. Do not add headings, labels, speaker names, scripture text or numbers written as digits. When a',
       'word looks misheard, leave it as it is. The stretch may start or end in the middle of a sentence; leave it so.',
     ].join('\n'),
-    parseInput: (input) => ({ transcript: textField(input, 'transcript') }),
-    prompt: ({ transcript }) => `Transcript:\n\n${transcript}`,
+    parseInput: (input) => ({
+      transcript: textField(input, 'transcript'),
+      ...((input as { strict?: unknown } | null)?.strict === true ? { strict: true } : {}),
+    }),
+    prompt: ({ transcript, strict }) => `${strict ? `Transcript (${STRICT_CLEANING})` : 'Transcript'}:\n\n${transcript}`,
     schema: object({ transcript: { type: 'string' } }),
     // A chunk of 1,500 words comes back as about 2,000 tokens, with room for thinking.
     maxTokens: 8000,
@@ -422,10 +557,9 @@ const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
       const { transcript } = output as { transcript?: unknown }
       if (typeof transcript !== 'string' || !transcript.trim()) throw new TaskError('The AI returned no transcript. Try again.')
       const cleaned = transcript.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
-      const added = addedWords(input.transcript, cleaned, false)
-      if (added.length > 0) {
-        const sample = [...new Set(added)].slice(0, 5).map((w) => `“${w}”`).join(', ')
-        throw new TaskError(`The AI changed the wording (${sample}), so its version was not used. Try again.`)
+      const flagged = transcriptWordingProblems(input.transcript, cleaned)
+      if (flagged.length > 0) {
+        throw new TaskError(`The AI changed the wording (${quoteSample(flagged.map((w) => w.slice(1)))}), so its version was not used.`, flagged)
       }
       return { transcript: cleaned }
     },
@@ -440,12 +574,12 @@ const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
       '',
       NOTES_RULES,
     ].join('\n'),
-    parseInput: (input) => ({ transcript: textField(input, 'transcript') }),
-    prompt: ({ transcript }) => `Transcript:\n\n${transcript}`,
+    parseInput: (input) => ({ transcript: textField(input, 'transcript'), sermon: sermonDetailsField(input) }),
+    prompt: ({ transcript, sermon }) => withDetails(sermon, `Transcript:\n\n${transcript}`),
     schema: NOTES_SCHEMA,
     maxTokens: 4000,
     effort: 'medium',
-    check: (output, input) => checkNotes(output, input.transcript, KEY_POINTS.max, SUMMARY_MAX_WORDS),
+    check: (output, input) => checkNotes(output, input.transcript, input.sermon, KEY_POINTS.max, SUMMARY_MAX_WORDS),
   },
 
   summarizePart: {
@@ -456,12 +590,12 @@ const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
       '',
       NOTES_RULES,
     ].join('\n'),
-    parseInput: (input) => ({ transcript: textField(input, 'transcript') }),
-    prompt: ({ transcript }) => `Part of the transcript:\n\n${transcript}`,
+    parseInput: (input) => ({ transcript: textField(input, 'transcript'), sermon: sermonDetailsField(input) }),
+    prompt: ({ transcript, sermon }) => withDetails(sermon, `Part of the transcript:\n\n${transcript}`),
     schema: NOTES_SCHEMA,
     maxTokens: 2000,
     effort: 'low',
-    check: (output, input) => checkNotes(output, input.transcript, PART_POINTS, PART_SUMMARY_WORDS),
+    check: (output, input) => checkNotes(output, input.transcript, input.sermon, PART_POINTS, PART_SUMMARY_WORDS),
   },
 
   sermonNotesFromParts: {
@@ -473,12 +607,12 @@ const TASKS: { [T in AiTask]: TaskDefinition<T> } = {
       '',
       NOTES_RULES.replace('what the speaker said', 'what the part summaries say'),
     ].join('\n'),
-    parseInput: (input) => ({ parts: textField(input, 'parts') }),
-    prompt: ({ parts }) => `Part summaries:\n\n${parts}`,
+    parseInput: (input) => ({ parts: textField(input, 'parts'), sermon: sermonDetailsField(input) }),
+    prompt: ({ parts, sermon }) => withDetails(sermon, `Part summaries:\n\n${parts}`),
     schema: NOTES_SCHEMA,
     maxTokens: 4000,
     effort: 'medium',
-    check: (output, input) => checkNotes(output, input.parts, KEY_POINTS.max, SUMMARY_MAX_WORDS),
+    check: (output, input) => checkNotes(output, input.parts, input.sermon, KEY_POINTS.max, SUMMARY_MAX_WORDS),
   },
 }
 
@@ -546,7 +680,7 @@ export async function runTask<T extends AiTask>(task: T, input: unknown): Promis
   try {
     return { ok: true, value: definition.check(JSON.parse(text.text), parsed) }
   } catch (error) {
-    return fail('bad_request', error instanceof TaskError ? error.message : 'The AI answer could not be used. Try again.')
+    return checkFailure(error)
   }
 }
 
@@ -559,11 +693,11 @@ async function runThroughService<T extends AiTask>(
   if (!getAppSettings().aiEnabled) return fail('disabled', 'AI features are turned off in Settings.')
   const route = SERVICE_ROUTES[task] as Route<T> | undefined
   if (!route) return fail('unavailable', `${FEATURES[TASK_FEATURES[task]].label} is not available through the ServiceEx account yet.`)
-  const answer = await runServiceTask(route.task, route.text(input), route.options)
+  const answer = await runServiceTask(route.task, route.text(input), typeof route.options === 'function' ? route.options(input) : route.options)
   if (!answer.ok) return answer
   try {
     return { ok: true, value: definition.check(route.parse(answer.value), input) }
   } catch (error) {
-    return fail('bad_request', error instanceof TaskError ? error.message : 'The AI answer could not be used. Try again.')
+    return checkFailure(error)
   }
 }

@@ -109,7 +109,18 @@ describe('through the account', () => {
     expect(runs().map((r) => r.body.task)).toEqual(['announcementBuilder', 'cleanTranscriptChunk', 'sermonNotes'])
   })
 
-  it('says plainly when the monthly allowance is used up, without the server’s text', async () => {
+  it('sends the sermon’s details with notes and the exact-copy wording on a strict cleaning try', async () => {
+    server.aiOutputs.sermonNotes = 'Summary:\nPastor Ines Moreau spoke on Saturday.\n\nPoints:\n- Lift the gate gently'
+    const sermon = { title: '', preacher: 'Pastor Ines Moreau', series: '', churchName: '', date: '2026-10-31', scriptures: [] }
+    expect(await runTask('sermonNotes', { transcript: 'lift the gate gently', sermon })).toMatchObject({ ok: true })
+    expect(runs()[0].body).toMatchObject({ options: { sermon: 'Preacher: Pastor Ines Moreau\nDate: Saturday, October 31, 2026' } })
+
+    server.aiOutputs.cleanTranscriptChunk = 'And so we pray.'
+    await runTask('cleanTranscript', { transcript: 'and so we pray', strict: true })
+    expect(runs()[1].body).toMatchObject({ options: { wording: expect.stringMatching(/^Copy every word exactly, change only punctuation, capitalization and paragraph breaks/) } })
+  })
+
+    it('says plainly when the monthly allowance is used up, without the server’s text', async () => {
     server.aiRemaining = 0
     const result = await runTask('cleanTranscript', { transcript: 'and so we pray' })
     expect(result).toEqual({ ok: false, error: { code: 'billing', message: expect.stringMatching(/^This month's AI allowance is used up\. It resets on/) } })
