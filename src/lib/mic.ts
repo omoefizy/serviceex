@@ -97,7 +97,7 @@ const CHUNK_MS = 100
 const CHUNK_BYTES = 3200
 
 const DENIED =
-  'WorshipDeck is not allowed to use the microphone. On a Mac, turn it on in System Settings > Privacy & Security > Microphone, then try again.'
+  'ServiceEx is not allowed to use the microphone. On a Mac, turn it on in System Settings > Privacy & Security > Microphone, then try again.'
 
 /** A sentence for the operator from a getUserMedia or permission failure. */
 export function micErrorMessage(error: unknown): string {

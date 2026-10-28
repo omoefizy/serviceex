@@ -91,7 +91,7 @@ const PROBLEMS: Record<TokenProblem, string> = {
   wrong_machine: 'The licence saved here belongs to another computer. Sign in again to activate this one.',
   expired: 'This computer has been offline for more than 14 days, so the licence needs checking. Connect to the internet and it will refresh by itself.',
   no_key: 'This build has no licence key to check licences with.',
-  unknown_key: 'This licence was signed with a newer key than this version of WorshipDeck knows. Update WorshipDeck to use it.',
+  unknown_key: 'This licence was signed with a newer key than this version of ServiceEx knows. Update ServiceEx to use it.',
 }
 
 /** What a checked token allows, at `now`. A token that fails its check gives the free features, never an error. */

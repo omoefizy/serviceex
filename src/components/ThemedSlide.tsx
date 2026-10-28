@@ -37,7 +37,7 @@ export function LogoPlaceholder() {
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M10 2h4v6h6v4h-6v10h-4V12H4V8h6z" />
       </svg>
-      <span>WorshipDeck</span>
+      <span>ServiceEx</span>
     </div>
   )
 }

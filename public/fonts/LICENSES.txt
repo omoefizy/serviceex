@@ -1,4 +1,4 @@
-Fonts bundled with WorshipDeck
+Fonts bundled with ServiceEx
 ==============================
 
 These fonts are included unmodified apart from conversion to WOFF2. They come from the Google Fonts

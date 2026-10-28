@@ -61,9 +61,9 @@ export function serviceErrorMessage(code: ServiceErrorCode, details?: Record<str
     case 'no_credit':
       return 'There are no cloud listening hours left. Listening carries on offline on this computer; buy more hours in Plans and Credits.'
     case 'license_expired':
-      return 'Your license updates have expired, so this needs a renewal. WorshipDeck keeps working as it is.'
+      return 'Your license updates have expired, so this needs a renewal. ServiceEx keeps working as it is.'
     case 'license_revoked':
-      return 'This license has been revoked or refunded. WorshipDeck keeps working; contact ServiceEx if this is a mistake.'
+      return 'This license has been revoked or refunded. ServiceEx keeps working; contact ServiceEx if this is a mistake.'
     case 'seat_limit': {
       if (details?.reason === 'move_limit') {
         const next = shortDate(details.next_move_available_at)
@@ -104,7 +104,7 @@ export function serviceErrorMessage(code: ServiceErrorCode, details?: Record<str
     case 'payload_too_large':
       return 'That text is too long to send in one request.'
     case 'not_configured':
-      return 'This build of WorshipDeck is not set up to connect to ServiceEx.'
+      return 'This build of ServiceEx is not set up to connect to ServiceEx.'
     case 'unavailable':
       return 'ServiceEx is not answering properly right now. Try again shortly.'
   }

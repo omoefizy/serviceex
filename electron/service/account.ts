@@ -317,7 +317,7 @@ export class AccountService {
         check.reason === 'no_key'
           ? 'This build has no licence key to check licences with.'
           : check.reason === 'unknown_key'
-            ? 'This licence was signed with a newer key than this version of WorshipDeck knows. Update WorshipDeck to use it.'
+            ? 'This licence was signed with a newer key than this version of ServiceEx knows. Update ServiceEx to use it.'
             : 'The licence from ServiceEx could not be checked, so it was not saved.',
       )
     }

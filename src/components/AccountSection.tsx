@@ -269,7 +269,7 @@ export function AccountSection() {
         Account
       </h3>
       {!account ? null : !account.configured ? (
-        <p className="hint">This build of WorshipDeck is not set up to connect to ServiceEx. Everything offline works as usual.</p>
+        <p className="hint">This build of ServiceEx is not set up to connect to ServiceEx. Everything offline works as usual.</p>
       ) : account.signedIn ? (
         <div className="settings-row">
           <span>
@@ -314,7 +314,7 @@ export function AccountSection() {
       </ul>
       <p className="hint">
         {ENFORCE_ENTITLEMENTS ? '' : 'Plan limits are not enforced yet: every feature works. '}A change to the plan takes effect the next time
-        WorshipDeck starts, never during a service.
+        ServiceEx starts, never during a service.
       </p>
     </section>
   )

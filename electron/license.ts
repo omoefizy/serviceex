@@ -79,7 +79,7 @@ export function adoptServerKey(pem: string, folder = app.getPath('userData')): s
   }
   if (!bundledKey || same(bundledKey, served)) return null
   console.error('The licence key ServiceEx publishes does not match the one built into this app')
-  return 'The licence key ServiceEx uses does not match this version of WorshipDeck, so licences cannot be checked. Update WorshipDeck.'
+  return 'The licence key ServiceEx uses does not match this version of ServiceEx, so licences cannot be checked. Update ServiceEx.'
 }
 
 let status: LicenseStatus | null = null

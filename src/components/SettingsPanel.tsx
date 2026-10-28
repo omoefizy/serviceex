@@ -236,7 +236,7 @@ function AiListeningSection() {
         <input type="checkbox" checked={settings.aiEnabled} onChange={(e) => updateSettings({ aiEnabled: e.target.checked })} />
         Use AI features
       </label>
-      <p className="hint">When this is off, WorshipDeck sends nothing to Anthropic.</p>
+      <p className="hint">When this is off, ServiceEx sends nothing to Anthropic.</p>
     </Section>
   )
 }
@@ -1217,7 +1217,7 @@ function PresentationsSection() {
       {error && <p className="error">{error}</p>}
       {status?.active === 'powerpoint-mac' && (
         <p className="hint">
-          The first conversion asks to let WorshipDeck control PowerPoint. If it was turned down, allow it in System Settings, Privacy and
+          The first conversion asks to let ServiceEx control PowerPoint. If it was turned down, allow it in System Settings, Privacy and
           Security, Automation.
         </p>
       )}

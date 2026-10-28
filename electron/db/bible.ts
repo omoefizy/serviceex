@@ -84,7 +84,7 @@ export function listVersions(): BibleVersion[] {
  * search index (a few seconds). The bundled versions cannot be replaced.
  */
 export function storeVersion(code: BibleVersionCode, name: string, verses: ParsedVerse[]): number {
-  if (BUNDLED_BIBLE_VERSIONS.includes(code)) throw new Error(`${code} ships with WorshipDeck; choose another code`)
+  if (BUNDLED_BIBLE_VERSIONS.includes(code)) throw new Error(`${code} ships with ServiceEx; choose another code`)
   db.transaction(() => {
     const { id } = db
       .prepare(

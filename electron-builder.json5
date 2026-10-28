@@ -56,7 +56,7 @@
     ],
     // macOS shows this when asking for the microphone; without it the request fails silently.
     "extendInfo": {
-      "NSMicrophoneUsageDescription": "WorshipDeck listens to the sermon to show a live transcript.",
+      "NSMicrophoneUsageDescription": "ServiceEx listens to the sermon to show a live transcript.",
       // Shown when the PowerPoint import first asks to control Microsoft PowerPoint through AppleScript.
       "NSAppleEventsUsageDescription": "ServiceEx uses PowerPoint to render your slides.",
       // Local network sharing (off until turned on in Settings): macOS asks before the app may use the local

@@ -282,7 +282,7 @@ export function toOpenLyrics(song: Song): string {
   ].filter(Boolean)
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<song xmlns="http://openlyrics.info/namespace/2009/song" version="0.9" createdIn="WorshipDeck" modifiedDate="${new Date().toISOString()}">
+<song xmlns="http://openlyrics.info/namespace/2009/song" version="0.9" createdIn="ServiceEx" modifiedDate="${new Date().toISOString()}">
   <properties>
 ${properties.join('\n')}
   </properties>

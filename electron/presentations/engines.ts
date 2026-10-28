@@ -133,7 +133,7 @@ function macPowerPointError(error: RunError, name: string): Error {
   const code = /\((-?\d+)\)\s*$/.exec(error.stderr)?.[1]
   if (code === '-1743') {
     return new Error(
-      `macOS did not allow WorshipDeck to control Microsoft PowerPoint. Turn on PowerPoint under WorshipDeck in ${AUTOMATION_SETTINGS_PATH}, then try again.`,
+      `macOS did not allow ServiceEx to control Microsoft PowerPoint. Turn on PowerPoint under ServiceEx in ${AUTOMATION_SETTINGS_PATH}, then try again.`,
     )
   }
   if (error.timedOut || code === '-1712') {

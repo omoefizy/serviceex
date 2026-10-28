@@ -39,7 +39,7 @@ interface Show {
 function macError(error: RunError): Error {
   const code = /\((-?\d+)\)\s*$/.exec(error.stderr)?.[1]
   if (code === '-1743') {
-    return new Error(`macOS did not allow WorshipDeck to control Microsoft PowerPoint. Turn on PowerPoint under WorshipDeck in ${AUTOMATION_SETTINGS_PATH}.`)
+    return new Error(`macOS did not allow ServiceEx to control Microsoft PowerPoint. Turn on PowerPoint under ServiceEx in ${AUTOMATION_SETTINGS_PATH}.`)
   }
   if (error.timedOut || code === '-1712') return new Error('PowerPoint did not answer. If it is showing a dialog (sign in, file access), answer it and try again.')
   if (code === '-600' || code === '-10810') return new Error('PowerPoint could not be started. Open it once by hand to finish its setup.')
@@ -100,7 +100,7 @@ export function createMacController(script: string): SlideShowController {
 
   return {
     platform: 'mac',
-    showMode: 'Full screen (speaker) show, a space of its own on the output display; PowerPoint is brought forward to show it, then the keyboard returns to WorshipDeck',
+    showMode: 'Full screen (speaker) show, a space of its own on the output display; PowerPoint is brought forward to show it, then the keyboard returns to ServiceEx',
 
     available: async () => existsSync(MAC_POWERPOINT),
 

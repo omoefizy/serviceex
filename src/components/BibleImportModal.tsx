@@ -67,7 +67,7 @@ export function BibleImportModal({ versions, onChanged, onClose }: Props) {
         <h2>Import a Bible version</h2>
 
         <p className="notice">
-          Only import versions your church holds a license to display. WorshipDeck does not check licensing; making sure
+          Only import versions your church holds a license to display. ServiceEx does not check licensing; making sure
           you have permission is your responsibility.
         </p>
 
@@ -94,7 +94,7 @@ export function BibleImportModal({ versions, onChanged, onClose }: Props) {
             <input className="input" value={name} maxLength={100} placeholder="New International Version" onChange={(e) => setName(e.target.value)} />
           </label>
         </div>
-        {bundledCode && <p className="error">{cleanCode} ships with WorshipDeck; choose another code.</p>}
+        {bundledCode && <p className="error">{cleanCode} ships with ServiceEx; choose another code.</p>}
         {replacing && !bundledCode && <p className="hint">This replaces the {cleanCode} you imported before.</p>}
 
         {imported.length > 0 && (

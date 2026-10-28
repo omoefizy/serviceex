@@ -125,7 +125,7 @@ export class LivePowerPointSession {
       if (existing) await this.discard(presentationId, existing)
       await mkdir(this.options.copyDir, { recursive: true })
       // A new name each time: PowerPoint will not open two files with the same name.
-      const copy = path.join(this.options.copyDir, `WorshipDeck ${presentationId}-${randomBytes(3).toString('hex')}${path.extname(source.sourcePath)}`)
+      const copy = path.join(this.options.copyDir, `ServiceEx ${presentationId}-${randomBytes(3).toString('hex')}${path.extname(source.sourcePath)}`)
       await copyFile(source.sourcePath, copy)
       entry.copy = copy
       const open: OpenOptions = { steps: null, clickMs: null, hidden: [] }
@@ -412,7 +412,7 @@ export class LivePowerPointSession {
         return p
       }, where)
     const pause = () => new Promise((resolve) => setTimeout(resolve, 700))
-    const copy = path.join(this.options.copyDir, `WorshipDeck test-${randomBytes(3).toString('hex')}.pptx`)
+    const copy = path.join(this.options.copyDir, `ServiceEx test-${randomBytes(3).toString('hex')}.pptx`)
     let opened = false
     let ok = false
     try {

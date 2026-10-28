@@ -175,7 +175,7 @@ function createOutputWindow() {
   const overShow = outputOverShow()
 
   const output = new BrowserWindow({
-    title: 'WorshipDeck Output',
+    title: 'ServiceEx Output',
     backgroundColor: '#000',
     ...(external
       ? overShow
@@ -229,7 +229,7 @@ function createStreamWindow() {
   const fit = Math.min(1 / scaleFactor, (workAreaSize.width * 0.9) / width, (workAreaSize.height * 0.9) / height)
 
   const stream = new BrowserWindow({
-    title: 'WorshipDeck Stream',
+    title: 'ServiceEx Stream',
     backgroundColor: '#000',
     ...(external
       ? { ...external.bounds, fullscreen: true, frame: false }
@@ -266,7 +266,7 @@ function openStageWindow() {
     return
   }
   const stage = new BrowserWindow({
-    title: 'WorshipDeck Stage',
+    title: 'ServiceEx Stage',
     width: 1280,
     height: 720,
     backgroundColor: '#000',

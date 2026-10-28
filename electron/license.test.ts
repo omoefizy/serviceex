@@ -130,7 +130,7 @@ describe('at startup', () => {
     writeFileSync(path.join(folder, 'serviceex-license.json'), JSON.stringify({ token, seatsUsed: 1, checkedAt: null }))
     const status = await loadLicense(folder)
     expect(status).toMatchObject({ state: 'invalid', plan: 'Free' })
-    expect(status.message).toMatch(/Update WorshipDeck/)
+    expect(status.message).toMatch(/Update ServiceEx/)
   })
 })
 
