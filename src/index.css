@@ -820,6 +820,28 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+/* AI uses left: a plain bar beside the percentage. */
+.allowance-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.allowance-bar {
+  flex: none;
+  width: 120px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--panel-raised);
+}
+
+.allowance-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
 .plans-orders {
   width: 100%;
   border-collapse: collapse;

@@ -1,6 +1,6 @@
 import { ExternalLink, Loader2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { formatHours, formatNaira, type Order, type Product, type ProductKind } from '../../shared/account'
+import { formatHours, formatNaira, NEEDS_REVIEW_MESSAGE, ORDER_STATES, type Order, type Product, type ProductKind } from '../../shared/account'
 import { shortDate } from '../../shared/serviceErrors'
 import { openPlans, useAccount } from '../lib/account'
 
@@ -18,8 +18,6 @@ function productDetail(p: Product): string {
   if (p.listeningSeconds) parts.push(`${formatHours(p.listeningSeconds)} of cloud listening`)
   return parts.join(' · ')
 }
-
-const ORDER_STATES: Record<string, string> = { pending: 'Waiting for payment', paid: 'Paid', failed: 'Failed', refunded: 'Refunded' }
 
 /**
  * Plans and Credits: the products with their prices exactly as the server sends them, buying through Paystack in the
@@ -69,8 +67,9 @@ export function PlansModal() {
         </header>
 
         {!account?.signedIn && <p className="hint">Sign in in Settings, Account to buy. Prices are shown for reference.</p>}
-        {checkout && (
-          <p className={checkout.state === 'failed' || checkout.state === 'timed_out' ? 'listener-warning' : 'hint'} role="status">
+        {/* After 3 minutes the checks stop quietly; the order keeps its status in Order history. */}
+        {checkout && checkout.state !== 'timed_out' && (
+          <p className={checkout.state === 'failed' ? 'listener-warning' : 'hint'} role="status">
             {waiting && <Loader2 size={14} className="spin" aria-hidden="true" />} <strong>{checkout.productName}:</strong> {checkout.message}
           </p>
         )}
@@ -135,12 +134,13 @@ export function PlansModal() {
                       <td>{o.productName}</td>
                       <td>{formatNaira(o.amountKobo, o.currency)}</td>
                       <td>{ORDER_STATES[o.status] ?? o.status}</td>
-                      <td>{o.receiptNumber ?? '—'}</td>
+                      <td>{o.status === 'paid' || o.status === 'needs_review' ? (o.receiptNumber ?? '—') : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
+            {orders?.some((o) => o.status === 'needs_review') && checkout?.state !== 'needs_review' && <p className="hint">{NEEDS_REVIEW_MESSAGE}</p>}
           </section>
         )}
       </div>

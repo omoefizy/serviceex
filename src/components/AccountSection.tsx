@@ -1,6 +1,6 @@
 import { BadgeCheck, Check, CreditCard, Lock, LogIn, LogOut, Mail, MonitorX, RefreshCw, UserRound } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
-import { formatHours, isLowBalance, type AccountState } from '../../shared/account'
+import { useEffect, useState, type FormEvent } from 'react'
+import { allowancePercentLeft, formatHours, isLowBalance, type AccountState, type AiAllowance } from '../../shared/account'
 import { ENFORCE_ENTITLEMENTS, FEATURE_KEYS, FEATURES, includes } from '../../shared/features'
 import type { LicenseStatus } from '../../shared/license'
 import { shortDate } from '../../shared/serviceErrors'
@@ -198,13 +198,31 @@ export function BalanceLines({ account }: { account: AccountState }) {
           Less than 30 minutes of cloud listening left. Buy more hours in Plans and Credits; listening carries on offline when they run out.
         </p>
       )}
-      {allowance && (
-        <p className="hint">
-          AI this month: {allowance.remainingTokens.toLocaleString()} of {allowance.monthlyTokens.toLocaleString()} tokens left · resets on{' '}
-          {shortDate(allowance.resetsAt)}
-        </p>
-      )}
+      {allowance && <AllowanceLine allowance={allowance} />}
     </>
+  )
+}
+
+/** The AI uses left as a bar and a percentage; the exact counts only in developer builds. */
+function AllowanceLine({ allowance }: { allowance: AiAllowance }) {
+  const [developerMode, setDeveloperMode] = useState(false)
+  useEffect(() => {
+    window.api.ai.status().then((s) => setDeveloperMode(s.developerMode), console.error)
+  }, [])
+
+  const percent = allowancePercentLeft(allowance)
+  const label = allowance.oneTime ? 'AI trial' : 'AI uses this month'
+  const when = allowance.oneTime ? 'one time trial' : allowance.resetsAt ? `resets on ${shortDate(allowance.resetsAt)}` : null
+  return (
+    <div className="allowance-line">
+      <span className="allowance-bar" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+        <span style={{ width: `${percent}%` }} />
+      </span>
+      <span className="hint">
+        {label}: {percent} percent left{when && ` · ${when}`}
+        {developerMode && ` · ${allowance.remainingTokens.toLocaleString()} of ${allowance.monthlyTokens.toLocaleString()} tokens`}
+      </span>
+    </div>
   )
 }
 

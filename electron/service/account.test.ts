@@ -275,7 +275,7 @@ describe('buying', () => {
     await vi.waitFor(() => expect(account.state().balance?.totalSeconds).toBe(7200 + 36_000))
   })
 
-  it('gives up after 3 minutes and says the payment may still appear', async () => {
+  it('stops checking quietly after 3 minutes', async () => {
     let clock = Date.now()
     // Each wait between checks moves the clock on by the poll interval.
     setUp(() => clock, async (ms) => void (clock += ms))
@@ -284,6 +284,6 @@ describe('buying', () => {
     await vi.waitFor(() => expect(account.state().checkout?.state).toBe('timed_out'))
     // Every 5 seconds for 3 minutes.
     expect(server.calls('/checkout/verify')).toHaveLength(CHECKOUT_POLL_MS / CHECKOUT_POLL_EVERY_MS)
-    expect(account.state().checkout?.message).toMatch(/appears in Order history once Paystack confirms it/)
+    expect(account.state().checkout?.message).not.toMatch(/not been confirmed/)
   })
 })

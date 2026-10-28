@@ -19,8 +19,29 @@ export interface AiAllowance {
   monthlyTokens: number
   usedTokens: number
   remainingTokens: number
-  resetsAt: string
+  /** When a monthly allowance starts again; null for a one time trial, which never resets. */
+  resetsAt: string | null
+  oneTime: boolean
 }
+
+/** The share of the allowance left, as a whole percentage from 0 to 100. */
+export function allowancePercentLeft(allowance: AiAllowance): number {
+  if (allowance.monthlyTokens <= 0) return 0
+  return Math.max(0, Math.min(100, Math.round((allowance.remainingTokens / allowance.monthlyTokens) * 100)))
+}
+
+/** What each order status means to the person who paid. */
+export const ORDER_STATES: Record<string, string> = {
+  pending: 'Waiting for payment',
+  needs_review: 'Payment received, checking',
+  expired: 'Expired',
+  paid: 'Paid',
+  failed: 'Failed',
+  refunded: 'Refunded',
+}
+
+export const NEEDS_REVIEW_MESSAGE =
+  'We received your payment and are checking it. If your license does not appear within an hour, contact support with your receipt number.'
 
 export type ProductKind = 'license' | 'updates_renewal' | 'listening_credits'
 
@@ -48,11 +69,14 @@ export interface Order {
   paidAt: string | null
 }
 
-/** A purchase after the Paystack page has opened: waiting for the payment, then paid, failed or given up on. */
+/**
+ * A purchase after the Paystack page has opened: waiting for the payment, then paid, being checked, failed, or no
+ * longer polled (timed_out), in which case the order simply stays in Order history.
+ */
 export interface CheckoutProgress {
   reference: string
   productName: string
-  state: 'waiting' | 'paid' | 'failed' | 'timed_out'
+  state: 'waiting' | 'paid' | 'needs_review' | 'failed' | 'timed_out'
   message: string
 }
 

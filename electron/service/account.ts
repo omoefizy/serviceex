@@ -6,7 +6,7 @@
 // allows takes effect the next time the app starts; here it is only shown.
 
 import type { KeyObject } from 'node:crypto'
-import type { AccountResult, AccountState, AiAllowance, CheckoutProgress, ListeningBalance, Order, Product, ProductKind } from '../../shared/account'
+import { NEEDS_REVIEW_MESSAGE, type AccountResult, type AccountState, type AiAllowance, type CheckoutProgress, type ListeningBalance, type Order, type Product, type ProductKind } from '../../shared/account'
 import { licenseStatusOf, NO_ACCOUNT_LICENSE, NO_LICENSE, type LicenseStatus, type StoredLicense } from '../../shared/license'
 import { serviceErrorMessage } from '../../shared/serviceErrors'
 import { isServiceError, ServiceError, type ServiceClient } from './client'
@@ -336,8 +336,19 @@ export class AccountService {
   }
 
   async refreshAllowance(): Promise<void> {
-    const a = await this.deps.client.request<{ monthly_tokens: number; used_tokens: number; remaining_tokens: number; resets_at: string }>('GET', '/ai/allowance')
-    this.allowance = { monthlyTokens: a.monthly_tokens, usedTokens: a.used_tokens, remainingTokens: a.remaining_tokens, resetsAt: a.resets_at }
+    const a = await this.deps.client.request<{ monthly_tokens: number; used_tokens: number; remaining_tokens: number; resets_at: string | null; one_time?: boolean }>(
+      'GET',
+      '/ai/allowance',
+    )
+    // A one time trial says so, or comes without a reset date.
+    const oneTime = a.one_time === true || !a.resets_at
+    this.allowance = {
+      monthlyTokens: a.monthly_tokens,
+      usedTokens: a.used_tokens,
+      remainingTokens: a.remaining_tokens,
+      resetsAt: oneTime ? null : a.resets_at,
+      oneTime,
+    }
   }
 
   /** The hours left, as a listening heartbeat reports them. */
@@ -469,7 +480,10 @@ export class AccountService {
     return ok(null)
   }
 
-  /** Asks the server to confirm the payment every few seconds for up to 3 minutes; on success, reloads everything. */
+  /**
+   * Asks the server to confirm the payment every few seconds for up to 3 minutes; on success, reloads everything. With
+   * no answer by then it stops quietly: the order stays in Order history with its status.
+   */
   async pollCheckout(run: number, reference: string): Promise<void> {
     const until = this.now().getTime() + CHECKOUT_POLL_MS
     while (run === this.checkoutRun && this.now().getTime() < until) {
@@ -481,6 +495,14 @@ export class AccountService {
           this.finishCheckout(run, 'paid', 'Payment received. Thank you.')
           this.activationDue = true
           await this.refresh()
+          return
+        }
+        if (answer.order.status === 'needs_review') {
+          this.finishCheckout(run, 'needs_review', NEEDS_REVIEW_MESSAGE)
+          return
+        }
+        if (answer.order.status === 'expired') {
+          this.finishCheckout(run, 'failed', 'This order expired before a payment arrived. Buy again to start a new one.')
           return
         }
         if (answer.order.status === 'failed' || answer.order.status === 'refunded') {
@@ -496,7 +518,7 @@ export class AccountService {
       }
     }
     if (run === this.checkoutRun) {
-      this.finishCheckout(run, 'timed_out', 'The payment has not been confirmed yet. If you paid, it appears in Order history once Paystack confirms it.')
+      this.finishCheckout(run, 'timed_out', 'Its status is in Order history.')
     }
   }
 
