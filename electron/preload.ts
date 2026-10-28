@@ -364,6 +364,7 @@ const account: AccountApi = {
   products: () => ipcRenderer.invoke('account:products'),
   orders: () => ipcRenderer.invoke('account:orders'),
   buy: (productId) => ipcRenderer.invoke('account:buy', productId),
+  warmUp: () => ipcRenderer.send('account:warmUp'),
   onChanged(listener) {
     const handler = (_event: Electron.IpcRendererEvent, state: AccountState) => listener(state)
     ipcRenderer.on('account:changed', handler)

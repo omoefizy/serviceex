@@ -247,6 +247,8 @@ export function AccountSection() {
   const account = useAccount()
   const [busy, setBusy] = useState(false)
 
+  useEffect(() => window.api.account.warmUp(), [])
+
   async function signOut() {
     setBusy(true)
     setAccountState(await window.api.account.signOut())

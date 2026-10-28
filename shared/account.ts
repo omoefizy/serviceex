@@ -153,6 +153,8 @@ export interface AccountApi {
   orders(): Promise<AccountResult<Order[]>>
   /** Opens Paystack in the browser, then checks the payment for up to 3 minutes; progress arrives in the state. */
   buy(productId: string): Promise<AccountResult<null>>
+  /** Wakes the server in the background if it has not answered in the last 10 minutes. Sends nothing about the account. */
+  warmUp(): void
   onChanged(listener: (state: AccountState) => void): () => void
 }
 

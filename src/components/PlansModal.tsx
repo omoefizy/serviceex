@@ -31,6 +31,8 @@ export function PlansModal() {
   const [buying, setBuying] = useState<string | null>(null)
   const checkout = account?.checkout ?? null
 
+  useEffect(() => window.api.account.warmUp(), [])
+
   useEffect(() => {
     window.api.account.products().then((answer) => (answer?.ok ? setProducts(answer.value) : setError(answer?.error.message ?? null)), console.error)
   }, [])

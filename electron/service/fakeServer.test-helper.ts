@@ -50,6 +50,8 @@ export class FakeServiceServer {
   /** When set, the next response with this access token says it expired, once. */
   expireAccessToken = false
   offlineDays = 14
+  /** How long GET /health waits before it answers (to test the warm up's timeout). */
+  healthDelayMs = 0
   now = () => new Date()
 
   private accessTokens = new Set<string>()
@@ -164,7 +166,7 @@ export class FakeServiceServer {
     if (this.failWith) return error(this.failWith.status, this.failWith.code, this.failWith.details)
 
     const route = `${req.method} ${url.pathname}`
-    const open = ['POST /auth/request-code', 'POST /auth/verify', 'POST /auth/refresh', 'GET /products', 'GET /.well-known/license-key']
+    const open = ['POST /auth/request-code', 'POST /auth/verify', 'POST /auth/refresh', 'GET /products', 'GET /.well-known/license-key', 'GET /health']
     if (!open.includes(route)) {
       const token = auth?.startsWith('Bearer ') ? auth.slice(7) : ''
       if (!this.accessTokens.has(token)) return error(401, 'unauthorized')
@@ -179,6 +181,10 @@ export class FakeServiceServer {
     if (session) return this.listening(session[1], session[2], body, send, error)
 
     switch (route) {
+      case 'GET /health':
+        if (this.healthDelayMs) await new Promise((resolve) => setTimeout(resolve, this.healthDelayMs))
+        if (!res.destroyed) send(200, { ok: true })
+        return
       case 'POST /auth/request-code':
         return send(202, { ok: true })
       case 'POST /auth/verify':

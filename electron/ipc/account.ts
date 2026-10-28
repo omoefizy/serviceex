@@ -11,6 +11,7 @@ import { apiBaseUrl } from '../service/config'
 import { machineId } from '../service/machineId'
 import { setServiceAccount } from '../service/registry'
 import { safeSessionStore } from '../service/session'
+import { createWarmUp } from '../service/warmUp'
 
 /** The licence is refreshed this often while the app runs, well inside its 14 days offline. */
 const REFRESH_EVERY_MS = 6 * 60 * 60 * 1000
@@ -54,6 +55,11 @@ export function registerAccountIpc(): void {
   })
   const account = service
   setServiceAccount({ account, client, machineId: thisMachineId })
+
+  // Node's own fetch rather than net.fetch, so not even Electron's user agent (app and system versions) goes with it.
+  const warmUp = createWarmUp({ baseUrl: apiBaseUrl })
+  void warmUp.ping()
+  ipcMain.on('account:warmUp', () => void warmUp.pingIfStale())
 
   ipcMain.handle('account:state', () => account.state())
   ipcMain.handle('account:requestCode', (_event, email: unknown) => account.requestCode(email))
