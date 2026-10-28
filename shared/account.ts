@@ -15,19 +15,54 @@ export interface ListeningBalance {
   updatedAt: string
 }
 
-export interface AiAllowance {
-  monthlyTokens: number
-  usedTokens: number
+/** One pool of AI tokens: what it holds in all and what is left of it. */
+export interface AiPool {
+  tokens: number
   remainingTokens: number
-  /** When a monthly allowance starts again; null for a one time trial, which never resets. */
-  resetsAt: string | null
-  oneTime: boolean
 }
 
-/** The share of the allowance left, as a whole percentage from 0 to 100. */
+/**
+ * The AI uses an account has, in two pools: the one time trial (never resets) and the monthly allowance of its
+ * licences. The server draws on the monthly pool first. remainingTokens is what both pools have left together.
+ */
+export interface AiAllowance {
+  trial: AiPool
+  monthly: AiPool
+  remainingTokens: number
+  /** When the monthly allowance starts again; null when no licence gives one. */
+  resetsAt: string | null
+}
+
+/** All the tokens the allowance holds: the trial granted plus the monthly allowance, the same parts as remainingTokens. */
+export function allowanceTotalTokens(allowance: AiAllowance): number {
+  return allowance.trial.tokens + allowance.monthly.tokens
+}
+
+function percentOf(remaining: number, total: number): number {
+  if (total <= 0) return 0
+  return Math.max(0, Math.min(100, Math.round((remaining / total) * 100)))
+}
+
+/** The share of the whole allowance left, as a whole percentage from 0 to 100. */
 export function allowancePercentLeft(allowance: AiAllowance): number {
-  if (allowance.monthlyTokens <= 0) return 0
-  return Math.max(0, Math.min(100, Math.round((allowance.remainingTokens / allowance.monthlyTokens) * 100)))
+  return percentOf(allowance.remainingTokens, allowanceTotalTokens(allowance))
+}
+
+/** The share of one pool left, as a whole percentage from 0 to 100. */
+export function poolPercentLeft(pool: AiPool): number {
+  return percentOf(pool.remainingTokens, pool.tokens)
+}
+
+/** The allowance after an AI answer reports what is left in all; the monthly pool is used first, as on the server. */
+export function withRemainingTokens(allowance: AiAllowance, tokens: number): AiAllowance {
+  const left = Math.max(0, tokens)
+  const monthlyLeft = Math.min(allowance.monthly.tokens, Math.max(0, left - allowance.trial.remainingTokens))
+  return {
+    ...allowance,
+    remainingTokens: left,
+    monthly: { ...allowance.monthly, remainingTokens: monthlyLeft },
+    trial: { ...allowance.trial, remainingTokens: Math.min(allowance.trial.tokens, left - monthlyLeft) },
+  }
 }
 
 /** What each order status means to the person who paid. */

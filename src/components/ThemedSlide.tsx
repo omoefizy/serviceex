@@ -1,12 +1,11 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import { matching, richVerticalAlign } from '../../shared/richText'
-import { AUTO_FIT_MAX, DEFAULT_FONT, isTextKind } from '../../shared/themes'
+import { AUTO_FIT_MAX } from '../../shared/themes'
 import type {
   OutputMode,
   RichText,
   TextCase,
   ThemeBackground,
-  ThemeBox,
   ThemeElement,
   ThemeStyle,
   ThemeTextElement,
@@ -19,6 +18,7 @@ import { REFERENCE_LINE_COLOR, slideLines } from '../lib/slides'
 import { animateSmoke, drawStillSmoke, SMOKE_HEIGHT, SMOKE_WIDTH } from '../lib/smoke'
 import { spanStyle } from '../lib/richText'
 import { RichSlideLines } from './RichText'
+import { backgroundSplit, boxStyle, DefaultFontContext } from './themedSlideLayers'
 
 const MIN_SIZE = 1
 
@@ -30,10 +30,6 @@ const TEXT_TRANSFORMS: Record<TextCase, CSSProperties['textTransform']> = {
 const JUSTIFY = { top: 'flex-start', middle: 'center', bottom: 'flex-end' } as const
 const ALIGN_ITEMS = { left: 'flex-start', center: 'center', right: 'flex-end' } as const
 
-/** The font for text boxes with none of their own: Live Options' Default Font, provided by each window. */
-export const DefaultFontContext = createContext(DEFAULT_FONT)
-
-export const boxStyle = (box: ThemeBox): CSSProperties => ({ left: `${box.x}%`, top: `${box.y}%`, width: `${box.width}%`, height: `${box.height}%` })
 
 export function LogoPlaceholder() {
   return (
@@ -92,28 +88,7 @@ function Background({ background, still }: { background: ThemeBackground; still:
   }
 }
 
-/**
- * Where the background layer ends: the shapes and images under the first text box are drawn with the background,
- * so they hold still while the words crossfade between slides. Everything from the first text box up is content.
- */
-export function backgroundSplit(theme: ThemeStyle): number {
-  const index = theme.elements.findIndex((element) => isTextKind(element.kind))
-  return index === -1 ? theme.elements.length : index
-}
-
-/** What the backdrop layer draws, so an unchanged background (a playing video, say) is not redrawn between slides. */
-export function backdropKey(theme: ThemeStyle): string {
-  return JSON.stringify([theme.background, theme.overlay, theme.keyTransparent])
-}
-
-/** What the layer of shapes and images under the text draws, so unchanged ones hold still between slides. */
-export function underKey(theme: ThemeStyle, logoUrl: string | null): string {
-  const below = theme.elements.slice(0, backgroundSplit(theme))
-  const usesLogo = below.some((element) => element.kind === 'image' && element.src === null)
-  return JSON.stringify([below, usesLogo ? logoUrl : null])
-}
-
-export function textStyle(props: ThemeTextProps, defaultFont: string): CSSProperties {
+function textStyle(props: ThemeTextProps, defaultFont: string): CSSProperties {
   const { shadow, outline } = props
   return {
     fontFamily: cssFontFamily(props.fontFamily || defaultFont),

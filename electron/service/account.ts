@@ -6,7 +6,7 @@
 // allows takes effect the next time the app starts; here it is only shown.
 
 import type { KeyObject } from 'node:crypto'
-import { NEEDS_REVIEW_MESSAGE, type AccountResult, type AccountState, type AiAllowance, type CheckoutProgress, type ListeningBalance, type Order, type Product, type ProductKind } from '../../shared/account'
+import { NEEDS_REVIEW_MESSAGE, type AccountResult, type AccountState, type AiAllowance, type CheckoutProgress, type ListeningBalance, type Order, type Product, type ProductKind, withRemainingTokens } from '../../shared/account'
 import { licenseStatusOf, NO_ACCOUNT_LICENSE, NO_LICENSE, type LicenseStatus, type StoredLicense } from '../../shared/license'
 import { serviceErrorMessage } from '../../shared/serviceErrors'
 import { isServiceError, ServiceError, type ServiceClient } from './client'
@@ -336,18 +336,23 @@ export class AccountService {
   }
 
   async refreshAllowance(): Promise<void> {
-    const a = await this.deps.client.request<{ monthly_tokens: number; used_tokens: number; remaining_tokens: number; resets_at: string | null; one_time?: boolean }>(
-      'GET',
-      '/ai/allowance',
-    )
-    // A one time trial says so, or comes without a reset date.
-    const oneTime = a.one_time === true || !a.resets_at
+    const a = await this.deps.client.request<{
+      remaining_tokens: number
+      monthly_tokens: number
+      monthly_remaining_tokens?: number
+      used_tokens?: number
+      resets_at: string | null
+      free_tokens?: number
+      free_remaining_tokens?: number
+    }>('GET', '/ai/allowance')
+    // Older servers send only the combined remainder; whatever is beyond the monthly part is then the trial.
+    const monthlyLeft = a.monthly_remaining_tokens ?? Math.min(a.remaining_tokens, Math.max(0, a.monthly_tokens - (a.used_tokens ?? 0)))
+    const trialLeft = a.free_remaining_tokens ?? Math.max(0, a.remaining_tokens - monthlyLeft)
     this.allowance = {
-      monthlyTokens: a.monthly_tokens,
-      usedTokens: a.used_tokens,
+      trial: { tokens: Math.max(a.free_tokens ?? 0, trialLeft), remainingTokens: trialLeft },
+      monthly: { tokens: a.monthly_tokens, remainingTokens: monthlyLeft },
       remainingTokens: a.remaining_tokens,
-      resetsAt: oneTime ? null : a.resets_at,
-      oneTime,
+      resetsAt: a.monthly_tokens > 0 ? a.resets_at : null,
     }
   }
 
@@ -362,10 +367,10 @@ export class AccountService {
     this.changed()
   }
 
-  /** The tokens left this month, as an AI answer reports them. */
+  /** The tokens left in all, as an AI answer reports them. */
   setAllowanceRemaining(tokens: number): void {
     if (!this.allowance) return
-    this.allowance = { ...this.allowance, remainingTokens: tokens, usedTokens: Math.max(this.allowance.usedTokens, this.allowance.monthlyTokens - tokens) }
+    this.allowance = withRemainingTokens(this.allowance, tokens)
     this.changed()
   }
 

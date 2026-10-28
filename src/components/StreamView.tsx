@@ -3,7 +3,7 @@ import type { OutputState, StreamState } from '../../shared/types'
 import { ACTION_SAFE, TITLE_SAFE } from '../lib/stream'
 import { Overlays } from './Overlays'
 import { SlideLayers } from './OutputView'
-import { DefaultFontContext } from './ThemedSlide'
+import { DefaultFontContext } from './themedSlideLayers'
 
 const NO_MARGINS = { top: 0, right: 0, bottom: 0, left: 0 }
 

@@ -34,6 +34,9 @@ export class FakeServiceServer {
   balanceSeconds = 2 * 3600
   nearestExpiry: { expires_at: string; seconds: number } | null = { expires_at: '2027-03-01T00:00:00.000Z', seconds: 7200 }
   aiRemaining = 20_000
+  /** The one time trial, beside the monthly 20,000. */
+  aiTrialTokens = 0
+  aiTrialRemaining = 0
   /** What /ai/run answers with, per task. */
   aiOutputs: Record<string, string> = {}
   /** Seconds billed for each heartbeat, whatever the client reports; null bills what it reports. */
@@ -236,13 +239,23 @@ export class FakeServiceServer {
         })
       }
       case 'GET /ai/allowance':
-        return send(200, { monthly_tokens: 20_000, used_tokens: 20_000 - this.aiRemaining, remaining_tokens: this.aiRemaining, resets_at: '2026-11-01T00:00:00.000Z', has_lapsed_licenses: false })
+        return send(200, {
+          remaining_tokens: this.aiRemaining + this.aiTrialRemaining,
+          monthly_tokens: 20_000,
+          monthly_used_tokens: 20_000 - this.aiRemaining,
+          monthly_remaining_tokens: this.aiRemaining,
+          resets_at: '2026-11-01T00:00:00.000Z',
+          free_tokens: this.aiTrialTokens,
+          free_used_tokens: this.aiTrialTokens - this.aiTrialRemaining,
+          free_remaining_tokens: this.aiTrialRemaining,
+          has_lapsed_licenses: false,
+        })
       case 'POST /ai/run': {
         if (this.aiRemaining <= 0) return error(429, 'ai_quota_exceeded', { resets_at: '2026-11-01T00:00:00.000Z' })
         const output = this.aiOutputs[String(body.task)]
         if (output === undefined) return error(400, 'validation_error')
         this.aiRemaining = Math.max(0, this.aiRemaining - 500)
-        return send(200, { task: body.task, output, truncated: false, usage: { input_tokens: 300, output_tokens: 200 }, allowance_remaining_tokens: this.aiRemaining })
+        return send(200, { task: body.task, output, truncated: false, usage: { input_tokens: 300, output_tokens: 200 }, allowance_remaining_tokens: this.aiRemaining + this.aiTrialRemaining })
       }
       case 'GET /products':
         return send(200, {

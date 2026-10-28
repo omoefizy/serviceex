@@ -1,9 +1,10 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import type { OutputMode, ThemeBox, ThemeElement, ThemeStyle } from '../../shared/types'
 import { HANDLES, moveBoxes, resizeBox, snapTargets, type Guide, type Handle } from '../lib/themeLayout'
-import { boxStyle, ThemedSlide } from './ThemedSlide'
+import { ThemedSlide } from './ThemedSlide'
+import { boxStyle } from './themedSlideLayers'
 
-export const KIND_LABELS: Record<ThemeElement['kind'], string> = {
+const KIND_LABELS: Record<ThemeElement['kind'], string> = {
   text: 'Text box',
   reference: 'Reference box',
   copyright: 'Copyright box',
@@ -13,7 +14,7 @@ export const KIND_LABELS: Record<ThemeElement['kind'], string> = {
 }
 
 /** Attached Reference and Copyright boxes follow the main text, so they have no frame of their own on the canvas. */
-export const followsText = (element: ThemeElement, elements: ThemeElement[]) =>
+const followsText = (element: ThemeElement, elements: ThemeElement[]) =>
   (element.kind === 'reference' || element.kind === 'copyright') && element.attached && elements.some((e) => e.kind === 'text')
 
 /** Arrow keys move by a tenth of a percent of the slide; with Shift, ten times as far. */

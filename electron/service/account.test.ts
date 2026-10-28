@@ -3,7 +3,7 @@
 // text; a purchase is confirmed by polling. Emails, ids and amounts are invented.
 import type { KeyObject } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AccountState } from '../../shared/account'
+import { allowancePercentLeft, allowanceTotalTokens, poolPercentLeft, type AccountState } from '../../shared/account'
 import type { StoredLicense } from '../../shared/license'
 import { AccountService, CHECKOUT_POLL_EVERY_MS, CHECKOUT_POLL_MS, type LicenseStore } from './account'
 import { ServiceClient, type StoredSession } from './client'
@@ -64,6 +64,8 @@ beforeEach(() => {
   server.licenses = []
   server.orders = []
   server.balanceSeconds = 2 * 3600
+  server.aiTrialTokens = 0
+  server.aiTrialRemaining = 0
   server.failWith = null
   server.expireAccessToken = false
   server.listsLicenses = true
@@ -91,6 +93,25 @@ describe('signing in', () => {
     expect(saved?.email).toBe(server.email)
     expect(JSON.stringify(state)).not.toContain(saved!.accessToken)
     expect(licenseFile?.token.split('.')).toHaveLength(3)
+  })
+
+  it('counts the trial in the total when more is left than the licence allowance', async () => {
+    server.addLicense()
+    server.aiTrialTokens = 20_000
+    server.aiTrialRemaining = 14_200
+    await signIn()
+    const allowance = account.state().allowance!
+    expect(allowance).toEqual({
+      trial: { tokens: 20_000, remainingTokens: 14_200 },
+      monthly: { tokens: 20_000, remainingTokens: 20_000 },
+      remainingTokens: 34_200,
+      resetsAt: '2026-11-01T00:00:00.000Z',
+    })
+    expect(allowance.remainingTokens).toBeGreaterThan(allowance.monthly.tokens)
+    expect(allowanceTotalTokens(allowance)).toBe(40_000)
+    expect(allowancePercentLeft(allowance)).toBe(86)
+    expect(poolPercentLeft(allowance.trial)).toBe(71)
+    expect(poolPercentLeft(allowance.monthly)).toBe(100)
   })
 
   it('is the free plan when the account has no licence', async () => {

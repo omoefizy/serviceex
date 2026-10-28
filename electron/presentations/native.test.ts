@@ -10,7 +10,7 @@ import path from 'node:path'
 import PptxGenJS from 'pptxgenjs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { NativeSlide, ThemeElement, ThemeStyle } from '../../shared/types'
-import { backdropKey } from '../../src/components/ThemedSlide'
+import { backdropKey } from '../../src/components/themedSlideLayers'
 import { findFfmpeg } from './ffmpeg'
 import { readNativeSlides, resolveNativeMedia, type NativeDeck, type NativeMediaStore } from './native'
 

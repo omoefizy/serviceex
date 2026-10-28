@@ -4,7 +4,8 @@ import type { OutputState, ScreenMargins, ThemeStyle } from '../../shared/types'
 import { AlertBand } from './AlertBand'
 import { Overlays } from './Overlays'
 import { TestPattern } from './StreamView'
-import { backdropKey, DefaultFontContext, ThemedSlide, underKey } from './ThemedSlide'
+import { ThemedSlide } from './ThemedSlide'
+import { backdropKey, DefaultFontContext, underKey } from './themedSlideLayers'
 
 interface Frame {
   key: number
@@ -157,7 +158,7 @@ export function SlideLayers({ state, keyed = false }: { state: OutputState | nul
 }
 
 /** Live Options' screen margins: the area everything is drawn in, with black around it. */
-export const marginsStyle = (m: ScreenMargins): CSSProperties => ({ top: `${m.top}%`, right: `${m.right}%`, bottom: `${m.bottom}%`, left: `${m.left}%` })
+const marginsStyle = (m: ScreenMargins): CSSProperties => ({ top: `${m.top}%`, right: `${m.right}%`, bottom: `${m.bottom}%`, left: `${m.left}%` })
 
 /**
  * The projector picture inside the screen margins: the live slide, the overlays if the setting allows them, the alert
