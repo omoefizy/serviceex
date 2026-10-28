@@ -33,13 +33,21 @@ interface Receiver {
 
 let work: string
 const receivers: Receiver[] = []
+const stores: PeerStore[] = []
+
+/** A store for `folder`, waited on after each test so no write is still going when the folder is removed. */
+function peerStore(folder: string): PeerStore {
+  const peers = new PeerStore(folder, plainCodec)
+  stores.push(peers)
+  return peers
+}
 
 /** A receiving computer with its own folder, listening on a free localhost port. */
 async function startReceiver(folder?: string, limitMb = 2048): Promise<Receiver> {
   const dir = folder ?? (await mkdtemp(path.join(work, 'receiver-')))
   const receiver = {
     folder: dir,
-    peers: new PeerStore(dir, plainCodec),
+    peers: peerStore(dir),
     inbox: new Inbox(path.join(dir, 'inbox')),
     requests: [],
     ended: [],
@@ -62,7 +70,7 @@ async function startReceiver(folder?: string, limitMb = 2048): Promise<Receiver>
 
 /** A sending computer: its own identity and store. */
 async function makeSender(): Promise<{ peers: PeerStore; me: { id: string; name: string; port: null } }> {
-  const peers = new PeerStore(await mkdtemp(path.join(work, 'sender-')), plainCodec)
+  const peers = peerStore(await mkdtemp(path.join(work, 'sender-')))
   return { peers, me: { id: peers.deviceId, name: 'Youth room', port: null } }
 }
 
@@ -88,6 +96,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await Promise.all(receivers.splice(0).map((r) => r.server.close()))
+  await Promise.all(stores.splice(0).map((s) => s.flushed()))
   await removeTemp(work)
 })
 
@@ -131,11 +140,29 @@ describe('pairing', () => {
     const receiver = await startReceiver()
     const sender = await makeSender()
     await pair(receiver, sender)
-    const reopened = new PeerStore(receiver.folder, plainCodec)
+    const reopened = peerStore(receiver.folder)
     expect(reopened.deviceId).toBe(receiver.peers.deviceId)
     expect(reopened.get(sender.me.id)?.secret.equals(receiver.peers.get(sender.me.id)!.secret)).toBe(true)
     await reopened.forget(sender.me.id)
     expect(new PeerStore(receiver.folder, plainCodec).list()).toEqual([])
+  })
+
+  it('saves overlapping changes one at a time and keeps the latest on disk', async () => {
+    const folder = await mkdtemp(path.join(work, 'store-'))
+    // A new store writes its identity straight away; these changes land while that write and each other are still going.
+    const peers = peerStore(folder)
+    const [booth, stage] = [randomId(), randomId()]
+    await Promise.all([
+      peers.add({ id: booth, name: 'Booth', secret: Buffer.alloc(32, 1) }),
+      peers.update(booth, { alias: 'First' }),
+      peers.add({ id: stage, name: 'Stage', secret: Buffer.alloc(32, 2) }),
+      peers.update(booth, { alias: 'Last' }),
+      peers.forget(stage),
+    ])
+    await peers.flushed()
+    const reopened = new PeerStore(folder, plainCodec)
+    expect(reopened.deviceId).toBe(peers.deviceId)
+    expect(reopened.list().map((d) => [d.id, d.alias])).toEqual([[booth, 'Last']])
   })
 })
 

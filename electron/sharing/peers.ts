@@ -39,6 +39,8 @@ export class PeerStore {
   private readonly file: string
   private readonly codec: SecretCodec
   private peers = new Map<string, PeerRecord>()
+  /** The write in progress, if any; settles once the file holds everything saved so far. */
+  private saving: Promise<void> = Promise.resolve()
 
   constructor(folder: string, codec: SecretCodec) {
     this.file = path.join(folder, 'peers.json')
@@ -111,7 +113,22 @@ export class PeerStore {
     if (this.peers.delete(id)) await this.save()
   }
 
-  private async save(): Promise<void> {
+  /** Settles once every change so far is on disk, including the identity a new store writes on its own. */
+  flushed(): Promise<void> {
+    return this.saving
+  }
+
+  /**
+   * Writes one at a time: two writes at once would share the temp file, so one rename finds it gone, and an older
+   * state could land last. Each write takes the state when its turn comes, so the file always ends with the latest.
+   */
+  private save(): Promise<void> {
+    const write = this.saving.then(() => this.write())
+    this.saving = write.catch(() => {})
+    return write
+  }
+
+  private async write(): Promise<void> {
     const stored: StoredFile = {
       deviceId: this.deviceId,
       peers: [...this.peers.values()].map((peer) => ({ ...peer, secret: this.codec.encrypt(peer.secret).toString('base64') })),

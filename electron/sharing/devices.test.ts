@@ -22,6 +22,7 @@ const id = (n: number) => n.toString(16).padStart(32, '0')
 
 let work: string
 const servers: ShareServer[] = []
+const stores: PeerStore[] = []
 
 beforeEach(async () => {
   work = await makeTempDir('serviceex-devices-')
@@ -29,6 +30,8 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => s.close()))
+  // Writes still going (a new store's identity, a remembered address) would race the folder's removal.
+  await Promise.all(stores.splice(0).map((s) => s.flushed()))
   await removeTemp(work)
 })
 
@@ -174,6 +177,7 @@ interface Computer {
 async function startComputer(name: string): Promise<Computer> {
   const folder = await mkdtemp(path.join(work, 'computer-'))
   const peers = new PeerStore(folder, plainCodec)
+  stores.push(peers)
   const computer = { folder, peers, requests: [], cues: [], library: new Map() } as unknown as Computer
   computer.session = new SharedServiceSession({
     file: null,
