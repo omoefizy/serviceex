@@ -1,10 +1,9 @@
 // Sermons in the database: lines saved as they are heard survive a crash and a restart, older databases gain the
 // tables without losing anything, and search finds title, preacher and transcript words. All text is invented.
 import Database from 'better-sqlite3'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { makeTempDirSync, removeTempSync } from '../tempDir.test-helper'
 import { initSchema } from './schema'
 
 /** The database the module under test uses; replaced by each test, and again to simulate a restart. */
@@ -19,24 +18,28 @@ const sermons = await import('./sermons')
 
 let folder: string
 let file: string
+/** Every connection a test opened, including ones left open on purpose to simulate a crash. */
+const connections: Database.Database[] = []
 
 /** Opens the database file as the app does at startup. */
 function open(): Database.Database {
   const db = new Database(file)
+  connections.push(db)
   db.pragma('journal_mode = WAL')
   initSchema(db)
   return db
 }
 
 beforeEach(() => {
-  folder = mkdtempSync(path.join(tmpdir(), 'sermons-test-'))
+  folder = makeTempDirSync('sermons-test-')
   file = path.join(folder, 'test.db')
   holder.db = open()
 })
 
 afterEach(() => {
-  if (holder.db.open) holder.db.close()
-  rmSync(folder, { recursive: true, force: true })
+  // Windows cannot delete the file (or its -wal and -shm files) while any connection still holds it.
+  for (const db of connections.splice(0)) if (db.open) db.close()
+  removeTempSync(folder)
 })
 
 describe('recording', () => {
@@ -131,7 +134,7 @@ describe('search', () => {
 describe('migration', () => {
   it('adds the sermon tables to a database from an older version without touching its data', () => {
     holder.db.close()
-    rmSync(file, { force: true })
+    removeTempSync(file)
     const old = new Database(file)
     old.exec("CREATE TABLE songs (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, lyrics TEXT); INSERT INTO songs (title, lyrics) VALUES ('Morning Song', 'la la')")
     old.close()

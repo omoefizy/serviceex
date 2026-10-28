@@ -2,10 +2,10 @@
 // for 14 days offline; a tampered one, one for another computer, or a broken file is never used and gives the free
 // plan; expired updates keep every feature. The ids, dates and keys are invented.
 import { generateKeyPairSync } from 'node:crypto'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import os from 'node:os'
+import { writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { makeTempDirSync, removeTempSync } from './tempDir.test-helper'
 
 const electron = vi.hoisted(() => ({ app: { isPackaged: true, getPath: () => '/nowhere' }, ipcMain: { handle: () => undefined, on: () => undefined } }))
 vi.mock('electron', () => electron)
@@ -40,11 +40,11 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
-  folder = mkdtempSync(path.join(os.tmpdir(), 'worshipdeck-license-'))
+  folder = makeTempDirSync('worshipdeck-license-')
 })
 
 afterEach(() => {
-  rmSync(folder, { recursive: true, force: true })
+  removeTempSync(folder)
   setEntitlements(null)
 })
 

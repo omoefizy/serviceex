@@ -2,12 +2,12 @@
 // and the slide count follows. The engines need PowerPoint or LibreOffice, so a stand-in converter draws the
 // pictures; it counts slides with the real .pptx reader.
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import os from 'node:os'
+import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import PptxGenJS from 'pptxgenjs'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ThemeElement } from '../../shared/types'
+import { makeTempDir, removeTemp } from '../tempDir.test-helper'
 import { PresentationLibrary, type Converter, type PresentationRecord, type PresentationStore } from './library'
 import { readNativeSlides, resolveNativeMedia } from './native'
 import { readPptx } from './pptx'
@@ -78,7 +78,7 @@ describe('PresentationLibrary', () => {
   }
 
   beforeEach(async () => {
-    root = await mkdtemp(path.join(os.tmpdir(), 'worshipdeck-library-'))
+    root = await makeTempDir('worshipdeck-library-')
     conversions = 0
     updates = []
     library = new PresentationLibrary({
@@ -100,7 +100,7 @@ describe('PresentationLibrary', () => {
 
   afterEach(async () => {
     await library.close()
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   })
 
   it('re-renders a linked file when it is saved again and follows the new slide count', async () => {

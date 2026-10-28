@@ -4,13 +4,13 @@
 // element, and the slide with a table shows its picture with a warning. Needs ffmpeg; skipped without it.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import os from 'node:os'
+import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import PptxGenJS from 'pptxgenjs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { NativeSlide, ThemeElement, ThemeStyle } from '../../shared/types'
 import { backdropKey } from '../../src/components/themedSlideLayers'
+import { makeTempDir, removeTemp } from '../tempDir.test-helper'
 import { findFfmpeg } from './ffmpeg'
 import { readNativeSlides, resolveNativeMedia, type NativeDeck, type NativeMediaStore } from './native'
 
@@ -51,7 +51,7 @@ describe.skipIf(!ffmpeg)('Native mode', () => {
   let media: ReturnType<typeof memoryMediaStore>
 
   beforeAll(async () => {
-    work = await mkdtemp(path.join(os.tmpdir(), 'worshipdeck-native-'))
+    work = await makeTempDir('worshipdeck-native-')
     const video = path.join(work, 'motion.mp4')
     const logo = path.join(work, 'logo.png')
     execFileSync(ffmpeg!, ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=640x360:rate=15', '-t', '2', '-pix_fmt', 'yuv420p', video])
@@ -80,7 +80,7 @@ describe.skipIf(!ffmpeg)('Native mode', () => {
   }, 60_000)
 
   afterAll(async () => {
-    await rm(work, { recursive: true, force: true })
+    await removeTemp(work)
   })
 
   it('detects the full-slide video as the background and extracts it to the media library once', () => {

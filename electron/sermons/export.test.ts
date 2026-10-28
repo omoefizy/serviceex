@@ -1,11 +1,12 @@
 // The PowerPoint export: every slide of the sermon's deck is written, not only the title. The sermon is invented.
 import JSZip from 'jszip'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { sermonDeck } from '../../shared/sermons'
 import type { Sermon } from '../../shared/types'
+import { makeTempDirSync, removeTempSync } from '../tempDir.test-helper'
 
 vi.mock('electron', () => ({ app: { getAppPath: () => '.', getPath: () => tmpdir() }, BrowserWindow: class {} }))
 
@@ -52,8 +53,8 @@ const PASSAGES = [
 
 /** A 2 by 1 pixel PNG. */
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR42mP8z8DwnwEKGAEAJgUD/ThwagAAAABJRU5ErkJggg==', 'base64')
-const dir = mkdtempSync(path.join(tmpdir(), 'worshipdeck-pptx-'))
-afterAll(() => rmSync(dir, { recursive: true, force: true }))
+const dir = makeTempDirSync('worshipdeck-pptx-')
+afterAll(() => removeTempSync(dir))
 
 async function slideXml(buffer: Buffer): Promise<string[]> {
   const zip = await JSZip.loadAsync(buffer)

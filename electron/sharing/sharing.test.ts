@@ -3,8 +3,7 @@
 // carries on where it stopped (even after the receiver restarts), the hash check, and refusing unpaired devices.
 import { createHash, getDiffieHellman, randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
-import os from 'node:os'
+import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { shareKindOf, shareProblem } from '../../shared/sharing'
@@ -16,6 +15,7 @@ import { Inbox } from './inbox'
 import { emptyContents, extractFile, packagePath, readPackage, writePackage } from './package'
 import { PeerStore } from './peers'
 import { ShareServer } from './server'
+import { makeTempDir, removeTemp } from '../tempDir.test-helper'
 
 const plainCodec = { encrypt: (b: Buffer) => b, decrypt: (b: Buffer) => b }
 
@@ -83,12 +83,12 @@ async function randomFile(name: string, bytes: number): Promise<string> {
 }
 
 beforeEach(async () => {
-  work = await mkdtemp(path.join(os.tmpdir(), 'serviceex-sharing-test-'))
+  work = await makeTempDir('serviceex-sharing-test-')
 })
 
 afterEach(async () => {
   await Promise.all(receivers.splice(0).map((r) => r.server.close()))
-  await rm(work, { recursive: true, force: true })
+  await removeTemp(work)
 })
 
 describe('pairing', () => {

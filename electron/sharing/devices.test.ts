@@ -1,8 +1,7 @@
 // Device sharing on this machine: the shared service (filters, last write wins with a logical clock, offline edits
 // that resync), library sync deduplication, and the new sealed operations refusing a device that is not paired.
 // Servers run for real on localhost; nothing here touches Electron.
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import os from 'node:os'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { cleanCue } from '../../shared/cues'
@@ -16,6 +15,7 @@ import { PeerStore } from './peers'
 import { FROM_HEADER, requestAad, type LibraryEntry } from './protocol'
 import { ShareServer } from './server'
 import { SharedServiceSession, type ServiceTransport } from './sharedService'
+import { makeTempDir, removeTemp } from '../tempDir.test-helper'
 
 const plainCodec = { encrypt: (b: Buffer) => b, decrypt: (b: Buffer) => b }
 const id = (n: number) => n.toString(16).padStart(32, '0')
@@ -24,12 +24,12 @@ let work: string
 const servers: ShareServer[] = []
 
 beforeEach(async () => {
-  work = await mkdtemp(path.join(os.tmpdir(), 'serviceex-devices-'))
+  work = await makeTempDir('serviceex-devices-')
 })
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => s.close()))
-  await rm(work, { recursive: true, force: true })
+  await removeTemp(work)
 })
 
 // ---------- Shared service ----------
