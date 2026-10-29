@@ -35,3 +35,7 @@ dist-ssr
 dist-electron/
 # Installers from electron-builder
 release/
+
+# UI audit screenshots and measurements from scripts/ui-audit.ts (the report is kept)
+docs/ui-audit/*
+!docs/ui-audit/REPORT.md

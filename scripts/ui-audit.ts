@@ -1,0 +1,871 @@
+// Dev only: launches the app with Playwright and saves a screenshot of every main screen and state to docs/ui-audit/,
+// with the style measurements behind docs/ui-audit/REPORT.md. Not shipped; docs/ui-audit/ is not committed.
+//
+//   node scripts/ui-audit.ts
+//
+// It builds the main process, serves the renderer with Vite (so it can reach the app's stores to set up states such as
+// device chips), and runs the app on a fresh, temporary data folder with invented sample data. Your own library and
+// settings are never opened. Runs with Node's built-in TypeScript support (Node 22.18 or later).
+
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { crc32, deflateSync } from 'node:zlib'
+import { _electron, type ElectronApplication, type Page } from 'playwright'
+import { build, createServer } from 'vite'
+import react from '@vitejs/plugin-react'
+
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
+const OUT = path.join(ROOT, 'docs', 'ui-audit')
+const SIZES = [
+  { width: 1280, height: 720 },
+  { width: 1920, height: 1080 },
+] as const
+
+// ---------- Invented sample data ----------
+
+const SONGS = [
+  {
+    title: 'Morning Light Rising',
+    author: 'Sample Writer',
+    copyright: '© 2024 Example Music · CCLI 0000001',
+    tags: ['opener', 'upbeat'],
+    lyrics: `[Verse 1]
+Morning light is rising on the hills
+Every quiet heart is waking still
+Open up the windows of the soul
+Let the day begin and make us whole
+
+[Chorus]
+Rise, rise, the dawn is calling
+Sing, sing, the night is falling away
+Rise, rise, our voices joining
+Into a brand new day
+
+[Verse 2]
+Footsteps on the path we haven't known
+Lanterns for the road we walk alone
+Gather every voice and every song
+Carry us together, carry us along`,
+  },
+  {
+    title: 'Harbor of Grace',
+    author: 'Example Collective',
+    copyright: '© 2023 Placeholder Songs · CCLI 0000002',
+    tags: ['reflective'],
+    lyrics: `[Verse 1]
+When the waves are high and the wind is strong
+There's a harbor where the weary belong
+
+[Chorus]
+Harbor of grace, harbor of peace
+Here every storm will cease
+
+[Bridge]
+Anchor my heart, anchor my heart
+Never to drift apart`,
+  },
+  {
+    title: 'Every Valley Sings',
+    author: 'A. Placeholder',
+    copyright: '© 2022 Demo Publishing · CCLI 0000003',
+    tags: ['upbeat'],
+    lyrics: `[Verse 1]
+Every valley sings, every mountain bows
+Every river runs to the sea somehow
+
+[Chorus]
+Sing out, sing out, let the whole earth ring
+Every valley sings`,
+  },
+  {
+    title: 'Kindled Flame',
+    author: 'Sample Writer',
+    copyright: '© 2025 Example Music · CCLI 0000004',
+    tags: ['response'],
+    lyrics: `[Verse 1]
+A kindled flame, a steady glow
+A light that only grows
+
+[Chorus]
+Burn on, burn on in me`,
+  },
+  {
+    title: 'Wide Open Doors',
+    author: 'Test Choir',
+    copyright: null,
+    tags: [],
+    lyrics: `[Verse 1]
+Wide open doors and a table laid
+Room for the ones who were once afraid
+
+[Chorus]
+Come in, come in, there's a place for you`,
+  },
+  {
+    title: 'Still Waters Hymn',
+    author: 'Traditional (sample)',
+    copyright: null,
+    tags: ['hymn', 'reflective'],
+    lyrics: `[Verse 1]
+Beside the still and quiet stream
+My soul is led to rest
+
+[Verse 2]
+Through shaded vale and open field
+My every step is blessed`,
+  },
+]
+
+const MEDIA = [
+  { name: 'Dawn Gradient', from: [255, 166, 77], to: [120, 48, 160] },
+  { name: 'Ocean Blue', from: [12, 52, 110], to: [40, 170, 200] },
+  { name: 'Warm Amber', from: [140, 60, 10], to: [250, 200, 90] },
+  { name: 'Forest Mist', from: [20, 60, 40], to: [150, 190, 160] },
+  { name: 'Violet Dusk', from: [40, 20, 70], to: [200, 120, 200] },
+  { name: 'Slate Texture', from: [40, 44, 52], to: [110, 118, 130] },
+] as const
+
+/** A minimal PNG encoder for the sample backgrounds: a diagonal gradient with a soft circle. */
+function gradientPng(width: number, height: number, from: readonly number[], to: readonly number[]): Buffer {
+  const raw = Buffer.alloc((width * 3 + 1) * height)
+  let o = 0
+  for (let y = 0; y < height; y++) {
+    raw[o++] = 0
+    for (let x = 0; x < width; x++) {
+      const t = (x / width + y / height) / 2
+      const glow = Math.max(0, 1 - Math.hypot(x - width * 0.7, y - height * 0.35) / (height * 0.6)) * 40
+      for (let c = 0; c < 3; c++) raw[o++] = Math.min(255, Math.round(from[c] + (to[c] - from[c]) * t + glow))
+    }
+  }
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
+    const length = Buffer.alloc(4)
+    length.writeUInt32BE(data.length)
+    const crc = Buffer.alloc(4)
+    crc.writeUInt32BE(crc32(body))
+    return Buffer.concat([length, body, crc])
+  }
+  const header = Buffer.alloc(13)
+  header.writeUInt32BE(width, 0)
+  header.writeUInt32BE(height, 4)
+  header.set([8, 2, 0, 0, 0], 8)
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ])
+}
+
+// ---------- Style measurements, run in the page ----------
+
+type Counts = Record<string, number>
+
+interface Metrics {
+  viewport: { width: number; height: number }
+  fontFamilies: Counts
+  fontSizes: Counts
+  fontWeights: Counts
+  textColors: Counts
+  backgroundColors: Counts
+  borderColors: Counts
+  radii: Counts
+  spacing: Counts
+  shadows: Counts
+  iconSizes: Counts
+  iconStrokes: Counts
+  buttonStyles: Counts
+  inputStyles: Counts
+  inlineStyleProps: Counts
+  inlineStyled: number
+  smallTargets: { label: string; className: string; width: number; height: number }[]
+  lowContrast: { text: string; className: string; color: string; background: string; ratio: number; fontSize: string; disabled: boolean }[]
+  clippedText: { text: string; className: string; ellipsis: boolean }[]
+  offscreen: { text: string; className: string; right: number; bottom: number }[]
+  pageScrolls: { horizontal: boolean; vertical: boolean }
+}
+
+/** Measures every visible element. Slide previews and the output are the operator's content, so they are left out. */
+function collectMetrics(): Metrics {
+  const CONTENT = '.output-frame, .output, .theme-canvas, .lt-text-box, .themed-box, .themed-element, .themed-bg, .slide-text, .logo-placeholder'
+  const INTERACTIVE =
+    'button, a[href], input:not([type=hidden]), select, textarea, summary, [role=button], [role=tab], [role=menuitem], [role=checkbox], [role=switch], [role=option], [tabindex]:not([tabindex="-1"])'
+  type Rgba = { r: number; g: number; b: number; a: number }
+  const parse = (value: string): Rgba | null => {
+    const m = /rgba?\(([^)]+)\)/.exec(value)
+    if (!m) return null
+    const p = m[1].split(/[\s,/]+/).filter(Boolean).map(Number)
+    return { r: p[0], g: p[1], b: p[2], a: p[3] ?? 1 }
+  }
+  const hex = (c: Rgba) =>
+    '#' + [c.r, c.g, c.b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('') + (c.a < 1 ? ` @${Math.round(c.a * 100) / 100}` : '')
+  const over = (top: Rgba, base: Rgba): Rgba => ({
+    r: top.r * top.a + base.r * (1 - top.a),
+    g: top.g * top.a + base.g * (1 - top.a),
+    b: top.b * top.a + base.b * (1 - top.a),
+    a: 1,
+  })
+  const luminance = (c: Rgba) => {
+    const ch = (v: number) => {
+      const s = v / 255
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+    }
+    return 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b)
+  }
+  const contrast = (a: Rgba, b: Rgba) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+    return (hi + 0.05) / (lo + 0.05)
+  }
+  const add = (counts: Counts, key: string) => (counts[key] = (counts[key] ?? 0) + 1)
+  const label = (el: Element) =>
+    (el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('placeholder') || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60)
+  const visible = (el: Element) => {
+    const r = el.getBoundingClientRect()
+    if (r.width === 0 || r.height === 0 || r.bottom <= 0 || r.right <= 0 || r.top >= innerHeight || r.left >= innerWidth) return false
+    const cs = getComputedStyle(el)
+    return cs.visibility !== 'hidden' && cs.display !== 'none' && !el.closest('[hidden]')
+  }
+  /** The color behind an element, or null over a gradient or picture. */
+  const backdrop = (el: Element): Rgba | null => {
+    const layers: Rgba[] = []
+    for (let n: Element | null = el; n; n = n.parentElement) {
+      const cs = getComputedStyle(n)
+      if (cs.backgroundImage !== 'none') return null
+      const c = parse(cs.backgroundColor)
+      if (c && c.a > 0) {
+        layers.push(c)
+        if (c.a >= 1) break
+      }
+    }
+    return layers.reverse().reduce<Rgba>((base, layer) => over(layer, base), { r: 255, g: 255, b: 255, a: 1 })
+  }
+  const opacityOf = (el: Element) => {
+    let o = 1
+    for (let n: Element | null = el; n; n = n.parentElement) o *= Number(getComputedStyle(n).opacity)
+    return o
+  }
+
+  const m: Metrics = {
+    viewport: { width: innerWidth, height: innerHeight },
+    fontFamilies: {},
+    fontSizes: {},
+    fontWeights: {},
+    textColors: {},
+    backgroundColors: {},
+    borderColors: {},
+    radii: {},
+    spacing: {},
+    shadows: {},
+    iconSizes: {},
+    iconStrokes: {},
+    buttonStyles: {},
+    inputStyles: {},
+    inlineStyleProps: {},
+    inlineStyled: 0,
+    smallTargets: [],
+    lowContrast: [],
+    clippedText: [],
+    offscreen: [],
+    pageScrolls: {
+      horizontal: document.documentElement.scrollWidth > innerWidth,
+      vertical: document.documentElement.scrollHeight > innerHeight,
+    },
+  }
+
+  for (const el of Array.from(document.body.querySelectorAll('*'))) {
+    if (!visible(el) || el.closest(CONTENT)) continue
+    const cs = getComputedStyle(el)
+    const cls = typeof el.className === 'string' ? el.className : (el.getAttribute('class') ?? '')
+
+    if (el instanceof SVGSVGElement) {
+      const r = el.getBoundingClientRect()
+      add(m.iconSizes, `${Math.round(r.width)}x${Math.round(r.height)}`)
+      add(m.iconStrokes, el.getAttribute('stroke-width') ?? cs.strokeWidth)
+      continue
+    }
+    if (el.closest('svg')) continue
+
+    const bg = parse(cs.backgroundColor)
+    if (bg && bg.a > 0) add(m.backgroundColors, hex(bg))
+    for (const side of ['Top', 'Right', 'Bottom', 'Left'] as const) {
+      const width = cs.getPropertyValue(`border-${side.toLowerCase()}-width`)
+      const style = cs.getPropertyValue(`border-${side.toLowerCase()}-style`)
+      const color = parse(cs.getPropertyValue(`border-${side.toLowerCase()}-color`))
+      if (width !== '0px' && style !== 'none' && color && color.a > 0) add(m.borderColors, hex(color))
+    }
+    if (cs.borderRadius !== '0px') add(m.radii, cs.borderRadius)
+    if (cs.boxShadow !== 'none') add(m.shadows, cs.boxShadow)
+    for (const prop of ['padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'row-gap', 'column-gap']) {
+      const v = cs.getPropertyValue(prop)
+      if (v && v !== '0px' && v !== 'normal' && v !== 'auto') add(m.spacing, v)
+    }
+
+    const styleAttr = el.getAttribute('style')
+    if (styleAttr) {
+      m.inlineStyled++
+      for (const decl of styleAttr.split(';')) {
+        const prop = decl.split(':')[0].trim()
+        if (prop) add(m.inlineStyleProps, prop)
+      }
+    }
+
+    if (el.matches('button, .button, .icon-button, [role=button]')) {
+      add(m.buttonStyles, `${cls.split(' ').slice(0, 2).join('.') || el.tagName.toLowerCase()} | h${Math.round(el.getBoundingClientRect().height)} | pad ${cs.padding} | r ${cs.borderRadius} | bg ${bg ? hex(bg) : 'none'} | ${cs.fontSize}/${cs.fontWeight}`)
+    }
+    if (el.matches('input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), select, textarea')) {
+      add(m.inputStyles, `${el.tagName.toLowerCase()}.${cls.split(' ')[0] || '(none)'} | h${Math.round(el.getBoundingClientRect().height)} | pad ${cs.padding} | r ${cs.borderRadius} | bg ${bg ? hex(bg) : 'none'} | ${cs.fontSize}`)
+    }
+
+    if (el.matches(INTERACTIVE)) {
+      const r = el.getBoundingClientRect()
+      if (r.width < 32 || r.height < 32) {
+        m.smallTargets.push({ label: label(el), className: `${el.tagName.toLowerCase()}${cls ? '.' + cls.split(' ').join('.') : ''}`, width: Math.round(r.width), height: Math.round(r.height) })
+      }
+    }
+
+    const ownText = Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.trim())
+    const isField = el.matches('input, textarea, select')
+    if (!ownText && !isField) continue
+
+    add(m.fontFamilies, cs.fontFamily)
+    add(m.fontSizes, cs.fontSize)
+    add(m.fontWeights, cs.fontWeight)
+    const fg = parse(cs.color)
+    const behind = backdrop(el)
+    if (fg) add(m.textColors, hex(fg))
+    if (fg && behind && ownText) {
+      const opacity = opacityOf(el) * fg.a
+      const seen = over({ ...fg, a: opacity }, behind)
+      const ratio = contrast(seen, behind)
+      const size = parseFloat(cs.fontSize)
+      const large = size >= 24 || (size >= 18.66 && Number(cs.fontWeight) >= 700)
+      if (ratio < (large ? 3 : 4.5)) {
+        m.lowContrast.push({
+          text: label(el),
+          className: cls,
+          color: hex(fg) + (opacity < 1 ? ` (x${Math.round(opacity * 100) / 100} opacity)` : ''),
+          background: hex(behind),
+          ratio: Math.round(ratio * 100) / 100,
+          fontSize: cs.fontSize,
+          disabled: !!el.closest(':disabled, [aria-disabled=true]'),
+        })
+      }
+    }
+
+    const r = el.getBoundingClientRect()
+    if (ownText && (cs.overflowX === 'hidden' || cs.overflowX === 'clip') && el.scrollWidth > el.clientWidth + 1) {
+      m.clippedText.push({ text: label(el), className: cls, ellipsis: cs.textOverflow === 'ellipsis' })
+    }
+    if (ownText && (r.right > innerWidth + 1 || r.bottom > innerHeight + 1)) {
+      let scrolled = false
+      for (let n = el.parentElement; n; n = n.parentElement) {
+        const ps = getComputedStyle(n)
+        if (/(auto|scroll)/.test(ps.overflowX + ps.overflowY)) scrolled = true
+      }
+      if (!scrolled) m.offscreen.push({ text: label(el), className: cls, right: Math.round(r.right), bottom: Math.round(r.bottom) })
+    }
+  }
+  return m
+}
+
+// ---------- Static scan of the stylesheet and components ----------
+
+function staticScan() {
+  const css = readFileSync(path.join(ROOT, 'src', 'index.css'), 'utf8')
+  const componentDir = path.join(ROOT, 'src', 'components')
+  const components = readdirSync(componentDir)
+    .filter((f) => f.endsWith('.tsx'))
+    .map((f) => ({ file: f, text: readFileSync(path.join(componentDir, f), 'utf8') }))
+  const count = (text: string, re: RegExp) => {
+    const counts: Counts = {}
+    for (const match of text.matchAll(re)) counts[match[1] ?? match[0]] = (counts[match[1] ?? match[0]] ?? 0) + 1
+    return Object.fromEntries(Object.entries(counts).sort((a, b) => b[1] - a[1]))
+  }
+  const rootBlock = css.slice(0, css.indexOf('kbd {'))
+  const body = css.slice(rootBlock.length)
+
+  // The class names on <button> elements, and whether the stylesheet gives each a hover, focus and disabled look.
+  const buttonClasses = new Set<string>()
+  for (const { text } of components) {
+    for (const match of text.matchAll(/<button[^>]*?className=(?:"([^"]+)"|\{`([^`]+)`\})/gs)) {
+      const names = (match[1] ?? match[2]).replace(/\$\{[^}]*\}/g, ' ').split(/\s+/).filter((n) => /^[a-z][a-z0-9-]*$/.test(n))
+      if (names[0]) buttonClasses.add(names[0])
+    }
+  }
+  const has = (cls: string, state: string) => new RegExp(`\\.${cls}(?![\\w-])[^{,]*:${state}`).test(css)
+  const buttonStates = [...buttonClasses].sort().map((cls) => ({
+    class: cls,
+    hover: has(cls, 'hover'),
+    focus: has(cls, 'focus') || has(cls, 'focus-visible'),
+    disabled: has(cls, 'disabled'),
+  }))
+
+  return {
+    cssLines: css.split('\n').length,
+    rootTokens: count(rootBlock, /(--[a-z0-9-]+):/g),
+    hexColorsOutsideTokens: count(body, /(#[0-9a-fA-F]{3,8})\b/g),
+    rgbaOutsideTokens: count(body, /(rgba?\([^)]*\))/g),
+    varUses: count(body, /var\((--[a-z0-9-]+)\)/g),
+    fontSizeDeclarations: count(css, /font-size:\s*([^;]+);/g),
+    fontShorthands: count(css, /\bfont:\s*([^;]+);/g),
+    fontFamilies: count(css, /font-family:\s*([^;]+);/g),
+    radiusDeclarations: count(css, /border-radius:\s*([^;]+);/g),
+    rawPxSpacing: count(css, /(?:padding|margin|gap)(?:-[a-z]+)?:\s*([^;]*\d+px[^;]*);/g),
+    boxShadows: count(css, /box-shadow:\s*([^;]+);/g),
+    transitions: count(css, /transition:\s*([^;]+);/g),
+    globalFocusRules: css.match(/^[^{}\n]*:focus(?:-visible)?[^{}\n]*\{/gm)?.filter((r) => !r.trim().startsWith('.')) ?? [],
+    focusVisibleRules: (css.match(/:focus-visible/g) ?? []).length,
+    focusRules: (css.match(/:focus(?!-)/g) ?? []).length,
+    hoverRules: (css.match(/:hover/g) ?? []).length,
+    disabledRules: (css.match(/:disabled/g) ?? []).length,
+    outlineNone: (css.match(/outline:\s*(none|0)\b/g) ?? []).length,
+    inlineStylesPerComponent: Object.fromEntries(
+      components
+        .map(({ file, text }) => [file, (text.match(/style=\{\{/g) ?? []).length] as const)
+        .filter(([, n]) => n > 0)
+        .sort((a, b) => b[1] - a[1]),
+    ),
+    hexInComponents: Object.fromEntries(
+      components
+        .map(({ file, text }) => [file, [...new Set(text.match(/['"`]#[0-9a-fA-F]{3,8}\b/g)?.map((h) => h.slice(1)) ?? [])]] as const)
+        .filter(([, list]) => list.length > 0),
+    ),
+    buttonStates,
+  }
+}
+
+// ---------- Driving the app ----------
+
+interface Hooks {
+  store: { getState(): Record<string, (...args: unknown[]) => unknown> & Record<string, unknown>; setState(patch: object): void }
+  sharing: { setState(patch: object): void }
+  account: { openPlans(open: boolean): void; setAccountState(state: object): void }
+  features: { FEATURE_KEYS: string[] }
+}
+type AuditWindow = Window & { __audit: Hooks }
+
+/** Reaches the app's own stores through the Vite dev server: the same module URLs the app imported. */
+async function installHooks(page: Page) {
+  await page.waitForSelector('.toolbar')
+  await page.evaluate(async () => {
+    const load = (url: string) => import(/* @vite-ignore */ url)
+    const [store, sharing, account, features] = await Promise.all([load('/src/store.ts'), load('/src/lib/sharing.ts'), load('/src/lib/account.ts'), load('/shared/features.ts')])
+    ;(window as unknown as AuditWindow).__audit = { store: store.useOperatorStore, sharing: sharing.useSharingStore, account, features }
+  })
+}
+
+/** Closes every centre screen, modal and popup. */
+async function resetScreens(page: Page) {
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => {
+    const { store, sharing, account } = (window as unknown as AuditWindow).__audit
+    const s = store.getState()
+    s.editSong(null)
+    s.openThemeEditor(false)
+    s.openSettings(false)
+    s.openStreamPanel(false)
+    s.openSermons(false)
+    s.setPaletteOpen(false)
+    account.openPlans(false)
+    sharing.setState({ inboxOpen: false })
+  })
+}
+
+async function settle(page: Page, ms = 500) {
+  await page.evaluate(() => document.fonts.ready)
+  await page.waitForTimeout(ms)
+  // Clicking something outside the window scrolls the whole app sideways; shoot it as it opens.
+  await page.evaluate(() => {
+    for (const el of [document.documentElement, document.body, document.getElementById('root'), document.querySelector('.app')]) if (el) el.scrollLeft = 0
+  })
+}
+
+async function libraryTab(page: Page, name: string) {
+  await page.getByRole('tab', { name, exact: true }).click()
+}
+
+const metrics: Record<string, Metrics> = {}
+const shots: string[] = []
+
+async function shot(page: Page, name: string) {
+  await settle(page)
+  const file = `${name}.png`
+  await page.screenshot({ path: path.join(OUT, file) })
+  metrics[name] = await page.evaluate(collectMetrics)
+  shots.push(file)
+  console.log(`  ${file}`)
+}
+
+/** Sizes the operator window's content; falls back to emulating the viewport when the screen is smaller. */
+async function setSize(app: ElectronApplication, page: Page, size: { width: number; height: number }) {
+  await app.evaluate(({ BrowserWindow }, { width, height }) => {
+    const win = BrowserWindow.getAllWindows().find((w) => !w.webContents.getURL().includes('#/'))
+    win?.setContentSize(width, height)
+  }, size)
+  await page.waitForTimeout(300)
+  const actual = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
+  if (actual.width !== size.width || actual.height !== size.height) await page.setViewportSize(size)
+}
+
+const today = new Date().toISOString().slice(0, 10)
+
+async function main() {
+  rmSync(OUT, { recursive: true, force: true })
+  mkdirSync(OUT, { recursive: true })
+
+  // An empty server address means the build talks to no server; account screens show their offline states.
+  delete process.env.SERVICEEX_API_URL
+  console.log('Building the main process…')
+  await build({ root: ROOT, configFile: path.join(ROOT, 'vite.config.ts'), logLevel: 'warn' })
+
+  const server = await createServer({ root: ROOT, configFile: false, plugins: [react()], logLevel: 'warn', server: { port: 5299 } })
+  await server.listen()
+  const url = server.resolvedUrls!.local[0]
+
+  const userData = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'serviceex-ui-audit-')))
+  const mediaDir = path.join(userData, 'sample-media')
+  mkdirSync(mediaDir)
+  const mediaFiles = MEDIA.map(({ name, from, to }) => {
+    const file = path.join(mediaDir, `${name}.png`)
+    writeFileSync(file, gradientPng(960, 540, from, to))
+    return file
+  })
+
+  console.log(`Launching on a fresh data folder: ${userData}`)
+  const app = await _electron.launch({
+    args: ['.', `--user-data-dir=${userData}`],
+    cwd: ROOT,
+    env: { ...process.env, VITE_DEV_SERVER_URL: url },
+  })
+  try {
+    const dataPath = await app.evaluate(({ app }) => app.getPath('userData'))
+    if (path.resolve(dataPath) !== path.resolve(userData)) throw new Error(`The app is using ${dataPath}, not the temporary folder`)
+
+    // The operator and output windows open together; the operator's is the one without a #/ route.
+    let page: Page | undefined
+    for (const deadline = Date.now() + 60_000; !page && Date.now() < deadline; await new Promise((r) => setTimeout(r, 250))) {
+      page = app.windows().find((w) => w.url().startsWith('http') && !w.url().includes('#/'))
+    }
+    if (!page) throw new Error('The operator window did not open')
+    await page.waitForSelector('.toolbar', { timeout: 60_000 })
+    // The output opens full screen on a second display by default; keep it a window, and the look predictable.
+    await page.evaluate(() => window.api.settings.set({ outputDisplay: 'window', appearance: 'dark' }))
+    await page.reload()
+    await installHooks(page)
+
+    console.log('First run, no data:')
+    for (const size of SIZES) {
+      await setSize(app, page, size)
+      await shot(page, `01-first-run@${size.width}`)
+    }
+
+    // Sample data, through the app's own IPC.
+    await app.evaluate(({ dialog }, files) => {
+      dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: files })) as typeof dialog.showOpenDialog
+    }, mediaFiles)
+    const seeded = await page.evaluate(
+      async ({ songs, date }) => {
+        const songIds: number[] = []
+        for (const song of songs) songIds.push((await window.api.songs.create({ ...song, themeId: null, arrangement: { order: [], linesPerSlide: null } })).id)
+        await window.api.media.import()
+        const books = await window.api.bible.listBooks()
+        const psalms = books.find((b) => /^psalm/i.test(b)) ?? books[18]
+        const verses = await window.api.bible.getRange('KJV', psalms, 23, 1, 3)
+        const service = await window.api.services.create('Sunday Gathering', date)
+        await window.api.services.addItem(service.id, 'announcement', null, { title: 'Welcome', body: 'Welcome to the Sunday Gathering\n\nCoffee and lunch in the hall after the service', titleSlide: true })
+        await window.api.services.addItem(service.id, 'song', songIds[0], null)
+        await window.api.services.addItem(service.id, 'song', songIds[1], null)
+        await window.api.services.addItem(service.id, 'scripture', null, {
+          title: `${psalms} 23:1-3 KJV`,
+          verses: verses.map((v) => ({ text: v.text, caption: `${v.book} ${v.chapter}:${v.verse} KJV` })),
+        })
+        await window.api.services.addItem(service.id, 'song', songIds[2], null)
+        await window.api.services.addItem(service.id, 'announcement', null, { title: 'Youth night', body: 'Youth night is Friday at 7pm\n\nBring a friend', titleSlide: true })
+        await window.api.services.create('Midweek Prayer', date)
+        return { songIds, serviceId: service.id }
+      },
+      { songs: SONGS, date: today },
+    )
+
+    for (const size of SIZES) {
+      const at = `@${size.width}`
+      console.log(`At ${size.width} by ${size.height}:`)
+      await page.reload()
+      await installHooks(page)
+      await setSize(app, page, size)
+
+      await libraryTab(page, 'Songs')
+      await shot(page, `02-main-empty${at}`)
+
+      await page.locator('.song-list').getByText(SONGS[0].title, { exact: true }).first().click()
+      await shot(page, `03-song-list-selected${at}`)
+
+      await page.getByRole('button', { name: 'Add song' }).click()
+      await shot(page, `04-add-song-modal${at}`)
+      await resetScreens(page)
+
+      await page.evaluate((id) => (window as unknown as AuditWindow).__audit.store.getState().editSong(id), seeded.songIds[0])
+      await shot(page, `05-song-editor${at}`)
+      await resetScreens(page)
+
+      await libraryTab(page, 'Scripture')
+      await page.getByLabel('Search scripture').fill('john 3:16')
+      await shot(page, `06-scripture-reference${at}`)
+      await page.getByLabel('Search scripture').fill('shepherd')
+      await page.waitForTimeout(800)
+      await shot(page, `07-scripture-word-search${at}`)
+      await page.getByLabel('Search scripture').fill('Hezekiah 4:2')
+      await shot(page, `08-error-scripture-not-found${at}`)
+      await page.getByLabel('Search scripture').fill('')
+
+      await libraryTab(page, 'Media')
+      await shot(page, `09-media-library${at}`)
+      await libraryTab(page, 'Presentations')
+      await shot(page, `10-presentations-empty${at}`)
+      await libraryTab(page, 'Songs')
+
+      await page.evaluate((id) => (window as unknown as AuditWindow).__audit.store.getState().openService(id), seeded.serviceId)
+      await page.evaluate(async () => {
+        const s = (window as unknown as AuditWindow).__audit.store.getState() as unknown as { service: { items: unknown[] }; loadItem(item: unknown): Promise<boolean> }
+        await s.loadItem(s.service.items[1])
+      })
+      await shot(page, `11-main-service-loaded${at}`)
+
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().goLive(1))
+      await shot(page, `12-main-live${at}`)
+
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().setOutputMode('black'))
+      await shot(page, `13-main-live-black${at}`)
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().setOutputMode('show'))
+
+      await page.getByRole('button', { name: 'New service' }).click()
+      await shot(page, `14-schedule-new-service-modal${at}`)
+      await resetScreens(page)
+
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openThemeEditor(true))
+      await shot(page, `15-theme-editor${at}`)
+      await resetScreens(page)
+
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openSettings(true))
+      await shot(page, `16-settings-top${at}`)
+      await resetScreens(page)
+
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.account.openPlans(true))
+      await shot(page, `17-plans-and-credits${at}`)
+      await resetScreens(page)
+
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openSermons(true))
+      await shot(page, `18-sermons${at}`)
+      await resetScreens(page)
+
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openStreamPanel(true))
+      await shot(page, `19-stream${at}`)
+      await resetScreens(page)
+
+      // There is no Help screen; the command palette is the nearest thing to one.
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().setPaletteOpen(true))
+      await shot(page, `20-help-command-palette${at}`)
+      await page.keyboard.type('the')
+      await shot(page, `21-command-palette-results${at}`)
+      await resetScreens(page)
+
+      // Device chips, transfers and the Inbox, with invented computers. Sharing itself stays off, so nothing is
+      // advertised on the network.
+      await page.evaluate(() => {
+        const { store, sharing } = (window as unknown as AuditWindow).__audit
+        store.setState({ settings: { ...(store.getState().settings as object), sharingEnabled: true, sharingDeviceChips: true } })
+        const now = new Date().toISOString()
+        sharing.setState({
+          status: { enabled: true, deviceId: 'audit-self', deviceName: 'Sanctuary Booth', port: 47800, addresses: ['192.0.2.10'], error: null, publicNetworks: [], firewallCommand: null },
+          peers: [
+            { id: 'p1', name: 'Stage Laptop', online: true, paired: true, trusted: true, disconnected: false, liveTitle: 'Morning Light Rising', hosting: null },
+            { id: 'p2', name: 'Youth Room', online: true, paired: true, trusted: false, disconnected: false, liveTitle: null, hosting: { id: 's1', name: 'Youth Night' } },
+            { id: 'p3', name: 'Office iMac', online: false, paired: true, trusted: false, disconnected: false, liveTitle: null, hosting: null },
+            { id: 'p4', name: 'Guest Laptop', online: true, paired: false, trusted: false, disconnected: false, liveTitle: null, hosting: null },
+          ],
+          inbox: [
+            { id: 'i1', senderId: 'p1', senderName: 'Stage Laptop', name: 'Harbor of Grace.xml', size: 4200, kind: 'openlyrics', receivedAt: now },
+            { id: 'i2', senderId: 'p2', senderName: 'Youth Room', name: 'Youth Night.serviceex', size: 2_400_000, kind: 'package', receivedAt: now },
+            { id: 'i3', senderId: 'p1', senderName: 'Stage Laptop', name: 'Announcement loop.mp4', size: 48_000_000, kind: 'video', receivedAt: now },
+          ],
+          transfers: [{ id: 't1', peerId: 'p1', peerName: 'Stage Laptop', name: 'Sermon slides.pptx', sent: 3_100_000, size: 7_800_000, state: 'sending' }],
+          incoming: [{ id: 'p2-t9', senderId: 'p2', senderName: 'Youth Room', name: 'Worship loop.mov', size: 90_000_000, received: 22_000_000, state: 'receiving' }],
+          unseen: 2,
+        })
+      })
+      await shot(page, `22-device-chips${at}`)
+      await page.locator('[aria-label^="Inbox,"]').click()
+      await shot(page, `23-inbox-open${at}`)
+      await resetScreens(page)
+
+      // Account: as this build shows it (no server address), signed out, then signed in, all invented.
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openSettings(true))
+      await shot(page, `24-account-unconfigured${at}`)
+      const signedOut = {
+        configured: true,
+        encryptionAvailable: true,
+        signedIn: false,
+        email: null,
+        license: { state: 'none', plan: 'Free', productId: null, licenseId: null, seats: null, seatsUsed: null, updatesUntil: null, updatesExpired: false, issuedAt: null, offlineValidUntil: null, features: [], message: null },
+        balance: null,
+        allowance: null,
+        checkout: null,
+        notice: null,
+      }
+      await page.evaluate((state) => (window as unknown as AuditWindow).__audit.account.setAccountState(state), signedOut)
+      await shot(page, `25-account-signed-out${at}`)
+      await page.evaluate((base) => {
+        const { account, features } = (window as unknown as AuditWindow).__audit
+        account.setAccountState({
+          ...base,
+          signedIn: true,
+          email: 'operator@example.org',
+          license: { ...base.license, state: 'active', plan: 'Pro', productId: 'pro_license', licenseId: 'LIC-SAMPLE-0001', seats: 3, seatsUsed: 1, updatesUntil: '2027-10-29', issuedAt: '2026-10-01T00:00:00Z', offlineValidUntil: '2026-11-12T00:00:00Z', features: features.FEATURE_KEYS },
+          balance: { totalSeconds: 9 * 3600, nearestExpiry: { expiresAt: '2027-01-31T00:00:00Z', seconds: 4 * 3600 }, updatedAt: new Date().toISOString() },
+          allowance: { trial: { tokens: 200_000, remainingTokens: 150_000 }, monthly: { tokens: 1_000_000, remainingTokens: 620_000 }, remainingTokens: 770_000, resetsAt: '2026-12-01T00:00:00Z' },
+        })
+      }, signedOut)
+      await shot(page, `26-account-signed-in${at}`)
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.account.openPlans(true))
+      await shot(page, `27-plans-signed-in${at}`)
+      await resetScreens(page)
+
+      // Light appearance, for comparison.
+      await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'))
+      await shot(page, `28-main-live-light${at}`)
+      await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'))
+
+      // Errors: a song deleted while open, and a panel that fails to draw (the schedule given a broken service).
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().editSong(999_999))
+      await shot(page, `29-error-song-missing${at}`)
+      await resetScreens(page)
+      await page.evaluate(() => {
+        const { store } = (window as unknown as AuditWindow).__audit
+        store.setState({ service: { ...(store.getState().service as object), items: null } })
+      })
+      await shot(page, `30-error-panel-crashed${at}`)
+
+      if (size.width === 1280) {
+        // Every Settings section on its own, at the smaller size.
+        await page.reload()
+        await installHooks(page)
+        await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openSettings(true))
+        await settle(page)
+        metrics[`31-settings-full${at}`] = await page.evaluate(collectMetrics)
+        // An element taller than the viewport cannot be captured in Electron, so the page is made tall for these.
+        await page.setViewportSize({ width: size.width, height: 2600 })
+        await settle(page)
+        const sections = page.locator('.settings-section')
+        const total = await sections.count()
+        for (let i = 0; i < total; i++) {
+          const section = sections.nth(i)
+          const title = ((await section.locator('h3').first().textContent().catch(() => null)) ?? `section-${i}`).trim()
+          const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+          const file = `31-settings-${String(i + 1).padStart(2, '0')}-${slug}.png`
+          await section.scrollIntoViewIfNeeded()
+          await section.screenshot({ path: path.join(OUT, file) })
+          shots.push(file)
+          console.log(`  ${file}`)
+        }
+        await page.setViewportSize(size)
+      }
+    }
+
+    // The output and stage windows, with a slide live.
+    console.log('Output windows:')
+    await page.reload()
+    await installHooks(page)
+    await page.evaluate(async (id) => {
+      const s = (window as unknown as AuditWindow).__audit.store.getState() as unknown as {
+        openService(id: number): Promise<void>
+        service: { items: unknown[] }
+        loadItem(item: unknown): Promise<boolean>
+      }
+      await s.openService(id)
+      const st = (window as unknown as AuditWindow).__audit.store.getState() as unknown as typeof s
+      await st.loadItem(st.service.items[3])
+      ;(window as unknown as AuditWindow).__audit.store.getState().goLive(0)
+    }, seeded.serviceId)
+    await settle(page, 1200)
+    const output = app.windows().find((w) => w.url().includes('#/output'))
+    if (output) {
+      await output.screenshot({ path: path.join(OUT, '40-output-scripture.png') })
+      shots.push('40-output-scripture.png')
+      await page.evaluate(async () => {
+        const s = (window as unknown as AuditWindow).__audit.store.getState() as unknown as { service: { items: unknown[] }; loadItem(item: unknown): Promise<boolean>; goLive(i: number): void }
+        await s.loadItem(s.service.items[1])
+        ;(window as unknown as AuditWindow).__audit.store.getState().goLive(1)
+      })
+      await settle(page, 1200)
+      await output.screenshot({ path: path.join(OUT, '41-output-song.png') })
+      shots.push('41-output-song.png')
+    } else console.warn('  The output window was not found')
+    await page.evaluate(() => window.api.stage.open())
+    await settle(page, 1500)
+    const stage = app.windows().find((w) => w.url().includes('#/stage'))
+    if (stage) {
+      await stage.screenshot({ path: path.join(OUT, '42-stage-display.png') })
+      shots.push('42-stage-display.png')
+    }
+
+    writeFileSync(path.join(OUT, 'metrics.json'), JSON.stringify({ shots, screens: metrics, totals: totals(metrics) }, null, 2))
+    writeFileSync(path.join(OUT, 'static.json'), JSON.stringify(staticScan(), null, 2))
+    console.log(`Saved ${shots.length} screenshots and the measurements to ${path.relative(ROOT, OUT)}/`)
+  } finally {
+    await app.close().catch(() => undefined)
+    await server.close()
+    rmSync(userData, { recursive: true, force: true })
+  }
+}
+
+/** Every screen's counts added up, with near duplicate colors grouped. */
+function totals(screens: Record<string, Metrics>) {
+  const keys = ['fontFamilies', 'fontSizes', 'fontWeights', 'textColors', 'backgroundColors', 'borderColors', 'radii', 'spacing', 'shadows', 'iconSizes', 'iconStrokes', 'buttonStyles', 'inputStyles', 'inlineStyleProps'] as const
+  const sum = Object.fromEntries(keys.map((k) => [k, {} as Counts])) as Record<(typeof keys)[number], Counts>
+  for (const m of Object.values(screens)) for (const k of keys) for (const [v, n] of Object.entries(m[k])) sum[k][v] = (sum[k][v] ?? 0) + n
+  const sorted = Object.fromEntries(keys.map((k) => [k, Object.fromEntries(Object.entries(sum[k]).sort((a, b) => b[1] - a[1]))]))
+  const unique = <T,>(list: T[], key: (t: T) => string) => [...new Map(list.map((t) => [key(t), t])).values()]
+  const all = Object.values(screens)
+  return {
+    ...sorted,
+    distinct: Object.fromEntries(keys.map((k) => [k, Object.keys(sum[k]).length])),
+    nearDuplicateColors: nearDuplicates([...new Set([...Object.keys(sum.textColors), ...Object.keys(sum.backgroundColors), ...Object.keys(sum.borderColors)])]),
+    smallTargets: unique(all.flatMap((m) => m.smallTargets), (t) => `${t.className}|${t.label}`),
+    lowContrast: unique(all.flatMap((m) => m.lowContrast), (t) => `${t.className}|${t.color}|${t.background}`),
+    clippedText: unique(all.flatMap((m) => m.clippedText), (t) => `${t.className}|${t.text}`),
+    offscreen: Object.fromEntries(Object.entries(screens).filter(([, m]) => m.offscreen.length > 0).map(([name, m]) => [name, m.offscreen])),
+    pageScrolls: Object.fromEntries(Object.entries(screens).filter(([, m]) => m.pageScrolls.horizontal || m.pageScrolls.vertical).map(([name, m]) => [name, m.pageScrolls])),
+    inlineStyled: Object.fromEntries(Object.entries(screens).map(([name, m]) => [name, m.inlineStyled])),
+  }
+}
+
+/** Opaque colors within a small CIE76 distance of each other, which are probably meant to be one color. */
+function nearDuplicates(colors: string[]) {
+  const lab = (h: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((c) => (c > 0.04045 ? ((c + 0.055) / 1.055) ** 2.4 : c / 12.92))
+    const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116)
+    const x = f((r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047)
+    const y = f(r * 0.2126 + g * 0.7152 + b * 0.0722)
+    const z = f((r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883)
+    return [116 * y - 16, 500 * (x - y), 200 * (y - z)]
+  }
+  const solid = colors.filter((c) => /^#[0-9a-f]{6}$/.test(c))
+  const groups: string[][] = []
+  const used = new Set<string>()
+  for (const a of solid) {
+    if (used.has(a)) continue
+    const group = solid.filter((b) => !used.has(b) && Math.hypot(...lab(a).map((v, i) => v - lab(b)[i])) < 6)
+    if (group.length > 1) {
+      group.forEach((c) => used.add(c))
+      groups.push(group)
+    }
+  }
+  return groups
+}
+
+main().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})
