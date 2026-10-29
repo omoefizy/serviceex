@@ -3,7 +3,9 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import './db'
 import { seedBuiltinThemes } from './db/themes'
+import { seedBuiltinDesigns } from './db/designs'
 import { seedBuiltinLowerThirds } from './db/lowerThirds'
+import { registerDesignIpc } from './ipc/designs'
 import { registerLowerThirdIpc } from './ipc/lowerThirds'
 import { registerSongIpc } from './ipc/songs'
 import { registerBibleIpc } from './ipc/bible'
@@ -330,6 +332,7 @@ app.whenReady().then(async () => {
   registerAccountIpc()
   seedBuiltinThemes()
   seedBuiltinLowerThirds()
+  seedBuiltinDesigns()
   registerMediaProtocol()
   registerSongIpc()
   registerBibleIpc()
@@ -337,6 +340,7 @@ app.whenReady().then(async () => {
   registerSongFileIpc()
   registerThemeIpc()
   registerLowerThirdIpc()
+  registerDesignIpc()
   registerMediaIpc()
   registerLogIpc()
   registerFontIpc()

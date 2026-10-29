@@ -1,9 +1,11 @@
-import { Copy, FilePlus, Image, Save, Trash2, X } from 'lucide-react'
+import { Copy, FilePlus, Image, LayoutTemplate, Save, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { designFromLowerThird } from '../../shared/designs'
 import { normalizeLowerThirdStyle } from '../../shared/lowerThirds'
 import type { LowerThirdBox, LowerThirdStyle, LowerThirdTemplate, LowerThirdTextStyle, TextCase } from '../../shared/types'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { useOperatorStore } from '../store'
+import type { DesignerDocument } from './Designer'
 import { LowerThirdGraphic } from './LowerThird'
 import { FontPicker, MissingFontChips } from './FontPicker'
 import { ErrorNote } from './ui'
@@ -99,9 +101,10 @@ function TextFields({ label, field, onChange }: { label: string; field: LowerThi
 
 /**
  * Lower third templates: pick one, drag and resize its bar, text boxes and logo over the key color, set colors and
- * fonts, and save. Built-in templates are read only; Save as new or Duplicate makes an editable copy.
+ * fonts, and save. Built-in templates are read only; Save as new or Duplicate makes an editable copy. Open in designer
+ * hands the template, as it is now with the sample words, to the designer as a new design.
  */
-export function LowerThirdEditor({ onClose }: { onClose: () => void }) {
+export function LowerThirdEditor({ onClose, onOpenInDesigner }: { onClose: () => void; onOpenInDesigner?: (doc: DesignerDocument) => void }) {
   const templates = useOperatorStore((s) => s.lowerThirdTemplates)
   const loadTemplates = useOperatorStore((s) => s.loadLowerThirdTemplates)
   const settings = useOperatorStore((s) => s.settings)
@@ -360,6 +363,17 @@ export function LowerThirdEditor({ onClose }: { onClose: () => void }) {
 
         <footer className="modal-actions lt-editor-actions">
           <input className="input" aria-label="Template name" value={name} disabled={!custom} onChange={(e) => setName(e.target.value)} />
+          {onOpenInDesigner && (
+            <button
+              type="button"
+              className="button"
+              disabled={!style}
+              title="Open this template in the designer as a new design"
+              onClick={() => style && onOpenInDesigner({ id: null, name: name.trim() || 'Lower third', type: 'custom', style: designFromLowerThird(style, sample) })}
+            >
+              <LayoutTemplate size={14} aria-hidden="true" /> Open in designer
+            </button>
+          )}
           {custom && (
             <button type="button" className="button" onClick={remove}>
               <Trash2 size={14} aria-hidden="true" /> Delete

@@ -4900,6 +4900,369 @@ textarea {
   line-height: 1.5;
 }
 
+/* ---------- Designs ---------- */
+
+/* A design drawn at its parent's size, 16:9. Sizes inside are cqh of this view. */
+.design-view {
+  position: relative;
+  container-type: size;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.design-view.checker {
+  background: repeating-conic-gradient(#2a3147 0% 25%, #1c2236 0% 50%) 0 0 / 20px 20px;
+}
+
+.dv-background,
+.dv-el {
+  position: absolute;
+}
+
+.dv-background {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.dv-text {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dv-text p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dv-text p.editing {
+  outline: none;
+  pointer-events: auto;
+  cursor: text;
+  user-select: text;
+}
+
+.dv-line {
+  display: flex;
+  align-items: center;
+}
+
+.dv-line span {
+  width: 100%;
+}
+
+.dv-image-empty {
+  border: 1px dashed var(--screen-guide);
+  background: color-mix(in srgb, var(--screen-fg) 6%, transparent);
+}
+
+/* Over every popover of the operator screen (the heard list sits at 30), under the first run welcome. */
+.modal-backdrop.designer-backdrop,
+.modal-backdrop.designs-backdrop {
+  z-index: 100;
+}
+
+.designer-backdrop {
+  padding: var(--space-4);
+}
+
+.modal.designer {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  padding: var(--space-3) var(--space-4);
+  overflow: hidden;
+  outline: none;
+}
+
+.designer-header,
+.designer-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.designer-header > .input {
+  flex: none;
+  width: auto;
+}
+
+.designer-tools {
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.designer-tools-gap {
+  width: var(--space-3);
+}
+
+.designer-name {
+  width: 220px;
+}
+
+.designer-body {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr) 300px;
+  flex: 1;
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+.designer-layers,
+.designer-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.designer-layers h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.designer-layers ul {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.designer-layer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: 2px var(--space-1-5);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.designer-layer:hover {
+  background: var(--raised);
+}
+
+.designer-layer.selected {
+  background: var(--accent-tint);
+  box-shadow: var(--selected-ring);
+}
+
+.designer-layer.hidden .designer-layer-name {
+  opacity: 0.5;
+}
+
+.designer-layer.drop {
+  box-shadow: inset 0 2px 0 var(--accent-bright);
+}
+
+.designer-layer-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.designer-layer .dim {
+  opacity: 0.35;
+}
+
+.designer-arrange {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: auto;
+}
+
+/* The canvas, as large as fits at 16:9. */
+.designer-stage-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 0;
+  container-type: size;
+}
+
+.designer-stage {
+  position: relative;
+  flex-shrink: 0;
+  width: min(100cqw, (100cqh - 28px) * 16 / 9);
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  user-select: none;
+  touch-action: none;
+}
+
+.designer-hint {
+  margin: 0;
+}
+
+.designer-frames {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.designer-frame {
+  position: absolute;
+  cursor: move;
+  pointer-events: auto;
+}
+
+.designer-frame:hover {
+  outline: 1px solid color-mix(in srgb, var(--accent-bright) 70%, transparent);
+}
+
+.designer-frame.selected {
+  outline: 1px solid var(--accent-bright);
+}
+
+.designer-handle,
+.designer-rotate {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -5px 0 0 -5px;
+  border: 1px solid var(--accent-bright);
+  background: #ffffff;
+}
+
+.designer-handle.nw { left: 0; top: 0; cursor: nwse-resize; }
+.designer-handle.n { left: 50%; top: 0; cursor: ns-resize; }
+.designer-handle.ne { left: 100%; top: 0; cursor: nesw-resize; }
+.designer-handle.e { left: 100%; top: 50%; cursor: ew-resize; }
+.designer-handle.se { left: 100%; top: 100%; cursor: nwse-resize; }
+.designer-handle.s { left: 50%; top: 100%; cursor: ns-resize; }
+.designer-handle.sw { left: 0; top: 100%; cursor: nesw-resize; }
+.designer-handle.w { left: 0; top: 50%; cursor: ew-resize; }
+
+.designer-rotate {
+  left: 50%;
+  top: -22px;
+  border-radius: 50%;
+  cursor: grab;
+}
+
+.designer-rotate::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 8px;
+  width: 1px;
+  height: 13px;
+  background: var(--accent-bright);
+}
+
+.designer-guide {
+  position: absolute;
+  background: #ff3dbb;
+}
+
+.designer-guide.x {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.designer-guide.y {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+.designer-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1-5) var(--space-2);
+}
+
+.designer-number {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: 12px;
+}
+
+.designer-number > span:first-child {
+  min-width: 14px;
+  color: var(--text-3);
+}
+
+.designer-number .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.designer-words {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.designer-actions {
+  align-items: center;
+}
+
+.designer-actions .hint {
+  margin-right: auto;
+}
+
+.modal.designs-library {
+  width: min(1100px, 100%);
+  height: min(760px, 100%);
+}
+
+.designs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.designs-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+
+.designs-thumb {
+  display: block;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: none;
+  cursor: pointer;
+}
+
+.designs-thumb:hover,
+.designs-thumb:focus-visible {
+  border-color: var(--accent-bright);
+}
+
+.designs-card-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: 13px;
+}
+
+.designs-card-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;

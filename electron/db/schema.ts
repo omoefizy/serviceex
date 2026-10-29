@@ -69,6 +69,14 @@ export function initSchema(db: Database.Database): void {
       json TEXT NOT NULL
     );
 
+    -- Designs from the designer, kept like themes: 'builtin' or 'custom'; json is a DesignStyle.
+    CREATE TABLE IF NOT EXISTS designs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      json TEXT NOT NULL
+    );
+
     -- Background library. file and thumb are names in <userData>/media; tags is a JSON array.
     CREATE TABLE IF NOT EXISTS media (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

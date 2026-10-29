@@ -399,6 +399,118 @@ export interface LowerThirdsApi {
   delete(id: number): Promise<boolean>
 }
 
+// ---------- Designs ----------
+
+/** A design's background: transparent for a lower third over the picture, or a full slide background. */
+export type DesignBackground =
+  | { kind: 'transparent' }
+  | { kind: 'solid'; color: string }
+  | { kind: 'gradient'; from: string; to: string; angle: number }
+  /** A wd-media:// URL in the app data folder. */
+  | { kind: 'image'; src: string; fit: 'cover' | 'contain' }
+
+/** How a rectangle is filled. Angles are CSS degrees (0 is bottom to top). */
+export type DesignFill = { kind: 'solid'; color: string } | { kind: 'gradient'; from: string; to: string; angle: number }
+
+/** A drop shadow; offsets and blur in percent of screen height. */
+export interface DesignShadow {
+  enabled: boolean
+  color: string
+  /** 0 to 1. */
+  opacity: number
+  blur: number
+  x: number
+  y: number
+}
+
+/**
+ * What a text element shows when the design is used: the headline, the body or the point's number in place of its own
+ * words. Its own words are the sample the designer shows.
+ */
+export type DesignTextField = 'headline' | 'body' | 'number'
+
+interface DesignElementBase {
+  id: string
+  /** Shown in the layers list. */
+  name: string
+  /** Percent of the canvas, before rotation; it may run off the edges. */
+  box: ThemeBox
+  /** Degrees clockwise about the box's centre. */
+  rotation: number
+  /** 0 to 1. */
+  opacity: number
+  /** Locked elements cannot be selected on the canvas, moved or resized. */
+  locked: boolean
+  /** Hidden elements are not drawn, on the canvas or on air. */
+  hidden: boolean
+}
+
+export interface DesignTextProps {
+  text: string
+  field: DesignTextField | null
+  /** A family name such as "Montserrat"; empty uses the Default Font. */
+  fontFamily: string
+  fontWeight: number
+  italic: boolean
+  /** Percent of screen height: the size, or the largest size when auto fit is on. */
+  fontSize: number
+  /** Shrinks the words until they fit the box. */
+  autoFit: boolean
+  color: string
+  align: 'left' | 'center' | 'right'
+  verticalAlign: 'top' | 'middle' | 'bottom'
+  lineHeight: number
+  /** In em. */
+  letterSpacing: number
+  textCase: TextCase
+  shadow: DesignShadow
+  /** Width in em. */
+  outline: { enabled: boolean; color: string; width: number }
+}
+
+/** One element of a design, drawn bottom to top in list order. Sizes are percent of screen height. */
+export type DesignElement =
+  | (DesignElementBase & { kind: 'text' } & DesignTextProps)
+  | (DesignElementBase & {
+      kind: 'rect'
+      fill: DesignFill
+      /** Corner radius. */
+      radius: number
+      border: { width: number; color: string }
+      shadow: DesignShadow
+    })
+  /** A line across the middle of its box, as wide as the box; rotate it for any angle. */
+  | (DesignElementBase & { kind: 'line'; color: string; thickness: number; dashed: boolean })
+  | (DesignElementBase & { kind: 'image'; src: string | null; fit: 'contain' | 'cover'; radius: number })
+
+export type DesignElementKind = DesignElement['kind']
+
+export type DesignCategory = 'lowerThird' | 'slide'
+
+/** A design on a 16:9 canvas. Everything scales with the screen, so it looks the same at any size. */
+export interface DesignStyle {
+  category: DesignCategory
+  background: DesignBackground
+  elements: DesignElement[]
+}
+
+export interface Design {
+  id: number
+  name: string
+  /** Built-in designs ship with the app and cannot be changed or deleted; save a copy instead. */
+  type: 'builtin' | 'custom'
+  style: DesignStyle
+}
+
+export interface DesignsApi {
+  /** Built-in designs first, then custom ones in the order they were made. */
+  list(): Promise<Design[]>
+  create(name: string, style: DesignStyle): Promise<Design>
+  /** Custom designs only; resolves to false for a built-in or missing one. */
+  update(id: number, name: string, style: DesignStyle): Promise<boolean>
+  delete(id: number): Promise<boolean>
+}
+
 /** chroma: the background is `streamKeyColor` for a chroma key. luma: the background is black for a luma key. */
 export type StreamKeyMode = 'chroma' | 'luma'
 
@@ -1719,6 +1831,7 @@ export interface WorshipDeckApi {
   speech: SpeechApi
   stream: StreamApi
   lowerThirds: LowerThirdsApi
+  designs: DesignsApi
   presentations: PresentationsApi
   livePowerPoint: LivePowerPointApi
   rasterizer: RasterizerApi

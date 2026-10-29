@@ -1,4 +1,4 @@
-import { Bookmark, EyeOff, ListPlus, Paintbrush, Pin, PinOff, Play, RefreshCw, SkipForward, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { Bookmark, EyeOff, LayoutTemplate, ListPlus, Paintbrush, Pin, PinOff, Play, RefreshCw, SkipForward, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { hasFormatting, matching, plainText, richOrPlain, trimRich } from '../../shared/richText'
 import type { AppSettings, LowerThirdAnimation, RichText, SavedLowerThirdLine } from '../../shared/types'
@@ -8,6 +8,8 @@ import { LOWER_THIRD_HEADLINE_ID, MOD } from '../lib/shortcuts'
 import { selectLowerThirdStyle, useOperatorStore, type LowerThirdLine } from '../store'
 import { LowerThirdGraphic } from './LowerThird'
 import { LowerThirdEditor } from './LowerThirdEditor'
+import type { DesignerDocument } from './Designer'
+import { DesignsLibrary } from './DesignsLibrary'
 import type { FormatControl } from './FormatToolbar'
 import { RichTextEditor } from './RichTextEditor'
 import { HeaderPopover } from './LivePreview'
@@ -210,6 +212,8 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
   const typing = useLowerThirdTyping()
   const { draft, history, type, typeField, onKeyDown } = typing
   const [editorOpen, setEditorOpen] = useState(false)
+  /** The Designs library while it is open, and the document it opens straight into, if any. */
+  const [designs, setDesigns] = useState<{ open: DesignerDocument | null } | null>(null)
   const [pasted, setPasted] = useState('')
   const [error, setError] = useState<ErrorLike | null>(null)
 
@@ -259,6 +263,9 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
         </select>
         <button type="button" className="icon-button" aria-label="Edit templates" title="Edit templates" onClick={() => setEditorOpen(true)}>
           <SlidersHorizontal size={15} />
+        </button>
+        <button type="button" className="icon-button" aria-label="Designs" title="Designs: the designer and its templates" onClick={() => setDesigns({ open: null })}>
+          <LayoutTemplate size={15} />
         </button>
       </header>
 
@@ -457,7 +464,16 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
         <p className="hint">Off: the lower third steps aside while a full screen slide is live, and comes back when it clears.</p>
       </details>
 
-      {editorOpen && <LowerThirdEditor onClose={() => setEditorOpen(false)} />}
+      {editorOpen && (
+        <LowerThirdEditor
+          onClose={() => setEditorOpen(false)}
+          onOpenInDesigner={(doc) => {
+            setEditorOpen(false)
+            setDesigns({ open: doc })
+          }}
+        />
+      )}
+      {designs && <DesignsLibrary open={designs.open} onClose={() => setDesigns(null)} />}
     </section>
   )
 }
