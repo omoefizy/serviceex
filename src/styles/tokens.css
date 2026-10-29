@@ -226,11 +226,16 @@
 
   /* ---------- Shell ---------- */
 
-  --topbar-height: 60px;
-  --statusbar-height: 44px;
-  --shell-gap: 12px;
-  --order-width: 300px;
-  --finder-width: 400px;
+  --topbar-height: 56px;
+  --statusbar-height: 36px;
+  --shell-gap: 10px;
+  --order-width: 236px;
+  --order-rail-width: 64px;
+  --monitor-column-width: 352px;
+  --monitor-height: 176px;
+  --finder-height: 268px;
+  --finder-height-short: 220px;
+  --finder-search-width: 210px;
   --settings-nav-width: 300px;
   --settings-content-width: 760px;
 

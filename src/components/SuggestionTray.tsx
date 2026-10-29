@@ -1,30 +1,68 @@
-import { Eye, ListPlus, Pencil, PanelBottom, Pin, Send, Sparkles, X } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { MoreHorizontal, Sparkles } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { pinStatement, useListener } from '../lib/listener'
-import { useSuggestions, type ScriptureSuggestion, type StatementSuggestion } from '../lib/scriptureDetection'
+import { chipOf } from '../lib/listenerStatus'
+import { useSuggestions, type ScriptureSuggestion, type StatementSuggestion, type Suggestion } from '../lib/scriptureDetection'
 import { canSendCues, openCueMenu, useSharingStore } from '../lib/sharing'
 import { focusLowerThirdHeadline } from '../lib/shortcuts'
 import { quotePayload } from '../lib/slides'
+import { useDismiss } from '../lib/useDismiss'
 import { useOperatorStore } from '../store'
 import { QuoteModal } from './QuoteModal'
-import { Button, ErrorNote, IconButton } from './ui'
+import { Button, EmptyState, ErrorNote, IconButton } from './ui'
 
 /** A heard verse as a cue: its passage, word for word. */
 const verseCue = (s: ScriptureSuggestion) => ({ kind: 'verse' as const, title: s.passage.title, text: s.passage.verses.map((v) => v.text).join('\n'), verses: s.passage.verses })
 
 const timeOf = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
 
-/** "12 s ago", "3 min ago". */
+/** "just now", "20s ago", "3 min ago". */
 function agoOf(ms: number): string {
   const seconds = Math.max(0, Math.round(ms / 1000))
-  return seconds < 60 ? `${seconds} s ago` : `${Math.floor(seconds / 60)} min ago`
+  return seconds < 5 ? 'just now' : seconds < 60 ? `${seconds}s ago` : `${Math.floor(seconds / 60)} min ago`
+}
+
+/** A row's other actions, in a small menu from its ⋯ button. */
+function RowMenu({ label, children }: { label: string; children: (close: () => void) => ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const close = useCallback(() => setOpen(false), [])
+  useDismiss(open, ref, close)
+  return (
+    <div className="heard-menu-anchor" ref={ref}>
+      <IconButton size="sm" label={label} icon={<MoreHorizontal size={16} />} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)} />
+      {open && (
+        <div className="live-menu-list heard-menu" role="menu" aria-label={label}>
+          {children(close)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** A menu item that closes the menu once chosen. */
+function MenuItem({ close, title, disabled, onClick, children }: { close(): void; title?: string; disabled?: boolean; onClick(e: ReactMouseEvent<HTMLButtonElement>): void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      title={title}
+      disabled={disabled}
+      onClick={(e) => {
+        onClick(e)
+        close()
+      }}
+    >
+      {children}
+    </button>
+  )
 }
 
 /**
- * Verses heard in the live transcript, and statements the AI picked from it, newest first. A suggestion goes to
- * the preview, never live; Enter or Go Live then sends it. Verses disappear after two minutes and statements after
- * three, or when dismissed.
+ * Heard in the sermon: verses heard in the live transcript, and statements the AI picked from it, newest first. Preview
+ * puts one in the Preview monitor; Show live puts it in the preview and sends it on screen, as Enter or Send to live
+ * would. Verses disappear after two minutes and statements after three, or when dismissed.
  */
 export function SuggestionTray() {
   const { suggestions, previewedId, flashKey, preview, dismiss, editStatement } = useSuggestions()
@@ -32,20 +70,28 @@ export function SuggestionTray() {
   const speaker = useOperatorStore((s) => s.settings.quoteSpeakerName)
   const addToSchedule = useOperatorStore((s) => s.addToSchedule)
   const setLowerThirdDraft = useOperatorStore((s) => s.setLowerThirdDraft)
+  const liveDeckKey = useOperatorStore((s) => (s.live.slideIndex !== null ? s.live.deckKey : null))
   const [flashing, setFlashing] = useState(false)
   const [editing, setEditing] = useState<StatementSuggestion | null>(null)
-  /** Statements saved to the schedule this session, so the button says so. */
+  /** Statements saved to the schedule this session, so the menu says so. */
   const [scheduled, setScheduled] = useState<Set<number>>(new Set())
-  /** Verses added to the order of service this session, so the button says so. */
+  /** Verses added to the order of service this session, so the menu says so. */
   const [ordered, setOrdered] = useState<Set<number>>(new Set())
-  /** Statements pinned to the sermon being recorded, so the button says so. */
+  /** Statements pinned to the sermon being recorded, so the menu says so. */
   const [pinned, setPinned] = useState<Set<number>>(new Set())
   const recording = useListener((st) => st.sermon)
+  const status = useListener((st) => st.status)
+  const mode = useListener((st) => st.mode)
+  const modeReason = useListener((st) => st.modeReason)
+  const listenerError = useListener((st) => st.error)
+  const restarting = useListener((st) => st.restarting)
+  const listener = chipOf(status, mode, modeReason, listenerError, restarting)
+  const listening = status === 'listening'
   const [error, setError] = useState<ErrorLike | null>(null)
   // Re-renders when sharing turns on or off, for Send to device.
   useSharingStore((st) => st.status?.enabled)
   const sendable = canSendCues()
-  /** Ticks each second while there are cards, for "seconds ago". */
+  /** Ticks each second while there are rows, for "20s ago". */
   const [now, setNow] = useState(() => Date.now())
   const showing = suggestions.length > 0
 
@@ -83,180 +129,167 @@ export function SuggestionTray() {
     }
   }
 
-  // At most two cards show at once; the rest scroll inside the list, so the search and verses below stay in view.
-  const list = useRef<HTMLUListElement>(null)
-  useLayoutEffect(() => {
-    const el = list.current
-    if (!el) return
-    const fit = () => {
-      const second = el.children[1] as HTMLElement | undefined
-      el.style.maxHeight = second ? `${second.offsetTop - el.offsetTop + second.offsetHeight}px` : ''
-    }
-    fit()
-    const observer = new ResizeObserver(fit)
-    for (const card of Array.from(el.children)) observer.observe(card)
-    return () => observer.disconnect()
-  }, [suggestions])
+  /** Into the preview, handing the keyboard back to the page so the next Enter sends it live. */
+  function toPreview(s: Suggestion, e: ReactMouseEvent<HTMLElement>, option?: number) {
+    preview(s.id, option)
+    e.currentTarget.blur()
+  }
 
-  if (suggestions.length === 0) return null
+  /** Into the preview and straight on screen, as Send to live does. */
+  function showLive(s: Suggestion, e: ReactMouseEvent<HTMLElement>) {
+    toPreview(s, e)
+    useOperatorStore.getState().goLiveHighlighted()
+  }
 
-  return (
-    <div className={`suggestion-tray${flashing ? ' flash' : ''}`} role="region" aria-label="Scripture and statements heard in the sermon">
-      <div className="suggestion-tray-head">
-        <h3 className="suggestion-tray-title">
-          <Sparkles size={16} aria-hidden="true" /> Heard in the sermon
-        </h3>
-        <Button size="sm" variant="ghost" className="suggestion-clear" title="Dismiss every card" onClick={() => suggestions.forEach((s) => dismiss(s.id))}>
-          Clear
+  /** On screen now: the live item is this card's passage, or one of its other readings. */
+  const isLive = (s: Suggestion) =>
+    s.type === 'scripture' && liveDeckKey !== null && [s, ...s.alternatives].some((option) => liveDeckKey === `scripture:${option.passage.title}`)
+
+  function actions(s: Suggestion, primary: boolean) {
+    if (isLive(s)) return <span className="heard-live-chip">LIVE</span>
+    return (
+      <>
+        <Button size="sm" title="Show it in the Preview monitor; Enter or Send to live then puts it on screen" onClick={(e) => toPreview(s, e)}>
+          Preview
         </Button>
-      </div>
-      <ErrorNote error={error} />
-      <ul className="suggestion-list" ref={list}>
-        {suggestions.map((s) =>
-          s.type === 'scripture' ? (
-            <li key={s.id} className={`suggestion${s.id === previewedId ? ' previewed' : ''}${s.kind === 'reference' ? '' : ` ${s.kind}`}`}>
-              <button
-                type="button"
-                className="suggestion-main"
-                title={`Heard: "${s.heard}" · ${Math.round(s.confidence * 100)}% sure. Click to preview; Enter or Go Live sends it.`}
-                onClick={(e) => {
-                  preview(s.id)
-                  // Hand the keyboard back to the page, so the next Enter sends the preview live.
-                  e.currentTarget.blur()
+        <Button size="sm" variant={primary ? 'primary' : 'secondary'} title="Put it on screen now" onClick={(e) => showLive(s, e)}>
+          Show live
+        </Button>
+      </>
+    )
+  }
+
+  function scriptureRow(s: ScriptureSuggestion) {
+    const live = isLive(s)
+    const previewed = s.id === previewedId
+    return (
+      <li key={s.id} className={`heard-row${previewed ? ' previewed' : ''}${live ? ' live' : ''}${s.kind === 'reference' ? '' : ` ${s.kind}`}`}>
+        <div className="heard-ref">
+          <strong className="heard-label">{s.label}</strong>
+          <span className={`heard-meta${s.confidence >= 0.9 ? ' strong' : ''}`} title={`Heard at ${timeOf(s.heardAt)}`}>
+            {Math.round(s.confidence * 100)}% · {agoOf(now - s.heardAt)}
+          </span>
+          {s.kind === 'quote' && <span className="heard-tag">Possible quote{s.version !== 'KJV' ? ` · ${s.version}` : ''}</span>}
+          {s.kind === 'ai' && <span className="heard-tag ai">AI suggested</span>}
+        </div>
+        <button
+          type="button"
+          className="heard-text"
+          title={`Heard: "${s.heard}" · ${Math.round(s.confidence * 100)}% sure. Click to preview; Enter or Send to live sends it.`}
+          onClick={(e) => toPreview(s, e)}
+        >
+          {s.highlight ? s.highlight.map((part, i) => (part.match ? <mark key={i}>{part.text}</mark> : <span key={i}>{part.text}</span>)) : s.text}
+        </button>
+        {actions(s, previewed)}
+        <RowMenu label={`More for ${s.label}`}>
+          {(close) => (
+            <>
+              {s.alternatives.map((alt, i) => (
+                <MenuItem key={alt.label} close={close} title={`${Math.round(alt.confidence * 100)}% sure: ${alt.passage.verses[0]?.text ?? ''}`} onClick={(e) => toPreview(s, e, i)}>
+                  Preview {alt.label} instead
+                </MenuItem>
+              ))}
+              <MenuItem close={close} title={service ? `Add it to ${service.name}` : 'Create or pick a service first'} disabled={!service || ordered.has(s.id)} onClick={() => addVerse(s)}>
+                {ordered.has(s.id) ? 'Added to order' : 'Add to order'}
+              </MenuItem>
+              {sendable && (
+                <MenuItem close={close} title="Send to device: a cue in that computer's tray. It does not go live there." onClick={(e) => openCueMenu(e, verseCue(s))}>
+                  Send to device
+                </MenuItem>
+              )}
+              <MenuItem close={close} onClick={() => dismiss(s.id)}>
+                Dismiss
+              </MenuItem>
+            </>
+          )}
+        </RowMenu>
+      </li>
+    )
+  }
+
+  function statementRow(s: StatementSuggestion) {
+    const previewed = s.id === previewedId
+    return (
+      <li key={s.id} className={`heard-row statement${previewed ? ' previewed' : ''}`}>
+        <div className="heard-ref">
+          <strong className="heard-label">Statement</strong>
+          <span className="heard-meta">{timeOf(s.heardAt)}</span>
+        </div>
+        <button type="button" className="heard-text" title={`Said at ${timeOf(s.heardAt)}, picked by AI from the transcript word for word. Click to preview it as a quote slide.`} onClick={(e) => toPreview(s, e)}>
+          “{s.text}”
+        </button>
+        {actions(s, previewed)}
+        <RowMenu label="More for this statement">
+          {(close) => (
+            <>
+              <MenuItem close={close} title="Fix spelling or trim words first" onClick={() => setEditing(s)}>
+                Edit
+              </MenuItem>
+              <MenuItem
+                close={close}
+                title="Put it in the Lower Third fields; press Enter there to show it"
+                onClick={() => {
+                  // Fills the fields only: it goes live when the operator presses Enter.
+                  setLowerThirdDraft({ headline: s.text, body: speaker })
+                  focusLowerThirdHeadline()
                 }}
               >
-                <span className="suggestion-head">
-                  <strong className="suggestion-label">{s.label}</strong>
-                  <span className={`suggestion-match${s.confidence >= 0.9 ? ' strong' : ''}`}>{Math.round(s.confidence * 100)}% match</span>
-                  {s.kind === 'quote' && <span className="suggestion-tag">Possible quote{s.version !== 'KJV' ? ` · ${s.version}` : ''}</span>}
-                  {s.kind === 'ai' && <span className="suggestion-tag ai">AI suggested</span>}
-                  <span className="suggestion-time" title={`Heard at ${timeOf(s.heardAt)}`}>
-                    {agoOf(now - s.heardAt)}
-                  </span>
-                </span>
-                <span className="suggestion-text">
-                  {s.highlight
-                    ? s.highlight.map((part, i) => (part.match ? <mark key={i}>{part.text}</mark> : <span key={i}>{part.text}</span>))
-                    : s.text}
-                </span>
-              </button>
-              <div className="suggestion-actions">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon={<Eye size={15} aria-hidden="true" />}
-                  title="Show it in the preview; Enter or Go Live then puts it on screen"
-                  onClick={(e) => {
-                    preview(s.id)
-                    e.currentTarget.blur()
+                Send to Lower Third
+              </MenuItem>
+              <MenuItem close={close} title={service ? `Save it to ${service.name} as a quote, to use again` : 'Create or pick a service first'} disabled={!service || scheduled.has(s.id)} onClick={() => schedule(s)}>
+                {scheduled.has(s.id) ? 'Added to Schedule' : 'Add to Schedule'}
+              </MenuItem>
+              {recording && (
+                <MenuItem
+                  close={close}
+                  title={`Pin it to the sermon “${recording.title}”, for its slides and exports`}
+                  disabled={pinned.has(s.id)}
+                  onClick={() => {
+                    pinStatement(s.text)
+                    setPinned((ids) => new Set(ids).add(s.id))
                   }}
                 >
-                  Show in preview
-                </Button>
-                <span title={service ? `Add it to ${service.name}` : 'Create or pick a service first'}>
-                  <Button size="sm" icon={<ListPlus size={15} aria-hidden="true" />} disabled={!service || ordered.has(s.id)} onClick={() => addVerse(s)}>
-                    {ordered.has(s.id) ? 'Added' : 'Add to order'}
-                  </Button>
-                </span>
-              </div>
-              {s.alternatives.length > 0 && (
-                <div className="suggestion-alternatives" role="group" aria-label={`Other readings of ${s.label}`}>
-                  <span>or</span>
-                  {s.alternatives.map((alt, i) => (
-                    <button
-                      key={alt.label}
-                      type="button"
-                      className="suggestion-chip"
-                      title={`${alt.label}, ${Math.round(alt.confidence * 100)}% sure: ${alt.passage.verses[0]?.text ?? ''} Click to preview.`}
-                      onClick={(e) => {
-                        preview(s.id, i)
-                        e.currentTarget.blur()
-                      }}
-                    >
-                      {alt.label}
-                    </button>
-                  ))}
-                </div>
+                  {pinned.has(s.id) ? 'Pinned' : 'Pin to Sermon'}
+                </MenuItem>
               )}
               {sendable && (
-                <IconButton
-                  size="sm"
-                  className="suggestion-send"
-                  label={`Send ${s.label} to another computer`}
-                  tooltip="Send to device: a cue in that computer's tray. It does not go live there."
-                  icon={<Send size={15} />}
-                  onClick={(e) => openCueMenu(e, verseCue(s))}
-                />
+                <MenuItem close={close} title="Send to device: the exact words as a cue in that computer's tray. It does not go live there." onClick={(e) => openCueMenu(e, { kind: 'text', title: 'Statement', text: s.text })}>
+                  Send to device
+                </MenuItem>
               )}
-              <IconButton size="sm" className="suggestion-dismiss" label={`Dismiss ${s.label}`} tooltip="Dismiss" icon={<X size={15} />} onClick={() => dismiss(s.id)} />
-            </li>
-          ) : (
-            <li key={s.id} className={`suggestion statement${s.id === previewedId ? ' previewed' : ''}`}>
-              <div className="suggestion-main" title={`Said at ${timeOf(s.heardAt)}, picked by AI from the transcript word for word.`}>
-                <span className="suggestion-head">
-                  <strong>Statement</strong>
-                  <span className="suggestion-time">{timeOf(s.heardAt)}</span>
-                </span>
-                <span className="suggestion-text">“{s.text}”</span>
-              </div>
-              <div className="suggestion-actions">
-                <Button
-                  size="sm"
-                  title="Show it as a quote slide in the preview; Enter or Go Live sends it"
-                  onClick={(e) => {
-                    preview(s.id)
-                    e.currentTarget.blur()
-                  }}
-                >
-                  <Eye size={13} aria-hidden="true" /> Preview
-                </Button>
-                <Button size="sm" title="Fix spelling or trim words first" onClick={() => setEditing(s)}>
-                  <Pencil size={13} aria-hidden="true" /> Edit
-                </Button>
-                <Button
-                  size="sm"
-                  title="Put it in the Lower Third fields; press Enter there to show it"
-                  onClick={() => {
-                    // Fills the fields only: it goes live when the operator presses Enter.
-                    setLowerThirdDraft({ headline: s.text, body: speaker })
-                    focusLowerThirdHeadline()
-                  }}
-                >
-                  <PanelBottom size={13} aria-hidden="true" /> Send to Lower Third
-                </Button>
-                <span title={service ? `Save it to ${service.name} as a quote, to use again` : 'Create or pick a service first'}>
-                  <Button size="sm" disabled={!service || scheduled.has(s.id)} onClick={() => schedule(s)}>
-                    <ListPlus size={13} aria-hidden="true" /> {scheduled.has(s.id) ? 'Added' : 'Add to Schedule'}
-                  </Button>
-                </span>
-                {recording && (
-                  <Button
-                    size="sm"
-                    disabled={pinned.has(s.id)}
-                    title={`Pin it to the sermon “${recording.title}”, for its slides and exports`}
-                    onClick={() => {
-                      pinStatement(s.text)
-                      setPinned((ids) => new Set(ids).add(s.id))
-                    }}
-                  >
-                    <Pin size={13} aria-hidden="true" /> {pinned.has(s.id) ? 'Pinned' : 'Pin to Sermon'}
-                  </Button>
-                )}
-                {sendable && (
-                  <Button
-                    size="sm"
-                    title="Send to device: the exact words as a cue in that computer's tray. It does not go live there."
-                    onClick={(e) => openCueMenu(e, { kind: 'text', title: 'Statement', text: s.text })}
-                  >
-                    <Send size={13} aria-hidden="true" /> Send to device
-                  </Button>
-                )}
-              </div>
-              <IconButton size="sm" className="suggestion-dismiss" label="Dismiss statement" tooltip="Dismiss" icon={<X size={15} />} onClick={() => dismiss(s.id)} />
-            </li>
-          ),
-        )}
-      </ul>
+              <MenuItem close={close} onClick={() => dismiss(s.id)}>
+                Dismiss
+              </MenuItem>
+            </>
+          )}
+        </RowMenu>
+      </li>
+    )
+  }
+
+  return (
+    <section className={`heard-card${flashing ? ' flash' : ''}`} aria-label="Scripture and statements heard in the sermon">
+      <header className="heard-head">
+        <h2 className="heard-title">Heard in the sermon</h2>
+        <span className={`heard-status${listening ? ' on' : ''}`} title={listener.why}>
+          <span className="heard-status-dot" aria-hidden="true" />
+          {listener.label.toUpperCase()}
+        </span>
+        <Button size="sm" variant="ghost" className="heard-clear" title="Dismiss every row" disabled={!showing} onClick={() => suggestions.forEach((s) => dismiss(s.id))}>
+          Clear all
+        </Button>
+      </header>
+      <ErrorNote error={error} />
+      {showing ? (
+        <ul className="heard-list">{suggestions.map((s) => (s.type === 'scripture' ? scriptureRow(s) : statementRow(s)))}</ul>
+      ) : (
+        <EmptyState
+          compact
+          icon={<Sparkles size={20} />}
+          title="Nothing heard yet"
+          description={listening ? 'Verses the speaker names or quotes show here, newest first.' : 'Start listening and the verses the speaker names or quotes show here.'}
+        />
+      )}
       {editing && (
         <QuoteModal
           text={editing.text}
@@ -269,6 +302,6 @@ export function SuggestionTray() {
           }}
         />
       )}
-    </div>
+    </section>
   )
 }

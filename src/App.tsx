@@ -1,10 +1,9 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { X } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { can } from '../shared/features'
 import { layoutById, showsPanel } from '../shared/layouts'
 import { CommandPalette } from './components/CommandPalette'
-import { OnScreenPanel, PreviewPanel, UpNextCard, UpNextMeta } from './components/LivePreview'
-import { LowerThirdPanel } from './components/LowerThirdPanel'
+import { LiveMonitor, PreviewMonitor, QueueCard, UpNextMeta } from './components/LivePreview'
 import { PlansModal } from './components/PlansModal'
 import { MediaPanel } from './components/MediaPanel'
 import { PanelBoundary } from './components/PanelBoundary'
@@ -19,7 +18,6 @@ import { SongList } from './components/SongList'
 import { StatusBar } from './components/StatusBar'
 import { StreamPanel } from './components/StreamPanel'
 import { SuggestionTray } from './components/SuggestionTray'
-import { Splitter } from './components/Splitter'
 import { ThemeEditor } from './components/ThemeEditor'
 import { Toolbar } from './components/Toolbar'
 import { IconButton, Tabs } from './components/ui'
@@ -46,27 +44,6 @@ import {
   useOperatorStore,
 } from './store'
 
-/** The two side columns: the Order of service on the left, the finder on the right. The centre takes the rest. */
-type PanelSizes = { order: number; finder: number }
-
-const DEFAULT_SIZES: PanelSizes = { order: 300, finder: 400 }
-const LIMITS = { order: [240, 440], finder: [300, 560] } as const
-/** How far each side column gives way, below its saved width, when the window is too narrow (1280 by 720 laptops). */
-const FLOORS: PanelSizes = { order: 240, finder: 300 }
-/** Below 1366 pixels the Order of service and the finder are at most this wide. */
-const NARROW_ORDER = 260
-const NARROW_FINDER = 340
-const CENTRE_MIN = 420
-/** The centre's minimum while an editor is open there: forms need more room than the live screen. */
-const EDITOR_MIN = 520
-/** The Order of service as a rail of item icons: collapsed, or below 1280 pixels. The finder's rail is narrower. */
-const ORDER_RAIL = 64
-const RAIL = 44
-
-const isPanelSizes = (value: unknown): value is PanelSizes =>
-  typeof value === 'object' &&
-  value !== null &&
-  (Object.keys(LIMITS) as (keyof PanelSizes)[]).every((key) => typeof (value as PanelSizes)[key] === 'number')
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
 
 /** Whether the window matches a media query, following it as the window is resized. */
@@ -91,16 +68,6 @@ const LIBRARY_TABS = [
   { id: 'media', label: 'Media' },
 ] as const
 
-/** The tabs of the card under On screen. Up next leaves out below 720 pixels of height, where it does not fit. */
-type DeckTab = 'upNext' | 'slides' | 'preview' | 'points'
-const DECK_TABS: { id: DeckTab; label: string }[] = [
-  { id: 'upNext', label: 'Up next' },
-  { id: 'slides', label: 'Slides' },
-  { id: 'preview', label: 'Preview' },
-  { id: 'points', label: 'Lower third' },
-]
-const isDeckTab = (value: unknown): value is DeckTab => DECK_TABS.some((tab) => tab.id === value)
-
 /** Keeps a panel mounted (so it keeps its state, and the listener keeps listening) while the layout hides it. */
 function Slot({ show, children }: { show: boolean; children: ReactNode }) {
   return (
@@ -112,16 +79,15 @@ function Slot({ show, children }: { show: boolean; children: ReactNode }) {
 
 function App() {
   const [chosenTab, setLibraryTab] = useState<(typeof LIBRARY_TABS)[number]['id']>('scripture')
-  const [sizes, setSizes] = usePersistentState('serviceex.panelWidths', DEFAULT_SIZES, isPanelSizes)
-  const narrow = useMediaQuery('(max-width: 1365px)')
   const railWidth = useMediaQuery('(max-width: 1279px)')
-  const short = useMediaQuery('(max-height: 719px)')
   // Below 1280 pixels the Order of service is a rail unless it was opened out for now.
   const [orderOpenedOut, setOrderOpenedOut] = useState(false)
-  const [chosenDeckTab, setDeckTab] = usePersistentState<DeckTab>('serviceex.deckTab', 'upNext', isDeckTab)
+  /** The full slide grid, open over the finder. */
+  const [slidesDrawerOpen, setSlidesDrawerOpen] = useState(false)
+  /** The finder's tab row, where the Scripture tab puts its translation and search. */
+  const [finderTools, setFinderTools] = useState<HTMLDivElement | null>(null)
   const welcome = useWelcome()
   const [scheduleCollapsed, setScheduleCollapsed] = usePersistentState('worshipdeck.scheduleCollapsed', false, isBoolean)
-  const [libraryCollapsed, setLibraryCollapsed] = usePersistentState('worshipdeck.libraryCollapsed', false, isBoolean)
   const editingSongId = useOperatorStore((s) => s.editingSongId)
 
   // An empty state elsewhere asking for a library tab, such as the schedule's Browse songs.
@@ -130,11 +96,11 @@ function App() {
       const tab = (e as CustomEvent<string>).detail
       if (!LIBRARY_TABS.some((t) => t.id === tab)) return
       setLibraryTab(tab as (typeof LIBRARY_TABS)[number]['id'])
-      setLibraryCollapsed(false)
+      setSlidesDrawerOpen(false)
     }
     window.addEventListener(SHOW_LIBRARY_TAB_EVENT, show)
     return () => window.removeEventListener(SHOW_LIBRARY_TAB_EVENT, show)
-  }, [setLibraryCollapsed])
+  }, [])
 
   // The top bar's service button: the Order of service unfolds with the keyboard on its service picker.
   useEffect(() => {
@@ -167,18 +133,12 @@ function App() {
     listener: showsPanel(layout, 'listener'),
     schedule: showsPanel(layout, 'schedule'),
   }
-  const centreColumn = show.centre || show.live || show.points
+  const rightColumn = show.live || show.centre
   const orderRail = scheduleCollapsed || (railWidth && !orderOpenedOut)
   const setOrderRail = (rail: boolean) => {
     if (railWidth) setOrderOpenedOut(!rail)
     if (!rail || !railWidth) setScheduleCollapsed(rail)
   }
-  const deckTabs = DECK_TABS.filter(
-    (tab) => (tab.id === 'upNext' ? show.live && !short : tab.id === 'slides' ? showsPanel(layout, 'slides') : tab.id === 'preview' ? show.live : show.points),
-  )
-  const deckTab = deckTabs.some((tab) => tab.id === chosenDeckTab) ? chosenDeckTab : (deckTabs[0]?.id ?? chosenDeckTab)
-
-  const resize = (key: keyof PanelSizes) => (value: number) => setSizes((current) => ({ ...current, [key]: value }))
 
   useEffect(() => {
     const st = useOperatorStore.getState()
@@ -400,19 +360,8 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  // The columns the layout shows, with a 12px splitter as the gap between each. A side column is its saved width when
-  // there is room, and shrinks towards its floor when there is not; below 1366 pixels the Order of service is at most
-  // 260 and the finder 340, and below 1280 the Order of service is a 64 pixel rail of item icons.
-  const width = (key: keyof PanelSizes) => (narrow ? Math.min(sizes[key], key === 'finder' ? NARROW_FINDER : NARROW_ORDER) : sizes[key])
-  const side = (key: keyof PanelSizes) => `minmax(${Math.min(FLOORS[key], width(key))}px, ${width(key)}px)`
-  const columns = [
-    ...(show.schedule ? [orderRail ? `${ORDER_RAIL}px` : side('order')] : []),
-    ...(show.schedule && (centreColumn || show.library) ? ['auto'] : []),
-    ...(centreColumn ? [`minmax(${centreOpen ? EDITOR_MIN : CENTRE_MIN}px, 1fr)`] : []),
-    ...(show.library && centreColumn ? ['auto'] : []),
-    ...(show.library ? [libraryCollapsed ? `${RAIL}px` : centreColumn ? side('finder') : '1fr'] : []),
-  ].join(' ')
-
+  // Three columns after docs/design/Main2.reference.html: the Order of service (236px, a 64px rail below 1280 pixels),
+  // the middle (Heard in the sermon over the finder) and the monitors (352px). Nothing scrolls but the lists inside.
   return (
     <div className="app">
       <PanelBoundary name="Toolbar" layout="bar">
@@ -424,21 +373,17 @@ function App() {
         </PanelBoundary>
       )}
       {/* Hidden, not unmounted, while Settings is open: every panel keeps its search text and state. */}
-      <main className="operator" hidden={settingsOpen} style={{ gridTemplateColumns: columns }}>
+      <main className="operator" hidden={settingsOpen}>
         <Slot show={show.schedule}>
-          <PanelBoundary name="Schedule">
-            <SchedulePanel collapsed={orderRail} onCollapsedChange={setOrderRail} />
-          </PanelBoundary>
-          {(centreColumn || show.library) &&
-            (orderRail ? (
-              <span className="shell-gap" aria-hidden="true" />
-            ) : (
-              <Splitter label="Resize the order of service" value={sizes.order} min={LIMITS.order[0]} max={LIMITS.order[1]} direction={1} panel=".schedule" onChange={resize('order')} />
-            ))}
+          <div className={`operator-order${orderRail ? ' rail' : ''}`}>
+            <PanelBoundary name="Schedule">
+              <SchedulePanel collapsed={orderRail} onCollapsedChange={setOrderRail} />
+            </PanelBoundary>
+          </div>
         </Slot>
-        <div className="stage-column" hidden={!centreColumn}>
-          {centreOpen ? (
-            editingSongId !== null ? (
+        <div className="operator-middle">
+          {centreOpen &&
+            (editingSongId !== null ? (
               <PanelBoundary key="songEditor" name="Song editor">
                 <SongEditor key={editingSongId} songId={editingSongId} />
               </PanelBoundary>
@@ -454,108 +399,80 @@ function App() {
               <PanelBoundary key="sermons" name="Sermons">
                 <SermonsPanel />
               </PanelBoundary>
-            )
-          ) : null}
-          {/* The live screen stays mounted under an editor, so its state survives. On screen takes the height the card
-              under it leaves; nothing here scrolls but the lists inside the cards. */}
-          <div className="stage-live" hidden={centreOpen}>
-            <Slot show={show.live}>
-              <PanelBoundary name="On screen">
-                <OnScreenPanel />
-              </PanelBoundary>
-            </Slot>
-            {deckTabs.length > 0 && (
-              <section className={`stage-deck stage-deck--${deckTab}`} aria-label={deckTabs.length === 1 ? deckTabs[0].label : 'Up next, slides and preview'}>
-                {deckTabs.length > 1 && (
-                  <div className="stage-deck-tabs">
-                    <Tabs<DeckTab> aria-label="Under On screen" idPrefix="deck" tabs={deckTabs} value={deckTab} onChange={setDeckTab} />
-                    {deckTab === 'upNext' && <UpNextMeta />}
-                  </div>
-                )}
-                {/* All stay mounted, so the slide grid keeps its place and the lower third its text. */}
-                <Slot show={deckTab === 'upNext' && show.live && !short}>
-                  <div id="deck-panel-upNext" role="tabpanel" aria-labelledby="deck-tab-upNext" className="stage-deck-page">
-                    <UpNextCard titled={deckTabs.length === 1} />
-                  </div>
-                </Slot>
-                <Slot show={deckTab === 'slides' && show.centre}>
-                  <div id="deck-panel-slides" role="tabpanel" aria-labelledby="deck-tab-slides" className="stage-deck-page">
-                    <PanelBoundary key="slides" name="Slides">
-                      <SlideGrid />
-                    </PanelBoundary>
-                  </div>
-                </Slot>
-                <Slot show={deckTab === 'preview' && show.live}>
-                  <div id="deck-panel-preview" role="tabpanel" aria-labelledby="deck-tab-preview" className="stage-deck-page">
-                    <PanelBoundary name="Preview">
-                      <PreviewPanel />
-                    </PanelBoundary>
-                  </div>
-                </Slot>
-                <Slot show={deckTab === 'points' && show.points}>
-                  <div id="deck-panel-points" role="tabpanel" aria-labelledby="deck-tab-points" className="stage-deck-page">
-                    <PanelBoundary name="Lower third">
-                      <LowerThirdPanel />
-                    </PanelBoundary>
-                  </div>
-                </Slot>
+            ))}
+          {/* Stays mounted under an editor, so the heard verses and every search keep their state. */}
+          <div className="operator-middle-live" hidden={centreOpen}>
+            <PanelBoundary name="Suggestions">
+              <SuggestionTray />
+            </PanelBoundary>
+            <Slot show={show.library}>
+              <section className="finder" aria-label="Finder">
+                <div className="finder-head">
+                  <Tabs<(typeof LIBRARY_TABS)[number]['id']>
+                    className="finder-tabs"
+                    aria-label="Finder"
+                    idPrefix="finder"
+                    tabs={libraryTabs.map((tab) => ({ id: tab.id, label: tab.label }))}
+                    value={libraryTab}
+                    onChange={setLibraryTab}
+                  />
+                  <div className="finder-tools" ref={setFinderTools} />
+                </div>
+                {/* All stay mounted so each keeps its search text when switching tabs. */}
+                <div className="library-page" id="finder-panel-songs" role="tabpanel" aria-labelledby="finder-tab-songs" hidden={libraryTab !== 'songs'}>
+                  <PanelBoundary name="Songs">
+                    <SongList />
+                  </PanelBoundary>
+                </div>
+                <div className="library-page" id="finder-panel-scripture" role="tabpanel" aria-labelledby="finder-tab-scripture" hidden={libraryTab !== 'scripture'}>
+                  <PanelBoundary name="Scripture">
+                    <ScripturePanel toolbar={libraryTab === 'scripture' ? finderTools : null} />
+                  </PanelBoundary>
+                </div>
+                <div className="library-page" id="finder-panel-presentations" role="tabpanel" aria-labelledby="finder-tab-presentations" hidden={libraryTab !== 'presentations'}>
+                  <PanelBoundary name="Presentations">
+                    <PresentationsPanel />
+                  </PanelBoundary>
+                </div>
+                <div className="library-page" id="finder-panel-media" role="tabpanel" aria-labelledby="finder-tab-media" hidden={libraryTab !== 'media'}>
+                  <PanelBoundary name="Media">
+                    <MediaPanel />
+                  </PanelBoundary>
+                </div>
               </section>
+            </Slot>
+            {/* Every slide of the item, full size, over the finder; mounted throughout so the grid keeps its place. */}
+            {show.centre && (
+              <aside id="slides-drawer" className="slides-drawer" aria-label="All slides" hidden={!slidesDrawerOpen}>
+                <div className="slides-drawer-head">
+                  <UpNextMeta />
+                  <IconButton size="sm" label="Close all slides" icon={<X size={16} />} onClick={() => setSlidesDrawerOpen(false)} />
+                </div>
+                <PanelBoundary key="slides" name="Slides">
+                  <SlideGrid />
+                </PanelBoundary>
+              </aside>
             )}
           </div>
         </div>
-        <Slot show={show.library}>
-          {centreColumn &&
-            (libraryCollapsed ? (
-              <span className="shell-gap" aria-hidden="true" />
-            ) : (
-              <Splitter label="Resize the finder" value={sizes.finder} min={LIMITS.finder[0]} max={LIMITS.finder[1]} direction={-1} panel=".library" onChange={resize('finder')} />
-            ))}
-          {libraryCollapsed ? (
-            <aside className="library collapsed">
-              <button className="panel-rail-toggle" aria-expanded={false} title="Show the finder" onClick={() => setLibraryCollapsed(false)}>
-                <ChevronLeft size={16} aria-hidden="true" />
-                <span className="panel-rail-label">Finder</span>
-              </button>
-            </aside>
-          ) : (
-            <div className="library">
-              <div className="library-tabs">
-                <Tabs<(typeof LIBRARY_TABS)[number]['id']>
-                  className="library-tab-list"
-                  aria-label="Finder"
-                  idPrefix="finder"
-                  tabs={libraryTabs.map((tab) => ({ id: tab.id, label: tab.label }))}
-                  value={libraryTab}
-                  onChange={setLibraryTab}
-                />
-                <IconButton label="Hide the finder" icon={<ChevronRight size={18} />} aria-expanded={true} onClick={() => setLibraryCollapsed(true)} />
-              </div>
-              <PanelBoundary name="Suggestions">
-                <SuggestionTray />
+        <Slot show={rightColumn}>
+          <div className="operator-right">
+            {show.live && (
+              <>
+                <PanelBoundary name="Preview">
+                  <PreviewMonitor />
+                </PanelBoundary>
+                <PanelBoundary name="Live">
+                  <LiveMonitor lowerThird={show.points} />
+                </PanelBoundary>
+              </>
+            )}
+            {show.centre && (
+              <PanelBoundary name="Queue">
+                <QueueCard gridOpen={slidesDrawerOpen} onGridOpenChange={setSlidesDrawerOpen} />
               </PanelBoundary>
-              {/* All stay mounted so each keeps its search text when switching tabs. */}
-              <div className="library-page" id="finder-panel-songs" role="tabpanel" aria-labelledby="finder-tab-songs" hidden={libraryTab !== 'songs'}>
-                <PanelBoundary name="Songs">
-                  <SongList />
-                </PanelBoundary>
-              </div>
-              <div className="library-page" id="finder-panel-scripture" role="tabpanel" aria-labelledby="finder-tab-scripture" hidden={libraryTab !== 'scripture'}>
-                <PanelBoundary name="Scripture">
-                  <ScripturePanel />
-                </PanelBoundary>
-              </div>
-              <div className="library-page" id="finder-panel-presentations" role="tabpanel" aria-labelledby="finder-tab-presentations" hidden={libraryTab !== 'presentations'}>
-                <PanelBoundary name="Presentations">
-                  <PresentationsPanel />
-                </PanelBoundary>
-              </div>
-              <div className="library-page" id="finder-panel-media" role="tabpanel" aria-labelledby="finder-tab-media" hidden={libraryTab !== 'media'}>
-                <PanelBoundary name="Media">
-                  <MediaPanel />
-                </PanelBoundary>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </Slot>
       </main>
       <StatusBar showListener={show.listener} />

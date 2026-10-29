@@ -1,5 +1,6 @@
-import { BookPlus, BookX, History, Search, SearchX, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { BookPlus, BookX, History, Search, SearchX, SlidersHorizontal, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { can, upgradeNote } from '../../shared/features'
 import { BOOK_NAMES, formatReference, NEW_TESTAMENT_BOOKS, OLD_TESTAMENT_BOOKS, parseReference } from '../../shared/parseReference'
 import type { AiError, BibleVersion, BibleVersionCode, Testament, Verse } from '../../shared/types'
@@ -16,6 +17,7 @@ import {
   type ScriptureQuery,
   type VersionFilter,
 } from '../lib/referenceSuggestions'
+import { useDismiss } from '../lib/useDismiss'
 import { usePersistentState } from '../lib/usePersistentState'
 import { useVerseSearch } from '../lib/useVerseSearch'
 import { selectDefaultTranslation, selectLiveSlide, useOperatorStore } from '../store'
@@ -52,8 +54,11 @@ async function readListing(view: Extract<ScriptureQuery, { kind: 'books' | 'chap
   return perVersion.flat().sort((a, b) => a.verseStart - b.verseStart)
 }
 
-/** One search box, all local: the list below it narrows to books, a chapter or keyword matches with every keystroke. */
-export function ScripturePanel() {
+/**
+ * One search box, all local: the list below it narrows to books, a chapter or keyword matches with every keystroke.
+ * The translation, the search box and the search options sit in the finder's tab row (`toolbar`) while the tab is open.
+ */
+export function ScripturePanel({ toolbar = null }: { toolbar?: HTMLElement | null }) {
   const [input, setInput] = useState('')
   const [query, setQuery] = useState('')
   /** The input the user chose to search as words, overriding the book or chapter listing. */
@@ -73,6 +78,10 @@ export function ScripturePanel() {
   /** Installed versions, for the version list. */
   const [installed, setInstalled] = useState<BibleVersion[]>([])
   const [importOpen, setImportOpen] = useState(false)
+  const [optionsOpen, setOptionsOpen] = useState(false)
+  const optionsRef = useRef<HTMLDivElement>(null)
+  const closeOptions = useCallback(() => setOptionsOpen(false), [])
+  useDismiss(optionsOpen, optionsRef, closeOptions)
   const [error, setError] = useState<ErrorLike | null>(null)
   const [hasBible, setHasBible] = useState<boolean | null>(null)
   /** "Search by meaning": the AI names passages; their text is read here from the database. */
@@ -368,6 +377,8 @@ export function ScripturePanel() {
     if (bookFilter && !allowed.includes(bookFilter)) setBookFilter(null)
   }
 
+  const chapterCount = chapter ? (structure[chapter.book]?.length ?? 0) : 0
+
   function heading() {
     if (meaning) {
       return (
@@ -410,12 +421,29 @@ export function ScripturePanel() {
           {chapter.book} {chapter.chapter}
         </strong>
         , {count} verse{count === 1 ? '' : 's'}
+        {chapterCount > 1 && (
+          <Select
+            size="sm"
+            className="chapter-select"
+            aria-label={`${chapter.book} chapters`}
+            value={chapter.chapter}
+            onChange={(e) => {
+              showText(`${chapter.book} ${e.target.value}`)
+              inputRef.current?.focus()
+            }}
+          >
+            {Array.from({ length: chapterCount }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={n}>
+                Chapter {n}
+              </option>
+            ))}
+          </Select>
+        )}
       </>
     )
   }
 
   const bookChoices = testament === 'old' ? OLD_TESTAMENT_BOOKS : testament === 'new' ? NEW_TESTAMENT_BOOKS : BOOK_NAMES
-  const chapterCount = chapter ? (structure[chapter.book]?.length ?? 0) : 0
   const showList = meaning !== null || textMode || listView !== null
   /** A search that finished with nothing to show (a listing with only its "Search verses for" row counts too). */
   const noResults =
@@ -466,43 +494,51 @@ export function ScripturePanel() {
     )
   }
 
-  return (
-    <section className="panel scripture-panel">
-      <h2 className="visually-hidden">Scripture</h2>
-      <form className="scripture-search" onSubmit={(e: FormEvent) => e.preventDefault()}>
-        <div className="scripture-version-row">
-          <Select aria-label="Translation" title="The translation to search; All searches every installed version" value={version} onChange={(e) => setVersion(e.target.value as VersionFilter)}>
-            {[{ code: 'both', name: 'All installed versions' }, ...installed].map((v) => (
-              <option key={v.code} value={v.code} title={v.name}>
-                {v.code === 'both' ? 'All' : v.code}
-              </option>
-            ))}
-          </Select>
-          <IconButton
-            label="Import a Bible version"
-            tooltip="Import a Bible version your church owns"
-            icon={<BookPlus size={18} />}
-            disabled={!can('bible.extraVersions')}
-            disabledTooltip={upgradeNote('bible.extraVersions')}
-            onClick={() => setImportOpen(true)}
-          />
-        </div>
-        <div className="scripture-search-row">
-          <span className="scripture-input-icon" aria-hidden="true">
-            <Search size={16} />
-          </span>
-          <Input
-            ref={inputRef}
-            className="scripture-input"
-            size="lg"
-            type="search"
-            aria-label="Search scripture"
-            aria-controls="scripture-list"
-            placeholder="John 3:16, or describe it"
-            value={input}
-            onChange={(e) => changeInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
+  const tools = (
+    <>
+      <Select
+        size="sm"
+        className="scripture-version"
+        aria-label="Translation"
+        title="The translation to search; All searches every installed version"
+        value={version}
+        onChange={(e) => setVersion(e.target.value as VersionFilter)}
+      >
+        {[{ code: 'both', name: 'All installed versions' }, ...installed].map((v) => (
+          <option key={v.code} value={v.code} title={v.name}>
+            {v.code === 'both' ? 'All' : v.code}
+          </option>
+        ))}
+      </Select>
+      <label className="scripture-search-row">
+        <span className="scripture-input-icon" aria-hidden="true">
+          <Search size={14} />
+        </span>
+        <Input
+          ref={inputRef}
+          className="scripture-input"
+          size="sm"
+          type="search"
+          aria-label="Search scripture"
+          aria-controls="scripture-list"
+          placeholder="John 3:16, or describe it"
+          value={input}
+          onChange={(e) => changeInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+      </label>
+      <div className="scripture-options-anchor" ref={optionsRef}>
+        <IconButton
+          size="sm"
+          className={filtered ? 'scripture-options-button active' : 'scripture-options-button'}
+          label="Search options"
+          tooltip="Search by meaning, the testament and book, and Bible versions"
+          icon={<SlidersHorizontal size={16} />}
+          aria-haspopup="dialog"
+          aria-expanded={optionsOpen}
+          onClick={() => setOptionsOpen(!optionsOpen)}
+        />
+        <div className="scripture-options" role="dialog" aria-label="Search options" hidden={!optionsOpen}>
           <AiButton
             feature="ai.scriptureSearch"
             label="By meaning"
@@ -512,24 +548,43 @@ export function ScripturePanel() {
             tooltip="Ask the AI for passages about this; their text still comes from your local Bible"
             onClick={handleMeaning}
           />
+          <div className="scripture-filters">
+            <Select aria-label="Testament" value={testament} onChange={(e) => handleTestamentChange(e.target.value as Testament)}>
+              <option value="all">Whole Bible</option>
+              <option value="old">Old Testament</option>
+              <option value="new">New Testament</option>
+            </Select>
+            <Select aria-label="Book" value={bookFilter ?? ''} onChange={(e) => setBookFilter(e.target.value || null)}>
+              <option value="">All books</option>
+              {bookChoices.map((book) => (
+                <option key={book} value={book}>
+                  {book}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <Button
+            size="sm"
+            icon={<BookPlus size={16} aria-hidden="true" />}
+            title="Import a Bible version your church owns"
+            disabled={!can('bible.extraVersions')}
+            disabledTooltip={upgradeNote('bible.extraVersions')}
+            onClick={() => {
+              setOptionsOpen(false)
+              setImportOpen(true)
+            }}
+          >
+            Import a Bible version
+          </Button>
         </div>
+      </div>
+    </>
+  )
 
-        <div className="scripture-filters">
-          <Select aria-label="Testament" value={testament} onChange={(e) => handleTestamentChange(e.target.value as Testament)}>
-            <option value="all">Whole Bible</option>
-            <option value="old">Old Testament</option>
-            <option value="new">New Testament</option>
-          </Select>
-          <Select aria-label="Book" value={bookFilter ?? ''} onChange={(e) => setBookFilter(e.target.value || null)}>
-            <option value="">All books</option>
-            {bookChoices.map((book) => (
-              <option key={book} value={book}>
-                {book}
-              </option>
-            ))}
-          </Select>
-        </div>
-      </form>
+  return (
+    <section className="panel scripture-panel">
+      <h2 className="visually-hidden">Scripture</h2>
+      {toolbar ? createPortal(tools, toolbar) : <div className="scripture-search">{tools}</div>}
 
       {hasBible === false && (
         <EmptyState compact icon={<BookX size={20} />} title="No Bible text yet" description='Run "npm run import:bible", then try again.' />
@@ -562,26 +617,6 @@ export function ScripturePanel() {
         <div className="scripture-results">
           <ErrorNote error={error} />
           <ErrorNote error={meaningError && describeError(meaningError)} />
-
-          {chapter && chapterCount > 1 && (
-            <div className="chapter-buttons" role="group" aria-label={`${chapter.book} chapters`}>
-              {Array.from({ length: chapterCount }, (_, i) => i + 1).map((n) => (
-                <Button
-                  key={n}
-                  size="sm"
-                  className="chapter-button"
-                  pressed={n === chapter.chapter}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    showText(`${chapter.book} ${n}`)
-                    inputRef.current?.focus()
-                  }}
-                >
-                  {n}
-                </Button>
-              ))}
-            </div>
-          )}
 
           <div className="scripture-list" id="scripture-list" ref={listRef}>
             {noResults && noResultsState()}

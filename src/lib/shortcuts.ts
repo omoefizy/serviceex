@@ -26,7 +26,16 @@ export function isTyping(target: EventTarget | null): boolean {
 /** The Lower Third panel's headline field, focused by Cmd+L (Ctrl+L) and by Send to Lower Third. */
 export const LOWER_THIRD_HEADLINE_ID = 'lower-third-headline'
 
+/** Asks the Live monitor to open its Lower third popover, where the headline field is. */
+export const SHOW_LOWER_THIRD_EVENT = 'serviceex:show-lower-third'
+
 export function focusLowerThirdHeadline(): void {
+  window.dispatchEvent(new Event(SHOW_LOWER_THIRD_EVENT))
+  // The popover renders first; then the field can take the keyboard.
+  requestAnimationFrame(() => requestAnimationFrame(focusHeadlineField))
+}
+
+function focusHeadlineField(): void {
   const field = document.getElementById(LOWER_THIRD_HEADLINE_ID)
   if (!(field instanceof HTMLInputElement) && !field?.isContentEditable) return
   field.scrollIntoView({ block: 'nearest' })

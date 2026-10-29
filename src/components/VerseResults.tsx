@@ -43,7 +43,8 @@ export function VerseText({ item }: { item: ResultItem }) {
 }
 
 /**
- * The results as a table with Translation, Reference and Scripture columns. Click a row to preview it, double-click
+ * The results as a table with Translation, Reference and Scripture columns, one line per verse. Within one chapter the
+ * reference is the verse number, and with one version the Translation column is left out. Click a row to preview it, double-click
  * to go live; tick several to preview or schedule them as a range or a sequence. The live verse is marked.
  */
 export const VerseResults = forwardRef<VerseResultsHandle, Props>(function VerseResults(
@@ -91,6 +92,8 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
   const chosen = items.filter((item) => selected.has(item.key))
   const rangeOk = canMakeRange(chosen)
   const effectiveMode = mode === 'range' && !rangeOk ? 'sequence' : mode
+  const oneVersion = items.every((item) => item.version === items[0].version)
+  const oneChapter = items.every((item) => item.book === items[0].book && item.chapter === items[0].chapter)
 
   /** `at` sends the passage to another computer as a cue, from a menu there; it never goes live there. */
   async function use(list: ResultItem[], how: 'range' | 'sequence', action: 'preview' | 'schedule' | 'send', at?: { clientX: number; clientY: number }) {
@@ -170,7 +173,7 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
           <thead>
             <tr>
               <th scope="col" aria-label="Select" />
-              <th scope="col">Translation</th>
+              {!oneVersion && <th scope="col">Translation</th>}
               <th scope="col">Reference</th>
               <th scope="col">Scripture</th>
               <th scope="col" aria-label="Schedule" />
@@ -213,8 +216,8 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
                       <input type="checkbox" aria-label={`Select ${reference} ${item.version}`} checked={selected.has(item.key)} onChange={() => toggle(item.key)} />
                     </label>
                   </td>
-                  <td className="verse-table-version">{item.version}</td>
-                  <td className="verse-table-ref">{reference}</td>
+                  {!oneVersion && <td className="verse-table-version">{item.version}</td>}
+                  <td className="verse-table-ref">{oneChapter ? (item.verseStart === item.verseEnd ? item.verseStart : `${item.verseStart}-${item.verseEnd}`) : reference}</td>
                   <td className="verse-table-text" title={item.verses.map((v) => v.text).join(' ')}>
                     {/* At most 3 lines; the whole verse is in the tooltip and the strip under the list. */}
                     <div className="verse-table-clamp">
@@ -245,7 +248,7 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={footer.onChoose}
               >
-                <td colSpan={5}>{footer.label}</td>
+                <td colSpan={oneVersion ? 4 : 5}>{footer.label}</td>
               </tr>
             )}
           </tbody>

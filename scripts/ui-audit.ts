@@ -34,8 +34,11 @@ const OUT = path.join(ROOT, 'docs', 'ui-audit')
 const COMPARE = path.join(OUT, 'compare')
 /** Only the screens compared with the design, for a quick run while matching it. */
 const COMPARE_ONLY = process.argv.includes('--compare')
-/** The approved designs, by the name of the screen they are compared with. */
-const REFERENCES = { main: 'Main.reference.html', settings: 'Settings.reference.html', welcome: 'Welcome.reference.html' } as const
+/**
+ * The approved designs, by the name of the screen they are compared with. The operator screen is Main2 (drawn at 1366
+ * by 768), which replaced the operator layout of Main.reference.html.
+ */
+const REFERENCES = { main: 'Main2.reference.html', settings: 'Settings.reference.html', welcome: 'Welcome.reference.html' } as const
 type CompareScreen = keyof typeof REFERENCES
 /** Common church laptops (1280 by 720 and 1366 by 768) and a full HD screen. */
 const SIZES = [
@@ -723,7 +726,7 @@ async function settle(page: Page, ms = 500) {
 }
 
 async function libraryTab(page: Page, name: string) {
-  await page.locator('.library').getByRole('tab', { name, exact: true }).click()
+  await page.locator('.finder').getByRole('tab', { name, exact: true }).click()
 }
 
 const metrics: Record<string, Metrics> = {}
@@ -769,7 +772,8 @@ async function compareShot(page: Page, screen: CompareScreen, size: { width: num
 
 /**
  * Each approved design at each size, saved beside the app's picture as <screen>@<width>.reference.png. The designs are
- * drawn at 1440 by 900; their root is stretched to the window so they show what the design does at that size.
+ * drawn at one size (1366 by 768, or 1440 by 900); their root is stretched to the window so they show what the design
+ * does at that size.
  */
 async function captureReferences() {
   mkdirSync(COMPARE, { recursive: true })
@@ -792,44 +796,58 @@ async function captureReferences() {
 }
 
 /**
- * The operator screen as the design shows it (scripture live, three verses heard in the sermon, the Scripture tab
- * open), then Settings at its listening page.
+ * The operator screen as Main2.reference.html shows it: John 3:16 to 18 live at verse 16, three verses heard in the
+ * sermon (Romans 8:1 just now and in the preview, Psalm 23:4 20 seconds ago, John 3:16 a minute ago and live), the
+ * Scripture tab open at John 3. Then Settings at its listening page.
  */
 async function compareScreens(page: Page, serviceId: number, size: { width: number; height: number }) {
+  // The chapter first, so the list follows the verse as it goes live.
+  await libraryTab(page, 'Scripture')
+  await page.getByLabel('Search scripture').fill('john 3')
+  await page.waitForTimeout(400)
+  await page.getByLabel('Search scripture').blur()
   await page.evaluate(async (id) => {
     const { store, suggestions } = (window as unknown as AuditWindow).__audit
-    const s = store.getState() as unknown as { openService(id: number): Promise<void> }
-    await s.openService(id)
-    const st = store.getState() as unknown as { service: { items: unknown[] }; loadItem(item: unknown): Promise<boolean>; goLive(i: number): void }
-    await st.loadItem(st.service.items[3])
-    st.goLive(0)
+    type Passage = { title: string; verses: { text: string; caption: string }[] }
+    const st = store.getState() as unknown as { openService(id: number): Promise<void>; selectScripture(title: string, slides: Passage['verses']): void; goLive(i: number): void }
+    await st.openService(id)
     const books = await window.api.bible.listBooks()
+    const john = books.find((b) => /^john$/i.test(b)) ?? books[42]
+    const read = async (book: string, chapter: number, from: number, to: number): Promise<Passage> => {
+      const verses = await window.api.bible.getRange('KJV', book, chapter, from, to)
+      const label = `${book} ${chapter}:${from}${to > from ? `-${to}` : ''}`
+      return { title: `${label} KJV`, verses: verses.map((v) => ({ text: v.text, caption: `${v.book} ${v.chapter}:${v.verse} KJV` })) }
+    }
+    const live = await read(john, 3, 16, 18)
+    st.selectScripture(live.title, live.verses)
+    st.goLive(0)
+    const now = Date.now()
     const heard = [
-      { book: books.find((b) => /^romans/i.test(b)) ?? books[44], chapter: 8, verse: 1, confidence: 0.94 },
-      { book: books.find((b) => /^psalm/i.test(b)) ?? books[18], chapter: 23, verse: 4, confidence: 0.61 },
-      { book: books.find((b) => /^john/i.test(b)) ?? books[42], chapter: 3, verse: 17, confidence: 0.72 },
+      { book: john, chapter: 3, verse: 16, confidence: 0.97, ago: 60_000 },
+      { book: books.find((b) => /^psalm/i.test(b)) ?? books[18], chapter: 23, verse: 4, confidence: 0.61, ago: 20_000 },
+      { book: books.find((b) => /^romans/i.test(b)) ?? books[44], chapter: 8, verse: 1, confidence: 0.94, ago: 0 },
     ]
     suggestions.getState().clear()
     for (const h of heard) {
-      const verses = await window.api.bible.getRange('KJV', h.book, h.chapter, h.verse, h.verse)
+      // John 3:16 is heard as the live passage, so its row shows LIVE.
+      const passage = h.verse === 16 ? live : await read(h.book, h.chapter, h.verse, h.verse)
       const label = `${h.book} ${h.chapter}:${h.verse}`
-      const passage = { title: `${label} KJV`, verses: verses.map((v) => ({ text: v.text, caption: `${v.book} ${v.chapter}:${v.verse} KJV` })) }
       suggestions.getState().add({
         reference: { book: h.book, chapter: h.chapter, verseStart: h.verse, verseEnd: h.verse },
         label,
         passage,
         confidence: h.confidence,
-        text: verses[0]?.text ?? '',
+        text: passage.verses[0]?.text ?? '',
         version: 'KJV',
         alternatives: [],
-        heardAt: Date.now(),
+        heardAt: now - h.ago,
         kind: 'reference',
         heard: label,
       })
     }
+    const newest = (suggestions.getState() as unknown as { suggestions: { id: number }[]; preview(id: number): void })
+    newest.preview(newest.suggestions[0].id)
   }, serviceId)
-  await libraryTab(page, 'Scripture')
-  await page.getByLabel('Search scripture').fill('john 3')
   await page.waitForTimeout(400)
   await compareShot(page, 'main', size)
   await page.getByLabel('Search scripture').fill('')
