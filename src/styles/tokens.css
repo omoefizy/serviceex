@@ -26,6 +26,11 @@
   --selected-ring: inset 0 0 0 1px var(--accent-ring);
   /* Text and icons on an accent fill (4.8:1). */
   --ink: #031018;
+  /* Text on the accent tint: the on-air item's detail and NOW, the selected verse's number. */
+  --accent-text: #9fd8f5;
+  --accent-number: #7ccbf2;
+  /* The soft glow under the live screen. */
+  --accent-glow: color-mix(in srgb, var(--accent) 18%, transparent);
 
   /* ---------- Surfaces and lines ---------- */
 
@@ -36,6 +41,9 @@
   --raised-2: #1a2440;
   --line: rgb(173 196 255 / 0.09);
   --line-strong: rgb(173 196 255 / 0.18);
+  /* Hover on a transparent control, and on a list row. */
+  --hover: rgb(173 196 255 / 0.08);
+  --hover-row: rgb(173 196 255 / 0.06);
 
   /* ---------- Text ---------- */
 
@@ -86,10 +94,18 @@
   --live-strong: var(--live-red);
   /* Live red as text on a dark surface (the solid pill is preferred). */
   --live-text: #ff5d73;
+  /* The LIVE chip on On screen: pale text and a bright dot on the soft live tint. */
+  --live-chip-text: #ffd3d9;
+  --live-dot: #ff5a6e;
   --live-soft: color-mix(in srgb, var(--live-red) 18%, transparent);
   /* Red text on a white pill inside a live fill (the alert chip's Stop). */
   --live-ink: #a3142a;
 
+  /* How sure a heard verse is: a strong match and a maybe. */
+  --match-strong: #6fe3b2;
+  --match-maybe: #f5c56b;
+  /* A switch that is off. */
+  --switch-off: #26304d;
   --success-soft: color-mix(in srgb, var(--success) 15%, transparent);
   --warning-soft: color-mix(in srgb, var(--warning) 15%, transparent);
   --warning-fill: var(--warning);
@@ -117,7 +133,11 @@
 
   /* The first run welcome: accent into navy, with rising lines in the bright accent. */
   --welcome-from: var(--accent);
-  --welcome-to: #0a1636;
+  --welcome-mid: #064c75;
+  --welcome-to: #0a0f1e;
+  --welcome-line: var(--accent-bright);
+  --welcome-dot: #eaf7ff;
+  --welcome-caption: #bfe6fa;
 
   /* Screens: anything that stands for the projector (previews, thumbnails, the stage display). These stay dark in
      light mode, because the projector does. */
@@ -240,6 +260,8 @@
     --raised-2: #e6eaf3;
     --line: rgb(13 19 36 / 0.1);
     --line-strong: rgb(13 19 36 / 0.2);
+    --hover: rgb(13 19 36 / 0.06);
+    --hover-row: rgb(13 19 36 / 0.04);
     --text: #0d1324;
     --text-secondary: #3a4560;
     --muted: #5b6680;
@@ -252,6 +274,13 @@
     --warning-fill: #f5b94a;
     --error: #b4321f;
     --scrim: rgb(13 19 36 / 0.45);
+    --accent-text: color-mix(in srgb, var(--accent), black 30%);
+    --accent-number: color-mix(in srgb, var(--accent), black 22%);
+    --live-chip-text: #a3142a;
+    --live-dot: #d62b43;
+    --match-strong: #12814f;
+    --match-maybe: #9a5b00;
+    --switch-off: #cdd3e1;
     --shadow-1: 0 4px 12px rgb(13 19 36 / 0.12);
     --shadow-2: 0 8px 24px rgb(13 19 36 / 0.14);
     --shadow-3: 0 16px 40px rgb(13 19 36 / 0.16);
@@ -266,6 +295,8 @@
   --raised-2: #e6eaf3;
   --line: rgb(13 19 36 / 0.1);
   --line-strong: rgb(13 19 36 / 0.2);
+  --hover: rgb(13 19 36 / 0.06);
+  --hover-row: rgb(13 19 36 / 0.04);
   --text: #0d1324;
   --text-secondary: #3a4560;
   --muted: #5b6680;
@@ -278,6 +309,13 @@
   --warning-fill: #f5b94a;
   --error: #b4321f;
   --scrim: rgb(13 19 36 / 0.45);
+  --accent-text: color-mix(in srgb, var(--accent), black 30%);
+  --accent-number: color-mix(in srgb, var(--accent), black 22%);
+  --live-chip-text: #a3142a;
+  --live-dot: #d62b43;
+  --match-strong: #12814f;
+  --match-maybe: #9a5b00;
+  --switch-off: #cdd3e1;
   --shadow-1: 0 4px 12px rgb(13 19 36 / 0.12);
   --shadow-2: 0 8px 24px rgb(13 19 36 / 0.14);
   --shadow-3: 0 16px 40px rgb(13 19 36 / 0.16);

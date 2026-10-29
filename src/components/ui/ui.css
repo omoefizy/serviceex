@@ -316,19 +316,17 @@
   width: 48px;
   height: 28px;
   padding: 0;
-  border: 1px solid var(--border-strong);
+  border: 0;
   border-radius: var(--radius-full);
-  background: var(--bg-3);
+  background: var(--switch-off);
   cursor: pointer;
-  transition:
-    background-color var(--duration) var(--ease),
-    border-color var(--duration) var(--ease);
+  transition: background-color var(--duration) var(--ease);
 }
 
 .ui-switch-thumb {
   position: absolute;
-  top: 2px;
-  left: 2px;
+  top: 3px;
+  left: 3px;
   width: 22px;
   height: 22px;
   border-radius: 50%;
@@ -339,16 +337,15 @@
 }
 
 .ui-switch:is(:hover, [data-force~='hover']):not(:disabled) {
-  border-color: var(--text-3);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 
 .ui-switch[aria-checked='true'] {
-  border-color: var(--accent);
   background: var(--accent);
 }
 
 .ui-switch[aria-checked='true'] .ui-switch-thumb {
-  background: var(--ink);
+  background: var(--on-live);
   transform: translateX(20px);
 }
 
@@ -386,27 +383,31 @@
 
 /* ---------- SegmentedControl ---------- */
 
+/* A pill of choices: the chosen one filled in the accent. */
 .ui-segmented {
   display: inline-flex;
   max-width: 100%;
-  height: var(--control-md);
+  padding: var(--space-1);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
-/* Each item has its own border, overlapping its neighbour's, so every item is the full control height. */
 .ui-segmented-item {
   position: relative;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-1-5);
   min-width: 0;
-  height: 100%;
-  margin-left: -1px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: 0;
-  background: var(--bg-2);
+  height: var(--control-md);
+  padding: 0 var(--space-5);
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
   color: var(--text-2);
   font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
   white-space: nowrap;
   cursor: pointer;
   transition:
@@ -414,27 +415,16 @@
     color var(--duration-fast) var(--ease);
 }
 
-.ui-segmented-item:first-child {
-  margin-left: 0;
-  border-radius: var(--radius-md) 0 0 var(--radius-md);
-}
-
-.ui-segmented-item:last-child {
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-}
-
-.ui-segmented-item:only-child {
-  border-radius: var(--radius-md);
-}
-
 .ui-segmented-item:is(:hover, [data-force~='hover']):not(:disabled) {
-  background: var(--bg-3);
+  background: var(--hover);
   color: var(--text-1);
 }
 
-.ui-segmented-item[aria-checked='true'] {
-  background: var(--accent-soft);
-  color: var(--text-1);
+.ui-segmented-item[aria-checked='true'],
+.ui-segmented-item[aria-checked='true']:is(:hover, [data-force~='hover']):not(:disabled) {
+  background: var(--accent);
+  color: var(--ink);
+  font-weight: var(--weight-bold);
 }
 
 .ui-segmented-item:is(:focus-visible, [data-force~='focus']) {

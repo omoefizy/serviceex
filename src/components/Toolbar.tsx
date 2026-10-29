@@ -2,6 +2,7 @@ import {
   BookOpenText,
   Cast,
   Check,
+  ChevronDown,
   CircleHelp,
   Ellipsis,
   EyeOff,
@@ -344,7 +345,7 @@ function LogoMark() {
   return (
     <svg className="brand-mark" width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">
       <rect width="28" height="28" rx="8" fill="var(--accent)" />
-      <path d="M7 19.5h4.5v-4h4.5v-4h4.5" fill="none" stroke="var(--ink)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8 19l5-5 3 3 5-6" fill="none" stroke="var(--ink)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
@@ -407,8 +408,11 @@ export function Toolbar() {
       </div>
       <span className="toolbar-divider" aria-hidden="true" />
       <button type="button" className="toolbar-service" title="Choose or create a service" onClick={showServicePicker}>
-        <span className="toolbar-service-name">{service ? service.name : 'No service open'}</span>
-        <span className="toolbar-service-date">{service ? (service.date ? `${service.date} · ${saved}` : saved) : 'Choose or create one'}</span>
+        <span className="toolbar-service-text">
+          <span className="toolbar-service-name">{service ? service.name : 'No service open'}</span>
+          <span className="toolbar-service-date">{service ? (service.date ? `${service.date} · ${saved}` : saved) : 'Choose or create one'}</span>
+        </span>
+        <ChevronDown size={16} aria-hidden="true" />
       </button>
 
       <AlertRunningChip />
@@ -432,9 +436,10 @@ export function Toolbar() {
             </button>
           ))}
         </div>
-        <AlertsButton />
-        <MoreMenu />
-        <IconButton
+        <div className="toolbar-icons">
+          <AlertsButton />
+          <MoreMenu />
+          <IconButton
           size="lg"
           className="toolbar-icon toolbar-settings"
           label="Settings"
@@ -443,7 +448,8 @@ export function Toolbar() {
           pressed={settingsOpen}
           aria-keyshortcuts={IS_MAC ? 'Meta+,' : 'Control+,'}
           onClick={() => openSettings(!settingsOpen)}
-        />
+          />
+        </div>
       </div>
     </header>
   )

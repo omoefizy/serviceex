@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ServiceEx settings</title>
+
+</head>
+<body>
+
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Figtree:wght@400..700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#070B16}
+.hv:hover{background:rgba(173,196,255,.08)}
+button{font-family:inherit;cursor:pointer}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #00AFEF;outline-offset:2px}
+input[type=range]{accent-color:#0087CB}
+</style>
+
+<div style="--bg:#070B16;--panel:#0D1324;--raise:#141C33;--line:rgba(173,196,255,.09);--line2:rgba(173,196,255,.18);--text:#EEF2FA;--text2:#B4BED4;--muted:#8793AF;--accent:#0087CB;--accent2:#00AFEF;--ink:#031018;width:1440px;height:900px;box-sizing:border-box;display:flex;background:var(--bg);color:var(--text);font-family:'Figtree',system-ui,sans-serif;font-size:14px;line-height:1.4;overflow:hidden">
+
+  <!-- NAV -->
+  <nav aria-label="Settings sections" style="width:300px;flex:none;display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--line);padding:16px 12px">
+    <button type="button" class="hv" style="display:flex;align-items:center;gap:10px;height:44px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:var(--text);font-weight:600;font-size:15px;margin-bottom:12px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>
+      Back to service
+    </button>
+    <div style="padding:8px 12px 6px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--muted)">ACCOUNT</div>
+    <button type="button" class="hv" style="display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:var(--text2);font-weight:500;font-size:14px;text-align:left">Account and plan</button>
+    <button type="button" class="hv" style="display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:var(--text2);font-weight:500;font-size:14px;text-align:left">Usage</button>
+    <div style="padding:16px 12px 6px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--muted)">SERVICE</div>
+    <button type="button" class="hv" style="display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:var(--text2);font-weight:500;font-size:14px;text-align:left">Scripture</button>
+    <button type="button" style="display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border:0;border-radius:10px;background:rgba(0,135,203,.18);box-shadow:inset 0 0 0 1px rgba(0,175,239,.4);color:#fff;font-weight:600;font-size:14px;text-align:left" aria-current="page">Audio and listening</button>
+    <button type="button" class="hv" style="display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:var(--text2);font-weight:500;font-size:14px;text-align:left">Language</button>
+    <button type="button" class="hv" style="display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:var(--text2);font-weight:500;font-size:14px;text-align:left">Church brand</button>
+    <div style="padding:16px 12px 6px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--muted)">DEVICES</div>
+    <button type="button" class="hv" style="display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:var(--text2);font-weight:500;font-size:14px;text-align:left">Sharing</button>
+    <button type="button" class="hv" style="display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:var(--text2);font-weight:500;font-size:14px;text-align:left">Outputs and displays</button>
+    <div style="padding:16px 12px 6px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--muted)">SUPPORT</div>
+    <button type="button" class="hv" style="display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:var(--text2);font-weight:500;font-size:14px;text-align:left">Help and diagnostics</button>
+    <button type="button" class="hv" style="display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:var(--text2);font-weight:500;font-size:14px;text-align:left">Send feedback</button>
+    <div style="flex:1"></div>
+    <div style="padding:14px;border-radius:14px;background:var(--raise);box-shadow:inset 0 0 0 1px var(--line)">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-weight:600">Pro plan</span>
+        <span style="font-size:12px;color:var(--muted)">v1.0.0</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin:4px 0 12px">Cloud listening: 41 h 57 min left</div>
+      <button type="button" style="width:100%;height:36px;border:0;border-radius:9px;background:var(--accent);color:var(--ink);font-weight:700;font-size:13px">Manage plan</button>
+    </div>
+  </nav>
+
+  <!-- CONTENT -->
+  <main style="flex:1;min-width:0;overflow:hidden;padding:48px 64px">
+    <div style="max-width:760px">
+      <h1 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-size:32px;font-weight:700;letter-spacing:-0.02em">Audio and listening</h1>
+      <p style="margin:8px 0 28px;color:var(--text2);font-size:15px;max-width:560px">Choose what ServiceEx listens to, and how. Changes apply the next time you start listening, never during a service.</p>
+
+      <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden">
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:24px;padding:20px 24px;border-bottom:1px solid var(--line)">
+          <div>
+            <div style="font-weight:600;font-size:15px">Transcription</div>
+            <div style="font-size:13px;color:var(--muted);margin-top:2px;max-width:380px">Cloud is the most accurate. On device keeps working without internet.</div>
+          </div>
+          <div style="display:flex;padding:4px;background:var(--bg);border-radius:12px;box-shadow:inset 0 0 0 1px var(--line)">
+            <button type="button" aria-pressed="true" style="height:36px;padding:0 20px;border:0;border-radius:9px;background:var(--accent);color:var(--ink);font-weight:700;font-size:13px">Cloud</button>
+            <button type="button" aria-pressed="false" class="hv" style="height:36px;padding:0 20px;border:0;border-radius:9px;background:transparent;color:var(--text2);font-weight:600;font-size:13px">On device</button>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:24px;padding:20px 24px;border-bottom:1px solid var(--line)">
+          <div>
+            <label for="mic" style="font-weight:600;font-size:15px">Microphone or line input</label>
+            <div style="font-size:13px;color:var(--muted);margin-top:2px">2 devices available</div>
+          </div>
+          <select id="mic" style="height:40px;min-width:260px;padding:0 12px;border:1px solid var(--line2);border-radius:10px;background:var(--bg);color:var(--text);font-family:inherit;font-size:14px">
+            <option>MacBook Pro Microphone</option>
+            <option>USB audio interface</option>
+          </select>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:24px;padding:20px 24px;border-bottom:1px solid var(--line)">
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:15px">Input level</div>
+            <div style="font-size:13px;color:var(--muted);margin-top:2px">Speak normally. The bar should reach the middle, not the end.</div>
+          </div>
+          <div style="width:260px;display:flex;align-items:center;gap:14px">
+            <div style="flex:1;height:10px;border-radius:999px;background:var(--bg);box-shadow:inset 0 0 0 1px var(--line);overflow:hidden"><div style="width:46%;height:100%;border-radius:999px;background:linear-gradient(90deg,#00AFEF,#3DDC97)"></div></div>
+            <button type="button" class="hv" style="height:36px;padding:0 14px;border:1px solid var(--line2);border-radius:10px;background:transparent;color:var(--text);font-weight:600;font-size:13px">Test</button>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:24px;padding:20px 24px;border-bottom:1px solid var(--line)">
+          <div>
+            <label for="gain" style="font-weight:600;font-size:15px">Input volume</label>
+            <div style="font-size:13px;color:var(--muted);margin-top:2px">Raise it if verses are missed, lower it if the level hits the end.</div>
+          </div>
+          <input id="gain" type="range" min="-12" max="12" value="0" style="width:260px">
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:24px;padding:20px 24px;border-bottom:1px solid var(--line)">
+          <div>
+            <div id="nc" style="font-weight:600;font-size:15px">Noise reduction</div>
+            <div style="font-size:13px;color:var(--muted);margin-top:2px;max-width:420px">Reduces fan, hum and room noise. Best for laptop microphones and noisy rooms.</div>
+          </div>
+          <button type="button" role="switch" aria-checked="false" aria-labelledby="nc" style="width:48px;height:28px;padding:3px;border:0;border-radius:999px;background:#26304D;display:flex;align-items:center"><span style="width:22px;height:22px;border-radius:50%;background:#B4BED4"></span></button>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:24px;padding:20px 24px">
+          <div>
+            <div id="vc" style="font-weight:600;font-size:15px">Voice commands</div>
+            <div style="font-size:13px;color:var(--muted);margin-top:2px;max-width:420px">Say “next verse” or “go to black” to control the screen hands free.</div>
+          </div>
+          <button type="button" role="switch" aria-checked="true" aria-labelledby="vc" style="width:48px;height:28px;padding:3px;border:0;border-radius:999px;background:var(--accent);display:flex;align-items:center;justify-content:flex-end"><span style="width:22px;height:22px;border-radius:50%;background:#fff"></span></button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+
+</body>
+</html>

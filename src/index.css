@@ -7301,6 +7301,8 @@ svg.lucide {
 
 /* ---------- Centre: On screen, Previous and Next, Up next ---------- */
 
+/* Nothing in the centre scrolls: On screen takes the height the card under it leaves, and the screen inside is as
+   large as that allows at 16:9. Only the lists inside the card under it scroll. */
 .stage-column {
   display: flex;
   flex-direction: column;
@@ -7323,75 +7325,93 @@ svg.lucide {
   min-height: 0;
 }
 
-.stage-scroll {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: var(--shell-gap);
-  min-height: 0;
-  overflow-y: auto;
-  border-radius: var(--radius-xl);
-}
-
-.stage-scroll > .panel,
-.stage-scroll > .ui-card,
-.stage-scroll > .layout-slot > * {
-  flex-shrink: 0;
-}
-
-/* The live screen fits the window's height, so Previous and Next and the slides below stay in view. */
-.on-screen-panel .preview-screen {
-  align-self: center;
-  width: min(100%, calc(var(--screen-max-height) * 16 / 9));
-}
-
-.on-screen-panel {
-  --screen-max-height: max(160px, calc(100vh - 520px));
-}
-
-.on-screen-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
-.on-screen-meta .screen-label {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.on-screen-meta .fade-control {
-  flex: 0 1 260px;
-  margin: 0;
-}
-
-.stage-column > .panel,
-.stage-live > .panel,
-.stage-live > .layout-slot > .panel,
-.stage-live .ui-panel {
-  flex-shrink: 0;
-}
-
 /* An editor open in the centre fills it, scrolling inside. */
 .stage-column > :not(.stage-live) {
   flex: 1;
   min-height: 0;
 }
 
-.on-screen-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: 0 var(--space-4) var(--space-3);
+.on-screen-panel {
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .on-screen-panel .ui-panel-head {
-  min-height: 52px;
+  min-height: 56px;
+  padding: 0 var(--space-4);
+}
+
+.on-screen-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.on-screen-body > :not(.on-screen-stage) {
+  flex-shrink: 0;
+}
+
+/* The space the screen may take; the screen is its largest 16:9 box. */
+.on-screen-stage {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  container-type: size;
+}
+
+.on-screen-stage > .preview-screen {
+  width: min(100cqw, 100cqh * 16 / 9);
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+.preview-screen {
+  border-radius: var(--radius-lg);
+}
+
+/* The live screen in the accent ring and glow; red is for the ON AIR button and LIVE chip. */
+.preview-screen.live {
+  border: 0;
+  box-shadow: 0 0 0 1px var(--accent-ring), 0 12px 40px var(--accent-glow);
+}
+
+.preview-screen.preview {
+  border: 2px solid var(--accent);
+}
+
+.on-screen-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.on-screen-tools .highlight-bar {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.on-screen-tools .fade-control {
+  display: flex;
+  flex: 0 1 240px;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 140px;
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
+
+.on-screen-tools .fade-control input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
 }
 
 .on-screen-output {
@@ -7404,37 +7424,25 @@ svg.lucide {
   gap: var(--space-1-5);
   height: 24px;
   padding: 0 var(--space-2-5);
-  border: 1px solid var(--border-strong);
+  border: 0;
   border-radius: var(--radius-full);
+  background: var(--raised);
   color: var(--text-2);
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
 }
 
 .on-air-chip.live {
-  border-color: var(--live-red);
-  background: var(--live-red);
-  color: var(--on-live);
+  background: var(--live-soft);
+  color: var(--live-chip-text);
 }
 
 .on-air-chip .live-dot {
-  width: 7px;
-  height: 7px;
-  background: var(--on-live);
+  width: 6px;
+  height: 6px;
+  background: var(--live-dot);
   animation: live-pulse 1.6s ease-in-out infinite;
-}
-
-.preview-screen {
-  border-radius: var(--radius-lg);
-}
-
-.preview-screen.live {
-  border: 2px solid var(--live-red);
-}
-
-.preview-screen.preview {
-  border: 2px solid var(--accent);
 }
 
 .screen-off {
@@ -7461,30 +7469,165 @@ svg.lucide {
   min-width: 0;
 }
 
+/* Previous and Next under the screen, with where the live slide is at the right. */
 .transport {
-  display: grid;
-  flex-shrink: 0;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--shell-gap);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .transport .ui-button {
-  width: 100%;
+  height: var(--control-xl);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-base);
+  gap: var(--space-2-5);
 }
 
-.up-next {
-  flex-shrink: 0;
+.transport-previous.ui-button {
+  padding: 0 var(--space-4) 0 var(--space-3);
+}
+
+.transport-next.ui-button {
+  padding: 0 var(--space-3) 0 18px;
+  font-weight: var(--weight-bold);
+}
+
+.transport .ui-button kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text-3);
+  font: inherit;
+  font-size: var(--text-xs);
+  line-height: 16px;
+}
+
+.transport-next.ui-button kbd {
+  border-color: color-mix(in srgb, var(--ink) 40%, transparent);
+  color: var(--ink);
+}
+
+.transport-position {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--text-sm);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The card under On screen: Up next, and the slide grid, Preview and Lower third when the layout shows them. */
+.stage-deck {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
   border-radius: var(--radius-xl);
+  background: var(--panel);
+  overflow: hidden;
+}
+
+/* A tab other than Up next holds a list: the card takes a share of the height and the list scrolls inside it. */
+.stage-deck:not(.stage-deck--upNext) {
+  flex: 0 1 clamp(200px, 38vh, 440px);
+}
+
+.stage-deck-tabs {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-3);
+  height: 52px;
+  padding: 0 var(--space-4) 0 var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.stage-deck-tabs > .ui-tabs {
+  flex: 0 1 auto;
+  min-width: 0;
+  border-bottom: 0;
+}
+
+.stage-deck-tabs .ui-tab {
+  flex: 0 1 auto;
+  height: 52px;
+  padding: 0 var(--space-3);
+  color: var(--text-3);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.stage-deck-tabs .ui-tab[aria-selected='true'] {
+  border-bottom-color: var(--accent-bright);
+  color: var(--text-1);
+}
+
+.stage-deck-tabs .up-next-meta {
+  margin-left: auto;
+}
+
+.stage-deck-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The panels in the card draw no frame of their own; their lists scroll inside. */
+.stage-deck-page > .panel,
+.stage-deck-page > .ui-panel,
+.stage-deck-page > .ui-card {
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.stage-deck-page > .panel,
+.stage-deck-page > .ui-panel {
+  overflow-y: auto;
+}
+
+.up-next.ui-card {
+  gap: 0;
+  padding: 0 var(--space-4) var(--space-4);
+  border-radius: var(--radius-xl);
+}
+
+.stage-deck-tabs + .layout-slot .up-next.ui-card,
+.stage-deck-tabs ~ .layout-slot .up-next.ui-card {
+  padding-top: var(--space-3);
+}
+
+.up-next > .ui-card-header {
+  height: 52px;
 }
 
 .up-next .ui-card-title {
   font-family: var(--font-display);
   font-size: var(--text-title);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.01em;
+}
+
+.up-next-meta {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .up-next-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 200px));
   gap: var(--space-3);
   margin: 0;
   padding: 0;
@@ -7500,11 +7643,12 @@ svg.lucide {
 
 .up-next-thumb {
   position: relative;
+  width: 100%;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--screen-bg);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 
 .up-next-label,
@@ -7515,6 +7659,55 @@ svg.lucide {
   font-size: var(--text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Under 800 pixels of height Up next is one compact row: small thumbnails with their labels beside them. Under 720
+   it is left out (App drops its tab). */
+@media (max-height: 799px) {
+  .up-next.ui-card {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-2-5) var(--space-4);
+  }
+
+  .stage-deck-tabs ~ .layout-slot .up-next.ui-card {
+    padding-top: var(--space-2-5);
+  }
+
+  .up-next > .ui-card-header {
+    flex-shrink: 0;
+    height: auto;
+  }
+
+  .up-next > .ui-card-header .up-next-meta {
+    display: none;
+  }
+
+  .up-next-list {
+    flex: 1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    min-width: 0;
+  }
+
+  .up-next-item {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .up-next-thumb {
+    flex: none;
+    width: 64px;
+  }
+
+  .stage-deck-tabs {
+    height: 44px;
+  }
+
+  .stage-deck-tabs .ui-tab {
+    height: 44px;
+  }
 }
 
 /* ---------- Order of service ---------- */
@@ -8012,7 +8205,7 @@ svg.lucide {
   padding-right: 48px;
 }
 
-/* ---------- Settings: a page of its own ---------- */
+/* ---------- Settings: a page of its own, after docs/design/Settings.reference.html ---------- */
 
 .settings-page {
   display: grid;
@@ -8024,65 +8217,69 @@ svg.lucide {
 .settings-sidebar {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
   min-height: 0;
-  padding: var(--space-4);
+  padding: var(--space-4) var(--space-3);
   overflow-y: auto;
   border-right: 1px solid var(--border);
   background: var(--panel);
 }
 
 .ui-button.settings-back {
-  align-self: flex-start;
-  margin-left: calc(-1 * var(--space-2));
-}
-
-.settings-page-title {
-  font-size: 24px;
-  font-weight: var(--weight-bold);
+  justify-content: flex-start;
+  gap: var(--space-2-5);
+  height: var(--control-xl);
+  margin-bottom: var(--space-3);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--text-1);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
 }
 
 .settings-nav-groups {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
 }
 
 .settings-nav-group {
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
 .settings-nav-heading {
-  padding: 0 var(--space-2-5) var(--space-1);
+  padding: var(--space-4) var(--space-3) var(--space-1-5);
   color: var(--text-3);
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
+.settings-nav-group:first-child .settings-nav-heading {
+  padding-top: var(--space-2);
+}
+
 .settings-nav-item {
-  height: var(--control-md);
-  padding: 0 var(--space-2-5);
+  flex-shrink: 0;
+  height: var(--control-lg);
+  padding: 0 var(--space-3);
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-2);
   font-size: var(--text-base);
+  font-weight: var(--weight-medium);
   text-align: left;
   cursor: pointer;
 }
 
 .settings-nav-item:hover {
-  background: var(--bg-2);
-  color: var(--text-1);
+  background: var(--hover);
 }
 
-.settings-nav-item[aria-current='true'] {
-  background: var(--accent-tint);
-  box-shadow: var(--selected-ring);
+.settings-nav-item[aria-current='page'] {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-bright) 40%, transparent);
   color: var(--text-1);
   font-weight: var(--weight-semibold);
 }
@@ -8090,135 +8287,195 @@ svg.lucide {
 .settings-plan-card {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-1);
+  flex-shrink: 0;
   margin-top: auto;
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-2);
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
-.settings-plan-label {
-  color: var(--text-3);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+.settings-sidebar {
+  overflow: hidden;
+}
+
+/* The nav scrolls when it is longer than the window; Back and the plan card stay in view. */
+.settings-nav-groups {
+  flex: 1 1 0;
+  min-height: 0;
+  margin: 0 calc(-1 * var(--space-1)) var(--space-4);
+  padding: 0 var(--space-1);
+  overflow-y: auto;
 }
 
 .settings-plan-name {
-  font-family: var(--font-display);
-  font-size: var(--text-title);
+  font-weight: var(--weight-semibold);
 }
 
 .settings-plan-detail {
+  margin: var(--space-1) 0 0;
   color: var(--text-3);
   font-size: var(--text-sm);
 }
 
-.settings-plan-card .ui-button {
-  margin-top: var(--space-2);
+.ui-button.settings-plan-manage {
+  width: 100%;
+  height: var(--control-md);
+  margin-top: var(--space-3);
+  border-radius: 9px;
+  font-weight: var(--weight-bold);
 }
 
 .settings-panel {
   min-height: 0;
-  padding: var(--space-6) var(--space-6) var(--space-10);
+  padding: var(--space-12, 48px) 64px;
   overflow-y: auto;
 }
 
 .settings-column {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
   width: 100%;
   max-width: var(--settings-content-width);
-  margin: 0 auto;
 }
 
-.settings-section {
-  scroll-margin-top: var(--space-6);
+.settings-page-heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.02em;
+}
+
+.settings-page-lead {
+  max-width: 560px;
+  margin: var(--space-2) 0 28px;
+  color: var(--text-2);
+  font-size: var(--text-lg);
+}
+
+.settings-column > .ui-error-note,
+.settings-column > .hint {
+  margin-bottom: var(--space-4);
+}
+
+/* One card per page, each setting a row in it: a bold label with its muted explanation at the left, the control at
+   the right, rows divided by a line. The section's own heading is the page title, so it is kept for screen readers
+   only. */
+.settings-column > .settings-section {
   gap: 0;
-  padding: 0;
+  padding: 0 var(--space-6);
+  border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background: var(--panel);
+  overflow: hidden;
 }
 
-.settings-section > .ui-card-header {
-  padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--border);
+.settings-column > .settings-section[hidden] {
+  display: none;
 }
 
-.settings-section .ui-card-title {
-  font-family: var(--font-display);
-  font-size: var(--text-title);
+.settings-column > .settings-section > .ui-card-header {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
-.settings-section h3 {
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-/* Each setting is a row: a bold label with its one line explanation, and the control on the right. The card holds
-   the padding; rows are divided by a line. */
-.settings-section {
-  padding: 0 var(--space-5) var(--space-2);
-}
-
-.settings-section > .ui-card-header {
-  margin: 0 calc(-1 * var(--space-5)) var(--space-1);
-}
-
-.settings-section > :not(.ui-card-header) {
-  margin-block: var(--space-2);
-}
-
-.settings-section > :is(.field, .ui-toggle, .fade-control, .settings-row, .settings-logo) {
+.settings-column > .settings-section > * {
   margin: 0;
-  padding: var(--space-3) 0;
 }
 
-.settings-section > :is(.field, .ui-toggle, .fade-control, .settings-row, .settings-logo) + :is(.field, .ui-toggle, .fade-control, .settings-row, .settings-logo) {
+.settings-column > .settings-section > :is(.field, .ui-toggle, .fade-control, .settings-row, .settings-logo, .settings-subheading, .plan-summary, .plan-features, form, ul, dl, table, .ui-skeleton) {
+  padding: var(--space-5) 0;
+}
+
+.settings-column > .settings-section > :not(.ui-card-header, .hint) + :not(.hint) {
   border-top: 1px solid var(--border);
 }
 
-.settings-section > .hint {
-  margin-top: calc(-1 * var(--space-2));
+/* An explanation under a row belongs to it: it sits in the row's left column, under the label. */
+.settings-column > .settings-section > .hint,
+.settings-column > .settings-section .field > .hint {
+  display: block;
+  max-width: 420px;
+  margin-top: calc(-1 * var(--space-4));
+  padding-bottom: var(--space-5);
   color: var(--text-3);
   font-size: var(--text-md);
 }
 
-.settings-section > .field,
-.settings-section > label.field {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(200px, 300px);
-  align-items: center;
-  gap: var(--space-1) var(--space-4);
+.settings-column > .settings-section .field > .hint {
+  grid-column: 1;
+  margin-top: 0;
+  padding-bottom: 0;
 }
 
-.settings-section > .field > span:first-child {
+.settings-column > .settings-section > .field,
+.settings-column > .settings-section > label.field,
+.settings-column > .settings-section > form.field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  align-items: center;
+  gap: 2px var(--space-6);
+}
+
+.settings-column > .settings-section > .field > :first-child,
+.settings-column > .settings-section > .ui-toggle > .ui-toggle-label,
+.settings-column > .settings-section > .fade-control > span:first-child {
   color: var(--text-1);
+  font-size: var(--text-lg);
   font-weight: var(--weight-semibold);
 }
 
-.settings-section > .field small {
+.settings-column > .settings-section > .field small {
   display: block;
   color: var(--text-3);
+  font-size: var(--text-md);
   font-weight: var(--weight-regular);
 }
 
-.settings-section > .ui-toggle {
-  display: flex;
-  justify-content: space-between;
-  font-weight: var(--weight-semibold);
+.settings-column > .settings-section > .field > .settings-row {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
-.settings-section > .fade-control {
+.settings-column > .settings-section > .ui-toggle {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-6);
+}
+
+.settings-column > .settings-section > .ui-segmented {
+  align-self: flex-start;
+  margin: var(--space-5) 0;
+}
+
+.settings-column > .settings-section > .fade-control {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(160px, 240px) auto;
+  grid-template-columns: minmax(0, 1fr) 260px auto;
   align-items: center;
   gap: var(--space-3);
-  font-weight: var(--weight-semibold);
+}
+
+.settings-column > .settings-section .settings-subheading {
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-column > .settings-section input[type='range'] {
+  accent-color: var(--accent);
+}
+
+@media (max-width: 1365px) {
+  .settings-panel {
+    padding: 40px 40px;
+  }
 }
 
 .panel-header .count-badge {
@@ -8236,21 +8493,23 @@ svg.lucide {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- First run welcome ---------- */
+/* ---------- First run welcome, after docs/design/Welcome.reference.html ---------- */
 
 .welcome {
   position: fixed;
   inset: 0;
   z-index: 200;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  background: var(--panel);
+  display: flex;
+  background: var(--bg);
+  color: var(--text-1);
 }
 
 .welcome-art {
   position: relative;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
-  background: linear-gradient(150deg, var(--welcome-from) 0%, var(--welcome-to) 78%);
+  background: radial-gradient(90% 90% at 0% 100%, var(--welcome-from) 0%, var(--welcome-mid) 35%, var(--welcome-to) 75%);
 }
 
 .welcome-paths {
@@ -8262,60 +8521,811 @@ svg.lucide {
 
 .welcome-brand {
   position: absolute;
-  top: var(--space-10);
-  left: var(--space-10);
+  top: 36px;
+  left: 48px;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  color: var(--text);
+  gap: var(--space-2-5);
 }
 
 .welcome-wordmark {
   font-family: var(--font-display);
-  font-size: 26px;
+  font-size: 22px;
   font-weight: var(--weight-bold);
+  letter-spacing: -0.02em;
+}
+
+.welcome-caption {
+  position: absolute;
+  top: 96px;
+  right: 48px;
+  left: 48px;
+  color: var(--welcome-caption);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .welcome-body {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: center;
-  padding: var(--space-10);
+  width: min(640px, 50vw);
+  background: var(--bg);
 }
 
 .welcome-content {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  width: min(420px, 100%);
+  gap: var(--space-3);
+  width: min(420px, calc(100% - 64px));
 }
 
 .welcome-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--text-display);
+  font-size: 40px;
   font-weight: var(--weight-bold);
-  line-height: 1.1;
-  letter-spacing: -0.02em;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
 }
 
 .welcome-text {
-  margin: 0;
+  margin: 0 0 var(--space-5);
+  color: var(--text-2);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.welcome-content > .ui-button {
+  width: 100%;
+  height: 52px;
+  border-radius: var(--radius-lg);
+  font-size: 16px;
+}
+
+.ui-button.welcome-primary {
+  font-weight: var(--weight-bold);
+}
+
+.ui-button.welcome-primary:hover:not(:disabled) {
+  border-color: var(--accent-bright);
+  background: var(--accent-bright);
+}
+
+.ui-button.welcome-secondary:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--hover);
+}
+
+.welcome-content > .ui-button.welcome-skip {
+  height: var(--control-xl);
+  border-radius: var(--radius-md);
   color: var(--text-2);
   font-size: var(--text-lg);
 }
 
-.welcome-actions {
+.welcome-note {
+  margin: var(--space-3) 0 0;
+  color: var(--text-3);
+  font-size: var(--text-md);
+  text-align: center;
+}
+
+/* =====================================================================================================================
+   Fit to the window, after docs/design/Main.reference.html. The app is exactly the window: a 60px top bar, the panels,
+   a 44px status bar. Nothing scrolls the page; every panel may shrink (min-height 0) and only lists scroll inside
+   their own panel.
+   ================================================================================================================== */
+
+.app {
   display: flex;
   flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app > .toolbar {
+  flex: none;
+}
+
+.app > .statusbar {
+  flex: none;
+  height: var(--statusbar-height);
+}
+
+.app > .operator,
+.app > .settings-page {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.operator {
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.operator > *,
+.operator > .layout-slot > * {
+  min-height: 0;
+}
+
+/* ---------- Top bar ---------- */
+
+.toolbar {
+  gap: var(--space-4);
+  padding: 0 var(--space-4) 0 var(--space-5);
+}
+
+.brand-wordmark {
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.toolbar-divider {
+  height: 24px;
+}
+
+.toolbar > .toolbar-service {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2-5);
+  height: var(--control-lg);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+}
+
+.toolbar > .toolbar-service:hover {
+  background: var(--hover);
+}
+
+.toolbar-service-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.toolbar-service-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar-service > svg {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+
+.toolbar-actions {
+  gap: var(--space-4);
+}
+
+.listening-chip {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text-2);
+  font-weight: var(--weight-medium);
+}
+
+.listening-chip:hover {
+  border-color: var(--border);
+  background: var(--hover);
+}
+
+.mode-buttons {
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+}
+
+.mode-button {
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  border-radius: 9px;
+  color: var(--text-1);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+}
+
+.mode-button:hover {
+  background: var(--hover);
+}
+
+.mode-button.mode-show,
+.mode-button.mode-show:hover {
+  font-weight: var(--weight-bold);
+}
+
+.toolbar-actions > .toolbar-icons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolbar .ui-icon-button.toolbar-icon {
+  --_size: var(--control-lg);
+  border: 0;
+  border-radius: var(--radius-md);
+}
+
+.toolbar .ui-icon-button.toolbar-icon:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.toolbar .ui-icon-button.toolbar-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+@media (max-width: 1365px) {
+  .toolbar,
+  .toolbar-actions {
+    gap: var(--space-3);
+  }
+
+  .mode-button {
+    padding: 0 var(--space-3);
+  }
+}
+
+/* ---------- Panel columns ---------- */
+
+.schedule.panel,
+.library,
+.schedule.collapsed,
+.library.collapsed {
+  min-height: 0;
+}
+
+/* ---------- Order of service ---------- */
+
+.panel-header.schedule-head {
+  align-items: center;
+  min-height: 0;
+  padding: var(--space-4) var(--space-4) var(--space-3);
+}
+
+.schedule-head-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.schedule-head .ui-panel-title {
+  letter-spacing: -0.01em;
+}
+
+.schedule-count.ui-panel-meta {
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
+
+.schedule-head .ui-panel-actions {
+  gap: var(--space-1);
+}
+
+.ui-icon-button.schedule-add-button {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-1);
+}
+
+.ui-icon-button.schedule-collapse {
+  --_size: var(--control-sm);
+}
+
+.schedule-picker[hidden] {
+  display: none;
+}
+
+.schedule-picker {
+  margin: 0 var(--space-3) var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+}
+
+.schedule-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.schedule-picker-title {
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.schedule-items {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--space-2);
+}
+
+.schedule-item {
+  margin-bottom: 2px;
+}
+
+.schedule-item:hover {
+  background: var(--hover-row);
+}
+
+.schedule-item-main {
   gap: var(--space-3);
-  margin-top: var(--space-4);
+  min-height: 54px;
+  padding: var(--space-2-5) var(--space-2);
 }
 
-.welcome-actions .ui-button {
+.schedule-item-handle {
+  position: absolute;
+  left: 0;
+  width: 10px;
+}
+
+.schedule-item-type svg {
+  width: 17px;
+  height: 17px;
+}
+
+.schedule-item.on-air .schedule-item-subtitle,
+.schedule-item-state.now {
+  color: var(--accent-text);
+}
+
+.schedule-item-state {
+  letter-spacing: 0.06em;
+}
+
+.schedule-item-state.next {
+  color: var(--text-3);
+}
+
+.schedule-item-done {
+  width: 16px;
+  height: 16px;
+}
+
+.schedule-footer {
+  flex-shrink: 0;
+}
+
+.ui-button.schedule-add-footer {
   width: 100%;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-2);
+  font-weight: var(--weight-medium);
 }
 
-.ui-button.welcome-skip {
+.ui-button.schedule-add-footer:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--hover);
+}
+
+/* The rail: 64px of item icons, the on-air one in the accent. */
+.schedule.collapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+}
+
+.schedule-rail-items {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-1) 0;
+  overflow-y: auto;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.schedule-rail-item {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.schedule-rail-item:hover {
+  background: var(--raised-2);
+  color: var(--text-1);
+}
+
+.schedule-rail-item.active {
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  color: var(--text-1);
+}
+
+.schedule-rail-item.on-air {
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-ring);
+  color: var(--ink);
+}
+
+.schedule-rail-item svg {
+  width: 17px;
+  height: 17px;
+}
+
+.ui-icon-button.schedule-rail-add {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+/* ---------- Finder ---------- */
+
+.library {
+  display: flex;
+  flex-direction: column;
+}
+
+.library-tabs {
+  flex-shrink: 0;
+  gap: var(--space-1);
+  padding: var(--space-2-5) var(--space-2-5) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.library-tabs .ui-tab {
+  flex: 0 1 auto;
+  height: var(--control-xl);
+  padding: 0 14px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  color: var(--text-3);
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+}
+
+.library-tabs .ui-tab:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.library-tabs .ui-tab[aria-selected='true'] {
+  border-bottom-color: var(--accent-bright);
+  color: var(--text-1);
+  font-weight: var(--weight-semibold);
+}
+
+.library-tabs > .ui-icon-button {
+  margin-left: auto;
+}
+
+.library-page {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.library-page > .panel {
+  padding: var(--space-3) var(--space-2) var(--space-2);
+}
+
+/* Heard in the sermon: at most two cards in view, the rest scroll inside the list (SuggestionTray sets its height). */
+.library > .suggestion-tray {
+  flex-shrink: 0;
+  max-height: none;
+  margin: 0;
+  padding: 14px 14px var(--space-1);
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.suggestion-tray.flash {
+  background: var(--accent-tint);
+}
+
+.suggestion-tray-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2-5);
+}
+
+.suggestion-tray-title {
+  gap: var(--space-2);
   color: var(--accent-bright);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ui-button.suggestion-clear {
+  height: 28px;
+  padding: 0 var(--space-2);
+  color: var(--text-3);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.library .suggestion-list {
+  gap: var(--space-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.library .suggestion {
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.library .suggestion.previewed {
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+}
+
+.suggestion-main {
+  padding: var(--space-3) calc(var(--space-3) + 36px) 0 var(--space-3);
+}
+
+.suggestion-label {
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+
+.suggestion-match {
+  color: var(--match-maybe);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.suggestion-match.strong {
+  color: var(--match-strong);
+}
+
+.suggestion-text {
+  margin-top: var(--space-1);
+}
+
+.suggestion-actions {
+  gap: var(--space-2);
+  padding: var(--space-2-5) var(--space-3) var(--space-3);
+}
+
+.suggestion-actions .ui-button--sm {
+  padding: 0 var(--space-3);
+  font-size: var(--text-md);
+}
+
+.suggestion-actions .ui-button--primary {
+  padding: 0 14px;
+  font-weight: var(--weight-bold);
+}
+
+/* Scripture: the translation and the search on one row, the rest of the search tools under them. */
+.scripture-search {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-1-5);
+}
+
+.scripture-version-row,
+.scripture-search-row {
+  display: contents;
+}
+
+.scripture-version-row > .ui-select {
+  flex: 0 0 auto;
+  order: 1;
+  width: auto;
+}
+
+.scripture-version-row > .ui-select .ui-select-field {
+  height: var(--control-lg);
+  padding-right: 30px;
+  border-color: var(--border-strong);
+  border-radius: var(--radius-md);
+  background: transparent;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+.scripture-search-row > .ui-input,
+.scripture-search-row > .scripture-input {
+  flex: 1 1 0;
+  order: 2;
+  min-width: 0;
+  height: var(--control-lg);
+  padding-left: 36px;
+  border-color: var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.scripture-input-icon {
+  position: relative;
+  order: 2;
+  width: 0;
+  margin-right: calc(-1 * var(--space-2));
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.scripture-input-icon > svg {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+}
+
+/* A break after the first row. */
+.scripture-search::after {
+  content: '';
+  flex-basis: 100%;
+  order: 3;
+}
+
+.scripture-search-row > :not(.ui-input, .scripture-input, .scripture-input-icon) {
+  order: 4;
+}
+
+.scripture-search > .scripture-filters {
+  flex: 1 1 0;
+  order: 5;
+  min-width: 0;
+}
+
+.scripture-version-row > .ui-icon-button,
+.scripture-version-row > .ui-tooltip-wrap {
+  order: 6;
+}
+
+.verse-table {
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.verse-table td {
+  color: var(--text-2);
+}
+
+.verse-table tr.active td {
+  color: var(--text-1);
+}
+
+.verse-table tr.active .verse-table-ref {
+  color: var(--accent-number);
+  font-weight: var(--weight-bold);
+}
+
+/* ---------- Status bar ---------- */
+
+.statusbar {
+  gap: var(--space-5);
+  padding: 0 var(--space-5);
+  color: var(--text-2);
+}
+
+.statusbar-listener {
+  gap: var(--space-2-5);
+}
+
+.statusbar-state {
+  color: var(--text-1);
+}
+
+.statusbar-transcript {
+  padding-left: var(--space-5);
+  border-left: 1px solid var(--border-strong);
+}
+
+.statusbar-end {
+  gap: var(--space-5);
+  padding-left: var(--space-5);
+  border-left: 1px solid var(--border-strong);
+}
+
+/* ---------- Under 1366 and 1280 pixels ---------- */
+
+@media (max-width: 1365px) {
+  .panel-header.schedule-head {
+    padding: var(--space-3) var(--space-3) var(--space-2-5);
+  }
+
+  .library-tabs .ui-tab {
+    padding: 0 var(--space-2-5);
+  }
+}
+
+/* Scripture: the search stays put and only the verse list scrolls. */
+.library-page > .scripture-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.scripture-panel > :not(.scripture-body) {
+  flex-shrink: 0;
+}
+
+.scripture-panel > .scripture-body {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.scripture-results {
+  min-height: 0;
+}
+
+.scripture-list {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+@media (max-height: 799px) {
+  .verse-strip {
+    display: none;
+  }
+}
+
+/* Heard in the sermon: the newest card in full; the others one line, their actions on hover or keyboard focus. */
+.library .suggestion:not(:first-child) .suggestion-text {
+  -webkit-line-clamp: 1;
+}
+
+.library .suggestion:not(:first-child) .suggestion-main {
+  padding-bottom: var(--space-3);
+}
+
+.library .suggestion:not(:first-child):not(:hover, :focus-within) .suggestion-actions,
+.library .suggestion:not(:first-child):not(:hover, :focus-within) .suggestion-alternatives {
+  display: none;
+}
+
+/* The highlighting tools stay one row beside the crossfade, which gives way first. */
+.on-screen-tools .highlight-bar {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  overflow: visible;
+}
+
+@media (max-width: 1365px) {
+  .on-screen-tools .fade-control > span:first-child {
+    display: none;
+  }
+
+  .on-screen-tools .fade-control {
+    flex-basis: 160px;
+    min-width: 110px;
+  }
+}
+
+.scripture-input-icon > svg {
+  top: -8px;
 }

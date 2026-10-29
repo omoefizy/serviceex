@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ServiceEx operator screen</title>
+
+</head>
+<body>
+
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Figtree:wght@400..700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#070B16}
+.hv:hover{background:rgba(173,196,255,.08)}
+.row:hover{background:rgba(173,196,255,.06)}
+button{font-family:inherit;cursor:pointer}
+button:focus-visible{outline:2px solid #00AFEF;outline-offset:2px}
+</style>
+
+<div style="--bg:#070B16;--panel:#0D1324;--raise:#141C33;--line:rgba(173,196,255,.09);--line2:rgba(173,196,255,.18);--text:#EEF2FA;--text2:#B4BED4;--muted:#8793AF;--accent:#0087CB;--accent2:#00AFEF;--ink:#031018;--live:#D62B43;width:1440px;height:900px;box-sizing:border-box;display:flex;flex-direction:column;background:var(--bg);color:var(--text);font-family:'Figtree',system-ui,sans-serif;font-size:14px;line-height:1.4;overflow:hidden">
+
+<!-- TOP BAR -->
+<header style="height:60px;flex:none;display:flex;align-items:center;gap:16px;padding:0 16px 0 20px;background:var(--panel);border-bottom:1px solid var(--line)">
+  <div style="display:flex;align-items:center;gap:10px">
+    <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect width="28" height="28" rx="8" fill="#0087CB"/><path d="M8 19l5-5 3 3 5-6" stroke="#031018" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:20px;letter-spacing:-0.02em">ServiceEx</span>
+  </div>
+  <div style="width:1px;height:24px;background:var(--line2)"></div>
+  <button type="button" class="hv" style="display:flex;align-items:center;gap:10px;height:40px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:var(--text);text-align:left">
+    <span style="display:flex;flex-direction:column;line-height:1.2">
+      <span style="font-weight:600;font-size:14px">Sunday Service</span>
+      <span style="font-size:12px;color:var(--muted)">Saved just now</span>
+    </span>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8793AF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+  </button>
+
+  <div style="flex:1"></div>
+
+  <button type="button" class="hv" style="display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--text2);font-size:13px;font-weight:500">
+    <span style="width:8px;height:8px;border-radius:50%;background:#3DDC97"></span>
+    Cloud listening
+    <span style="color:var(--muted)">41 h 57 min left</span>
+  </button>
+
+  <div style="display:flex;align-items:center;gap:4px;padding:4px;background:var(--raise);border-radius:12px">
+    <button type="button" class="hv" style="height:36px;padding:0 16px;border:0;border-radius:9px;background:transparent;color:var(--text);font-weight:600;font-size:13px;letter-spacing:.04em">BLACK</button>
+    <button type="button" class="hv" style="height:36px;padding:0 16px;border:0;border-radius:9px;background:transparent;color:var(--text);font-weight:600;font-size:13px;letter-spacing:.04em">CLEAR</button>
+    <button type="button" style="display:flex;align-items:center;gap:8px;height:36px;padding:0 16px;border:0;border-radius:9px;background:var(--live);color:#fff;font-weight:700;font-size:13px;letter-spacing:.04em"><span style="width:8px;height:8px;border-radius:50%;background:#fff"></span>ON AIR</button>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:2px">
+    <button type="button" class="hv" aria-label="Alerts" style="width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:10px;background:transparent;color:var(--text2)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 7H4c0-1 2-2 2-7z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg></button>
+    <button type="button" class="hv" aria-label="More: Themes, Outputs, Studio, Help" style="width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:10px;background:transparent;color:var(--text2)"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+    <button type="button" class="hv" aria-label="Settings" style="width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:10px;background:transparent;color:var(--text2)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></button>
+  </div>
+</header>
+
+<!-- BODY -->
+<main style="flex:1;min-height:0;display:flex;gap:12px;padding:12px">
+
+  <!-- ORDER OF SERVICE -->
+  <section style="width:300px;flex:none;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px">
+      <div>
+        <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-size:17px;font-weight:600;letter-spacing:-0.01em">Order of service</h2>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">6 items</div>
+      </div>
+      <button type="button" aria-label="Add item" class="hv" style="width:36px;height:36px;display:grid;place-items:center;border:1px solid var(--line2);border-radius:10px;background:transparent;color:var(--text)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+    </div>
+    <div style="flex:1;min-height:0;overflow:hidden;padding:0 8px;display:flex;flex-direction:column;gap:2px">
+
+      <div class="row" style="display:flex;align-items:center;gap:12px;padding:10px 8px;border-radius:12px">
+        <span style="width:34px;height:34px;flex:none;display:grid;place-items:center;border-radius:10px;background:var(--raise);color:var(--text2)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8"/></svg></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-weight:600">Welcome and notices</span><span style="display:block;font-size:12px;color:var(--muted)">4 slides</span></span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3DDC97" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Done"><path d="m5 12 5 5 9-10"/></svg>
+      </div>
+
+      <div class="row" style="display:flex;align-items:center;gap:12px;padding:10px 8px;border-radius:12px">
+        <span style="width:34px;height:34px;flex:none;display:grid;place-items:center;border-radius:10px;background:var(--raise);color:var(--text2)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-weight:600">Opening worship</span><span style="display:block;font-size:12px;color:var(--muted)">3 songs</span></span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3DDC97" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Done"><path d="m5 12 5 5 9-10"/></svg>
+      </div>
+
+      <!-- ON AIR ITEM -->
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 8px;border-radius:12px;background:rgba(0,135,203,.16);box-shadow:inset 0 0 0 1px rgba(0,175,239,.45)">
+        <span style="width:34px;height:34px;flex:none;display:grid;place-items:center;border-radius:10px;background:var(--accent);color:var(--ink)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H20v15H5.5A1.5 1.5 0 0 0 4 19.5z"/><path d="M4 19.5A1.5 1.5 0 0 0 5.5 21H20"/></svg></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-weight:600">Scripture reading</span><span style="display:block;font-size:12px;color:#9FD8F5">John 3:16 to 18</span></span>
+        <span style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#9FD8F5">NOW</span>
+      </div>
+
+      <div class="row" style="display:flex;align-items:center;gap:12px;padding:10px 8px;border-radius:12px">
+        <span style="width:34px;height:34px;flex:none;display:grid;place-items:center;border-radius:10px;background:var(--raise);color:var(--text2)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-weight:600">Sermon</span><span style="display:block;font-size:12px;color:var(--muted)">Listening for verses</span></span>
+        <span style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--muted)">NEXT</span>
+      </div>
+
+      <div class="row" style="display:flex;align-items:center;gap:12px;padding:10px 8px;border-radius:12px">
+        <span style="width:34px;height:34px;flex:none;display:grid;place-items:center;border-radius:10px;background:var(--raise);color:var(--text2)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8"/></svg></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-weight:600">Offering</span><span style="display:block;font-size:12px;color:var(--muted)">2 slides</span></span>
+      </div>
+
+      <div class="row" style="display:flex;align-items:center;gap:12px;padding:10px 8px;border-radius:12px">
+        <span style="width:34px;height:34px;flex:none;display:grid;place-items:center;border-radius:10px;background:var(--raise);color:var(--text2)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-weight:600">Closing song</span><span style="display:block;font-size:12px;color:var(--muted)">1 song</span></span>
+      </div>
+    </div>
+    <div style="padding:12px;border-top:1px solid var(--line)">
+      <button type="button" class="hv" style="width:100%;height:40px;display:flex;align-items:center;justify-content:center;gap:8px;border:1px dashed var(--line2);border-radius:10px;background:transparent;color:var(--text2);font-weight:500">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        Add song, slide or verse
+      </button>
+    </div>
+  </section>
+
+  <!-- CENTER -->
+  <section style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+
+    <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:0 16px 16px">
+      <div style="height:56px;display:flex;align-items:center;justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:10px">
+          <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-size:17px;font-weight:600;letter-spacing:-0.01em">On screen</h2>
+          <span style="display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:999px;background:rgba(214,43,67,.18);color:#FFD3D9;font-size:11px;font-weight:700;letter-spacing:.06em"><span style="width:6px;height:6px;border-radius:50%;background:#FF5A6E"></span>LIVE</span>
+        </div>
+        <button type="button" class="hv" style="display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--text2);font-size:13px;font-weight:500">Main output
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      </div>
+
+      <!-- SLIDE -->
+      <div style="position:relative;width:100%;height:340px;border-radius:12px;overflow:hidden;background:radial-gradient(120% 140% at 100% 100%,#0087CB 0%,#06476E 38%,#0A0F1E 78%);box-shadow:0 0 0 1px rgba(0,175,239,.35),0 12px 40px rgba(0,135,203,.18)">
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 72px;text-align:center;gap:18px">
+          <div style="font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:30px;line-height:1.25;letter-spacing:-0.01em;color:#fff;text-wrap:balance">For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.</div>
+          <div style="font-size:13px;font-weight:600;letter-spacing:.14em;color:#BFE6FA">JOHN 3:16 · KJV</div>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:8px;margin-top:14px">
+        <button type="button" class="hv" style="display:flex;align-items:center;gap:10px;height:44px;padding:0 16px 0 12px;border:1px solid var(--line2);border-radius:12px;background:transparent;color:var(--text);font-weight:600"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>Previous<kbd style="font-family:inherit;font-size:11px;color:var(--muted);border:1px solid var(--line2);border-radius:6px;padding:1px 6px">←</kbd></button>
+        <button type="button" style="display:flex;align-items:center;gap:10px;height:44px;padding:0 12px 0 18px;border:0;border-radius:12px;background:var(--accent);color:var(--ink);font-weight:700">Next verse<kbd style="font-family:inherit;font-size:11px;color:var(--ink);border:1px solid rgba(3,16,24,.4);border-radius:6px;padding:1px 6px">→</kbd><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+        <div style="flex:1"></div>
+        <span style="font-size:12px;color:var(--muted)">Verse 16 of 36 · John 3</span>
+      </div>
+    </div>
+
+    <div style="flex:1;min-height:0;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:0 16px">
+      <div style="height:52px;display:flex;align-items:center;justify-content:space-between">
+        <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-size:17px;font-weight:600;letter-spacing:-0.01em">Up next</h2>
+        <span style="font-size:12px;color:var(--muted)">Sermon, then Offering</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
+        <div>
+          <div style="height:112px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 16px;text-align:center;background:linear-gradient(135deg,#0F2A44,#0A1730);box-shadow:inset 0 0 0 1px var(--line2);font-size:12px;font-weight:600;line-height:1.35;color:#DDE6F5">For God sent not his Son into the world to condemn the world</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px">John 3:17</div>
+        </div>
+        <div>
+          <div style="height:112px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 16px;text-align:center;background:linear-gradient(135deg,#0F2A44,#0A1730);box-shadow:inset 0 0 0 1px var(--line2);font-size:12px;font-weight:600;line-height:1.35;color:#DDE6F5">He that believeth on him is not condemned</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px">John 3:18</div>
+        </div>
+        <div>
+          <div style="height:112px;border-radius:10px;display:grid;place-items:center;background:var(--raise);box-shadow:inset 0 0 0 1px var(--line2);color:var(--text2);font-size:12px;font-weight:600">Black screen</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px">Sermon starts</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FINDER -->
+  <section style="width:400px;flex:none;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:4px;padding:10px 10px 0;border-bottom:1px solid var(--line)">
+      <button type="button" style="height:44px;padding:0 14px;border:0;border-bottom:2px solid var(--accent2);background:transparent;color:var(--text);font-weight:600;font-size:14px">Scripture</button>
+      <button type="button" class="hv" style="height:44px;padding:0 14px;border:0;border-bottom:2px solid transparent;border-radius:8px 8px 0 0;background:transparent;color:var(--muted);font-weight:500;font-size:14px">Songs</button>
+      <button type="button" class="hv" style="height:44px;padding:0 14px;border:0;border-bottom:2px solid transparent;border-radius:8px 8px 0 0;background:transparent;color:var(--muted);font-weight:500;font-size:14px">Slides</button>
+      <button type="button" class="hv" style="height:44px;padding:0 14px;border:0;border-bottom:2px solid transparent;border-radius:8px 8px 0 0;background:transparent;color:var(--muted);font-weight:500;font-size:14px">Media</button>
+    </div>
+
+    <!-- HEARD -->
+    <div style="padding:14px 14px 4px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--accent2)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>
+          HEARD IN THE SERMON
+        </div>
+        <button type="button" class="hv" style="height:28px;padding:0 8px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:12px;font-weight:500">Clear</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="padding:12px;border-radius:12px;background:var(--raise);box-shadow:inset 0 0 0 1px var(--line)">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span style="font-weight:600">Romans 8:1</span>
+            <span style="font-size:12px;font-weight:600;color:#6FE3B2">94% match</span>
+          </div>
+          <div style="font-size:13px;color:var(--text2);margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">There is therefore now no condemnation to them which are in Christ Jesus, who walk not after the flesh, but after the Spirit.</div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button type="button" style="height:32px;padding:0 14px;border:0;border-radius:8px;background:var(--accent);color:var(--ink);font-weight:700;font-size:13px">Show on screen</button>
+            <button type="button" class="hv" style="height:32px;padding:0 12px;border:1px solid var(--line2);border-radius:8px;background:transparent;color:var(--text);font-weight:600;font-size:13px">Add to order</button>
+          </div>
+        </div>
+        <div style="padding:12px;border-radius:12px;background:var(--raise);box-shadow:inset 0 0 0 1px var(--line)">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span style="font-weight:600">Psalm 23:4</span>
+            <span style="font-size:12px;font-weight:600;color:#F5C56B">Maybe · 61%</span>
+          </div>
+          <div style="font-size:13px;color:var(--text2);margin-top:4px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden">Yea, though I walk through the valley of the shadow of death, I will fear no evil.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEARCH -->
+    <div style="display:flex;gap:8px;padding:12px 14px">
+      <button type="button" class="hv" style="height:40px;display:flex;align-items:center;gap:8px;padding:0 12px;border:1px solid var(--line2);border-radius:10px;background:transparent;color:var(--text);font-weight:600;font-size:13px">KJV<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <label style="flex:1;height:40px;display:flex;align-items:center;gap:8px;padding:0 12px;border:1px solid var(--line2);border-radius:10px;background:var(--bg);color:var(--muted)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="text" aria-label="Find a verse" placeholder="John 3:16, or describe it" style="flex:1;min-width:0;border:0;outline:0;background:transparent;color:var(--text);font-family:inherit;font-size:14px">
+      </label>
+    </div>
+
+    <!-- VERSES -->
+    <div style="flex:1;min-height:0;overflow:hidden;padding:0 8px 8px">
+      <div style="padding:4px 8px 8px;font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--muted)">JOHN 3</div>
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <div class="row" style="display:flex;gap:10px;padding:10px 8px;border-radius:10px;font-size:13.5px;line-height:1.45;color:var(--text2)"><span style="width:20px;flex:none;color:var(--muted);font-weight:600">14</span><span>And as Moses lifted up the serpent in the wilderness, even so must the Son of man be lifted up:</span></div>
+        <div class="row" style="display:flex;gap:10px;padding:10px 8px;border-radius:10px;font-size:13.5px;line-height:1.45;color:var(--text2)"><span style="width:20px;flex:none;color:var(--muted);font-weight:600">15</span><span>That whosoever believeth in him should not perish, but have eternal life.</span></div>
+        <div style="display:flex;gap:10px;padding:10px 8px;border-radius:10px;font-size:13.5px;line-height:1.45;color:var(--text);background:rgba(0,135,203,.16);box-shadow:inset 0 0 0 1px rgba(0,175,239,.45)"><span style="width:20px;flex:none;color:#7CCBF2;font-weight:700">16</span><span>For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.</span></div>
+        <div class="row" style="display:flex;gap:10px;padding:10px 8px;border-radius:10px;font-size:13.5px;line-height:1.45;color:var(--text2)"><span style="width:20px;flex:none;color:var(--muted);font-weight:600">17</span><span>For God sent not his Son into the world to condemn the world; but that the world through him might be saved.</span></div>
+        <div class="row" style="display:flex;gap:10px;padding:10px 8px;border-radius:10px;font-size:13.5px;line-height:1.45;color:var(--text2)"><span style="width:20px;flex:none;color:var(--muted);font-weight:600">18</span><span>He that believeth on him is not condemned: but he that believeth not is condemned already.</span></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- STATUS BAR -->
+<footer style="height:44px;flex:none;display:flex;align-items:center;gap:20px;padding:0 20px;background:var(--panel);border-top:1px solid var(--line);font-size:13px;color:var(--text2)">
+  <div style="display:flex;align-items:center;gap:10px">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3DDC97" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    <span style="font-weight:600;color:var(--text)">Listening</span>
+    <span style="display:flex;align-items:flex-end;gap:2px;height:16px" aria-label="Input level">
+      <span style="width:3px;height:6px;border-radius:2px;background:#3DDC97"></span><span style="width:3px;height:10px;border-radius:2px;background:#3DDC97"></span><span style="width:3px;height:14px;border-radius:2px;background:#3DDC97"></span><span style="width:3px;height:9px;border-radius:2px;background:#3DDC97"></span><span style="width:3px;height:12px;border-radius:2px;background:#3DDC97"></span><span style="width:3px;height:6px;border-radius:2px;background:rgba(173,196,255,.2)"></span><span style="width:3px;height:8px;border-radius:2px;background:rgba(173,196,255,.2)"></span><span style="width:3px;height:6px;border-radius:2px;background:rgba(173,196,255,.2)"></span>
+    </span>
+  </div>
+  <div style="width:1px;height:18px;background:var(--line2)"></div>
+  <div style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)"><span style="color:var(--text2)">“…and he said that God so loved the world that he gave his only begotten Son…”</span></div>
+  <button type="button" class="hv" style="height:32px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--text2);font-size:13px;font-weight:500">Transcript</button>
+  <div style="width:1px;height:18px;background:var(--line2)"></div>
+  <span style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:#3DDC97"></span>2 devices</span>
+  <span style="color:var(--muted)">Pro plan</span>
+</footer>
+</div>
+
+
+</body>
+</html>

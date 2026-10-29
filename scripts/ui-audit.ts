@@ -1,11 +1,17 @@
 // Dev only: launches the app with Playwright and saves a screenshot of every main screen and state to docs/ui-audit/,
 // with the style measurements behind docs/ui-audit/REPORT.md. Not shipped; docs/ui-audit/ is not committed.
 //
-//   node scripts/ui-audit.ts
+//   node scripts/ui-audit.ts             every screen and state
+//   node scripts/ui-audit.ts --compare   only the operator screen, Settings and the welcome, beside the design
+//
+// Both save the operator screen, Settings and the first run welcome at each size to docs/ui-audit/compare/, each beside
+// a picture of its approved design (docs/design/*.reference.html, drawn at the same size) and an index.html that shows
+// the pairs side by side.
 //
 // It also checks the layout of every screen at each size: it exits with an error, listing what failed (also saved to
-// layout.json), when a screen scrolls sideways, the toolbar wraps to a second row, or a control lies outside the window
-// or is cut off by the panel it sits in.
+// layout.json), when the page is taller or wider than the window (document scrollHeight over innerHeight, scrollWidth
+// over innerWidth), the toolbar wraps to a second row, or a control lies outside the window or is cut off by the panel
+// it sits in.
 //
 // It also checks the states each screen is in (states.json): no developer text such as a stack trace on screen, no toast
 // in the live red, and it lists any bare "Loading…" line or one line "No … yet" left instead of an empty state.
@@ -17,7 +23,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { crc32, deflateSync } from 'node:zlib'
 import { _electron, chromium, type ElectronApplication, type Page } from 'playwright'
 import { build, createServer } from 'vite'
@@ -25,6 +31,12 @@ import react from '@vitejs/plugin-react'
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = path.join(ROOT, 'docs', 'ui-audit')
+const COMPARE = path.join(OUT, 'compare')
+/** Only the screens compared with the design, for a quick run while matching it. */
+const COMPARE_ONLY = process.argv.includes('--compare')
+/** The approved designs, by the name of the screen they are compared with. */
+const REFERENCES = { main: 'Main.reference.html', settings: 'Settings.reference.html', welcome: 'Welcome.reference.html' } as const
+type CompareScreen = keyof typeof REFERENCES
 /** Common church laptops (1280 by 720 and 1366 by 768) and a full HD screen. */
 const SIZES = [
   { width: 1280, height: 720 },
@@ -449,8 +461,27 @@ function checkLayout(): LayoutProblem[] {
   }
   const px = (n: number) => Math.round(n)
 
+  // The page is exactly the window: it never scrolls, either way, even with its scrollbars hidden.
+  const doc = document.documentElement
+  // What sticks out: the lowest boxes below the window that no ancestor clips.
+  const sticking = () =>
+    Array.from(document.body.querySelectorAll('*'))
+      .filter((el) => {
+        const r = el.getBoundingClientRect()
+        if (r.height === 0 || r.bottom + scrollY <= innerHeight + 1) return false
+        for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) if (getComputedStyle(n).overflowY !== 'visible') return false
+        return true
+      })
+      .slice(0, 3)
+      .map((el) => `${describe(el).slice(0, 50)} to ${px(el.getBoundingClientRect().bottom + scrollY)} px`)
+      .join('; ')
+  if (doc.scrollHeight > innerHeight) problems.push({ kind: 'page-overflow', what: 'document', detail: `scrollHeight ${doc.scrollHeight} px in a ${innerHeight} px window: ${sticking()}` })
+  if (doc.scrollWidth > innerWidth) problems.push({ kind: 'page-overflow', what: 'document', detail: `scrollWidth ${doc.scrollWidth} px in a ${innerWidth} px window` })
   for (const el of [document.documentElement, document.body, document.getElementById('root'), document.querySelector('.app'), document.querySelector('.operator'), document.querySelector('.toolbar')]) {
     if (el && el.scrollWidth > el.clientWidth + 1) problems.push({ kind: 'page-overflow', what: describe(el).slice(0, 40), detail: `${el.scrollWidth} px of content in ${el.clientWidth} px` })
+  }
+  for (const el of [document.body, document.getElementById('root'), document.querySelector('.app'), document.querySelector('.operator:not([hidden])'), document.querySelector('.settings-page')]) {
+    if (el && el.scrollHeight > el.clientHeight + 1) problems.push({ kind: 'page-overflow', what: describe(el).slice(0, 40), detail: `${el.scrollHeight} px of content in ${el.clientHeight} px tall` })
   }
   const toolbar = document.querySelector('.toolbar')
   if (toolbar && toolbar.getBoundingClientRect().height > 64) problems.push({ kind: 'toolbar-wraps', what: 'header.toolbar', detail: `${px(toolbar.getBoundingClientRect().height)} px tall` })
@@ -645,6 +676,7 @@ interface Hooks {
   sharing: { setState(patch: object): void }
   account: { openPlans(open: boolean): void; setAccountState(state: object): void }
   features: { FEATURE_KEYS: string[] }
+  suggestions: { getState(): { add(s: object): unknown; clear(): void } }
 }
 type AuditWindow = Window & { __audit: Hooks }
 
@@ -653,8 +685,14 @@ async function installHooks(page: Page) {
   await page.waitForSelector('.toolbar')
   await page.evaluate(async () => {
     const load = (url: string) => import(/* @vite-ignore */ url)
-    const [store, sharing, account, features] = await Promise.all([load('/src/store.ts'), load('/src/lib/sharing.ts'), load('/src/lib/account.ts'), load('/shared/features.ts')])
-    ;(window as unknown as AuditWindow).__audit = { store: store.useOperatorStore, sharing: sharing.useSharingStore, account, features }
+    const [store, sharing, account, features, detection] = await Promise.all([
+      load('/src/store.ts'),
+      load('/src/lib/sharing.ts'),
+      load('/src/lib/account.ts'),
+      load('/shared/features.ts'),
+      load('/src/lib/scriptureDetection.ts'),
+    ])
+    ;(window as unknown as AuditWindow).__audit = { store: store.useOperatorStore, sharing: sharing.useSharingStore, account, features, suggestions: detection.useSuggestions }
   })
 }
 
@@ -685,7 +723,7 @@ async function settle(page: Page, ms = 500) {
 }
 
 async function libraryTab(page: Page, name: string) {
-  await page.getByRole('tab', { name, exact: true }).click()
+  await page.locator('.library').getByRole('tab', { name, exact: true }).click()
 }
 
 const metrics: Record<string, Metrics> = {}
@@ -719,6 +757,108 @@ async function setSize(app: ElectronApplication, page: Page, size: { width: numb
 
 const today = new Date().toISOString().slice(0, 10)
 
+/** The screens shot for the comparison, in the order of the index page. */
+const compared: { screen: CompareScreen; width: number; height: number }[] = []
+
+/** Shoots a screen for the comparison, with the usual measurements and layout check. */
+async function compareShot(page: Page, screen: CompareScreen, size: { width: number; height: number }) {
+  mkdirSync(COMPARE, { recursive: true })
+  await shot(page, `compare/${screen}@${size.width}`)
+  compared.push({ screen, ...size })
+}
+
+/**
+ * Each approved design at each size, saved beside the app's picture as <screen>@<width>.reference.png. The designs are
+ * drawn at 1440 by 900; their root is stretched to the window so they show what the design does at that size.
+ */
+async function captureReferences() {
+  mkdirSync(COMPARE, { recursive: true })
+  const browser = await chromium.launch()
+  try {
+    for (const [screen, file] of Object.entries(REFERENCES)) {
+      for (const size of SIZES) {
+        const page = await browser.newPage({ viewport: size, colorScheme: 'dark' })
+        await page.goto(pathToFileURL(path.join(ROOT, 'docs', 'design', file)).href, { waitUntil: 'networkidle' }).catch(() => undefined)
+        await page.addStyleTag({ content: 'body > div:first-of-type { width: 100vw !important; height: 100vh !important; }' })
+        await page.evaluate(() => document.fonts.ready)
+        await page.screenshot({ path: path.join(COMPARE, `${screen}@${size.width}.reference.png`) })
+        await page.close()
+      }
+    }
+  } finally {
+    await browser.close()
+  }
+  console.log(`  ${Object.keys(REFERENCES).length * SIZES.length} reference pictures in ${path.relative(ROOT, COMPARE)}/`)
+}
+
+/**
+ * The operator screen as the design shows it (scripture live, three verses heard in the sermon, the Scripture tab
+ * open), then Settings at its listening page.
+ */
+async function compareScreens(page: Page, serviceId: number, size: { width: number; height: number }) {
+  await page.evaluate(async (id) => {
+    const { store, suggestions } = (window as unknown as AuditWindow).__audit
+    const s = store.getState() as unknown as { openService(id: number): Promise<void> }
+    await s.openService(id)
+    const st = store.getState() as unknown as { service: { items: unknown[] }; loadItem(item: unknown): Promise<boolean>; goLive(i: number): void }
+    await st.loadItem(st.service.items[3])
+    st.goLive(0)
+    const books = await window.api.bible.listBooks()
+    const heard = [
+      { book: books.find((b) => /^romans/i.test(b)) ?? books[44], chapter: 8, verse: 1, confidence: 0.94 },
+      { book: books.find((b) => /^psalm/i.test(b)) ?? books[18], chapter: 23, verse: 4, confidence: 0.61 },
+      { book: books.find((b) => /^john/i.test(b)) ?? books[42], chapter: 3, verse: 17, confidence: 0.72 },
+    ]
+    suggestions.getState().clear()
+    for (const h of heard) {
+      const verses = await window.api.bible.getRange('KJV', h.book, h.chapter, h.verse, h.verse)
+      const label = `${h.book} ${h.chapter}:${h.verse}`
+      const passage = { title: `${label} KJV`, verses: verses.map((v) => ({ text: v.text, caption: `${v.book} ${v.chapter}:${v.verse} KJV` })) }
+      suggestions.getState().add({
+        reference: { book: h.book, chapter: h.chapter, verseStart: h.verse, verseEnd: h.verse },
+        label,
+        passage,
+        confidence: h.confidence,
+        text: verses[0]?.text ?? '',
+        version: 'KJV',
+        alternatives: [],
+        heardAt: Date.now(),
+        kind: 'reference',
+        heard: label,
+      })
+    }
+  }, serviceId)
+  await libraryTab(page, 'Scripture')
+  await page.getByLabel('Search scripture').fill('john 3')
+  await page.waitForTimeout(400)
+  await compareShot(page, 'main', size)
+  await page.getByLabel('Search scripture').fill('')
+  await page.evaluate(() => (window as unknown as AuditWindow).__audit.suggestions.getState().clear())
+
+  await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openSettings(true))
+  const listening = page.locator('.settings-nav-item', { hasText: 'Sermon listener' })
+  if (await listening.count()) await listening.first().click()
+  await compareShot(page, 'settings', size)
+  await resetScreens(page)
+}
+
+/** compare/index.html: each screen beside its design, at each size. */
+function writeCompareIndex() {
+  const rows = compared
+    .map(
+      ({ screen, width, height }) => `<section><h2>${screen} at ${width} by ${height}</h2><div class="pair">
+<figure><img src="${screen}@${width}.png" alt="The app"><figcaption>App</figcaption></figure>
+<figure><img src="${screen}@${width}.reference.png" alt="The design"><figcaption>Design</figcaption></figure></div></section>`,
+    )
+    .join('\n')
+  writeFileSync(
+    path.join(COMPARE, 'index.html'),
+    `<!doctype html><meta charset="utf-8"><title>App beside the design</title>
+<style>body{margin:24px;background:#111;color:#eee;font:14px system-ui}h2{font-size:15px;text-transform:capitalize}.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}figure{margin:0}img{width:100%;border:1px solid #333}figcaption{color:#999;margin-top:4px}</style>
+${rows}`,
+  )
+}
+
 /**
  * The dev UI kit: a picture only. It shows disabled and forced states on purpose, so it stays out of the counts. It needs
  * nothing from Electron, so a plain browser page shows it. It runs first, on its own dev server: once the main process is
@@ -749,7 +889,9 @@ async function main() {
   // Last run's pictures and measurements go; the report, which is committed, stays.
   mkdirSync(OUT, { recursive: true })
   for (const file of readdirSync(OUT)) if (file !== 'REPORT.md') rmSync(path.join(OUT, file), { recursive: true, force: true })
-  await captureUiKit()
+  if (!COMPARE_ONLY) await captureUiKit()
+  console.log('The approved designs:')
+  await captureReferences()
 
   // An empty server address means the build talks to no server; account screens show their offline states.
   delete process.env.SERVICEEX_API_URL
@@ -798,10 +940,14 @@ async function main() {
     await page.waitForSelector('.welcome', { timeout: 10_000 }).catch(() => console.warn('  The first run welcome did not show'))
     for (const size of SIZES) {
       await setSize(app, page, size)
-      if (await page.locator('.welcome').count()) await shot(page, `00-welcome@${size.width}`)
+      if (await page.locator('.welcome').count()) {
+        if (!COMPARE_ONLY) await shot(page, `00-welcome@${size.width}`)
+        await compareShot(page, 'welcome', size)
+      }
     }
     if (await page.locator('.welcome').count()) await page.getByRole('button', { name: 'Continue without an account' }).click()
     for (const size of SIZES) {
+      if (COMPARE_ONLY) break
       await setSize(app, page, size)
       await shot(page, `01-first-run@${size.width}`)
       await libraryTab(page, 'Media')
@@ -843,6 +989,11 @@ async function main() {
       await page.reload()
       await installHooks(page)
       await setSize(app, page, size)
+
+      if (COMPARE_ONLY) {
+        await compareScreens(page, seeded.serviceId, size)
+        continue
+      }
 
       await libraryTab(page, 'Songs')
       await shot(page, `02-main-empty${at}`)
@@ -896,7 +1047,10 @@ async function main() {
       await shot(page, `13-schedule-empty${at}`)
       await page.evaluate((id) => (window as unknown as AuditWindow).__audit.store.getState().openService(id), seeded.serviceId)
 
-      await page.getByRole('button', { name: 'New service' }).click()
+      // The service picker opens from the top bar's service button.
+      await page.locator('.toolbar-service').click()
+      await shot(page, `14-schedule-service-picker${at}`)
+      await page.locator('.schedule-picker').getByRole('button', { name: 'New service' }).click()
       await shot(page, `14-schedule-new-service-modal${at}`)
       await resetScreens(page)
 
@@ -1066,25 +1220,28 @@ async function main() {
       })
       await shot(page, `30-error-panel-crashed${at}`)
 
+      await page.reload()
+      await installHooks(page)
+      await compareScreens(page, seeded.serviceId, size)
+
       if (size.width === 1280) {
-        // Every Settings section on its own, at the smaller size.
+        // Every Settings page, at the smaller size: each nav item opens one section.
         await page.reload()
         await installHooks(page)
         await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openSettings(true))
         await settle(page)
         metrics[`31-settings-full${at}`] = await page.evaluate(collectMetrics)
-        // An element taller than the viewport cannot be captured in Electron, so the page is made tall for these.
+        // A page taller than the viewport cannot be captured in Electron, so the window is made tall for these.
         await page.setViewportSize({ width: size.width, height: 2600 })
-        await settle(page)
-        const sections = page.locator('.settings-section')
-        const total = await sections.count()
+        const items = page.locator('.settings-nav-item')
+        const total = await items.count()
         for (let i = 0; i < total; i++) {
-          const section = sections.nth(i)
-          const title = ((await section.locator('h3').first().textContent().catch(() => null)) ?? `section-${i}`).trim()
+          const title = ((await items.nth(i).textContent()) ?? `page-${i}`).trim()
+          await items.nth(i).click()
+          await settle(page, 300)
           const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
           const file = `31-settings-${String(i + 1).padStart(2, '0')}-${slug}.png`
-          await section.scrollIntoViewIfNeeded()
-          await section.screenshot({ path: path.join(OUT, file) })
+          await page.locator('.settings-column').screenshot({ path: path.join(OUT, file) })
           shots.push(file)
           console.log(`  ${file}`)
         }
@@ -1129,6 +1286,7 @@ async function main() {
       shots.push('42-stage-display.png')
     }
 
+    writeCompareIndex()
     writeFileSync(path.join(OUT, 'metrics.json'), JSON.stringify({ shots, screens: metrics, totals: totals(metrics) }, null, 2))
     writeFileSync(path.join(OUT, 'static.json'), JSON.stringify(staticScan(), null, 2))
     writeFileSync(path.join(OUT, 'layout.json'), JSON.stringify(layout, null, 2))

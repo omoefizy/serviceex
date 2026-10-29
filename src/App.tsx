@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { can } from '../shared/features'
 import { layoutById, showsPanel } from '../shared/layouts'
 import { CommandPalette } from './components/CommandPalette'
-import { OnScreenPanel, PreviewPanel, Transport, UpNextCard } from './components/LivePreview'
+import { OnScreenPanel, PreviewPanel, UpNextCard, UpNextMeta } from './components/LivePreview'
 import { LowerThirdPanel } from './components/LowerThirdPanel'
 import { PlansModal } from './components/PlansModal'
 import { MediaPanel } from './components/MediaPanel'
@@ -53,11 +53,14 @@ const DEFAULT_SIZES: PanelSizes = { order: 300, finder: 400 }
 const LIMITS = { order: [240, 440], finder: [300, 560] } as const
 /** How far each side column gives way, below its saved width, when the window is too narrow (1280 by 720 laptops). */
 const FLOORS: PanelSizes = { order: 240, finder: 300 }
-/** Below 1366 pixels the finder is at most this wide. */
+/** Below 1366 pixels the Order of service and the finder are at most this wide. */
+const NARROW_ORDER = 260
 const NARROW_FINDER = 340
 const CENTRE_MIN = 420
 /** The centre's minimum while an editor is open there: forms need more room than the live screen. */
 const EDITOR_MIN = 520
+/** The Order of service as a rail of item icons: collapsed, or below 1280 pixels. The finder's rail is narrower. */
+const ORDER_RAIL = 64
 const RAIL = 44
 
 const isPanelSizes = (value: unknown): value is PanelSizes =>
@@ -66,17 +69,18 @@ const isPanelSizes = (value: unknown): value is PanelSizes =>
   (Object.keys(LIMITS) as (keyof PanelSizes)[]).every((key) => typeof (value as PanelSizes)[key] === 'number')
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
 
-/** True below 1366 pixels, where the finder narrows and Up next hides. */
-function useNarrowWindow(): boolean {
-  const query = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 1365px)') : null
-  const [narrow, setNarrow] = useState(query?.matches ?? false)
+/** Whether the window matches a media query, following it as the window is resized. */
+function useMediaQuery(media: string): boolean {
+  const query = typeof window.matchMedia === 'function' ? window.matchMedia(media) : null
+  const [matches, setMatches] = useState(query?.matches ?? false)
   useEffect(() => {
     if (!query) return
-    const change = () => setNarrow(query.matches)
+    const change = () => setMatches(query.matches)
+    change()
     query.addEventListener('change', change)
     return () => query.removeEventListener('change', change)
   }, [query])
-  return narrow
+  return matches
 }
 
 /** The finder's tabs. Slides is the Presentations library. */
@@ -86,6 +90,16 @@ const LIBRARY_TABS = [
   { id: 'presentations', label: 'Slides' },
   { id: 'media', label: 'Media' },
 ] as const
+
+/** The tabs of the card under On screen. Up next leaves out below 720 pixels of height, where it does not fit. */
+type DeckTab = 'upNext' | 'slides' | 'preview' | 'points'
+const DECK_TABS: { id: DeckTab; label: string }[] = [
+  { id: 'upNext', label: 'Up next' },
+  { id: 'slides', label: 'Slides' },
+  { id: 'preview', label: 'Preview' },
+  { id: 'points', label: 'Lower third' },
+]
+const isDeckTab = (value: unknown): value is DeckTab => DECK_TABS.some((tab) => tab.id === value)
 
 /** Keeps a panel mounted (so it keeps its state, and the listener keeps listening) while the layout hides it. */
 function Slot({ show, children }: { show: boolean; children: ReactNode }) {
@@ -99,7 +113,12 @@ function Slot({ show, children }: { show: boolean; children: ReactNode }) {
 function App() {
   const [chosenTab, setLibraryTab] = useState<(typeof LIBRARY_TABS)[number]['id']>('scripture')
   const [sizes, setSizes] = usePersistentState('serviceex.panelWidths', DEFAULT_SIZES, isPanelSizes)
-  const narrow = useNarrowWindow()
+  const narrow = useMediaQuery('(max-width: 1365px)')
+  const railWidth = useMediaQuery('(max-width: 1279px)')
+  const short = useMediaQuery('(max-height: 719px)')
+  // Below 1280 pixels the Order of service is a rail unless it was opened out for now.
+  const [orderOpenedOut, setOrderOpenedOut] = useState(false)
+  const [chosenDeckTab, setDeckTab] = usePersistentState<DeckTab>('serviceex.deckTab', 'upNext', isDeckTab)
   const welcome = useWelcome()
   const [scheduleCollapsed, setScheduleCollapsed] = usePersistentState('worshipdeck.scheduleCollapsed', false, isBoolean)
   const [libraryCollapsed, setLibraryCollapsed] = usePersistentState('worshipdeck.libraryCollapsed', false, isBoolean)
@@ -121,6 +140,7 @@ function App() {
   useEffect(() => {
     const show = () => {
       setScheduleCollapsed(false)
+      setOrderOpenedOut(true)
       requestAnimationFrame(() => document.querySelector<HTMLSelectElement>('.schedule-picker select')?.focus())
     }
     window.addEventListener(SHOW_SERVICE_PICKER_EVENT, show)
@@ -148,6 +168,15 @@ function App() {
     schedule: showsPanel(layout, 'schedule'),
   }
   const centreColumn = show.centre || show.live || show.points
+  const orderRail = scheduleCollapsed || (railWidth && !orderOpenedOut)
+  const setOrderRail = (rail: boolean) => {
+    if (railWidth) setOrderOpenedOut(!rail)
+    if (!rail || !railWidth) setScheduleCollapsed(rail)
+  }
+  const deckTabs = DECK_TABS.filter(
+    (tab) => (tab.id === 'upNext' ? show.live && !short : tab.id === 'slides' ? showsPanel(layout, 'slides') : tab.id === 'preview' ? show.live : show.points),
+  )
+  const deckTab = deckTabs.some((tab) => tab.id === chosenDeckTab) ? chosenDeckTab : (deckTabs[0]?.id ?? chosenDeckTab)
 
   const resize = (key: keyof PanelSizes) => (value: number) => setSizes((current) => ({ ...current, [key]: value }))
 
@@ -372,11 +401,12 @@ function App() {
   }, [])
 
   // The columns the layout shows, with a 12px splitter as the gap between each. A side column is its saved width when
-  // there is room, and shrinks towards its floor when there is not; below 1366 pixels the finder is at most 340.
-  const width = (key: keyof PanelSizes) => (key === 'finder' && narrow ? Math.min(sizes.finder, NARROW_FINDER) : sizes[key])
+  // there is room, and shrinks towards its floor when there is not; below 1366 pixels the Order of service is at most
+  // 260 and the finder 340, and below 1280 the Order of service is a 64 pixel rail of item icons.
+  const width = (key: keyof PanelSizes) => (narrow ? Math.min(sizes[key], key === 'finder' ? NARROW_FINDER : NARROW_ORDER) : sizes[key])
   const side = (key: keyof PanelSizes) => `minmax(${Math.min(FLOORS[key], width(key))}px, ${width(key)}px)`
   const columns = [
-    ...(show.schedule ? [scheduleCollapsed ? `${RAIL}px` : side('order')] : []),
+    ...(show.schedule ? [orderRail ? `${ORDER_RAIL}px` : side('order')] : []),
     ...(show.schedule && (centreColumn || show.library) ? ['auto'] : []),
     ...(centreColumn ? [`minmax(${centreOpen ? EDITOR_MIN : CENTRE_MIN}px, 1fr)`] : []),
     ...(show.library && centreColumn ? ['auto'] : []),
@@ -397,10 +427,10 @@ function App() {
       <main className="operator" hidden={settingsOpen} style={{ gridTemplateColumns: columns }}>
         <Slot show={show.schedule}>
           <PanelBoundary name="Schedule">
-            <SchedulePanel collapsed={scheduleCollapsed} onCollapsedChange={setScheduleCollapsed} />
+            <SchedulePanel collapsed={orderRail} onCollapsedChange={setOrderRail} />
           </PanelBoundary>
           {(centreColumn || show.library) &&
-            (scheduleCollapsed ? (
+            (orderRail ? (
               <span className="shell-gap" aria-hidden="true" />
             ) : (
               <Splitter label="Resize the order of service" value={sizes.order} min={LIMITS.order[0]} max={LIMITS.order[1]} direction={1} panel=".schedule" onChange={resize('order')} />
@@ -426,36 +456,51 @@ function App() {
               </PanelBoundary>
             )
           ) : null}
-          {/* The live screen stays mounted under an editor, so its state survives. */}
+          {/* The live screen stays mounted under an editor, so its state survives. On screen takes the height the card
+              under it leaves; nothing here scrolls but the lists inside the cards. */}
           <div className="stage-live" hidden={centreOpen}>
-            {/* On screen and Previous/Next stay put; what is below scrolls on its own, so picking a slide never
-                scrolls the live screen away. */}
             <Slot show={show.live}>
               <PanelBoundary name="On screen">
                 <OnScreenPanel />
               </PanelBoundary>
-              <Transport />
             </Slot>
-            <div className="stage-scroll">
-              <Slot show={show.live && !narrow}>
-                <UpNextCard />
-              </Slot>
-              <Slot show={show.centre}>
-                <PanelBoundary key="slides" name="Slides">
-                  <SlideGrid />
-                </PanelBoundary>
-              </Slot>
-              <Slot show={show.live}>
-                <PanelBoundary name="Preview">
-                  <PreviewPanel />
-                </PanelBoundary>
-              </Slot>
-              <Slot show={show.points}>
-                <PanelBoundary name="Lower third">
-                  <LowerThirdPanel />
-                </PanelBoundary>
-              </Slot>
-            </div>
+            {deckTabs.length > 0 && (
+              <section className={`stage-deck stage-deck--${deckTab}`} aria-label={deckTabs.length === 1 ? deckTabs[0].label : 'Up next, slides and preview'}>
+                {deckTabs.length > 1 && (
+                  <div className="stage-deck-tabs">
+                    <Tabs<DeckTab> aria-label="Under On screen" idPrefix="deck" tabs={deckTabs} value={deckTab} onChange={setDeckTab} />
+                    {deckTab === 'upNext' && <UpNextMeta />}
+                  </div>
+                )}
+                {/* All stay mounted, so the slide grid keeps its place and the lower third its text. */}
+                <Slot show={deckTab === 'upNext' && show.live && !short}>
+                  <div id="deck-panel-upNext" role="tabpanel" aria-labelledby="deck-tab-upNext" className="stage-deck-page">
+                    <UpNextCard titled={deckTabs.length === 1} />
+                  </div>
+                </Slot>
+                <Slot show={deckTab === 'slides' && show.centre}>
+                  <div id="deck-panel-slides" role="tabpanel" aria-labelledby="deck-tab-slides" className="stage-deck-page">
+                    <PanelBoundary key="slides" name="Slides">
+                      <SlideGrid />
+                    </PanelBoundary>
+                  </div>
+                </Slot>
+                <Slot show={deckTab === 'preview' && show.live}>
+                  <div id="deck-panel-preview" role="tabpanel" aria-labelledby="deck-tab-preview" className="stage-deck-page">
+                    <PanelBoundary name="Preview">
+                      <PreviewPanel />
+                    </PanelBoundary>
+                  </div>
+                </Slot>
+                <Slot show={deckTab === 'points' && show.points}>
+                  <div id="deck-panel-points" role="tabpanel" aria-labelledby="deck-tab-points" className="stage-deck-page">
+                    <PanelBoundary name="Lower third">
+                      <LowerThirdPanel />
+                    </PanelBoundary>
+                  </div>
+                </Slot>
+              </section>
+            )}
           </div>
         </div>
         <Slot show={show.library}>
@@ -516,7 +561,7 @@ function App() {
       <StatusBar showListener={show.listener} />
       {paletteOpen && <CommandPalette />}
       {plansOpen && <PlansModal />}
-      {welcome.open && <WelcomeScreen onDone={welcome.dismiss} />}
+      {welcome.open && <WelcomeScreen onAccount={welcome.toAccount} onContinue={welcome.continueWithoutAccount} />}
     </div>
   )
 }

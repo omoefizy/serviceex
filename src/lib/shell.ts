@@ -16,12 +16,20 @@ export function toggleTranscriptDrawer(open?: boolean): void {
   window.dispatchEvent(new CustomEvent<boolean | undefined>(TRANSCRIPT_DRAWER_EVENT, { detail: open }))
 }
 
-/** Opens Settings at the section with this title. */
-export function openSettingsAt(title: string): void {
+export const SETTINGS_PAGE_EVENT = 'serviceex:settings-page'
+let pendingPage: string | null = null
+
+/** The Settings page asked for before Settings had rendered; Settings takes it once, on opening. */
+export function takeSettingsPage(): string | null {
+  const page = pendingPage
+  pendingPage = null
+  return page
+}
+
+/** Opens Settings at the page of the section with this title, putting the keyboard on `focus` there if given. */
+export function openSettingsAt(title: string, focus?: string): void {
+  pendingPage = title
   useOperatorStore.getState().openSettings(true)
-  // Settings scrolls to the section once it has rendered.
-  requestAnimationFrame(() => {
-    const section = Array.from(document.querySelectorAll('.settings-section')).find((el) => el.querySelector('h3')?.textContent?.trim() === title)
-    section?.scrollIntoView({ block: 'start' })
-  })
+  window.dispatchEvent(new CustomEvent<string>(SETTINGS_PAGE_EVENT, { detail: title }))
+  if (focus) requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector<HTMLElement>(focus)?.focus()))
 }

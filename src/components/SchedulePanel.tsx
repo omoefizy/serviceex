@@ -23,6 +23,7 @@ import { reportError, type ErrorLike } from '../lib/errors'
 import { droppedPaths, isFileDrag } from '../lib/presentations'
 import { addSampleSong, SAMPLE_WELCOME, showLibraryTab } from '../lib/samples'
 import { openSendMenu, SERVICES_CHANGED_EVENT, setShareDrag, showMessage, useSharingStore } from '../lib/sharing'
+import { SHOW_SERVICE_PICKER_EVENT } from '../lib/shell'
 import { MOD } from '../lib/shortcuts'
 import { useDismiss } from '../lib/useDismiss'
 import { selectDefaultTranslation, useOperatorStore } from '../store'
@@ -78,9 +79,16 @@ function AddMenu({ disabled, importing, onAnnouncement, onPresentation, onSermon
   }
   return (
     <div className="live-menu schedule-add" ref={ref}>
-      <Button size="sm" icon={<Plus size={16} aria-hidden="true" />} disabled={disabled} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
-        Add
-      </Button>
+      <IconButton
+        className="schedule-add-button"
+        label="Add item"
+        tooltip="Add an announcement, presentation, sermon outline, song or verse"
+        icon={<Plus size={18} />}
+        disabled={disabled}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      />
       {open && (
         <div className="live-menu-list" role="menu" aria-label="Add to the order of service">
           <button type="button" role="menuitem" onClick={choose(() => showLibraryTab('songs'))}>
@@ -134,6 +142,8 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
   const [dragId, setDragId] = useState<number | null>(null)
   /** Where the dragged item would land, as an index into the items before the move. */
   const [dropIndex, setDropIndex] = useState<number | null>(null)
+  /** The service picker (choose, create, export and import a service) opens from the top bar's service button. */
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const service = useOperatorStore((s) => s.service)
   const sharedOpen = useSharingStore((s) => (s.shared?.role ?? 'none') !== 'none')
@@ -168,6 +178,12 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
     } catch (err) {
       setError(reportError('Schedule', err))
     }
+  }, [])
+
+  useEffect(() => {
+    const open = () => setPickerOpen(true)
+    window.addEventListener(SHOW_SERVICE_PICKER_EVENT, open)
+    return () => window.removeEventListener(SHOW_SERVICE_PICKER_EVENT, open)
   }, [])
 
   // Open the newest service on start.
@@ -273,13 +289,36 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
     setDropIndex(null)
   }
 
+  const stateOf = (item: ServiceItem, index: number) =>
+    item.id === liveItemId ? ', on screen now' : item.id === activeItemId ? ', in preview' : liveIndex !== -1 && index === liveIndex + 1 ? ', next' : liveIndex !== -1 && index < liveIndex ? ', done' : ''
+
+  // The rail: a 64 pixel column of item icons, when collapsed or in a window under 1280 pixels.
   if (collapsed) {
     return (
-      <aside className="schedule collapsed">
-        <button className="panel-rail-toggle" aria-expanded={false} title="Show the order of service" onClick={() => onCollapsedChange(false)}>
-          <ChevronRight size={16} aria-hidden="true" />
-          <span className="panel-rail-label">Order of service</span>
-        </button>
+      <aside className="schedule collapsed" aria-label="Order of service">
+        <IconButton label="Show the order of service" icon={<ChevronRight size={18} />} aria-expanded={false} onClick={() => onCollapsedChange(false)} />
+        <ol className="schedule-rail-items">
+          {items.map((item, index) => (
+            <li key={item.id}>
+              <button
+                type="button"
+                className={['schedule-rail-item', item.id === activeItemId && 'active', item.id === liveItemId && 'on-air'].filter(Boolean).join(' ')}
+                title={`${item.title}: click to preview, double-click to go live`}
+                aria-label={`${item.title}${stateOf(item, index)}`}
+                aria-current={item.id === activeItemId ? 'true' : undefined}
+                onClick={() => run(() => loadItem(item))}
+                onDoubleClick={() =>
+                  run(async () => {
+                    if (await loadItem(item)) useOperatorStore.getState().goLive(0)
+                  })
+                }
+              >
+                <ItemIcon type={item.type} />
+              </button>
+            </li>
+          ))}
+        </ol>
+        <IconButton className="schedule-rail-add" label="Add song, slide or verse" icon={<Plus size={18} />} disabled={!service} onClick={() => showLibraryTab('songs')} />
       </aside>
     )
   }
@@ -304,13 +343,14 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
       }}
     >
       <header className="panel-header ui-panel-head schedule-head">
-        <h2 className="ui-panel-title">Order of service</h2>
-        {service && (
-          <span className="ui-panel-meta count-badge" title={`${items.length} item${items.length === 1 ? '' : 's'}`}>
-            {items.length}
-            <span className="visually-hidden"> item{items.length === 1 ? '' : 's'}</span>
-          </span>
-        )}
+        <div className="schedule-head-text">
+          <h2 className="ui-panel-title">Order of service</h2>
+          {service && (
+            <span className="ui-panel-meta schedule-count">
+              {items.length} item{items.length === 1 ? '' : 's'}
+            </span>
+          )}
+        </div>
         <div className="ui-panel-actions">
           <AddMenu
             disabled={!service}
@@ -319,17 +359,30 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
             onPresentation={() => window.api.presentations.pick('files').then(importPresentations, console.error)}
             onSermon={() => setSermonOpen(true)}
           />
-          <IconButton label="Hide the order of service" icon={<ChevronLeft size={18} />} aria-expanded={true} onClick={() => onCollapsedChange(true)} />
+          <IconButton
+            className="schedule-collapse"
+            label="Hide the order of service"
+            icon={<ChevronLeft size={18} />}
+            aria-expanded={true}
+            onClick={() => onCollapsedChange(true)}
+          />
         </div>
       </header>
 
-      <div className="schedule-picker">
+      <div className="schedule-picker" hidden={!pickerOpen}>
+        <div className="schedule-picker-head">
+          <span className="schedule-picker-title">Service</span>
+          <IconButton size="sm" label="Close the service picker" icon={<X size={14} />} onClick={() => setPickerOpen(false)} />
+        </div>
         <Select
           aria-label="Service"
           title="Right-click to send this service to another computer"
           onContextMenu={(e) => service && openSendMenu(e, [{ type: 'service', id: service.id }])}
           value={service?.id ?? ''}
-          onChange={(e) => run(() => openService(Number(e.target.value)))}
+          onChange={(e) => run(async () => {
+            await openService(Number(e.target.value))
+            setPickerOpen(false)
+          })}
           disabled={services.length === 0}
         >
           {services.length === 0 && <option value="">No services yet</option>}
@@ -510,10 +563,16 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
       )}
 
       <footer className="schedule-footer">
-        <Button size="lg" className="schedule-add-footer" icon={<Plus size={18} aria-hidden="true" />} disabled={!service} onClick={() => showLibraryTab('songs')}>
+        <Button
+          size="lg"
+          className="schedule-add-footer"
+          icon={<Plus size={16} aria-hidden="true" />}
+          disabled={!service}
+          title={`Add from the finder. ${MOD}↓ runs the next item.`}
+          onClick={() => showLibraryTab('songs')}
+        >
           Add song, slide or verse
         </Button>
-        <span className="hint">{MOD}↓ next item</span>
       </footer>
       <PresentationJobs />
 

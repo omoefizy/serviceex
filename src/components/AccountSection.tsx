@@ -66,7 +66,7 @@ function SignInForm({ encryptionAvailable }: { encryptionAvailable: boolean }) {
     <>
       {sentTo === null ? (
         <form className="field" onSubmit={sendCode}>
-          <label htmlFor="account-email">Email</label>
+          <label htmlFor="account-email">Log in or create a free account</label>
           <div className="settings-row">
             <Input
               id="account-email"
@@ -80,7 +80,7 @@ function SignInForm({ encryptionAvailable }: { encryptionAvailable: boolean }) {
               <Mail size={15} aria-hidden="true" /> Send code
             </Button>
           </div>
-          <span className="hint">A 6 digit code is emailed to you. No password is needed.</span>
+          <span className="hint">Enter your email and we send a 6 digit code. No password is needed; a new email gets a free account.</span>
         </form>
       ) : (
         <form className="field" onSubmit={verify}>

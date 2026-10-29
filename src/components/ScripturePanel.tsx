@@ -1,4 +1,4 @@
-import { BookPlus, BookX, History, SearchX, X } from 'lucide-react'
+import { BookPlus, BookX, History, Search, SearchX, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { can, upgradeNote } from '../../shared/features'
 import { BOOK_NAMES, formatReference, NEW_TESTAMENT_BOOKS, OLD_TESTAMENT_BOOKS, parseReference } from '../../shared/parseReference'
@@ -474,7 +474,7 @@ export function ScripturePanel() {
           <Select aria-label="Translation" title="The translation to search; All searches every installed version" value={version} onChange={(e) => setVersion(e.target.value as VersionFilter)}>
             {[{ code: 'both', name: 'All installed versions' }, ...installed].map((v) => (
               <option key={v.code} value={v.code} title={v.name}>
-                {v.code === 'both' ? 'All versions' : `${v.code} · ${v.name}`}
+                {v.code === 'both' ? 'All' : v.code}
               </option>
             ))}
           </Select>
@@ -488,6 +488,9 @@ export function ScripturePanel() {
           />
         </div>
         <div className="scripture-search-row">
+          <span className="scripture-input-icon" aria-hidden="true">
+            <Search size={16} />
+          </span>
           <Input
             ref={inputRef}
             className="scripture-input"
@@ -495,7 +498,7 @@ export function ScripturePanel() {
             type="search"
             aria-label="Search scripture"
             aria-controls="scripture-list"
-            placeholder="john 3:16, ps 23, or words like fear of the lord"
+            placeholder="John 3:16, or describe it"
             value={input}
             onChange={(e) => changeInput(e.target.value)}
             onKeyDown={handleKeyDown}

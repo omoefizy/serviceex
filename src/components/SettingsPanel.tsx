@@ -1,5 +1,5 @@
 import {
-  ArrowLeft,
+  ChevronLeft,
   BookOpen,
   Cloud,
   Copy,
@@ -37,7 +37,8 @@ import {
   Wifi,
   X,
 } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { SETTINGS_PAGE_EVENT, takeSettingsPage } from '../lib/shell'
 import type {
   AiModel,
   AiStatus,
@@ -1907,84 +1908,69 @@ const NAV_GROUPS: { label: string; titles: string[] }[] = [
 
 const sectionTitle = (section: Element) => section.querySelector('h3')?.textContent?.trim() ?? ''
 
+/** A nav name where it differs from the section's own title. */
+const NAV_LABELS: Record<string, string> = { Account: 'Account and plan' }
+
+/** The line under each page's title. */
+const DESCRIPTIONS: Record<string, string> = {
+  Account: 'Log in or create a free account, and see your plan, licence and cloud listening hours.',
+  Appearance: 'Dark, light, or following this computer.',
+  'Church profile': 'Your church name and logo, for the Logo screen and sermon exports.',
+  'Default themes': 'The theme each kind of slide starts with.',
+  Scripture: 'The Bible versions on this computer and the one references open in.',
+  'Scripture display': 'How verses look on screen: size, references and two translations.',
+  'Live highlighting': 'Marking words on the live verse while it is on screen.',
+  'Scripture detection': 'How verses heard in the sermon are suggested.',
+  'Sermon quotes': 'Quotable lines from the sermon, shown as quote slides.',
+  'AI and listening': 'Choose how ServiceEx listens, and what the AI may help with.',
+  'AI developer key': 'Keys for developer builds.',
+  'Sermon listener': 'Choose what ServiceEx listens to, and how. Changes apply the next time you start listening, never during a service.',
+  Presentations: 'How PowerPoint, PDF and image slides are imported and shown.',
+  Layouts: 'Which panels this computer shows, saved under a name.',
+  'Autosave and backups': 'Song editor drafts and automatic backups of your library.',
+  Output: 'Where the projector output opens, and how slides change.',
+  Sharing: 'Other computers on this network, and what they may send you.',
+  Devices: 'Computers you have paired with, and what each may do.',
+  'Library sync': 'Keeping songs and slides the same on paired computers.',
+  'Live PowerPoint diagnostics': 'Checks for running presentations in PowerPoint itself.',
+  Diagnostics: 'Logs and details to send when something goes wrong.',
+}
+
 /** The plan at the foot of the Settings nav, with Manage plan. */
 function PlanCard() {
   const account = useAccount()
   const plan = account?.signedIn ? account.license.plan : 'Free'
-  const hours = account?.signedIn && account.balance ? `${formatHours(account.balance.totalSeconds)} of cloud listening` : account?.signedIn ? null : 'Not signed in'
+  const hours = account?.signedIn && account.balance ? `Cloud listening: ${formatHours(account.balance.totalSeconds)} left` : account?.signedIn ? null : 'Not signed in'
   return (
     <div className="settings-plan-card">
-      <span className="settings-plan-label">Plan</span>
-      <strong className="settings-plan-name">{plan}</strong>
+      <span className="settings-plan-name">{plan} plan</span>
       {hours && <span className="settings-plan-detail">{hours}</span>}
-      <Button size="sm" onClick={() => openPlans(true)} disabled={account !== null && !account.configured}>
+      <Button variant="primary" size="sm" className="settings-plan-manage" onClick={() => openPlans(true)} disabled={account !== null && !account.configured}>
         Manage plan
       </Button>
     </div>
   )
 }
 
-/**
- * The Settings nav: every section on the page, grouped under Account, Service, Devices and Support, read from the
- * page itself so a section a build leaves out is not listed. The section in view is marked.
- */
-function SettingsNav({ content }: { content: RefObject<HTMLElement> }) {
-  const [titles, setTitles] = useState<string[]>([])
-  const [current, setCurrent] = useState<string | null>(null)
-
-  useLayoutEffect(() => {
-    const root = content.current
-    if (!root) return
-    const read = () => setTitles(Array.from(root.querySelectorAll('.settings-section')).map(sectionTitle).filter(Boolean))
-    read()
-    const watcher = new MutationObserver(read)
-    watcher.observe(root, { childList: true, subtree: true })
-    return () => watcher.disconnect()
-  }, [content])
-
-  // The section nearest the top of the page is the current one.
-  useEffect(() => {
-    const root = content.current
-    if (!root) return
-    const update = () => {
-      const top = root.getBoundingClientRect().top
-      let found: string | null = null
-      for (const section of root.querySelectorAll('.settings-section')) {
-        if (section.getBoundingClientRect().top - top > 80) break
-        found = sectionTitle(section)
-      }
-      setCurrent(found ?? titles[0] ?? null)
-    }
-    update()
-    root.addEventListener('scroll', update, { passive: true })
-    return () => root.removeEventListener('scroll', update)
-  }, [content, titles])
-
-  const go = (title: string) => {
-    const section = Array.from(content.current?.querySelectorAll('.settings-section') ?? []).find((el) => sectionTitle(el) === title)
-    section?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-  }
-
+/** The nav's groups as the page has them: a section a build leaves out is not listed. */
+function navGroups(titles: string[]) {
   const listed = new Set(NAV_GROUPS.flatMap((g) => g.titles))
-  const groups = NAV_GROUPS.map((group) => ({
+  return NAV_GROUPS.map((group) => ({
     label: group.label,
     titles: titles.filter((t) => group.titles.includes(t) || (group.label === 'Service' && !listed.has(t))),
   })).filter((g) => g.titles.length > 0)
+}
 
+/** The Settings nav: one page per section, grouped under Account, Service, Devices and Support. */
+function SettingsNav({ titles, current, onChoose }: { titles: string[]; current: string; onChoose(title: string): void }) {
   return (
     <nav className="settings-nav-groups" aria-label="Settings sections">
-      {groups.map((group) => (
+      {navGroups(titles).map((group) => (
         <div key={group.label} className="settings-nav-group">
           <span className="settings-nav-heading">{group.label}</span>
           {group.titles.map((title) => (
-            <button
-              key={title}
-              type="button"
-              className="settings-nav-item"
-              aria-current={current === title ? 'true' : undefined}
-              onClick={() => go(title)}
-            >
-              {title}
+            <button key={title} type="button" className="settings-nav-item" aria-current={current === title ? 'page' : undefined} onClick={() => onChoose(title)}>
+              {NAV_LABELS[title] ?? title}
             </button>
           ))}
         </div>
@@ -2000,12 +1986,45 @@ export function SettingsPanel() {
   const loadSettings = useOperatorStore((s) => s.loadSettings)
   const [displays, setDisplays] = useState<DisplayInfo[]>([])
   const contentRef = useRef<HTMLElement>(null)
+  const [titles, setTitles] = useState<string[]>([])
+  const [chosen, setChosen] = useState<string>(() => takeSettingsPage() ?? 'Account')
+  const page = titles.includes(chosen) ? chosen : (navGroups(titles)[0]?.titles[0] ?? chosen)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<ErrorLike | null>(null)
 
   useEffect(() => {
     window.api.settings.listDisplays().then(setDisplays, console.error)
   }, [])
+
+  // Another screen asking for a page while Settings is open (see openSettingsAt).
+  useEffect(() => {
+    const show = (e: Event) => setChosen(takeSettingsPage() ?? (e as CustomEvent<string>).detail)
+    window.addEventListener(SETTINGS_PAGE_EVENT, show)
+    return () => window.removeEventListener(SETTINGS_PAGE_EVENT, show)
+  }, [])
+
+  // The sections come from the page itself, so a section a build leaves out is not listed.
+  useLayoutEffect(() => {
+    const root = contentRef.current
+    if (!root) return
+    const read = () =>
+      setTitles((current) => {
+        const next = Array.from(root.querySelectorAll('.settings-section')).map(sectionTitle).filter(Boolean)
+        return next.join('\n') === current.join('\n') ? current : next
+      })
+    read()
+    const watcher = new MutationObserver(read)
+    watcher.observe(root, { childList: true, subtree: true })
+    return () => watcher.disconnect()
+  }, [])
+
+  // Every section stays mounted, so each keeps what is typed in it; only the chosen page's shows.
+  useLayoutEffect(() => {
+    const root = contentRef.current
+    if (!root) return
+    for (const section of root.querySelectorAll<HTMLElement>('.settings-section')) section.hidden = sectionTitle(section) !== page
+    root.scrollTop = 0
+  }, [page, titles])
 
   async function run(action: () => Promise<unknown>, done?: string) {
     setError(null)
@@ -2024,15 +2043,19 @@ export function SettingsPanel() {
   return (
     <div className="settings-page">
       <aside className="settings-sidebar">
-        <Button variant="ghost" className="settings-back" icon={<ArrowLeft size={18} aria-hidden="true" />} onClick={() => openSettings(false)}>
+        <Button variant="ghost" className="settings-back" icon={<ChevronLeft size={18} aria-hidden="true" />} onClick={() => openSettings(false)}>
           Back to service
         </Button>
-        <h2 className="settings-page-title">Settings</h2>
-        <SettingsNav content={contentRef} />
+        <h2 className="visually-hidden">Settings</h2>
+        <SettingsNav titles={titles} current={page} onChoose={setChosen} />
         <PlanCard />
       </aside>
-      <section className="panel settings-panel" ref={contentRef}>
+      <section className="panel settings-panel" ref={contentRef} aria-labelledby="settings-page-heading">
         <div className="settings-column">
+          <h1 id="settings-page-heading" className="settings-page-heading">
+            {NAV_LABELS[page] ?? page}
+          </h1>
+          {DESCRIPTIONS[page] && <p className="settings-page-lead">{DESCRIPTIONS[page]}</p>}
           <ErrorNote error={error} />
           {message && <p className="hint">{message}</p>}
 

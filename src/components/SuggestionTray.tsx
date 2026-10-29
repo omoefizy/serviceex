@@ -1,5 +1,5 @@
 import { Eye, ListPlus, Pencil, PanelBottom, Pin, Send, Sparkles, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { pinStatement, useListener } from '../lib/listener'
 import { useSuggestions, type ScriptureSuggestion, type StatementSuggestion } from '../lib/scriptureDetection'
@@ -83,15 +83,35 @@ export function SuggestionTray() {
     }
   }
 
+  // At most two cards show at once; the rest scroll inside the list, so the search and verses below stay in view.
+  const list = useRef<HTMLUListElement>(null)
+  useLayoutEffect(() => {
+    const el = list.current
+    if (!el) return
+    const fit = () => {
+      const second = el.children[1] as HTMLElement | undefined
+      el.style.maxHeight = second ? `${second.offsetTop - el.offsetTop + second.offsetHeight}px` : ''
+    }
+    fit()
+    const observer = new ResizeObserver(fit)
+    for (const card of Array.from(el.children)) observer.observe(card)
+    return () => observer.disconnect()
+  }, [suggestions])
+
   if (suggestions.length === 0) return null
 
   return (
     <div className={`suggestion-tray${flashing ? ' flash' : ''}`} role="region" aria-label="Scripture and statements heard in the sermon">
-      <h3 className="suggestion-tray-title">
-        <Sparkles size={16} aria-hidden="true" /> Heard in the sermon
-      </h3>
+      <div className="suggestion-tray-head">
+        <h3 className="suggestion-tray-title">
+          <Sparkles size={16} aria-hidden="true" /> Heard in the sermon
+        </h3>
+        <Button size="sm" variant="ghost" className="suggestion-clear" title="Dismiss every card" onClick={() => suggestions.forEach((s) => dismiss(s.id))}>
+          Clear
+        </Button>
+      </div>
       <ErrorNote error={error} />
-      <ul className="suggestion-list">
+      <ul className="suggestion-list" ref={list}>
         {suggestions.map((s) =>
           s.type === 'scripture' ? (
             <li key={s.id} className={`suggestion${s.id === previewedId ? ' previewed' : ''}${s.kind === 'reference' ? '' : ` ${s.kind}`}`}>

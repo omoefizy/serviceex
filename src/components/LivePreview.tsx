@@ -399,22 +399,20 @@ export function OnScreenPanel() {
       }
     >
       <div className="on-screen-body">
-        <div className={`preview-screen live${liveMarking.marking ? ' marking' : ''}`} {...liveMarking.handlers}>
-          {output ? (
-            <OutputScreen state={output} />
-          ) : (
-            <p className="screen-off">
-              <EyeOff size={18} aria-hidden="true" /> The preview is off. Choose Main output to draw it here.
-            </p>
-          )}
-          <SlideBadge index={live.slideIndex} count={live.slides.length} />
+        {/* The screen is as large as the space left allows, at 16:9, so Previous and Next always stay in view. */}
+        <div className="on-screen-stage">
+          <div className={`preview-screen live${liveMarking.marking ? ' marking' : ''}`} {...liveMarking.handlers}>
+            {output ? (
+              <OutputScreen state={output} />
+            ) : (
+              <p className="screen-off">
+                <EyeOff size={18} aria-hidden="true" /> The preview is off. Choose Main output to draw it here.
+              </p>
+            )}
+          </div>
         </div>
-        <HighlightBar where="live" />
-        <div className="on-screen-meta">
-          <p className="screen-label">
-            {(live.slideIndex !== null && live.title) || 'Nothing live'}
-            {live.mode !== 'show' && <span className="screen-mode"> · {live.mode.toUpperCase()}</span>}
-          </p>
+        <div className="on-screen-tools">
+          <HighlightBar where="live" />
           <label className="fade-control">
             <span>Crossfade</span>
             <input type="range" min={0} max={1500} step={100} value={fadeMs} onChange={(e) => setFadeMs(Number(e.target.value)).catch(console.error)} />
@@ -450,19 +448,24 @@ export function OnScreenPanel() {
             </Button>
           ))}
         <ErrorNote error={error} />
+        <Transport />
       </div>
     </Panel>
   )
 }
 
-/** Previous and Next for the live item: the same as the Left and Right keys. */
+/** Previous and Next for the live item, the same as the Left and Right keys, with where the live slide is. */
 export function Transport() {
   const nothingLive = useOperatorStore((s) => s.live.slideIndex === null)
   const previousSlide = useOperatorStore((s) => s.previousSlide)
   const nextSlide = useOperatorStore((s) => s.nextSlide)
+  const live = useOperatorStore((s) => s.live)
+  const unit = live.itemType === 'scripture' ? 'Verse' : 'Slide'
+  const position =
+    live.slideIndex === null ? 'Nothing live' : `${unit} ${live.slideIndex + 1} of ${live.slides.length}${live.title ? ` · ${live.title}` : ''}`
   return (
     <div className="transport" role="group" aria-label="Live slide">
-      <Button size="xl" className="transport-previous" disabled={nothingLive} icon={<ChevronLeft size={20} aria-hidden="true" />} onClick={previousSlide} aria-keyshortcuts="ArrowLeft">
+      <Button size="xl" className="transport-previous" disabled={nothingLive} icon={<ChevronLeft size={18} aria-hidden="true" />} onClick={previousSlide} aria-keyshortcuts="ArrowLeft">
         Previous <kbd>←</kbd>
       </Button>
       <Button
@@ -470,24 +473,38 @@ export function Transport() {
         variant="primary"
         className="transport-next"
         disabled={nothingLive}
-        iconEnd={<ChevronRight size={20} aria-hidden="true" />}
+        iconEnd={<ChevronRight size={18} aria-hidden="true" />}
         onClick={nextSlide}
         aria-keyshortcuts="ArrowRight"
       >
-        Next <kbd>→</kbd>
+        Next{live.itemType === 'scripture' ? ' verse' : ''} <kbd>→</kbd>
       </Button>
+      <span className="transport-position" title={position}>
+        {position}
+        {live.mode !== 'show' && live.slideIndex !== null && <span className="screen-mode"> · {live.mode.toUpperCase()}</span>}
+      </span>
     </div>
   )
 }
 
-/** The three slides after the live one, as they will look. */
-export function UpNextCard() {
+/** "Sermon, then Offering": the next items in the Order of service after the live one. */
+export function UpNextMeta() {
+  const next = useOperatorStore((s) => {
+    const items = s.service?.items ?? []
+    const at = items.findIndex((item) => item.id === s.live.scheduleItemId)
+    return at === -1 ? '' : items.slice(at + 1, at + 3).map((item) => item.title).join(', then ')
+  })
+  return next ? <span className="up-next-meta">{next}</span> : null
+}
+
+/** The three slides after the live one, as they will look. Titled when it is the only card under On screen. */
+export function UpNextCard({ titled = true }: { titled?: boolean }) {
   const live = useOperatorStore((s) => s.live)
   const logoUrl = useOperatorStore((s) => s.settings.logoUrl)
   const start = live.slideIndex === null ? null : live.slideIndex + 1
   const upcoming = start === null ? [] : live.slides.slice(start, start + 3)
   return (
-    <Card className="up-next" title="Up next">
+    <Card className="up-next" title={titled ? 'Up next' : undefined} actions={titled ? <UpNextMeta /> : undefined}>
       {upcoming.length === 0 ? (
         <p className="up-next-empty">{start === null ? 'Nothing is live yet.' : 'This is the last slide of the item.'}</p>
       ) : (
