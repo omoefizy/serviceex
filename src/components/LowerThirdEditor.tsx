@@ -2,9 +2,11 @@ import { Copy, FilePlus, Image, Save, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { normalizeLowerThirdStyle } from '../../shared/lowerThirds'
 import type { LowerThirdBox, LowerThirdStyle, LowerThirdTemplate, LowerThirdTextStyle, TextCase } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { useOperatorStore } from '../store'
 import { LowerThirdGraphic } from './LowerThird'
 import { FontPicker, MissingFontChips } from './FontPicker'
+import { ErrorNote } from './ui'
 
 const WEIGHTS = [300, 400, 500, 600, 700, 800, 900]
 const CASES: { value: TextCase; label: string }[] = [
@@ -113,7 +115,7 @@ export function LowerThirdEditor({ onClose }: { onClose: () => void }) {
     headline: typed.headline.trim() || 'Pastor Sam Example',
     body: typed.body.trim() || 'Lead Pastor · Grace Community Church',
   })
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const drag = useRef<{ part: Part; resize: boolean; startX: number; startY: number; start: LowerThirdBox } | null>(null)
   const dirty = selected !== null && style !== null && (name !== selected.name || JSON.stringify(style) !== JSON.stringify(selected.style))
@@ -139,7 +141,7 @@ export function LowerThirdEditor({ onClose }: { onClose: () => void }) {
     try {
       await action()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Lower third', err))
     }
   }
 
@@ -353,7 +355,7 @@ export function LowerThirdEditor({ onClose }: { onClose: () => void }) {
           </>
         )}
 
-        {error && <p className="error">{error}</p>}
+        <ErrorNote error={error} />
 
         <footer className="modal-actions lt-editor-actions">
           <input className="input" aria-label="Template name" value={name} disabled={!custom} onChange={(e) => setName(e.target.value)} />

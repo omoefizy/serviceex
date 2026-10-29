@@ -30,6 +30,7 @@ import type {
   TransferProgress,
 } from '../../shared/types'
 import { setScheduleTarget, useOperatorStore } from '../store'
+import { reportError } from './errors'
 import { chosenImportMode } from './presentations'
 
 /** Drag data for library and schedule items that can be dropped on a device chip. */
@@ -70,8 +71,8 @@ interface SharingState {
   unseen: number
   /** The Send to menu, at the pointer: files and items to copy, a cue for the tray, or both. */
   sendMenu: { x: number; y: number; sources: ShareSource[]; cue?: CueDraft } | null
-  /** A short message for the device bar: what went wrong, or what happened. */
-  message: { text: string; error: boolean } | null
+  /** A short message, shown as a toast below the toolbar: what went wrong, or what happened. */
+  message: SharingMessage | null
   /** Cues received, newest first. None of them is live. */
   cues: Cue[]
   cueTrayOpen: boolean
@@ -82,6 +83,16 @@ interface SharingState {
   /** Which shared service items the schedule lists here. */
   itemFilter: ItemFilter
   library: LibrarySyncStatus | null
+}
+
+/** The toast's color: never the live red, which means on air. */
+export type MessageTone = 'info' | 'success' | 'warning' | 'error'
+
+export interface SharingMessage {
+  text: string
+  tone: MessageTone
+  /** Technical text behind Show details, for errors. */
+  details: string | null
 }
 
 export const useSharingStore = create<SharingState>(() => ({
@@ -108,11 +119,17 @@ export const useSharingStore = create<SharingState>(() => ({
 const set = useSharingStore.setState
 const get = useSharingStore.getState
 
-export const errorText = (error: unknown) =>
-  (error instanceof Error ? error.message : String(error)).replace(/^Error invoking remote method '[^']+': (\w*Error: )?/, '')
+/** The plain sentence for an error; its technical text goes to the diagnostics report. */
+export const errorText = (error: unknown, where = 'Sharing') => reportError(where, error).message
 
-export function showMessage(text: string, error = false): void {
-  set({ message: { text, error } })
+export function showMessage(text: string, tone: MessageTone = 'info', details: string | null = null): void {
+  set({ message: { text, tone, details } })
+}
+
+/** An error as a toast, with its technical text behind Show details. */
+export function showError(error: unknown, where = 'Sharing'): void {
+  const { message, details } = reportError(where, error)
+  showMessage(message, 'error', details)
 }
 
 /** Reloads the views a received item changed, imports its presentations and shows what happened. */
@@ -145,7 +162,7 @@ function onEvent(event: SharingEvent): void {
     case 'progress': {
       const { transfer } = event
       set((s) => ({ transfers: [...s.transfers.filter((t) => t.id !== transfer.id), transfer] }))
-      if (transfer.state === 'declined') showMessage(`${transfer.peerName} declined ${transfer.name}.`, true)
+      if (transfer.state === 'declined') showMessage(`${transfer.peerName} declined ${transfer.name}.`, 'warning')
       // Finished, cancelled and declined transfers leave the bar after a moment.
       if (transfer.state === 'done' || transfer.state === 'cancelled' || transfer.state === 'declined') {
         setTimeout(() => set((s) => ({ transfers: s.transfers.filter((t) => t.id !== transfer.id || isActiveTransfer(t)) })), 4000)
@@ -155,8 +172,8 @@ function onEvent(event: SharingEvent): void {
     case 'incoming': {
       const { transfer } = event
       set((s) => ({ incoming: [...s.incoming.filter((t) => t.id !== transfer.id), transfer] }))
-      if (transfer.state === 'cancelled') showMessage(`${transfer.senderName} stopped sending ${transfer.name}.`)
-      if (transfer.state === 'failed') showMessage(`${transfer.name} from ${transfer.senderName} arrived damaged and was deleted. It can be sent again.`, true)
+      if (transfer.state === 'cancelled') showMessage(`${transfer.senderName} stopped sending ${transfer.name}.`, 'warning')
+      if (transfer.state === 'failed') showMessage(`${transfer.name} from ${transfer.senderName} arrived damaged and was deleted. It can be sent again.`, 'error')
       // A received file is in the Inbox, which says so; the chip goes after a moment, as do stopped ones.
       if (transfer.state !== 'receiving' && transfer.state !== 'stalled') {
         setTimeout(() => set((s) => ({ incoming: s.incoming.filter((t) => t.id !== transfer.id || t.state === 'receiving' || t.state === 'stalled') })), 4000)
@@ -168,11 +185,11 @@ function onEvent(event: SharingEvent): void {
       break
     case 'pairEnded':
       if (get().pairRequest?.pairingId === event.pairingId) set({ pairRequest: null })
-      if (event.paired) showMessage('Paired.')
+      if (event.paired) showMessage('Paired.', 'success')
       break
     case 'accepted':
       applyAcceptResult(event.result).catch(console.error)
-      showMessage(`From ${event.item.senderName}: ${event.result.message}`)
+      showMessage(`From ${event.item.senderName}: ${event.result.message}`, 'success')
       break
     case 'cues':
       // Only the tray changes: a cue never touches the preview or the output.
@@ -251,9 +268,9 @@ export async function sendCueTo(peer: SharePeer, cue: CueDraft): Promise<void> {
   }
   try {
     await window.api.sharing.sendCue(peer.id, cue)
-    showMessage(`Sent to ${peer.name}.`)
+    showMessage(`Sent to ${peer.name}.`, 'success')
   } catch (error) {
-    showMessage(errorText(error), true)
+    showError(error)
   }
 }
 
@@ -408,7 +425,7 @@ export async function updateShared(id: string, patch: Parameters<typeof window.a
   try {
     set({ shared: await window.api.sharing.updateSharedItem(id, patch) })
   } catch (error) {
-    showMessage(errorText(error), true)
+    showError(error)
   }
 }
 
@@ -464,7 +481,7 @@ export async function cancelTransfer(id: string): Promise<void> {
   try {
     await window.api.sharing.cancel(id)
   } catch (error) {
-    showMessage(errorText(error), true)
+    showError(error)
   }
 }
 
@@ -486,7 +503,7 @@ export async function declineIncoming(id: string): Promise<void> {
   try {
     await window.api.sharing.decline(id)
   } catch (error) {
-    showMessage(errorText(error), true)
+    showError(error)
   }
 }
 
@@ -523,7 +540,7 @@ export async function sendTo(peer: SharePeer, sources: ShareSource[]): Promise<v
   try {
     await window.api.sharing.send(peer.id, sources)
   } catch (error) {
-    showMessage(errorText(error), true)
+    showError(error)
   }
 }
 

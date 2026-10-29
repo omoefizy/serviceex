@@ -3324,38 +3324,77 @@ textarea {
 }
 
 .schedule-item {
+  --schedule-row: 40px;
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-1);
-  border-top: 2px solid transparent;
-  border-bottom: 2px solid transparent;
-  border-radius: 6px;
+  gap: var(--space-0-5);
+  min-height: var(--schedule-row);
+  padding-left: var(--space-1);
+  border-radius: var(--radius-md);
+  cursor: grab;
 }
 
-.schedule-item.drop-before {
-  border-top-color: var(--accent);
+/* Where a dragged item will land: a line across the gap above or below the row, which never moves the rows. */
+.schedule-item.drop-before::after,
+.schedule-item.drop-after::after {
+  content: '';
+  position: absolute;
+  right: var(--space-1);
+  left: var(--space-1);
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
 }
 
-.schedule-item.drop-after {
-  border-bottom-color: var(--accent);
+.schedule-item.drop-before::after {
+  top: -1px;
+}
+
+.schedule-item.drop-after::after {
+  bottom: -1px;
 }
 
 .schedule-item.dragging {
   opacity: 0.4;
 }
 
-.schedule-item.active {
-  background: var(--accent-soft);
+.schedule-item:hover {
+  background: var(--panel-raised);
 }
 
-/* The item on the projector gets a red dot at its start. */
-.schedule-item.on-air .schedule-item-main::before {
-  content: '';
+/* In the preview: an accent bar at the start and a tinted row. */
+.schedule-item.active {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 var(--accent);
+}
+
+/* On the projector: the live red bar, which wins over the preview's. */
+.schedule-item.on-air {
+  box-shadow: inset 3px 0 var(--live);
+}
+
+.schedule-item.on-air:not(.active) {
+  background: var(--live-soft);
+}
+
+.schedule-item-handle {
+  display: flex;
   flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--live);
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: var(--schedule-row);
+  color: var(--text-3);
+  opacity: 0.55;
+  transition: opacity var(--duration-fast) var(--ease), color var(--duration-fast) var(--ease);
+}
+
+.schedule-item:hover .schedule-item-handle,
+.schedule-item.active .schedule-item-handle {
+  color: var(--text-2);
+  opacity: 1;
 }
 
 .schedule-item-main {
@@ -3364,16 +3403,15 @@ textarea {
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  padding: var(--space-2) var(--space-2-5);
+  height: var(--schedule-row);
+  padding: 0 var(--space-2) 0 var(--space-1);
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: none;
+  color: var(--text-1);
+  font: inherit;
   text-align: left;
-  cursor: grab;
-}
-
-.schedule-item-main:hover {
-  background: var(--panel-raised);
+  cursor: inherit;
 }
 
 .schedule-item-main:focus-visible {
@@ -3381,10 +3419,82 @@ textarea {
   outline-offset: -2px;
 }
 
-.schedule-item-title {
+/* One width for every type, so titles line up whether the row has an icon or a slide picture. */
+.schedule-item-type {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+
+.schedule-item.active .schedule-item-type {
+  background: transparent;
+}
+
+.schedule-item-text {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.schedule-item-title {
+  font-size: var(--text-md);
+}
+
+.schedule-item.active .schedule-item-title,
+.schedule-item.on-air .schedule-item-title {
+  font-weight: var(--weight-medium);
+}
+
+/* Live or Preview, at the end of the row. */
+.schedule-item-state {
+  flex-shrink: 0;
+  padding: 1px var(--space-1-5);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Solid fills: white on them passes AA at this size (4.65 and 4.56), which the tinted versions did not. */
+.schedule-item-state.live {
+  background: var(--live-strong);
+  color: var(--text-on-fill);
+}
+
+.schedule-item-state.preview {
+  background: var(--accent-strong);
+  color: var(--text-on-fill);
+}
+
+/* The remove button shows on hover, focus and the selected row, so the list reads as titles. */
+.schedule-item > .ui-icon-button {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease);
+}
+
+.schedule-item:hover > .ui-icon-button,
+.schedule-item:focus-within > .ui-icon-button,
+.schedule-item.active > .ui-icon-button {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .schedule-item > .ui-icon-button {
+    opacity: 1;
+  }
+}
+
+.schedule-empty {
+  cursor: default;
 }
 
 .item-icon {
@@ -3400,6 +3510,10 @@ textarea {
 
 .schedule-item.active .item-icon {
   stroke: var(--accent);
+}
+
+.schedule-item.on-air .item-icon {
+  stroke: var(--live-text);
 }
 
 .schedule-footer {
@@ -3512,8 +3626,8 @@ textarea {
   margin-left: var(--space-2);
   padding: 0 var(--space-1-5);
   border-radius: 999px;
-  background: var(--live-soft);
-  color: var(--live);
+  background: var(--warning-soft);
+  color: var(--warning);
   font-size: 11px;
   font-weight: 600;
 }
@@ -3524,7 +3638,7 @@ textarea {
 
 .import-problems summary {
   cursor: pointer;
-  color: var(--live);
+  color: var(--error);
 }
 
 .import-problems ul {
@@ -5357,7 +5471,7 @@ textarea {
 .schedule-item-thumb {
   flex: none;
   width: 28px;
-  aspect-ratio: 16 / 9;
+  height: 16px;
   border-radius: 2px;
   background: var(--screen-bg);
   object-fit: contain;
@@ -6176,19 +6290,12 @@ textarea {
   max-width: 100%;
 }
 
-/* A passing sharing message, floating below the toolbar so it never pushes the toolbar's controls aside. */
+/* A passing message, as a toast floating below the toolbar so it never pushes the toolbar's controls aside. */
 .sharing-toast {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
   z-index: 19;
-  max-width: 360px;
-  padding: var(--space-1-5) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--panel-raised);
-  box-shadow: var(--shadow);
-  color: var(--text);
 }
 
 /* Other ServiceEx computers on the local network, in the toolbar; files and items are dropped on them. */
@@ -6849,4 +6956,38 @@ textarea {
 .verse-table-tick .input-hit {
   margin: calc((1em + 2px - var(--control-md)) / 2);
   vertical-align: middle;
+}
+
+/* ---------- A panel that stopped working ---------- */
+
+.panel-crashed {
+  justify-content: center;
+  overflow-y: auto;
+}
+
+/* The toolbar's version: one row, the height of the toolbar. */
+.panel-crashed-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 52px;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  font-size: var(--text-md);
+}
+
+.panel-crashed-bar > svg {
+  flex-shrink: 0;
+  color: var(--error);
+}
+
+.panel-crashed-bar > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.account-offline svg {
+  margin-right: var(--space-1);
+  vertical-align: -2px;
 }

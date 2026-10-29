@@ -2,11 +2,13 @@ import { ArrowDown, ArrowUp, Eye, EyeOff, Pencil, Play, SkipForward, Square, Tra
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { hasFormatting, matching, plainText, richOrPlain, trimRich } from '../../shared/richText'
 import type { AlertMessage, AppSettings, RichText } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { PRIORITY_BAND_COLOR, SPEED_PRESETS } from '../lib/ticker'
 import { useOperatorStore } from '../store'
 import type { FormatControl } from './FormatToolbar'
 import { RichInline } from './RichText'
 import { RichTextEditor } from './RichTextEditor'
+import { ErrorNote } from './ui'
 
 /** The message being written: a new one (id null) or a saved one being edited. */
 interface Draft {
@@ -51,14 +53,14 @@ export function AlertsPanel() {
   const setAlertHidden = useOperatorStore((s) => s.setAlertHidden)
   const updateSettings = useOperatorStore((s) => s.updateSettings)
   const [draft, setDraft] = useState<Draft>(NEW_DRAFT)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const messages = settings.alertMessages
   /** The messages Start plays in turn; priority ones only ever interrupt. */
   const normal = messages.filter((m) => !m.priority)
 
   function save(patch: Partial<AppSettings>) {
     setError(null)
-    updateSettings(patch).catch((err) => setError(err instanceof Error ? err.message : String(err)))
+    updateSettings(patch).catch((err) => setError(reportError('Alerts', err)))
   }
 
   const messageOf = (d: Draft): AlertMessage => {
@@ -291,7 +293,7 @@ export function AlertsPanel() {
         </label>
       </details>
 
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
     </div>
   )
 }

@@ -1,8 +1,12 @@
-import { ExternalLink, Loader2, X } from 'lucide-react'
+import { CloudOff, ExternalLink, Loader2, ReceiptText, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { formatHours, formatNaira, NEEDS_REVIEW_MESSAGE, ORDER_STATES, type Order, type Product, type ProductKind } from '../../shared/account'
+import { formatHours, formatNaira, NEEDS_REVIEW_MESSAGE, ORDER_STATES, type Product, type ProductKind } from '../../shared/account'
 import { shortDate } from '../../shared/serviceErrors'
 import { openPlans, useAccount } from '../lib/account'
+import { reportError, type FriendlyError } from '../lib/errors'
+import { useServerRequest } from '../lib/useServerRequest'
+import { ServerProblem } from './ServerProblem'
+import { EmptyState, ErrorNote, Skeleton } from './ui'
 
 const GROUPS: { kind: ProductKind; title: string }[] = [
   { kind: 'listening_credits', title: 'Cloud listening hours' },
@@ -25,23 +29,19 @@ function productDetail(p: Product): string {
  */
 export function PlansModal() {
   const account = useAccount()
-  const [products, setProducts] = useState<Product[] | null>(null)
-  const [orders, setOrders] = useState<Order[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<FriendlyError | null>(null)
   const [buying, setBuying] = useState<string | null>(null)
   const checkout = account?.checkout ?? null
+  const configured = account?.configured !== false
 
   useEffect(() => window.api.account.warmUp(), [])
 
-  useEffect(() => {
-    window.api.account.products().then((answer) => (answer?.ok ? setProducts(answer.value) : setError(answer?.error.message ?? null)), console.error)
-  }, [])
-
+  const products = useServerRequest('Plans and Credits', () => window.api.account.products(), { enabled: configured })
   // The order history, again whenever a purchase finishes.
-  useEffect(() => {
-    if (!account?.signedIn) return
-    window.api.account.orders().then((answer) => answer?.ok && setOrders(answer.value), console.error)
-  }, [account?.signedIn, checkout?.state])
+  const orders = useServerRequest('Order history', () => window.api.account.orders(), {
+    enabled: configured && Boolean(account?.signedIn),
+    key: checkout?.state ?? '',
+  })
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => e.key === 'Escape' && openPlans(false)
@@ -52,12 +52,18 @@ export function PlansModal() {
   async function buy(product: Product) {
     setError(null)
     setBuying(product.id)
-    const started = await window.api.account.buy(product.id)
-    setBuying(null)
-    if (!started.ok) setError(started.error.message)
+    try {
+      const started = await window.api.account.buy(product.id)
+      if (!started.ok) setError(reportError('Plans and Credits', started.error))
+    } catch (err) {
+      setError(reportError('Plans and Credits', err))
+    } finally {
+      setBuying(null)
+    }
   }
 
   const waiting = checkout?.state === 'waiting'
+  const productList = products.state.status === 'done' ? products.state.value : null
   return (
     <div className="modal-backdrop" onMouseDown={() => openPlans(false)}>
       <div className="modal plans-modal" role="dialog" aria-label="Plans and Credits" onMouseDown={(e) => e.stopPropagation()}>
@@ -68,23 +74,39 @@ export function PlansModal() {
           </button>
         </header>
 
-        {!account?.signedIn && <p className="hint">Sign in in Settings, Account to buy. Prices are shown for reference.</p>}
+        {configured && !account?.signedIn && <p className="hint">Sign in in Settings, Account to buy. Prices are shown for reference.</p>}
         {/* After 3 minutes the checks stop quietly; the order keeps its status in Order history. */}
         {checkout && checkout.state !== 'timed_out' && (
           <p className={checkout.state === 'failed' ? 'listener-warning' : 'hint'} role="status">
             {waiting && <Loader2 size={14} className="spin" aria-hidden="true" />} <strong>{checkout.productName}:</strong> {checkout.message}
           </p>
         )}
-        {error && (
-          <p className="error" role="alert">
-            {error}
+        <ErrorNote error={error} />
+        {productList && !products.online && (
+          <p className="listener-warning" role="status">
+            This computer is offline. These prices are as last loaded; buying needs the internet.
           </p>
         )}
 
-        {products === null && !error && <p className="hint">Loading prices…</p>}
-        {products &&
+        {!configured ? (
+          <EmptyState
+            compact
+            icon={<CloudOff size={20} />}
+            title="Plans are not available in this build"
+            description="This build of ServiceEx is not set up to connect to ServiceEx. Everything offline works as usual."
+          />
+        ) : productList ? null : products.state.status === 'loading' && products.online ? (
+          <Skeleton rows={4} tall label="Loading prices" />
+        ) : (
+          <ServerProblem
+            problem={!products.online ? 'offline' : products.state.status === 'error' ? products.state.error : 'timeout'}
+            what="Prices"
+            onRetry={products.retry}
+          />
+        )}
+        {productList &&
           GROUPS.map(({ kind, title }) => {
-            const list = products.filter((p) => p.kind === kind)
+            const list = productList.filter((p) => p.kind === kind)
             if (list.length === 0) return null
             return (
               <section key={kind} className="plans-group">
@@ -100,7 +122,7 @@ export function PlansModal() {
                       <button
                         type="button"
                         className="button primary"
-                        disabled={!account?.signedIn || waiting || buying !== null || (kind === 'updates_renewal' && !account?.license.licenseId)}
+                        disabled={!account?.signedIn || !products.online || waiting || buying !== null || (kind === 'updates_renewal' && !account?.license.licenseId)}
                         title={kind === 'updates_renewal' && !account?.license.licenseId ? 'Renews the licence this computer is activated on' : 'Pay with Paystack in your browser'}
                         onClick={() => void buy(p)}
                       >
@@ -113,11 +135,22 @@ export function PlansModal() {
             )
           })}
 
-        {account?.signedIn && (
+        {configured && account?.signedIn && (
           <section className="plans-group">
             <h3>Order history</h3>
-            {!orders || orders.length === 0 ? (
-              <p className="hint">{orders ? 'No orders yet.' : 'Loading…'}</p>
+            {orders.state.status === 'loading' && orders.online ? (
+              <Skeleton rows={2} label="Loading your orders" />
+            ) : orders.state.status !== 'done' && !orders.online ? (
+              // The offline explanation is already above, with the prices.
+              <p className="hint">Your orders show once this computer is back on the internet.</p>
+            ) : orders.state.status !== 'done' ? (
+              <ServerProblem
+                problem={orders.state.status === 'error' ? orders.state.error : 'timeout'}
+                what="Your orders"
+                onRetry={orders.retry}
+              />
+            ) : orders.state.value.length === 0 ? (
+              <EmptyState compact icon={<ReceiptText size={20} />} title="No orders yet" description="What you buy here is listed with its receipt number." />
             ) : (
               <table className="plans-orders">
                 <thead>
@@ -130,7 +163,7 @@ export function PlansModal() {
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.map((o) => (
+                  {orders.state.value.map((o) => (
                     <tr key={o.id}>
                       <td>{shortDate(o.paidAt ?? o.createdAt)}</td>
                       <td>{o.productName}</td>
@@ -142,7 +175,7 @@ export function PlansModal() {
                 </tbody>
               </table>
             )}
-            {orders?.some((o) => o.status === 'needs_review') && checkout?.state !== 'needs_review' && <p className="hint">{NEEDS_REVIEW_MESSAGE}</p>}
+            {orders.state.status === 'done' && orders.state.value.some((o) => o.status === 'needs_review') && checkout?.state !== 'needs_review' && <p className="hint">{NEEDS_REVIEW_MESSAGE}</p>}
           </section>
         )}
       </div>

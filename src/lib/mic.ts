@@ -2,6 +2,7 @@
 // hands back 16 kHz mono 16-bit PCM in 100 ms chunks, with level readings for the meter.
 
 import type { MicChannel } from '../../shared/types'
+import { describeError } from './errors'
 
 const workletUrl = new URL('./pcmWorklet.js', import.meta.url).href
 
@@ -107,7 +108,7 @@ export function micErrorMessage(error: unknown): string {
     return 'The chosen microphone was not found. Plug it in, or pick another one in Settings.'
   }
   if (name === 'NotReadableError') return 'The microphone could not be opened. Another app may be using it.'
-  return error instanceof Error ? error.message : String(error)
+  return describeError(error, 'The microphone could not be started. Check it in Settings, then try again.').message
 }
 
 interface Opened {

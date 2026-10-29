@@ -3,13 +3,13 @@ import { useEffect, useRef, useState } from 'react'
 import { CUE_KINDS } from '../../shared/cues'
 import { hasFeature } from '../../shared/features'
 import type { Cue, CueKind } from '../../shared/types'
-import { addCueToSchedule, errorText, openCueMenu, previewCue, showMessage, useSharingStore } from '../lib/sharing'
+import { addCueToSchedule, openCueMenu, previewCue, showError, useSharingStore } from '../lib/sharing'
 import { IconButton } from './ui'
 
 const kindLabel = (kind: CueKind) => CUE_KINDS.find((k) => k.id === kind)?.label ?? 'Cue'
 
 function CueCard({ cue }: { cue: Cue }) {
-  const run = (action: () => Promise<unknown>) => action().catch((error) => showMessage(errorText(error), true))
+  const run = (action: () => Promise<unknown>) => action().catch((error) => showError(error, 'Cues'))
   const dismiss = () => run(async () => useSharingStore.setState({ cues: await window.api.sharing.dismissCue(cue.id) }))
   return (
     <li className="cue-card">

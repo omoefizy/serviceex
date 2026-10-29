@@ -1,8 +1,9 @@
-import { BookPlus, BookX, History, X } from 'lucide-react'
+import { BookPlus, BookX, History, SearchX, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { can, upgradeNote } from '../../shared/features'
 import { BOOK_NAMES, formatReference, NEW_TESTAMENT_BOOKS, OLD_TESTAMENT_BOOKS, parseReference } from '../../shared/parseReference'
 import type { AiError, BibleVersion, BibleVersionCode, Testament, Verse } from '../../shared/types'
+import { describeError, reportError, type ErrorLike } from '../lib/errors'
 import { itemTitle, passageOf, previewPassage, type ResultItem } from '../lib/scripture'
 import { parseVerseCaption } from '../lib/slides'
 import {
@@ -20,7 +21,7 @@ import { useVerseSearch } from '../lib/useVerseSearch'
 import { selectDefaultTranslation, selectLiveSlide, useOperatorStore } from '../store'
 import { AiButton } from './AiButton'
 import { BibleImportModal } from './BibleImportModal'
-import { Button, Chip, EmptyState, IconButton, Input, PanelHeader, Select } from './ui'
+import { Button, Chip, EmptyState, ErrorNote, IconButton, Input, PanelHeader, Select } from './ui'
 import { VerseResults, VerseText, type VerseResultsHandle } from './VerseResults'
 
 const DEBOUNCE_MS = 60
@@ -72,7 +73,7 @@ export function ScripturePanel() {
   /** Installed versions, for the version list. */
   const [installed, setInstalled] = useState<BibleVersion[]>([])
   const [importOpen, setImportOpen] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const [hasBible, setHasBible] = useState<boolean | null>(null)
   /** "Search by meaning": the AI names passages; their text is read here from the database. */
   const [meaning, setMeaning] = useState<{ topic: string; items: ResultItem[] } | null>(null)
@@ -139,7 +140,7 @@ export function ScripturePanel() {
     let stale = false
     readListing(listView, versions).then(
       (items) => !stale && setListing({ key: listKey, items }),
-      (err) => !stale && setError(err instanceof Error ? err.message : String(err)),
+      (err) => !stale && setError(reportError('Scripture', err)),
     )
     return () => {
       stale = true
@@ -267,7 +268,7 @@ export function ScripturePanel() {
         inputRef.current?.blur()
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Scripture', err))
     }
   }
 
@@ -355,7 +356,7 @@ export function ScripturePanel() {
       setMeaning({ topic, items })
       remember(topic)
     } catch (err) {
-      setMeaningError({ code: 'unavailable', message: err instanceof Error ? err.message : String(err) })
+      setMeaningError({ code: 'unavailable', message: reportError('Scripture', err).message })
     } finally {
       setMeaningBusy(false)
     }
@@ -381,7 +382,6 @@ export function ScripturePanel() {
       return (
         <>
           <strong>{search.total.toLocaleString()}</strong> verse{search.total === 1 ? '' : 's'} for “{query.trim()}”
-          {search.total === 0 && <span className="hint"> · try fewer words, or "quotes" for an exact phrase</span>}
         </>
       )
     }
@@ -417,6 +417,54 @@ export function ScripturePanel() {
   const bookChoices = testament === 'old' ? OLD_TESTAMENT_BOOKS : testament === 'new' ? NEW_TESTAMENT_BOOKS : BOOK_NAMES
   const chapterCount = chapter ? (structure[chapter.book]?.length ?? 0) : 0
   const showList = meaning !== null || textMode || listView !== null
+  /** A search that finished with nothing to show (a listing with only its "Search verses for" row counts too). */
+  const noResults =
+    hasBible !== false &&
+    ((meaning !== null && meaning.items.length === 0) || (textMode && !search.loading && search.total === 0 && query.trim().length > 0))
+  const filtered = testament !== 'all' || bookFilter !== null
+
+  /** No results: the one change most likely to find something, then a sample reference. */
+  function noResultsState() {
+    const wider = filtered
+      ? { label: 'Search the whole Bible', run: () => (setTestament('all'), setBookFilter(null)) }
+      : version !== 'both' && installed.length > 1
+        ? { label: 'Search every version', run: () => setVersion('both') }
+        : { label: 'Clear search', run: () => showText('') }
+    return (
+      <EmptyState
+        compact
+        icon={<SearchX size={20} />}
+        title={meaning ? `No passages found about “${meaning.topic}”` : `No verses found for “${query.trim()}”`}
+        description={
+          filtered
+            ? 'Nothing matched in the books chosen. Search the whole Bible, or try fewer words.'
+            : 'Try fewer words, check the spelling, or put "quotes" around an exact phrase. A reference such as John 3:16 opens the verse.'
+        }
+        action={
+          <Button
+            variant="primary"
+            onClick={() => {
+              wider.run()
+              inputRef.current?.focus()
+            }}
+          >
+            {wider.label}
+          </Button>
+        }
+        secondaryAction={
+          <Button
+            variant="ghost"
+            onClick={() => {
+              showText('John 3:16')
+              inputRef.current?.focus()
+            }}
+          >
+            Try John 3:16
+          </Button>
+        }
+      />
+    )
+  }
 
   return (
     <section className="panel scripture-panel">
@@ -511,12 +559,8 @@ export function ScripturePanel() {
         </nav>
 
         <div className="scripture-results">
-          {error && <p className="error">{error}</p>}
-          {meaningError && (
-            <p className="error" role="alert">
-              {meaningError.message}
-            </p>
-          )}
+          <ErrorNote error={error} />
+          <ErrorNote error={meaningError && describeError(meaningError)} />
 
           {chapter && chapterCount > 1 && (
             <div className="chapter-buttons" role="group" aria-label={`${chapter.book} chapters`}>
@@ -539,7 +583,8 @@ export function ScripturePanel() {
           )}
 
           <div className="scripture-list" id="scripture-list" ref={listRef}>
-            {showList && (
+            {noResults && noResultsState()}
+            {showList && !(noResults && !wordsRow) && (
               <VerseResults
                 ref={tableRef}
                 items={items}

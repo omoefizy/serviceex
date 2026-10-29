@@ -3,10 +3,12 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { can, upgradeNote } from '../../shared/features'
 import { fromPlain, plainText, setFormat, splitRichSlides } from '../../shared/richText'
 import type { AiError, AnnouncementPayload, RichText, SlideFormats } from '../../shared/types'
+import { describeError, reportError, type ErrorLike } from '../lib/errors'
 import { announcementSlides } from '../lib/slides'
 import { selectDefaultTheme, useOperatorStore } from '../store'
 import { RichTextEditor } from './RichTextEditor'
 import { ThemedSlide } from './ThemedSlide'
+import { ErrorNote } from './ui'
 
 interface Props {
   onSave(payload: AnnouncementPayload): Promise<void>
@@ -21,7 +23,7 @@ export function AnnouncementModal({ onSave, onCancel }: Props) {
   const [active, setActive] = useState(0)
   const [titleSlide, setTitleSlide] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   /** The long message for Build Slides, and that request's state. */
   const [message, setMessage] = useState('')
   const [building, setBuilding] = useState(false)
@@ -59,7 +61,7 @@ export function AnnouncementModal({ onSave, onCancel }: Props) {
         setAiError(answer.error)
       }
     } catch (err) {
-      setAiError({ code: 'unavailable', message: err instanceof Error ? err.message : String(err) })
+      setAiError({ code: 'unavailable', message: reportError('Announcement', err).message })
     } finally {
       setBuilding(false)
     }
@@ -82,7 +84,7 @@ export function AnnouncementModal({ onSave, onCancel }: Props) {
         ...(Object.keys(formats).length > 0 ? { formats } : {}),
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Announcement', err))
       setSaving(false)
     }
   }
@@ -125,11 +127,7 @@ export function AnnouncementModal({ onSave, onCancel }: Props) {
               </span>
             )}
           </div>
-          {aiError && (
-            <p className="error" role="alert">
-              {aiError.message}
-            </p>
-          )}
+          <ErrorNote error={aiError && describeError(aiError)} />
         </div>
 
         <label className="field">
@@ -195,7 +193,7 @@ export function AnnouncementModal({ onSave, onCancel }: Props) {
           </div>
         )}
 
-        {error && <p className="error">{error}</p>}
+        <ErrorNote error={error} />
 
         <footer className="modal-actions">
           <button type="button" className="button" onClick={onCancel}>

@@ -2,8 +2,10 @@ import { useEffect, useState, type DragEvent } from 'react'
 import { buildSongSlides } from '../../shared/lyrics'
 import { can } from '../../shared/features'
 import type { ExportFormat, ImportScan } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { useOperatorStore } from '../store'
 import { UpgradeNote } from './UpgradeNote'
+import { ErrorNote } from './ui'
 
 const FORMAT_NAMES = { text: 'Text', openlyrics: 'OpenLyrics', opensong: 'OpenSong' }
 
@@ -21,7 +23,7 @@ type Stage =
 export function ImportModal({ onClose }: Props) {
   const [stage, setStage] = useState<Stage>({ name: 'choose' })
   const [dragging, setDragging] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
   const songsChanged = useOperatorStore((s) => s.songsChanged)
 
@@ -45,7 +47,7 @@ export function ImportModal({ onClose }: Props) {
       // Duplicates start unticked, so importing never doubles a song unless asked to.
       setStage({ name: 'preview', scan, selected: scan.songs.map((s) => s.duplicateOf === null) })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Song import', err))
       setStage({ name: 'choose' })
     }
   }
@@ -70,7 +72,8 @@ export function ImportModal({ onClose }: Props) {
       setStage({ name: 'done', added, skipped, unreadable })
     } catch (err) {
       // The import is one transaction, so a failure adds nothing; go back to the preview to try again.
-      setError(`Nothing was imported: ${err instanceof Error ? err.message : String(err)}`)
+      const failed = reportError('Song import', err)
+      setError({ ...failed, message: `Nothing was imported. ${failed.message}` })
       setStage({ ...stage })
     }
   }
@@ -82,7 +85,7 @@ export function ImportModal({ onClose }: Props) {
       const result = await window.api.songFiles.export(null, format)
       if (result) setExportMessage(`Exported ${result.written} song${result.written === 1 ? '' : 's'} to ${result.location}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Song import', err))
     }
   }
 
@@ -235,7 +238,7 @@ export function ImportModal({ onClose }: Props) {
           </p>
         )}
 
-        {error && <p className="error">{error}</p>}
+        <ErrorNote error={error} />
 
         <footer className="modal-actions">
           {preview && (

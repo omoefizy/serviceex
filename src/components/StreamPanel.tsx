@@ -1,9 +1,11 @@
 import { ArrowDown, ArrowUp, Cast, Eye, EyeOff, Plus, ScanLine, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { AppSettings, DisplayInfo, LogoAnchor, LogoItem, StreamResolution, StreamState } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { usePersistentState } from '../lib/usePersistentState'
 import { selectStreamState, useOperatorStore } from '../store'
 import { StreamScreen } from './StreamView'
+import { ErrorNote } from './ui'
 
 const RESOLUTIONS: { value: StreamResolution; label: string }[] = [
   { value: '1280x720', label: '1280×720 (720p)' },
@@ -127,7 +129,7 @@ export function StreamPanel() {
   const stream = useMemo(() => JSON.parse(streamJson) as StreamState, [streamJson])
   const [guides, setGuides] = usePersistentState('worshipdeck.streamGuides', true, isBoolean)
   const [displays, setDisplays] = useState<DisplayInfo[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
 
   useEffect(() => {
     window.api.settings.listDisplays().then(setDisplays, console.error)
@@ -135,7 +137,7 @@ export function StreamPanel() {
 
   const save = (patch: Partial<AppSettings>) => {
     setError(null)
-    updateSettings(patch).catch((err) => setError(err instanceof Error ? err.message : String(err)))
+    updateSettings(patch).catch((err) => setError(reportError('Stream', err)))
   }
 
   const logos = settings.logoItems
@@ -166,7 +168,7 @@ export function StreamPanel() {
       }
       await updateSettings({ logoItems: [...useOperatorStore.getState().settings.logoItems, logo] })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Stream', err))
     }
   }
 
@@ -184,7 +186,7 @@ export function StreamPanel() {
         </button>
       </header>
 
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
 
       <div className="stream-preview-frame">
         <StreamScreen state={stream} guides={guides} />

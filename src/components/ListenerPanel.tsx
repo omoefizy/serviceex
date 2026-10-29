@@ -1,3 +1,4 @@
+import { describeError } from '../lib/errors'
 import { BookOpenText, Eraser, Mic, Quote, Square, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { formatHours, isLowBalance } from '../../shared/account'
@@ -13,6 +14,7 @@ import { useOperatorStore } from '../store'
 import { LevelMeter } from './LevelMeter'
 import { QuoteModal } from './QuoteModal'
 import { StartSermonModal } from './StartSermonModal'
+import { ErrorNote } from './ui'
 
 const MODE_LABELS: Record<SpeechMode, string> = { cloud: 'Cloud', offline: 'Offline', reconnecting: 'Reconnecting' }
 
@@ -341,7 +343,7 @@ export function ListenerPanel() {
           </button>
         </p>
       )}
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error && describeError(error)} />
 
       <div
         className="transcript"

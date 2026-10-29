@@ -1,6 +1,7 @@
 import { AlertTriangle, Star } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FocusEvent } from 'react'
 import { BUNDLED_FONTS, fallbackFor, familyName } from '../../shared/fonts'
+import { reportError } from '../lib/errors'
 import {
   cssFontFamily,
   favoriteFonts,
@@ -80,7 +81,7 @@ export function FontPicker({ value, onChange, emptyLabel, buttonLabel }: { value
       if (skipped.length > 0) parts.push(`Could not read ${skipped.join(', ')}.`)
       setNote(parts.join(' ') || null)
     } catch (err) {
-      setNote(err instanceof Error ? err.message : String(err))
+      setNote(reportError('Fonts', err).message)
     } finally {
       importing.current = false
     }

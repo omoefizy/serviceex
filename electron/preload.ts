@@ -286,6 +286,7 @@ const speech: SpeechApi = {
 
 const log: LogApi = {
   panelError: (report) => ipcRenderer.invoke('log:panelError', report),
+  appInfo: () => ipcRenderer.invoke('log:appInfo'),
 }
 
 const fonts: FontsApi = {

@@ -3,10 +3,12 @@ import { useEffect, useState } from 'react'
 import { replaceThemeFont, themeFonts } from '../../shared/fonts'
 import { paragraphsFromRich, richFromParagraphs } from '../../shared/richText'
 import type { RichText, ThemeElement, ThemeStyle, ThemeTextParagraph } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { useOperatorStore } from '../store'
 import { MissingFontChips } from './FontPicker'
 import { RichTextEditor } from './RichTextEditor'
 import { ThemedSlide } from './ThemedSlide'
+import { ErrorNote } from './ui'
 
 type FixedText = Extract<ThemeElement, { kind: 'text' }> & { paragraphs: ThemeTextParagraph[] }
 
@@ -29,7 +31,7 @@ export function NativeSlideEditor({ presentationId, index: startIndex, onClose }
   const detach = useOperatorStore((s) => s.detachPresentation)
   const [index, setIndex] = useState(startIndex)
   const [draft, setDraft] = useState<Record<string, RichText>>({})
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const [confirmingDetach, setConfirmingDetach] = useState(false)
 
   useEffect(() => {
@@ -63,7 +65,7 @@ export function NativeSlideEditor({ presentationId, index: startIndex, onClose }
       await action()
       return true
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Slide editor', err))
       return false
     }
   }
@@ -159,7 +161,7 @@ export function NativeSlideEditor({ presentationId, index: startIndex, onClose }
           </div>
         )}
 
-        {error && <p className="error">{error}</p>}
+        <ErrorNote error={error} />
 
         <footer className="modal-actions">
           {style && (

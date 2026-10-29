@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { applyScriptureLook, contrastWarnings, isEmptyAdjust, OFFSET_LIMIT, readScriptureLook, SIZE_LIMITS, type ScriptureLook } from '../../shared/scriptureLook'
 import { THEME_CONTENT_TYPES } from '../../shared/themes'
 import type { ThemeContentType } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { nudgeVerse, stepVerseSize } from '../lib/scriptureAdjust'
 import { MOD } from '../lib/shortcuts'
 import { dualTheme } from '../lib/translations'
@@ -13,7 +14,7 @@ import { selectAdjustTarget, selectDeckTheme, selectServiceLook, slideTheme, use
 import { FontPicker } from './FontPicker'
 import { Color, Range, Row, Segmented } from './ThemeEditor'
 import { ThemedSlide } from './ThemedSlide'
-import { Button, Toggle } from './ui'
+import { Button, ErrorNote, Toggle } from './ui'
 
 const SAMPLE = {
   text: 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.',
@@ -57,7 +58,7 @@ export function ScriptureQuickAdjust({ where }: { where: TranslationTarget }) {
   const reset = useOperatorStore((s) => s.resetScriptureAdjust)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const theme = useMemo(() => (slide ? slideTheme(base, slide) : null), [base, slide])
   const look = useMemo(() => theme && readScriptureLook(theme), [theme])
@@ -83,7 +84,7 @@ export function ScriptureQuickAdjust({ where }: { where: TranslationTarget }) {
       await save(where, scope)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Scripture display', err))
     } finally {
       setBusy(false)
     }
@@ -179,7 +180,7 @@ export function ScriptureQuickAdjust({ where }: { where: TranslationTarget }) {
             </button>
           </div>
           <p className="hint">Changes apply to this verse only until you save them.</p>
-          {error && <p className="error">{error}</p>}
+          <ErrorNote error={error} />
         </div>
       )}
     </div>
@@ -255,7 +256,7 @@ export function ScriptureDisplayForm() {
       await saveTheme(style)
       setStatus({ text: builtin ? `Saved as a copy of ${theme?.name}, now the default scripture theme.` : 'Saved.', error: false })
     } catch (err) {
-      setStatus({ text: err instanceof Error ? err.message : String(err), error: true })
+      setStatus({ text: reportError('Scripture display', err).message, error: true })
     } finally {
       setBusy(false)
     }

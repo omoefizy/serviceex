@@ -1,6 +1,8 @@
 import { Trash2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import type { BibleVersion } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
+import { ErrorNote } from './ui'
 
 interface Props {
   versions: BibleVersion[]
@@ -14,7 +16,7 @@ export function BibleImportModal({ versions, onChanged, onClose }: Props) {
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const imported = versions.filter((v) => !v.bundled)
   const cleanCode = code.trim().toUpperCase()
@@ -40,7 +42,7 @@ export function BibleImportModal({ versions, onChanged, onClose }: Props) {
         onChanged()
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(err))
+      setError(reportError('Bible import', err))
     } finally {
       setBusy(false)
     }
@@ -113,7 +115,7 @@ export function BibleImportModal({ versions, onChanged, onClose }: Props) {
         )}
 
         {message && <p className="hint" role="status">{message}</p>}
-        {error && <p className="error">{error}</p>}
+        <ErrorNote error={error} />
 
         <footer className="modal-actions">
           <button type="button" className="button" onClick={onClose} disabled={busy}>

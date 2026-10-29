@@ -5,6 +5,7 @@
 import { can } from '../../shared/features'
 import { locateStatement, wordKeys } from '../../shared/statements'
 import { useOperatorStore } from '../store'
+import { reportError } from './errors'
 import { alertNewSuggestion, useSuggestions } from './scriptureDetection'
 
 export const PICK_INTERVAL_MS = 30_000
@@ -54,7 +55,7 @@ export async function pickStatements(): Promise<void> {
       if (found && useSuggestions.getState().addStatement(found.text, heardAtOf(lines, found.start))) alertNewSuggestion()
     }
   } catch (error) {
-    report?.(error instanceof Error ? error.message : String(error))
+    report?.(reportError('Quote suggestions', error).message)
   }
 }
 

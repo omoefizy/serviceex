@@ -26,6 +26,7 @@ import { highlightKey, toggleHighlightMode } from './lib/highlights'
 import { cycleLayout, switchLayout } from './lib/layouts'
 import { nudgeVerse, stepVerseSize } from './lib/scriptureAdjust'
 import { focusLowerThirdHeadline, isTyping, MODE_KEYS } from './lib/shortcuts'
+import { SHOW_LIBRARY_TAB_EVENT } from './lib/samples'
 import { slideTranslation } from './lib/translations'
 import { usePersistentState } from './lib/usePersistentState'
 import { usePlansOpen } from './lib/account'
@@ -82,6 +83,18 @@ function App() {
   const [scheduleCollapsed, setScheduleCollapsed] = usePersistentState('worshipdeck.scheduleCollapsed', false, isBoolean)
   const [libraryCollapsed, setLibraryCollapsed] = usePersistentState('worshipdeck.libraryCollapsed', false, isBoolean)
   const editingSongId = useOperatorStore((s) => s.editingSongId)
+
+  // An empty state elsewhere asking for a library tab, such as the schedule's Browse songs.
+  useEffect(() => {
+    const show = (e: Event) => {
+      const tab = (e as CustomEvent<string>).detail
+      if (!LIBRARY_TABS.some((t) => t.id === tab)) return
+      setLibraryTab(tab as (typeof LIBRARY_TABS)[number]['id'])
+      setLibraryCollapsed(false)
+    }
+    window.addEventListener(SHOW_LIBRARY_TAB_EVENT, show)
+    return () => window.removeEventListener(SHOW_LIBRARY_TAB_EVENT, show)
+  }, [setLibraryCollapsed])
   const themeEditorOpen = useOperatorStore((s) => s.themeEditorOpen)
   const settingsOpen = useOperatorStore((s) => s.settingsOpen)
   const streamPanelOpen = useOperatorStore((s) => s.streamPanelOpen)
@@ -340,7 +353,7 @@ function App() {
 
   return (
     <div className="app">
-      <PanelBoundary name="Toolbar">
+      <PanelBoundary name="Toolbar" layout="bar">
         <Toolbar />
       </PanelBoundary>
       <main className="operator" style={{ gridTemplateColumns: columns }}>

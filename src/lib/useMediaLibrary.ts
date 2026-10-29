@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { MediaItem } from '../../shared/types'
 import { useOperatorStore } from '../store'
+import { reportError, type ErrorLike } from './errors'
 import { ensureThumbnails } from './media'
 
 /** The media library, reloaded whenever any view of it changes it, with missing thumbnails filled in. */
 export function useMediaLibrary() {
   const [items, setItems] = useState<MediaItem[]>([])
-  const [error, setError] = useState<string | null>(null)
+  /** False until the first list arrives, so the empty state does not flash. */
+  const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const mediaVersion = useOperatorStore((s) => s.mediaVersion)
   const mediaChanged = useOperatorStore((s) => s.mediaChanged)
 
@@ -20,10 +23,11 @@ export function useMediaLibrary() {
       (list) => {
         if (cancelled) return
         setItems(list)
+        setLoaded(true)
         setError(null)
         ensureThumbnails(list, replace)
       },
-      (err) => !cancelled && setError(err instanceof Error ? err.message : String(err)),
+      (err) => !cancelled && setError(reportError('Media', err)),
     )
     return () => {
       cancelled = true
@@ -37,10 +41,10 @@ export function useMediaLibrary() {
       if (added.length > 0) mediaChanged()
       return added
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Media', err))
       return []
     }
   }, [mediaChanged])
 
-  return { items, error, setError, importFiles }
+  return { items, loaded, error, setError, importFiles }
 }

@@ -1,11 +1,14 @@
-import { BadgeCheck, Check, CreditCard, Lock, LogIn, LogOut, Mail, MonitorX, RefreshCw, UserRound } from 'lucide-react'
+import { BadgeCheck, Check, CreditCard, Lock, LogIn, LogOut, Mail, MonitorX, RefreshCw, UserRound, WifiOff } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { allowancePercentLeft, allowanceTotalTokens, formatHours, isLowBalance, poolPercentLeft, type AccountState, type AiAllowance, type AiPool } from '../../shared/account'
 import { ENFORCE_ENTITLEMENTS, FEATURE_KEYS, FEATURES, includes } from '../../shared/features'
 import type { LicenseStatus } from '../../shared/license'
 import { shortDate } from '../../shared/serviceErrors'
-import { openPlans, setAccountState, useAccount } from '../lib/account'
-import { Button, Card, Input } from './ui'
+import { openPlans, reloadAccount, setAccountState, useAccount } from '../lib/account'
+import { reportError, type FriendlyError } from '../lib/errors'
+import { SERVER_TIMEOUT_MS, useOnline, withServerTimeout } from '../lib/useServerRequest'
+import { ServerProblem } from './ServerProblem'
+import { Button, Card, ErrorNote, Input, Skeleton } from './ui'
 
 const LICENSE_STATES: Record<LicenseStatus['state'], string> = {
   none: 'No licence on this computer',
@@ -21,16 +24,21 @@ function SignInForm({ encryptionAvailable }: { encryptionAvailable: boolean }) {
   const [code, setCode] = useState('')
   const [sentTo, setSentTo] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<FriendlyError | null>(null)
 
   async function sendCode(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError(null)
-    const sent = await window.api.account.requestCode(email.trim())
-    setBusy(false)
-    if (sent.ok) setSentTo(email.trim())
-    else setError(sent.error.message)
+    try {
+      const sent = await withServerTimeout(window.api.account.requestCode(email.trim()))
+      if (sent.ok) setSentTo(email.trim())
+      else setError(reportError('Sign in', sent.error))
+    } catch (err) {
+      setError(reportError('Sign in', err))
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function verify(e: FormEvent) {
@@ -38,12 +46,17 @@ function SignInForm({ encryptionAvailable }: { encryptionAvailable: boolean }) {
     if (!sentTo) return
     setBusy(true)
     setError(null)
-    const signedIn = await window.api.account.verifyCode(sentTo, code)
-    setBusy(false)
-    if (signedIn.ok) {
-      setAccountState(signedIn.value)
-      setCode('')
-    } else setError(signedIn.error.message)
+    try {
+      const signedIn = await withServerTimeout(window.api.account.verifyCode(sentTo, code))
+      if (signedIn.ok) {
+        setAccountState(signedIn.value)
+        setCode('')
+      } else setError(reportError('Sign in', signedIn.error))
+    } catch (err) {
+      setError(reportError('Sign in', err))
+    } finally {
+      setBusy(false)
+    }
   }
 
   if (!encryptionAvailable) {
@@ -94,11 +107,7 @@ function SignInForm({ encryptionAvailable }: { encryptionAvailable: boolean }) {
           <span className="hint">Signing in also activates this computer on your licence, if you have one.</span>
         </form>
       )}
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
+      <ErrorNote error={error} />
     </>
   )
 }
@@ -108,16 +117,21 @@ function LicenseDetails({ account }: { account: AccountState }) {
   const license = account.license
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<FriendlyError | null>(null)
 
   async function deactivate() {
     setBusy(true)
     setError(null)
-    const done = await window.api.account.deactivate()
-    setBusy(false)
-    setConfirming(false)
-    if (done.ok) setAccountState(done.value)
-    else setError(done.error.message)
+    try {
+      const done = await withServerTimeout(window.api.account.deactivate())
+      if (done.ok) setAccountState(done.value)
+      else setError(reportError('Account', done.error))
+    } catch (err) {
+      setError(reportError('Account', err))
+    } finally {
+      setBusy(false)
+      setConfirming(false)
+    }
   }
 
   const seats = license.seats === null ? null : `${license.seatsUsed ?? '?'} of ${license.seats} in use`
@@ -175,11 +189,7 @@ function LicenseDetails({ account }: { account: AccountState }) {
           )}
         </div>
       )}
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
+      <ErrorNote error={error} />
     </>
   )
 }
@@ -245,25 +255,68 @@ function PoolLine({ label, pool, when = null, developerMode }: { label: string; 
 /** Settings, Account: signing in, this computer's licence, the hours and allowance, and what the plan includes. */
 export function AccountSection() {
   const account = useAccount()
+  const online = useOnline()
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<FriendlyError | null>(null)
+  /** The main process has not said what the account is within SERVER_TIMEOUT_MS. */
+  const [stuck, setStuck] = useState(false)
 
   useEffect(() => window.api.account.warmUp(), [])
 
+  useEffect(() => {
+    if (account || stuck) return
+    const timer = setTimeout(() => {
+      reportError('Account', new Error(`No account state within ${SERVER_TIMEOUT_MS / 1000} seconds`))
+      setStuck(true)
+    }, SERVER_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [account, stuck])
+
   async function signOut() {
     setBusy(true)
-    setAccountState(await window.api.account.signOut())
-    setBusy(false)
+    setError(null)
+    try {
+      setAccountState(await window.api.account.signOut())
+    } catch (err) {
+      setError(reportError('Account', err))
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function refresh() {
     setBusy(true)
-    const done = await window.api.account.refresh()
-    if (done?.ok) setAccountState(done.value)
-    setBusy(false)
+    setError(null)
+    try {
+      const done = await withServerTimeout(window.api.account.refresh())
+      if (done?.ok) setAccountState(done.value)
+      else if (done) setError(reportError('Account', done.error))
+    } catch (err) {
+      setError(reportError('Account', err))
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
     <Card className="settings-section" icon={<UserRound size={16} aria-hidden="true" />} title="Account">
+      {!account && !stuck && <Skeleton rows={3} label="Loading the account" />}
+      {!account && stuck && (
+        <ServerProblem
+          problem="timeout"
+          what="The account"
+          onRetry={() => {
+            setStuck(false)
+            reloadAccount()
+          }}
+        />
+      )}
+      {account?.configured && !online && (
+        <p className="listener-warning account-offline" role="status">
+          <WifiOff size={14} aria-hidden="true" /> This computer is offline. The licence, hours and allowance below are as last confirmed, and
+          ServiceEx keeps working. Signing in, Refresh and buying need the internet.
+        </p>
+      )}
       {!account ? null : !account.configured ? (
         <p className="hint">This build of ServiceEx is not set up to connect to ServiceEx. Everything offline works as usual.</p>
       ) : account.signedIn ? (
@@ -271,8 +324,8 @@ export function AccountSection() {
           <span>
             Signed in as <strong>{account.email}</strong>
           </span>
-          <Button disabled={busy} onClick={() => void refresh()} title="Check the licence, hours and allowance again">
-            <RefreshCw size={15} aria-hidden="true" /> Refresh
+          <Button disabled={busy || !online} onClick={() => void refresh()} title="Check the licence, hours and allowance again">
+            <RefreshCw size={15} aria-hidden="true" /> {busy ? 'Checking…' : 'Refresh'}
           </Button>
           <Button disabled={busy} onClick={() => void signOut()}>
             <LogOut size={15} aria-hidden="true" /> Sign out
@@ -281,6 +334,7 @@ export function AccountSection() {
       ) : (
         <SignInForm encryptionAvailable={account.encryptionAvailable} />
       )}
+      <ErrorNote error={error} />
       {account?.notice && <p className="hint" role="status">{account.notice}</p>}
 
       {account && (

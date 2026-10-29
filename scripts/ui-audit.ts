@@ -7,6 +7,9 @@
 // layout.json), when a screen scrolls sideways, the toolbar wraps to a second row, or a control lies outside the window
 // or is cut off by the panel it sits in.
 //
+// It also checks the states each screen is in (states.json): no developer text such as a stack trace on screen, no toast
+// in the live red, and it lists any bare "Loading…" line or one line "No … yet" left instead of an empty state.
+//
 // It builds the main process, serves the renderer with Vite (so it can reach the app's stores to set up states such as
 // device chips), and runs the app on a fresh, temporary data folder with invented sample data. Your own library and
 // settings are never opened. Runs with Node's built-in TypeScript support (Node 22.18 or later).
@@ -483,6 +486,66 @@ function checkLayout(): LayoutProblem[] {
 
 // ---------- Static scan of the stylesheet and components ----------
 
+interface StateReport {
+  /** Visible text written for developers: a stack trace, "Cannot read properties of …", an IPC wrapper. */
+  developerText: string[]
+  /** A visible line that is only "Loading…": it should be a skeleton, and never last. */
+  loadingText: string[]
+  /** Toasts drawn in a live red, which is reserved for on air. */
+  toastsInLiveRed: string[]
+  /** The old one line empty states (`.empty`) still showing, instead of an EmptyState. */
+  bareEmptyLines: string[]
+  emptyStates: { title: string; actions: string[] }[]
+  errorNotes: { text: string; hasDetails: boolean }[]
+  toasts: { tone: string; text: string }[]
+}
+
+/** What state the screen is in, and whether that state is finished. Runs in the page. */
+function checkStates(): StateReport {
+  const visible = (el: Element) => {
+    const r = el.getBoundingClientRect()
+    const cs = getComputedStyle(el)
+    return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && Number(cs.opacity) > 0 && !el.closest('[hidden], .ui-details-text, .visually-hidden')
+  }
+  const DEV = [/Cannot (read|set) propert/i, /is not a function/, /is not defined/, /Error invoking remote method/, /Minified React error/, /^\s*at .+:\d+:\d+/m, /\b(TypeError|ReferenceError|SyntaxError|RangeError):/, /reactjs\.org/]
+  const texts: string[] = []
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node.textContent?.trim()
+    if (text && node.parentElement && visible(node.parentElement)) texts.push(text)
+  }
+  const ownText = (el: Element) => (el.textContent ?? '').replace(/\s+/g, ' ').trim()
+  const rgb = (value: string) => {
+    const probe = document.createElement('span')
+    probe.style.color = value
+    document.body.appendChild(probe)
+    const color = getComputedStyle(probe).color
+    probe.remove()
+    return color
+  }
+  const root = getComputedStyle(document.documentElement)
+  const liveReds = new Set(['--live', '--live-strong', '--live-text'].map((t) => rgb(root.getPropertyValue(t).trim())))
+  const toastEls = [...document.querySelectorAll('.ui-toast')].filter(visible)
+  return {
+    developerText: [...new Set(texts.filter((t) => DEV.some((re) => re.test(t))))],
+    loadingText: [...new Set(texts.filter((t) => /^Loading(…|\.\.\.)$/.test(t)))],
+    toastsInLiveRed: toastEls
+      .filter((el) => {
+        const cs = getComputedStyle(el)
+        const icon = el.querySelector('svg')
+        return liveReds.has(cs.borderLeftColor) || (icon !== null && liveReds.has(getComputedStyle(icon).color))
+      })
+      .map(ownText),
+    bareEmptyLines: [...document.querySelectorAll('.empty')].filter(visible).map(ownText),
+    emptyStates: [...document.querySelectorAll('.ui-empty')].filter(visible).map((el) => ({
+      title: ownText(el.querySelector('.ui-empty-title') ?? el),
+      actions: [...el.querySelectorAll('.ui-empty-actions button')].map(ownText),
+    })),
+    errorNotes: [...document.querySelectorAll('.ui-error-note')].filter(visible).map((el) => ({ text: ownText(el.querySelector('.ui-error-note-text') ?? el), hasDetails: el.querySelector('.ui-details') !== null })),
+    toasts: toastEls.map((el) => ({ tone: [...el.classList].find((c) => c.startsWith('ui-toast--'))?.slice(10) ?? 'info', text: ownText(el) })),
+  }
+}
+
 function staticScan() {
   // The tokens live in src/styles/tokens.css; everything else (the app's stylesheet and the shared components') is
   // checked for colors written out instead of taken from a token.
@@ -548,6 +611,10 @@ function staticScan() {
         .filter(([, list]) => list.length > 0),
     ),
     buttonStates,
+    /** Rules for toasts, errors and warnings that use a live red token: there should be none. */
+    liveRedInStatusRules: [...body.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^}]*)\}/g)]
+      .filter(([, selector, rules]) => /toast|error|warning|duplicate-flag|import-problems/.test(selector) && /var\(--live/.test(rules))
+      .map(([, selector]) => selector.trim()),
   }
 }
 
@@ -603,6 +670,7 @@ async function libraryTab(page: Page, name: string) {
 
 const metrics: Record<string, Metrics> = {}
 const layout: Record<string, LayoutProblem[]> = {}
+const states: Record<string, StateReport> = {}
 const shots: string[] = []
 
 async function shot(page: Page, name: string) {
@@ -611,9 +679,11 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: path.join(OUT, file) })
   metrics[name] = await page.evaluate(collectMetrics)
   layout[name] = await page.evaluate(checkLayout)
+  states[name] = await page.evaluate(checkStates)
   shots.push(file)
   const failed = layout[name].length
-  console.log(`  ${file}${failed ? `  (${failed} layout problem${failed === 1 ? '' : 's'})` : ''}`)
+  const unfinished = states[name].developerText.length + states[name].toastsInLiveRed.length
+  console.log(`  ${file}${failed ? `  (${failed} layout problem${failed === 1 ? '' : 's'})` : ''}${unfinished ? `  (${unfinished} state problem${unfinished === 1 ? '' : 's'})` : ''}`)
 }
 
 /** Sizes the operator window's content; falls back to emulating the viewport when the screen is smaller. */
@@ -705,6 +775,9 @@ async function main() {
     for (const size of SIZES) {
       await setSize(app, page, size)
       await shot(page, `01-first-run@${size.width}`)
+      await libraryTab(page, 'Media')
+      await shot(page, `01-first-run-media@${size.width}`)
+      await libraryTab(page, 'Songs')
     }
 
     // Sample data, through the app's own IPC.
@@ -729,8 +802,8 @@ async function main() {
         })
         await window.api.services.addItem(service.id, 'song', songIds[2], null)
         await window.api.services.addItem(service.id, 'announcement', null, { title: 'Youth night', body: 'Youth night is Friday at 7pm\n\nBring a friend', titleSlide: true })
-        await window.api.services.create('Midweek Prayer', date)
-        return { songIds, serviceId: service.id }
+        const midweek = await window.api.services.create('Midweek Prayer', date)
+        return { songIds, serviceId: service.id, emptyServiceId: midweek.id }
       },
       { songs: SONGS, date: today },
     )
@@ -764,6 +837,9 @@ async function main() {
       await shot(page, `07-scripture-word-search${at}`)
       await page.getByLabel('Search scripture').fill('Hezekiah 4:2')
       await shot(page, `08-error-scripture-not-found${at}`)
+      await page.getByLabel('Search scripture').fill('xylophone zebra')
+      await page.waitForTimeout(800)
+      await shot(page, `08-scripture-no-results${at}`)
       await page.getByLabel('Search scripture').fill('')
 
       await libraryTab(page, 'Media')
@@ -785,6 +861,11 @@ async function main() {
       await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().setOutputMode('black'))
       await shot(page, `13-main-live-black${at}`)
       await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().setOutputMode('show'))
+
+      // A service with nothing in it yet, then the seeded one again with its slide still live.
+      await page.evaluate((id) => (window as unknown as AuditWindow).__audit.store.getState().openService(id), seeded.emptyServiceId)
+      await shot(page, `13-schedule-empty${at}`)
+      await page.evaluate((id) => (window as unknown as AuditWindow).__audit.store.getState().openService(id), seeded.serviceId)
 
       await page.getByRole('button', { name: 'New service' }).click()
       await shot(page, `14-schedule-new-service-modal${at}`)
@@ -855,7 +936,21 @@ async function main() {
       }
       await page.locator('[aria-label^="Inbox,"]').click()
       await shot(page, `23-inbox-open${at}`)
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.sharing.setState({ inbox: [], inboxOpen: true, unseen: 0 }))
+      await shot(page, `23-inbox-empty${at}`)
       await resetScreens(page)
+
+      // Toasts, one of each tone: none of them in the live red.
+      const toasts = [
+        { tone: 'success', text: 'Sent to Stage Laptop.', details: null },
+        { tone: 'warning', text: 'Stage Laptop declined Sermon slides.pptx.', details: null },
+        { tone: 'error', text: 'Another program is already using that network port. Close it, or choose another port in Settings, Sharing.', details: 'listen EADDRINUSE: address already in use 0.0.0.0:47800' },
+      ]
+      for (const toast of toasts) {
+        await page.evaluate((message) => (window as unknown as AuditWindow).__audit.sharing.setState({ message }), toast)
+        await shot(page, `32-toast-${toast.tone}${at}`)
+      }
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.sharing.setState({ message: null }))
 
       // Account: as this build shows it (no server address), signed out, then signed in, all invented.
       await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openSettings(true))
@@ -888,6 +983,44 @@ async function main() {
       await page.evaluate(() => (window as unknown as AuditWindow).__audit.account.openPlans(true))
       await shot(page, `27-plans-signed-in${at}`)
       await resetScreens(page)
+
+      // Offline: the renderer is told the network went away; nothing about the server changes.
+      const setOnline = (online: boolean) =>
+        page.evaluate((value) => {
+          Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => value })
+          window.dispatchEvent(new Event(value ? 'online' : 'offline'))
+        }, online)
+      await setOnline(false)
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openSettings(true))
+      await shot(page, `26-account-offline${at}`)
+      await resetScreens(page)
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.account.openPlans(true))
+      await shot(page, `27-plans-offline${at}`)
+      await resetScreens(page)
+      await setOnline(true)
+
+      if (size.width === 1280) {
+        // A server that never answers: the skeleton first, then after 20 seconds the timeout with Retry. Uses
+        // Electron's handler map (not public API); skipped when it is not there.
+        const stalled = await app.evaluate(({ ipcMain }) => {
+          const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, unknown> })._invokeHandlers
+          if (!handlers?.has('account:products')) return false
+          ;(globalThis as Record<string, unknown>).__auditProducts = handlers.get('account:products')
+          handlers.set('account:products', () => new Promise(() => undefined))
+          return true
+        })
+        if (stalled) {
+          await page.evaluate(() => (window as unknown as AuditWindow).__audit.account.openPlans(true))
+          await shot(page, `27-plans-loading${at}`)
+          await page.waitForTimeout(20_500)
+          await shot(page, `27-plans-timeout${at}`)
+          await resetScreens(page)
+          await app.evaluate(({ ipcMain }) => {
+            const handlers = (ipcMain as unknown as { _invokeHandlers: Map<string, unknown> })._invokeHandlers
+            handlers.set('account:products', (globalThis as Record<string, unknown>).__auditProducts)
+          })
+        } else console.warn('  The Plans timeout could not be staged; skipped')
+      }
 
       // Light appearance, for comparison.
       await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'))
@@ -970,6 +1103,7 @@ async function main() {
     writeFileSync(path.join(OUT, 'metrics.json'), JSON.stringify({ shots, screens: metrics, totals: totals(metrics) }, null, 2))
     writeFileSync(path.join(OUT, 'static.json'), JSON.stringify(staticScan(), null, 2))
     writeFileSync(path.join(OUT, 'layout.json'), JSON.stringify(layout, null, 2))
+    writeFileSync(path.join(OUT, 'states.json'), JSON.stringify(states, null, 2))
     console.log(`Saved ${shots.length} screenshots and the measurements to ${path.relative(ROOT, OUT)}/`)
 
     const failing = Object.entries(layout).filter(([, problems]) => problems.length > 0)
@@ -981,6 +1115,19 @@ async function main() {
       }
       process.exitCode = 1
     } else console.log(`Layout check passed on all ${Object.keys(layout).length} screens at ${SIZES.map((s) => `${s.width}x${s.height}`).join(', ')}.`)
+
+    const unfinished = Object.entries(states).filter(([, st]) => st.developerText.length > 0 || st.toastsInLiveRed.length > 0)
+    const lingering = Object.entries(states).filter(([, st]) => st.loadingText.length > 0 || st.bareEmptyLines.length > 0)
+    for (const [name, st] of lingering) console.warn(`  Note, ${name}: ${[...st.loadingText, ...st.bareEmptyLines.map((t) => `bare empty line "${t}"`)].join('; ')}`)
+    if (unfinished.length > 0) {
+      console.error(`\nState check failed on ${unfinished.length} of ${Object.keys(states).length} screens:`)
+      for (const [name, st] of unfinished) {
+        console.error(`  ${name}`)
+        for (const t of st.developerText) console.error(`    developer text: ${t.slice(0, 120)}`)
+        for (const t of st.toastsInLiveRed) console.error(`    toast in live red: ${t.slice(0, 120)}`)
+      }
+      process.exitCode = 1
+    } else console.log(`State check passed on all ${Object.keys(states).length} screens: no developer text, no toast in live red.`)
   } finally {
     await app.close().catch(() => undefined)
     await server.close()

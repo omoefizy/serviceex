@@ -1,9 +1,10 @@
-import { Film, Upload } from 'lucide-react'
+import { Film, ImagePlus, Upload } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { MediaItem } from '../../shared/types'
 import { matchesSearch, MEDIA_DRAG_TYPE } from '../lib/media'
 import { openSendMenu, setShareDrag } from '../lib/sharing'
 import { useMediaLibrary } from '../lib/useMediaLibrary'
+import { Button, EmptyState, ErrorNote } from './ui'
 
 interface GridProps {
   items: MediaItem[]
@@ -85,11 +86,23 @@ export function MediaPickerModal({ kind, onPick, onCancel, title = `Choose a bac
             <Upload size={15} aria-hidden="true" /> Import…
           </button>
         </div>
-        {error && <p className="error">{error}</p>}
+        <ErrorNote error={error} />
         {shown.length > 0 ? (
           <MediaGrid items={shown} onSelect={onPick} />
         ) : (
-          <p className="empty">{items.some((i) => i.kind === kind) ? `No ${kind}s match.` : `No ${kind}s in the library yet. Import one.`}</p>
+          <EmptyState
+            compact
+            icon={<ImagePlus size={20} />}
+            title={items.some((i) => i.kind === kind) ? `No ${kind}s match` : `No ${kind}s in the library yet`}
+            description={items.some((i) => i.kind === kind) ? 'Try another name or tag.' : `Import ${kind === 'image' ? 'a picture' : 'an MP4 or WebM loop'} to use it here.`}
+            action={
+              items.some((i) => i.kind === kind) ? undefined : (
+                <Button variant="primary" icon={<Upload size={15} aria-hidden="true" />} onClick={() => void handleImport()}>
+                  Import…
+                </Button>
+              )
+            }
+          />
         )}
         <footer className="modal-actions">
           <button className="button" onClick={onCancel}>

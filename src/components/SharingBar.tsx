@@ -18,6 +18,7 @@ import {
   sendCueTo,
   sendTo,
   SHARED_ITEM_DRAG_TYPE,
+  showError,
   showMessage,
   startSharing,
   updateShared,
@@ -26,7 +27,7 @@ import {
 import { useOperatorStore } from '../store'
 import { CueTray } from './CueTray'
 import { InboxPanel } from './InboxPanel'
-import { IconButton } from './ui'
+import { IconButton, Toast } from './ui'
 
 /**
  * A device on the network: drop files or items on it to send them, or a shared service item to make it that
@@ -69,7 +70,7 @@ function DeviceChip({ peer }: { peer: SharePeer }) {
           e.preventDefault()
           e.stopPropagation()
           setOver(false)
-          updateShared(shared, { ownerDevice: peer.id }).then(() => showMessage(`Given to ${peer.name}.`), console.error)
+          updateShared(shared, { ownerDevice: peer.id }).then(() => showMessage(`Given to ${peer.name}.`, 'success'), console.error)
           return
         }
         if (!canDropOnDevice(e) || !peer.online) return
@@ -77,7 +78,7 @@ function DeviceChip({ peer }: { peer: SharePeer }) {
         e.stopPropagation()
         setOver(false)
         const { sources, refused } = droppedSources(e)
-        if (refused.length > 0) showMessage(`Not sent (type not allowed): ${refused.join(', ')}`, true)
+        if (refused.length > 0) showMessage(`Not sent (type not allowed): ${refused.join(', ')}`, 'warning')
         sendTo(peer, sources).catch(console.error)
       }}
     >
@@ -131,7 +132,7 @@ function TransferChip({ transfer }: { transfer: TransferProgress }) {
           type="button"
           className="transfer-action ui-hit"
           title="Send again, carrying on from what already arrived"
-          onClick={() => window.api.sharing.retry(transfer.id).catch((error) => showMessage(errorText(error), true))}
+          onClick={() => window.api.sharing.retry(transfer.id).catch((error) => showError(error))}
         >
           <RotateCw size={11} aria-hidden="true" /> Retry
         </button>
@@ -227,7 +228,7 @@ function PairDialog() {
       const device = await window.api.sharing.finishPairing(pairing.pairingId, code)
       const pending = pairing.pending
       close()
-      showMessage(`Paired with ${device.name}.`)
+      showMessage(`Paired with ${device.name}.`, 'success')
       if (pending.length > 0) await window.api.sharing.send(device.id, pending)
     } catch (error) {
       // One try per code: a new code is needed.
@@ -462,7 +463,7 @@ export function SharingBar() {
   // Status messages clear themselves; errors stay a little longer.
   useEffect(() => {
     if (!message) return
-    const timer = setTimeout(() => useSharingStore.setState({ message: null }), message.error ? 12000 : 5000)
+    const timer = setTimeout(() => useSharingStore.setState({ message: null }), message.tone === 'error' ? 12000 : message.tone === 'warning' ? 8000 : 5000)
     return () => clearTimeout(timer)
   }, [message])
 
@@ -486,9 +487,11 @@ export function SharingBar() {
     <>
       {message && (
         // Floats below the toolbar, so a message never pushes the toolbar's controls aside.
-        <span className={`sharing-message sharing-toast${message.error ? ' error' : ''}`} role={message.error ? 'alert' : 'status'} title={message.text}>
-          {message.text}
-        </span>
+        <div className="sharing-toast">
+          <Toast tone={message.tone} details={message.details} onDismiss={() => useSharingStore.setState({ message: null })}>
+            {message.text}
+          </Toast>
+        </div>
       )}
       {(enabled || inboxCount > 0) && (
         <div className="alerts-control" ref={ref}>

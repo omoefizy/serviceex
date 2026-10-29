@@ -2,13 +2,14 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { replaceThemeFont, themeFonts } from '../../shared/fonts'
 import { THEME_CONTENT_TYPES } from '../../shared/themes'
 import type { Theme, ThemeBackground, ThemeBox, ThemeContentType, ThemeElement, ThemeStyle, ThemeTextElement, ThemeTextProps } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { selectBaseThemeId, useOperatorStore } from '../store'
 import { openSendMenu, setShareDrag } from '../lib/sharing'
 import { clampBox } from '../lib/themeLayout'
 import { MissingFontChips } from './FontPicker'
 import { FormatToolbar, type FormatControl, type FormatPatch, type FormatState } from './FormatToolbar'
 import { MediaPickerModal } from './MediaGrid'
-import { SegmentedControl, Select } from './ui'
+import { ErrorNote, SegmentedControl, Select } from './ui'
 import { ThemedSlide } from './ThemedSlide'
 
 const SAMPLES = {
@@ -127,7 +128,7 @@ export function ThemeDefaultsForm() {
   const themes = useOperatorStore((s) => s.themes)
   const defaults = useOperatorStore((s) => s.themeDefaults)
   const loadThemes = useOperatorStore((s) => s.loadThemes)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
 
   async function setDefault(type: ThemeContentType, id: number) {
     try {
@@ -135,7 +136,7 @@ export function ThemeDefaultsForm() {
       await loadThemes()
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Themes', err))
     }
   }
 
@@ -153,7 +154,7 @@ export function ThemeDefaultsForm() {
           </Select>
         </label>
       ))}
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
     </div>
   )
 }
@@ -170,7 +171,7 @@ export function ThemeEditor() {
   const [sample, setSample] = useState<keyof typeof SAMPLES>('song')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   /** Which kind of background the library picker is open for. */
   const [picking, setPicking] = useState<'image' | 'video' | null>(null)
 
@@ -200,7 +201,7 @@ export function ThemeEditor() {
     try {
       await action()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Themes', err))
     }
   }
 
@@ -360,7 +361,7 @@ export function ThemeEditor() {
             {builtin && <p className="hint">Built-in themes cannot be changed. Edit freely, then use Save as new to keep your version.</p>}
             {confirmingDelete && <p className="hint">Songs and defaults using this theme go back to the built-in defaults.</p>}
             {message && <p className="hint">{message}</p>}
-            {error && <p className="error">{error}</p>}
+            <ErrorNote error={error} />
             <MissingFontChips values={themeFonts(style)} onReplace={(from, to) => setStyle((s) => s && replaceThemeFont(s, from, to))} />
 
             {mainText &&

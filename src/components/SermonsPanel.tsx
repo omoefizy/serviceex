@@ -4,10 +4,12 @@ import { can, upgradeNote, type FeatureKey } from '../../shared/features'
 import { formatReference, parseReference } from '../../shared/parseReference'
 import { DEFAULT_EXPORT, longDate, rawParagraphs, sermonContentCount, sermonTitle, textParagraphs, UNTITLED_SERMON } from '../../shared/sermons'
 import type { AiError, AiResult, Sermon, SermonAiOutcome, SermonAiProgress, SermonExportOptions, SermonExportResult, SermonPatch, SermonSummary } from '../../shared/types'
+import { describeError, reportError, type ErrorLike } from '../lib/errors'
 import { useListener } from '../lib/listener'
 import { outcomeMessage, progressLabel } from '../lib/sermonAi'
 import { useOperatorStore } from '../store'
 import { AiButton } from './AiButton'
+import { ErrorNote } from './ui'
 
 /** How often a sermon being recorded is read again, so its transcript grows on screen. */
 const RECORDING_REFRESH_MS = 3000
@@ -40,7 +42,7 @@ export function SermonsPanel() {
   const [query, setQuery] = useState('')
   const [list, setList] = useState<SermonSummary[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
 
   const loadList = useCallback(async () => {
     const q = query.trim()
@@ -50,7 +52,7 @@ export function SermonsPanel() {
 
   // Searches as the operator types, after a short pause.
   useEffect(() => {
-    const timer = setTimeout(() => loadList().catch((err) => setError(String(err))), 200)
+    const timer = setTimeout(() => loadList().catch((err) => setError(reportError('Sermons', err))), 200)
     return () => clearTimeout(timer)
   }, [loadList])
 
@@ -69,7 +71,7 @@ export function SermonsPanel() {
           <X size={18} />
         </button>
       </header>
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
       <div className="sermons-body">
         <div className="sermons-list-column">
           <label className="sermons-search">
@@ -142,7 +144,7 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
   const [developerMode, setDeveloperMode] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const [aiError, setAiError] = useState<AiError | null>(null)
   const [progress, setProgress] = useState<SermonAiProgress | null>(null)
   const [newReference, setNewReference] = useState('')
@@ -168,7 +170,7 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
   const reload = useCallback(() => window.api.sermons.get(id).then(apply), [id, apply])
 
   useEffect(() => {
-    reload().catch((err) => setError(String(err)))
+    reload().catch((err) => setError(reportError('Sermons', err)))
     window.api.sermons.aiAvailable().then((ok) => setAiAvailable(ok === true), console.error)
     window.api.ai.status().then((s) => setDeveloperMode(s.developerMode), console.error)
   }, [reload])
@@ -201,7 +203,7 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
       apply(await window.api.sermons.update(id, patch))
       onChanged()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Sermons', err))
     }
   }
 
@@ -214,7 +216,7 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
       const done = await action()
       if (done) setMessage(done)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Sermons', err))
     } finally {
       setBusy(null)
     }
@@ -318,7 +320,7 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
           <span className="sermons-recording">Recording</span> The transcript grows here as the listener hears it.
         </p>
       )}
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
       {message && <p className="hint">{message}</p>}
 
       <div className="sermon-fields">
@@ -378,11 +380,7 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
             </button>
           </div>
         )}
-        {aiError && (
-          <p className="error" role="alert">
-            {aiError.message}
-          </p>
-        )}
+        <ErrorNote error={aiError && describeError(aiError)} />
         <label className="field">
           <span>Summary</span>
           <textarea className="input" rows={3} {...field('summary')} onBlur={() => void save({ summary: draft.summary })} />

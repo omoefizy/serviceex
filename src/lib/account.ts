@@ -32,6 +32,16 @@ function start() {
   }, console.error)
 }
 
+/** Asks the main process for the account again, such as after it did not answer in time. */
+export function reloadAccount(): void {
+  window.api.account.state().then((state) => {
+    if (state) {
+      account = state
+      emit()
+    }
+  }, console.error)
+}
+
 /** The account as the main process last reported it; null until it has answered. */
 export function useAccount(): AccountState | null {
   start()

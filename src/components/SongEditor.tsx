@@ -1,15 +1,17 @@
-import { Copy, Download, Merge, Scissors, Sparkles } from 'lucide-react'
+import { Copy, Download, FileQuestion, Merge, Scissors, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { can, upgradeNote } from '../../shared/features'
 import { buildSongSlides, findSection, isArrangement, LINES_PER_SLIDE_OPTIONS, parseLyrics, replaceSongSlide } from '../../shared/lyrics'
 import { formatFor, pruneFormats, renameFormat, sanitizeSlideFormats } from '../../shared/richText'
 import { DEFAULT_THEME_STYLE } from '../../shared/themes'
 import type { AiError, AiTasks, ExportFormat, RichText, SlideFormats, Song, SongArrangement, SongInput } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { duplicateSection, mergeWithNext, splitSlideAt, type ToolResult } from '../lib/lyricsTools'
 import { MOD } from '../lib/shortcuts'
 import { useOperatorStore } from '../store'
 import { LyricsDiffModal } from './LyricsDiffModal'
 import { SlideFormatter } from './SlideFormatter'
+import { Button, EmptyState, ErrorNote, Skeleton } from './ui'
 
 /** The editor's fields as typed. */
 interface Form {
@@ -124,7 +126,9 @@ export function SongEditor({ songId }: { songId: number }) {
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
+  /** The song was deleted, here or on another computer, before it opened. */
+  const [missing, setMissing] = useState(false)
   const [toolMessage, setToolMessage] = useState<string | null>(null)
   /** The slide open in the formatting editor, by play order. */
   const [formatIndex, setFormatIndex] = useState<number | null>(null)
@@ -167,7 +171,7 @@ export function SongEditor({ songId }: { songId: number }) {
       (song) => {
         if (cancelled) return
         if (!song) {
-          setError('This song no longer exists.')
+          setMissing(true)
           return
         }
         const stored = toForm(song)
@@ -182,7 +186,7 @@ export function SongEditor({ songId }: { songId: number }) {
           setForm(stored)
         }
       },
-      (err) => !cancelled && setError(err instanceof Error ? err.message : String(err)),
+      (err) => !cancelled && setError(reportError('Song editor', err)),
     )
     return () => {
       cancelled = true
@@ -262,7 +266,7 @@ export function SongEditor({ songId }: { songId: number }) {
       clearDraft(songId)
       await songSaved({ id: songId, ...input })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Song editor', err))
     } finally {
       setSaving(false)
     }
@@ -276,7 +280,7 @@ export function SongEditor({ songId }: { songId: number }) {
       await songDeleted(songId)
     } catch (err) {
       deletedRef.current = false
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Song editor', err))
     }
   }
 
@@ -287,7 +291,7 @@ export function SongEditor({ songId }: { songId: number }) {
       const result = await window.api.songFiles.export([songId], format)
       if (result) setToolMessage(`Exported to ${result.location}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Song editor', err))
     }
   }
 
@@ -300,7 +304,7 @@ export function SongEditor({ songId }: { songId: number }) {
     try {
       answer = await window.api.ai.ask('cleanLyrics', { lyrics: original })
     } catch (err) {
-      answer = { ok: false, error: { code: 'unavailable', message: err instanceof Error ? err.message : String(err) } }
+      answer = { ok: false, error: { code: 'unavailable', message: reportError('Song editor', err).message } }
     }
     setCleaning((current) =>
       current?.original === original && !current.result && !current.error
@@ -360,7 +364,22 @@ export function SongEditor({ songId }: { songId: number }) {
             Close
           </button>
         </header>
-        {error ? <p className="error">{error}</p> : <p className="empty">Loading…</p>}
+        {missing ? (
+          <EmptyState
+            icon={<FileQuestion size={20} />}
+            title="This song is no longer in the library"
+            description="It was deleted, here or on another computer. Nothing on the screen has changed."
+            action={
+              <Button variant="primary" onClick={() => editSong(null)}>
+                Close the editor
+              </Button>
+            }
+          />
+        ) : error ? (
+          <ErrorNote error={error} />
+        ) : (
+          <Skeleton rows={6} label="Loading the song" />
+        )}
       </section>
     )
   }
@@ -430,7 +449,7 @@ export function SongEditor({ songId }: { songId: number }) {
       {confirmingDelete && (
         <p className="hint">Any service that lists this song will show it as “Missing song”.</p>
       )}
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
 
       <div className="editor-fields">
         <label className="field">

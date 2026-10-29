@@ -2,11 +2,13 @@ import { AlertTriangle, Columns2, FilePen, FolderOpen, Loader2, Plus, Trash2, Up
 import { useState } from 'react'
 import { can, upgradeNote } from '../../shared/features'
 import type { Presentation, PresentationMode } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { droppedPaths, IMPORT_MODE_KEY, isFileDrag, isPresentationMode } from '../lib/presentations'
 import { openSendMenu, setShareDrag } from '../lib/sharing'
 import { usePersistentState } from '../lib/usePersistentState'
 import { useOperatorStore } from '../store'
 import { NativeSlideEditor } from './NativeSlideEditor'
+import { ErrorNote } from './ui'
 
 /** The progress chips of running conversions, and the error of a failed one until dismissed. */
 export function PresentationJobs() {
@@ -56,7 +58,7 @@ function PresentationCard({ presentation, onError }: { presentation: Presentatio
       await action()
       onError(null)
     } catch (err) {
-      onError(err instanceof Error ? err.message : String(err))
+      onError(reportError('Presentations', err).message)
     }
   }
 
@@ -207,7 +209,7 @@ export function PresentationsPanel() {
   const [importMode, setImportMode] = usePersistentState<PresentationMode>(IMPORT_MODE_KEY, 'image', isPresentationMode)
   const [search, setSearch] = useState('')
   const [dragging, setDragging] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
 
   async function importPaths(paths: string[]) {
     if (paths.length === 0) return
@@ -215,7 +217,7 @@ export function PresentationsPanel() {
       setError(null)
       await importPresentations(paths, can('powerpoint.native') ? importMode : 'image')
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Presentations', err))
     }
   }
 
@@ -267,7 +269,7 @@ export function PresentationsPanel() {
 
       <input className="input" type="search" placeholder="Search title or slide text" value={search} onChange={(e) => setSearch(e.target.value)} />
       <PresentationJobs />
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
 
       <ul className="presentation-list">
         {shown.map((presentation) => (

@@ -45,6 +45,7 @@ const SECTIONS = [
   'Library sync',
   'Layouts',
   'Autosave and backups',
+  'Diagnostics',
 ]
 
 /** Settings saved by a version from before the stream, lower third and layout editor settings existed. */

@@ -6,6 +6,7 @@
 import { create } from 'zustand'
 import type { AppSettings, SpeechMode, SpeechPerformance, SpeechStatus } from '../../shared/types'
 import { useOperatorStore } from '../store'
+import { reportError } from './errors'
 import { SignalWatch, startMic, type MicCapture, type MicDevice, type MicDsp, type MicReading, type MicState, type SignalAdvice } from './mic'
 import { detectFromPartial, detectScripture, resetDetection, useSuggestions } from './scriptureDetection'
 import { collectStatementText } from './statements'
@@ -201,7 +202,7 @@ export const useListener = create<ListenerState>((set, get) => ({
         },
       })
     } catch (error) {
-      set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
+      set({ status: 'error', error: reportError('Listener', error, 'Listening could not start. Try again, or pick another engine in Settings.').message })
       addLog(`Error: ${get().error}`)
       endRecording()
       return

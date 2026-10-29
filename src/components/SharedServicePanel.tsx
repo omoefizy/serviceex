@@ -5,12 +5,11 @@ import { orderBetween, visibleItems } from '../../shared/sharedService'
 import type { ItemFilter, SharedItem, SharedItemType } from '../../shared/types'
 import {
   deviceLabel,
-  errorText,
   hostOpenService,
   loadSharedItem,
   SHARED_ITEM_DRAG_TYPE,
   sharedNumericId,
-  showMessage,
+  showError,
   updateShared,
   useSharingStore,
 } from '../lib/sharing'
@@ -39,7 +38,7 @@ export function SharedServiceBar() {
     try {
       await action()
     } catch (error) {
-      showMessage(errorText(error), true)
+      showError(error)
     } finally {
       setBusy(false)
     }
@@ -167,7 +166,7 @@ export function SharedItemList() {
       (loaded) => {
         if (loaded && live) useOperatorStore.getState().goLive(0)
       },
-      (error) => showMessage(errorText(error), true),
+      (error) => showError(error),
     )
 
   function drop() {

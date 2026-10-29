@@ -159,7 +159,7 @@ describe('transfers from this computer', () => {
   it('say when the other computer declined', () => {
     startSharing()
     listener?.({ type: 'progress', transfer: transfer({ state: 'declined', error: 'Sanctuary booth declined the file.' }) })
-    expect(useSharingStore.getState().message).toEqual({ text: 'Sanctuary booth declined Sunday.serviceex.', error: true })
+    expect(useSharingStore.getState().message).toEqual({ text: 'Sanctuary booth declined Sunday.serviceex.', tone: 'warning', details: null })
   })
 })
 

@@ -1681,9 +1681,22 @@ export interface PanelErrorReport {
   componentStack: string
 }
 
+/** What a diagnostics report says about this copy of ServiceEx and the computer it runs on. */
+export interface AppInfo {
+  version: string
+  platform: string
+  arch: string
+  osVersion: string
+  electron: string
+  chrome: string
+  locale: string
+  packaged: boolean
+}
+
 export interface LogApi {
   /** Appends the report to logs/panel-errors.log in the app data folder. */
   panelError(report: PanelErrorReport): Promise<void>
+  appInfo(): Promise<AppInfo>
 }
 
 // ---------- Sermons ----------

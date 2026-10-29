@@ -1,15 +1,19 @@
-import { ListPlus, Pencil, Plus, Upload } from 'lucide-react'
+import { ListPlus, Music, Pencil, Plus, SearchX, Sparkles, Upload } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { SongInput, SongSummary } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
+import { addSampleSong } from '../lib/samples'
 import { openSongMenu, setShareDrag } from '../lib/sharing'
 import { useOperatorStore } from '../store'
 import { AddSongModal } from './AddSongModal'
 import { ImportModal } from './ImportModal'
+import { Button, EmptyState, ErrorNote } from './ui'
 
 export function SongList() {
   const [search, setSearch] = useState('')
-  const [songs, setSongs] = useState<SongSummary[]>([])
-  const [error, setError] = useState<string | null>(null)
+  /** Null until the first answer, so a first run does not flash the empty state. */
+  const [songs, setSongs] = useState<SongSummary[] | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const [adding, setAdding] = useState(false)
   const [importing, setImporting] = useState(false)
   const selectedId = useOperatorStore((s) => s.selectedSong?.id ?? null)
@@ -24,7 +28,7 @@ export function SongList() {
       setSongs(await window.api.songs.list(query))
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Songs', err))
     }
   }, [])
 
@@ -46,7 +50,18 @@ export function SongList() {
       await addToSchedule('song', id, null)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Songs', err))
+    }
+  }
+
+  async function handleSample() {
+    try {
+      const song = await addSampleSong()
+      await refresh(search)
+      selectSong(song)
+      setError(null)
+    } catch (err) {
+      setError(reportError('Songs', err))
     }
   }
 
@@ -79,10 +94,10 @@ export function SongList() {
         onChange={(e) => setSearch(e.target.value)}
       />
 
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
 
       <ul className="songs">
-        {songs.map((song) => (
+        {(songs ?? []).map((song) => (
           <li key={song.id} className="song-row">
             <button
               className={`song${song.id === selectedId ? ' selected' : ''}`}
@@ -115,8 +130,34 @@ export function SongList() {
             </button>
           </li>
         ))}
-        {songs.length === 0 && !error && (
-          <li className="empty">{search ? 'No songs match.' : 'No songs yet.'}</li>
+        {songs?.length === 0 && !error && (
+          <li>
+            {search ? (
+              <EmptyState
+                compact
+                icon={<SearchX size={20} />}
+                title={`No songs match “${search.trim()}”`}
+                description="Search looks in titles, authors, tags and lyrics. Try a word from the first line."
+                action={<Button onClick={() => setSearch('')}>Clear search</Button>}
+              />
+            ) : (
+              <EmptyState
+                icon={<Music size={20} />}
+                title="Your song library is empty"
+                description="Add the songs your church sings, or import them from OpenLyrics, OpenSong or text files."
+                action={
+                  <Button variant="primary" icon={<Plus size={15} aria-hidden="true" />} onClick={() => setAdding(true)}>
+                    Add your first song
+                  </Button>
+                }
+                secondaryAction={
+                  <Button variant="ghost" icon={<Sparkles size={15} aria-hidden="true" />} onClick={() => void handleSample()}>
+                    Add a sample song
+                  </Button>
+                }
+              />
+            )}
+          </li>
         )}
       </ul>
 

@@ -1,7 +1,8 @@
 import { app, ipcMain } from 'electron'
 import { appendFile, mkdir } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
-import type { PanelErrorReport } from '../../shared/types'
+import type { AppInfo, PanelErrorReport } from '../../shared/types'
 
 const MAX_FIELD = 20_000
 
@@ -9,6 +10,21 @@ const field = (value: unknown, fallback = '') => (typeof value === 'string' ? va
 
 /** Panel errors caught by the renderer's error boundaries go to logs/panel-errors.log in the app data folder. */
 export function registerLogIpc(): void {
+  // For the diagnostics report: no paths, names or anything about the library.
+  ipcMain.handle(
+    'log:appInfo',
+    (): AppInfo => ({
+      version: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      osVersion: os.release(),
+      electron: process.versions.electron,
+      chrome: process.versions.chrome,
+      locale: app.getLocale(),
+      packaged: app.isPackaged,
+    }),
+  )
+
   ipcMain.handle('log:panelError', async (_event, value: unknown) => {
     const report = (typeof value === 'object' && value !== null ? value : {}) as Partial<PanelErrorReport>
     const dir = path.join(app.getPath('userData'), 'logs')

@@ -1,11 +1,12 @@
 import { Eye, ListPlus, Send } from 'lucide-react'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
 import { formatReference } from '../../shared/parseReference'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { canMakeRange, passageOf, previewPassage, resultSegments, type ResultItem } from '../lib/scripture'
 import { canSendCues, openCueMenu, useSharingStore } from '../lib/sharing'
 import { verseCaption } from '../lib/slides'
 import { selectLiveSlide, selectPreviewSlide, useOperatorStore } from '../store'
-import { Button, IconButton, SegmentedControl } from './ui'
+import { Button, ErrorNote, IconButton, SegmentedControl } from './ui'
 
 export interface VerseResultsHandle {
   /** Ticks or unticks the row at `index` (Space in the search box). */
@@ -55,7 +56,7 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
   const liveCaption = useOperatorStore((s) => (s.live.itemType === 'scripture' ? (selectLiveSlide(s)?.caption ?? null) : null))
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [mode, setMode] = useState<'range' | 'sequence'>('sequence')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const sentinel = useRef<HTMLDivElement>(null)
   const rows = useRef<(HTMLTableRowElement | null)[]>([])
   const scrolledFor = useRef<string | null>(null)
@@ -105,7 +106,7 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
       } else await addToSchedule('scripture', null, passage)
       onUse?.()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Scripture', err))
     }
   }
 
@@ -162,7 +163,7 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
           </Button>
         </div>
       )}
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
 
       {(items.length > 0 || footer) && (
         <table className="verse-table">

@@ -2,9 +2,11 @@ import { ListPlus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { parseReference } from '../../shared/parseReference'
 import type { AiError, AiTasks, BibleVersionCode, ScripturePayload } from '../../shared/types'
+import { describeError, reportError, type ErrorLike } from '../lib/errors'
 import { fetchPassage } from '../lib/scripture'
 import { useOperatorStore } from '../store'
 import { AiButton } from './AiButton'
+import { ErrorNote } from './ui'
 
 const VERSIONS: BibleVersionCode[] = ['KJV', 'WEB']
 
@@ -27,7 +29,7 @@ export function SermonModal({ onClose }: Props) {
   const [busy, setBusy] = useState(false)
   const [adding, setAdding] = useState(false)
   const [aiError, setAiError] = useState<AiError | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const [sermon, setSermon] = useState<Sermon | null>(null)
   /** Which points and references to add; all start ticked. */
   const [pointsOn, setPointsOn] = useState<boolean[]>([])
@@ -74,7 +76,7 @@ export function SermonModal({ onClose }: Props) {
         setAiError(answer.error)
       }
     } catch (err) {
-      setAiError({ code: 'unavailable', message: err instanceof Error ? err.message : String(err) })
+      setAiError({ code: 'unavailable', message: reportError('Sermon outline', err).message })
     } finally {
       setBusy(false)
     }
@@ -98,7 +100,7 @@ export function SermonModal({ onClose }: Props) {
       }
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Sermon outline', err))
       setAdding(false)
     }
   }
@@ -130,11 +132,7 @@ export function SermonModal({ onClose }: Props) {
             </span>
           )}
         </div>
-        {aiError && (
-          <p className="error" role="alert">
-            {aiError.message}
-          </p>
-        )}
+        <ErrorNote error={aiError && describeError(aiError)} />
 
         {sermon && (
           <>
@@ -204,7 +202,7 @@ export function SermonModal({ onClose }: Props) {
           </>
         )}
 
-        {error && <p className="error">{error}</p>}
+        <ErrorNote error={error} />
 
         <footer className="modal-actions">
           <button type="button" className="button" onClick={onClose}>

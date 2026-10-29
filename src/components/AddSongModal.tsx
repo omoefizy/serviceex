@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { buildSongSlides, DEFAULT_ARRANGEMENT } from '../../shared/lyrics'
 import type { SongInput } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
+import { ErrorNote } from './ui'
 
 interface Props {
   onSave(input: SongInput): Promise<void>
@@ -12,7 +14,7 @@ export function AddSongModal({ onSave, onCancel }: Props) {
   const [author, setAuthor] = useState('')
   const [lyrics, setLyrics] = useState('')
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
 
   const slideCount = buildSongSlides(lyrics).length
 
@@ -40,7 +42,7 @@ export function AddSongModal({ onSave, onCancel }: Props) {
         lyrics,
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Add song', err))
       setSaving(false)
     }
   }
@@ -75,7 +77,7 @@ export function AddSongModal({ onSave, onCancel }: Props) {
           <textarea className="input lyrics" value={lyrics} onChange={(e) => setLyrics(e.target.value)} rows={12} />
         </label>
 
-        {error && <p className="error">{error}</p>}
+        <ErrorNote error={error} />
 
         <footer className="modal-actions">
           <button type="button" className="button" onClick={onCancel}>

@@ -19,6 +19,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import { HIGHLIGHT_COLORS, HIGHLIGHT_KINDS, isMarked, sentenceAt, slideRich, wordAt, wordsBetween } from '../../shared/highlights'
 import { comparePos, type RichPos } from '../../shared/richText'
 import type { DualTranslation, HighlightKind, LivePowerPointStatus, OutputState } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { pickHighlightColor } from '../lib/highlights'
 import { MOD } from '../lib/shortcuts'
 import { slideTranslation } from '../lib/translations'
@@ -35,6 +36,7 @@ import {
 import { OutputScreen } from './OutputView'
 import { ScriptureQuickAdjust } from './ScriptureDisplay'
 import { ThemedSlide } from './ThemedSlide'
+import { ErrorNote } from './ui'
 
 /** "Slide 2 of 5" across the corner of a screen, when it shows a slide. */
 function SlideBadge({ index, count }: { index: number | null; count: number }) {
@@ -93,7 +95,7 @@ function TranslationBar({ where }: { where: TranslationTarget }) {
     try {
       await action()
     } catch (err) {
-      useOperatorStore.setState({ translationNote: { where, text: err instanceof Error ? err.message : String(err), error: true } })
+      useOperatorStore.setState({ translationNote: { where, text: reportError('Live and Preview', err).message, error: true } })
     } finally {
       setBusy(false)
     }
@@ -346,14 +348,14 @@ export function LivePreview() {
   const liveMarking = useWordMarking('live')
   const previewMarking = useWordMarking('preview')
   const [dismissedFailure, setDismissedFailure] = useState(0)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
 
   async function resend() {
     try {
       await resendLive()
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Live and Preview', err))
     }
   }
 
@@ -413,7 +415,7 @@ export function LivePreview() {
             <RefreshCw size={13} aria-hidden="true" /> Live version is older, resend
           </button>
         ))}
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
 
       <label className="fade-control">
         <span>Crossfade</span>

@@ -2,6 +2,7 @@ import { Bookmark, EyeOff, ListPlus, Pin, PinOff, Play, RefreshCw, SkipForward, 
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { hasFormatting, matching, plainText, richOrPlain, trimRich } from '../../shared/richText'
 import type { AppSettings, LowerThirdAnimation, RichText, SavedLowerThirdLine } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { canSendCues, openCueMenu } from '../lib/sharing'
 import { LOWER_THIRD_HEADLINE_ID, MOD } from '../lib/shortcuts'
 import { selectLowerThirdStyle, useOperatorStore, type LowerThirdLine } from '../store'
@@ -9,6 +10,7 @@ import { LowerThirdGraphic } from './LowerThird'
 import { LowerThirdEditor } from './LowerThirdEditor'
 import type { FormatControl } from './FormatToolbar'
 import { RichTextEditor } from './RichTextEditor'
+import { ErrorNote } from './ui'
 
 const ANIMATIONS: { value: LowerThirdAnimation; label: string }[] = [
   { value: 'slide', label: 'Slide' },
@@ -49,7 +51,7 @@ export function LowerThirdPanel() {
   const queuePoints = useOperatorStore((s) => s.queueLowerThirdPoints)
   const [editorOpen, setEditorOpen] = useState(false)
   const [pasted, setPasted] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   /** Where Up and Down are in the history: -1 is the line being typed, kept in `typed` meanwhile. */
   const historyIndex = useRef(-1)
   const typed = useRef<LowerThirdLine>(draft)
@@ -62,7 +64,7 @@ export function LowerThirdPanel() {
 
   const save = (patch: Partial<AppSettings>) => {
     setError(null)
-    updateSettings(patch).catch((err) => setError(err instanceof Error ? err.message : String(err)))
+    updateSettings(patch).catch((err) => setError(reportError('Lower third', err)))
   }
 
   function type(patch: Partial<LowerThirdLine>) {
@@ -189,7 +191,7 @@ export function LowerThirdPanel() {
         </button>
       </div>
       {history.length > 0 && <p className="hint">↑ ↓ in a field: the last {history.length} lines used this service.</p>}
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
 
       <details className="lower-third-section" open>
         <summary>Saved lines ({saved.length})</summary>
@@ -275,7 +277,7 @@ export function LowerThirdPanel() {
             className="button"
             disabled={!pasted.trim()}
             onClick={() => {
-              queuePoints(pasted.split(/\r?\n/)).then(() => setPasted(''), (err) => setError(String(err)))
+              queuePoints(pasted.split(/\r?\n/)).then(() => setPasted(''), (err) => setError(reportError('Lower third', err)))
             }}
           >
             <ListPlus size={14} aria-hidden="true" /> Queue points

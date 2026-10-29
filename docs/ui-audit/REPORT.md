@@ -1,14 +1,70 @@
 # ServiceEx UI audit
 
-29 October 2026. The findings below (sections 1 to 3) record the app as it was first audited. The design tokens and shared components proposed in section 2 have since been applied to the toolbar, the Schedule, the Scripture panel and Settings; **[Tokens and shared components: before and after](#tokens-and-shared-components-before-and-after)** has the numbers. The layout at laptop sizes has since been fixed too; **[Layout at laptop sizes: before and after](#layout-at-laptop-sizes-before-and-after)** has the results of the automated layout check.
+29 October 2026. The findings below (sections 1 to 3) record the app as it was first audited. The design tokens and shared components proposed in section 2 have since been applied to the toolbar, the Schedule, the Scripture panel and Settings; **[Tokens and shared components: before and after](#tokens-and-shared-components-before-and-after)** has the numbers. The layout at laptop sizes has since been fixed too; **[Layout at laptop sizes: before and after](#layout-at-laptop-sizes-before-and-after)** has the results of the automated layout check. Empty, error, loading and toast states have since been finished; **[Unfinished states: before and after](#unfinished-states-before-and-after)** has what changed and the new state check.
 
-**How it was made.** `node scripts/ui-audit.ts` builds the main process and serves the renderer with Vite. It then runs the app with Playwright on a fresh temporary data folder, so the real library is never opened, and seeds invented sample data: 6 songs, 2 services, 6 generated gradient backgrounds, and a Psalm 23 item from the bundled KJV. For each state it saves a screenshot and measures every visible element (fonts, colors, spacing, radius, targets, contrast). It also scans the stylesheets (`src/styles/tokens.css`, `src/index.css`, `src/components/ui/ui.css`) and the components directly. It also checks the layout of every screen (see below) and exits with an error if one fails. Its outputs are `metrics.json` (with a `totals.headline` summary), `static.json` and `layout.json`, next to 120 PNGs in this folder: the app states at three sizes plus `50-ui-kit.png`, the dev UI kit. Re-run the script to regenerate everything; it keeps this report, and the folder is git-ignored except for the report.
+**How it was made.** `node scripts/ui-audit.ts` builds the main process and serves the renderer with Vite. It then runs the app with Playwright on a fresh temporary data folder, so the real library is never opened, and seeds invented sample data: 6 songs, 2 services, 6 generated gradient backgrounds, and a Psalm 23 item from the bundled KJV. For each state it saves a screenshot and measures every visible element (fonts, colors, spacing, radius, targets, contrast). It also scans the stylesheets (`src/styles/tokens.css`, `src/index.css`, `src/components/ui/ui.css`) and the components directly. It also checks the layout of every screen (see below) and exits with an error if one fails. It also checks the state of every screen (see below). Its outputs are `metrics.json` (with a `totals.headline` summary), `static.json`, `layout.json` and `states.json`, next to 150 PNGs in this folder: the app states at three sizes plus `50-ui-kit.png`, the dev UI kit. Re-run the script to regenerate everything; it keeps this report, and the folder is git-ignored except for the report.
 
 **Caveats.**
 - Plan gating is off (`ENFORCE_ENTITLEMENTS = false`), so every screen is reachable.
 - A dev build shows the "AI developer key" Settings section, which customers never see.
 - The signed-in account, device chips, transfers and Inbox are invented data injected into the renderer's stores. Sharing itself stayed off, so nothing was advertised on the network.
 - Counts in sections 1 to 3 are element instances summed over every screen at the two sizes audited then (1280 and 1920). They are useful for proportions, not as absolute figures.
+
+## Unfinished states: before and after
+
+**The check.** Every screen is now also checked for its state, saved to `states.json`. The script fails (exit code 1) when:
+- text written for developers is visible: a stack frame, "Cannot read properties of …", "… is not a function", an "Error invoking remote method" wrapper, a minified React error;
+- a toast is drawn in a live red (`--live`, `--live-strong` or `--live-text`).
+
+It also lists, without failing, any line that is only "Loading…" and any old one line `.empty` state still showing, and it records each screen's empty states (title and buttons), error notes (and whether they have Show details) and toasts (tone and text). The static scan adds `liveRedInStatusRules`: toast, error and warning rules in the stylesheets that use a live red token.
+
+| Measure | Before | After |
+|---|---|---|
+| Screens with developer text on screen | 3 (`30-error-panel-crashed` at each size): "Cannot read properties of null (reading 'find')" | **0 of 125** |
+| Toasts in the live red | none drawn as toasts; the floating sharing message was grey, its error text rose | **0**; toasts are info blue, success green, warning amber or error rose, each with its tint (`32-toast-*`) |
+| Stylesheet rules for errors or warnings using a live red | 2 (`.duplicate-flag` and `.import-problems summary` used `--live`) | **0** |
+| "Loading…" that never resolves | Plans and Credits (order history and prices), with no server | **0**; skeletons, then a timeout after 20 seconds |
+| One line `.empty` states in the five areas asked for (songs, schedule, media, scripture, Inbox) | 6 ("No songs yet.", "No songs match.", the media line, the media picker line, the Inbox line, scripture's grey "try fewer words") | **0** |
+| One line `.empty` states elsewhere | – | 3 (Slides, Preview, Presentations; see Still to watch) |
+| Contrast failures on enabled controls (unique) | 3 | **2**, the white text on user-chosen teal and amber section labels. The new LIVE and PREVIEW tags in the schedule failed at first (3.5 to 4.25 on their tints) and now use the solid live and accent fills (4.65 and 4.56) |
+| Click targets under 32 px (unique) | 74 | 84 over 125 screens (was 96). None are in the components changed here: all are the legacy controls listed under What is left, such as the format toolbar, highlight swatches, splitters and the song list's hover actions |
+
+**What changed.**
+- **Empty states** use EmptyState, each with one short line, one primary action and, where it helps, a sample action:
+  - *Songs, first run:* "Your song library is empty", **Add your first song**, and *Add a sample song* (Amazing Grace, public domain; a second click opens the one already added). A search with no match says what was searched and offers Clear search.
+  - *Schedule, no service:* "No service yet", **New service**, and *Create a sample service* (a welcome slide, Amazing Grace and Psalm 23 in the default translation). *Empty service:* "Nothing in this service yet", **Browse songs** (opens the library's Songs tab, unfolding the library if it was collapsed), and *Add a welcome slide*.
+  - *Media library:* "No backgrounds yet" with **Import media**; a search or tag with no match offers Clear search. The background picker has the same states.
+  - *Scripture, no results:* "No verses found for “…”" (or no passages, for Search by meaning). The primary action is the change most likely to find something: Search the whole Bible when a testament or book filter is set, else Search every version when more than one is installed, else Clear search. The sample action is *Try John 3:16*.
+  - *Inbox:* "Your Inbox is empty", **Import a package**, and *Sharing settings*. The header's Import package button is hidden while the empty state offers it.
+  - *Song editor, song deleted while open (29):* "This song is no longer in the library" with **Close the editor**, instead of a red line.
+- **Errors** go through `describeError` (`src/lib/errors.ts`):
+  - Known codes have their own sentence: file system (ENOENT, EACCES/EPERM, ENOSPC, EROFS, EBUSY, EEXIST, EMFILE), network (EADDRINUSE, ENOTFOUND, ECONNREFUSED, timeouts, "Failed to fetch"), SQLite (BUSY, FULL, READONLY, CORRUPT, CONSTRAINT), and the ServiceEx server's codes, whose sentences were already in `shared/serviceErrors.ts`.
+  - Developer text (TypeErrors, React errors, JSON parse errors, stack frames, "Bad …" from the font parser) becomes "Something went wrong. Try again; if it keeps happening, copy the diagnostics for support." A sentence ServiceEx itself wrote is shown as it is, without Electron's "Error invoking remote method" wrapper.
+  - The original text and stack go behind **Show details** (the new ErrorNote and DetailsToggle components), and into the **diagnostics report** with the panel's name. About 100 places that printed `err.message` or its own stripped copy now go through it, in 34 components and 6 libraries.
+- **Diagnostics report** (`src/lib/diagnostics.ts`): the version, system, Electron and Chrome versions, locale, online or not, window size, then the last 50 problems with their technical details. **Copy diagnostics** puts it on the clipboard; nothing is sent anywhere. It is in the panel crash fallback and in a new Settings section, Diagnostics. The main process answers `log:appInfo` for the version and system.
+- **Panel crash fallback (30):** a centred error state, "The Schedule panel stopped working" (named), "Your service, songs and what is on the screen are safe. Reload the panel to carry on.", **Reload panel** and **Copy diagnostics**, and the exception only behind Show details. The toolbar's fallback is one row, so a crash there does not push the panels down.
+- **Plans and Credits and Account** never sit on "Loading…":
+  - A skeleton shows while waiting. After **20 seconds** without an answer: "Could not reach the server." with **Retry** (`27-plans-timeout`).
+  - Offline (the browser's `navigator.onLine`): "This computer is offline. Prices show once it is back on the internet. Everything else in ServiceEx keeps working offline." with Retry. Coming back online retries by itself. Prices already loaded stay, with a note that buying needs the internet, and Buy is disabled.
+  - Account shows a skeleton until the main process answers, and the same timeout with Retry. Offline, a note says the licence, hours and allowance are as last confirmed; Refresh is disabled. Sign in, Send code, Refresh and Deactivate give up after 20 seconds with the same sentence, instead of staying busy.
+  - A build with no server address says so once, without Retry.
+- **Toasts:** the floating sharing message is now the Toast component, with a tone per message (success for sent, paired, received and saved; warning for declined and stopped transfers; error for failures, with Show details) and a dismiss button. Errors stay 12 seconds, warnings 8, the rest 5. Each tone tints the toast and colors its edge and icon; none uses `--live`.
+- **Schedule panel** (11, 12, `13-schedule-empty`):
+  - Every row is 40 px, whatever its type.
+  - A grip handle at the start of each row shows it can be dragged, stronger on hover. The drop line no longer moves the rows.
+  - The type icon (song, scripture, announcement, presentation thumbnail) sits in one 28 px box, so titles line up.
+  - The item in the preview has an accent bar and tint and a PREVIEW tag. The item on the projector has the live red bar and a LIVE tag; both are read out to screen readers.
+  - Remove (×) appears on hover, focus and the selected row (always on touch screens), so the list reads as titles.
+
+**Screens added:** `01-first-run-media`, `08-scripture-no-results`, `13-schedule-empty`, `23-inbox-empty`, `26-account-offline`, `27-plans-offline`, `32-toast-success`, `32-toast-warning` and `32-toast-error` at each size, and `27-plans-loading` and `27-plans-timeout` at 1280 (the timeout waits the full 20 seconds). The layout check passed on all 125 screens.
+
+**Still to watch.**
+- The Slides panel ("Select a song or look up scripture to see its slides."), the Preview box ("Select something to preview") and the empty Presentations library still use one grey line. They were not in this round; the state check lists them.
+- Media has no sample action: adding sample backgrounds needs the main process to accept generated files, which it does not yet.
+- Offline is what the browser reports. A network that is up but cannot reach the server shows as the 20 second timeout instead.
+- In `27-plans-timeout` the order history shows "You are signed out": the audit invents the signed in account in the renderer only, so the real main process answers as signed out.
+- Some error sentences shown in status lines (the translation note under Live and Preview, Scripture display) have no Show details; their details still go to the diagnostics report.
+- One existing test, `electron/sharing/sharing.test.ts` (a declined transfer), fails now and then when the whole suite runs. It is timing dependent and fails the same way without these changes.
 
 ## Layout at laptop sizes: before and after
 
@@ -110,23 +166,25 @@ Each operator screen is saved at `@1280` (1280×720), `@1366` (1366×768) and `@
 
 | # | Screen | Notes |
 |---|---|---|
-| 01 | First run, no data | Fresh data folder; the bundled Bible and built-in themes are present |
+| 01 | First run, no data | Fresh data folder; the bundled Bible and built-in themes are present. `01-first-run-media`: the Media tab, empty |
 | 02 | Main, empty | The newest service is open with no items |
 | 03–05 | Song list, Add song modal, Song editor | |
-| 06–08 | Scripture: reference, word search, unknown book | 08 is a "no results" error state |
+| 06–08 | Scripture: reference, word search, unknown book, no results | `08-scripture-no-results`: a word search with no match |
 | 09–10 | Media library, Presentations (empty) | |
 | 11–13 | Main with a service loaded, with a slide live, and on Black | |
+| 13 | Schedule, empty service | `13-schedule-empty`: the second seeded service, with nothing in it |
 | 14 | Schedule: New service modal | |
 | 15 | Theme editor | |
-| 16 | Settings (top) | Every section is also cropped on its own: `31-settings-01…20` |
-| 17, 27 | Plans and Credits | 17 is this build (no server); 27 is signed in |
+| 16 | Settings (top) | Every section is also cropped on its own: `31-settings-01…21` |
+| 17, 27 | Plans and Credits | 17 is this build (no server); 27 is signed in; `27-plans-offline`; `27-plans-loading` and `27-plans-timeout` (1280 only, a server that never answers) |
 | 18–19 | Sermons, Stream | |
 | 20–21 | **Help** | There is no Help screen. The command palette is the nearest thing |
 | 21 | More menu | `21-more-menu`: layouts, Stage Display, Stream, Sermons, Themes |
-| 22–23 | Device chips and transfers (in the status popover); Inbox open | |
-| 24–26 | Account: unconfigured, signed out, signed in | |
+| 22–23 | Device chips and transfers (in the status popover); Inbox open | `23-inbox-empty`: the Inbox with nothing in it |
+| 24–26 | Account: unconfigured, signed out, signed in | `26-account-offline`: signed in, offline |
 | 28 | Main, light appearance | |
 | 29–30 | Errors: song deleted while open; a panel that crashed | |
+| 32 | Toasts | `32-toast-success`, `-warning`, `-error` |
 | 40–42 | Output window (scripture, song), stage display | |
 
 ## Biggest problems first

@@ -1,16 +1,18 @@
-import { Trash2, Upload } from 'lucide-react'
+import { ImagePlus, SearchX, Trash2, Upload } from 'lucide-react'
 import { useState } from 'react'
 import type { MediaItem } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { matchesSearch } from '../lib/media'
 import { useMediaLibrary } from '../lib/useMediaLibrary'
 import { useOperatorStore } from '../store'
 import { MediaGrid } from './MediaGrid'
+import { Button, EmptyState, ErrorNote } from './ui'
 
 function MediaDetails({ item, onClose }: { item: MediaItem; onClose(): void }) {
   const [name, setName] = useState(item.name)
   const [tags, setTags] = useState(item.tags.join(', '))
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const mediaChanged = useOperatorStore((s) => s.mediaChanged)
   const dirty = name.trim() !== item.name || tags !== item.tags.join(', ')
 
@@ -20,7 +22,7 @@ function MediaDetails({ item, onClose }: { item: MediaItem; onClose(): void }) {
       setError(null)
       mediaChanged()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Media', err))
     }
   }
 
@@ -36,7 +38,7 @@ function MediaDetails({ item, onClose }: { item: MediaItem; onClose(): void }) {
         </span>
         <input className="input" placeholder="loops, christmas" value={tags} onChange={(e) => setTags(e.target.value)} />
       </label>
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
       {confirmingDelete && <p className="hint">Slides and custom themes using it go back to their theme’s background.</p>}
       <div className="media-details-actions">
         {confirmingDelete ? (
@@ -85,7 +87,7 @@ function MediaDetails({ item, onClose }: { item: MediaItem; onClose(): void }) {
 }
 
 export function MediaPanel() {
-  const { items, error, importFiles } = useMediaLibrary()
+  const { items, loaded, error, importFiles } = useMediaLibrary()
   const [search, setSearch] = useState('')
   const [tag, setTag] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -115,13 +117,39 @@ export function MediaPanel() {
         </div>
       )}
 
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
 
       <div className="media-scroll">
         {shown.length > 0 ? (
           <MediaGrid items={shown} selectedId={selectedId} onSelect={(item) => setSelectedId(item.id === selectedId ? null : item.id)} draggable shareable />
+        ) : !loaded ? null : items.length === 0 ? (
+          <EmptyState
+            icon={<ImagePlus size={20} />}
+            title="No backgrounds yet"
+            description="Import pictures, or MP4 and WebM loops, to put behind songs, scripture and announcements."
+            action={
+              <Button variant="primary" icon={<Upload size={15} aria-hidden="true" />} onClick={() => importFiles()}>
+                Import media
+              </Button>
+            }
+          />
         ) : (
-          <p className="empty">{items.length === 0 ? 'Import images or MP4/WebM loops to use as backgrounds.' : 'Nothing matches.'}</p>
+          <EmptyState
+            compact
+            icon={<SearchX size={20} />}
+            title="Nothing matches"
+            description={tag ? `Nothing tagged “${tag}” matches the search.` : 'No name or tag matches the search.'}
+            action={
+              <Button
+                onClick={() => {
+                  setSearch('')
+                  setTag(null)
+                }}
+              >
+                Clear search
+              </Button>
+            }
+          />
         )}
       </div>
 

@@ -27,6 +27,7 @@ import {
   Save,
   Sparkles,
   Square,
+  Stethoscope,
   Sun,
   SunMoon,
   Trash2,
@@ -60,6 +61,8 @@ import { HIGHLIGHT_COLORS, HIGHLIGHT_KINDS } from '../../shared/highlights'
 import { can, hasFeature, type FeatureKey } from '../../shared/features'
 import { createLayout, deleteLayout, duplicateLayout, LAYOUT_PANELS, renameLayout, updateLayout } from '../../shared/layouts'
 import { DEFAULT_SHARE_PORT, formatBytes, parseShareAddress } from '../../shared/sharing'
+import { recentProblems } from '../lib/diagnostics'
+import { describeError, reportError, type ErrorLike } from '../lib/errors'
 import { useOperatorStore } from '../store'
 import { dspOf, rememberDevice } from '../lib/listener'
 import {
@@ -84,8 +87,9 @@ import { ScriptureDisplayForm } from './ScriptureDisplay'
 import { ThemeDefaultsForm } from './ThemeEditor'
 import { UpgradeNote } from './UpgradeNote'
 import { AccountSection, BalanceLines } from './AccountSection'
+import { CopyDiagnosticsButton } from './PanelBoundary'
 import { useAccount } from '../lib/account'
-import { Button, Card, IconButton, Input, PanelHeader, Select, SegmentedControl, Toggle } from './ui'
+import { Button, Card, ErrorNote, IconButton, Input, PanelHeader, SegmentedControl, Select, Toggle } from './ui'
 
 /** The church's name and the footer line for exports, saved when the field is left. */
 function ChurchProfileFields() {
@@ -516,7 +520,7 @@ function ListenerSection() {
   const [advice, setAdvice] = useState<SignalAdvice[]>([])
   const [opened, setOpened] = useState<MicDevice | null>(null)
   const [micState, setMicState] = useState<MicState | null>(null)
-  const [micError, setMicError] = useState<string | null>(null)
+  const [micError, setMicError] = useState<ErrorLike | null>(null)
   /** 100 ms chunks recorded so far while the audio test records; null when not recording. */
   const [recordedChunks, setRecordedChunks] = useState<number | null>(null)
   const [recording, setRecording] = useState<ArrayBuffer | null>(null)
@@ -591,7 +595,7 @@ function ListenerSection() {
       },
       (error: unknown) => {
         if (cancelled) return
-        setMicError(error instanceof Error ? error.message : String(error))
+        setMicError(reportError('Settings', error))
         setTesting(false)
         chunks.current = null
         setRecordedChunks(null)
@@ -816,7 +820,7 @@ function ListenerSection() {
           ))}
         </ul>
       )}
-      {micError && <p className="error">{micError}</p>}
+      <ErrorNote error={micError} />
 
       <div className="settings-row">
         {recordedChunks === null ? (
@@ -1101,7 +1105,7 @@ function PresentationsSection() {
   const [status, setStatus] = useState<PresentationEngineStatus | null>(null)
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
 
   useEffect(() => {
     window.api.presentations.engineStatus().then(setStatus, console.error)
@@ -1115,7 +1119,7 @@ function PresentationsSection() {
       const done = await window.api.presentations.testConversion()
       setResult(`${ENGINE_LABELS[done.engine]} converted ${done.slides} slides in ${(done.ms / 1000).toFixed(1)} s.`)
     } catch (err) {
-      setError(err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(err))
+      setError(reportError('Settings', err))
     } finally {
       setTesting(false)
     }
@@ -1133,14 +1137,14 @@ function PresentationsSection() {
         />
         <span className="hint">Auto uses desktop PowerPoint when it is installed, otherwise LibreOffice. PDFs and images need neither.</span>
       </div>
-      {status && (status.active ? <p className="hint">Active: {ENGINE_LABELS[status.active]}</p> : <p className="error">{status.message}</p>)}
+      {status && (status.active ? <p className="hint">Active: {ENGINE_LABELS[status.active]}</p> : <ErrorNote error={describeError(status.message)} />)}
       <div className="settings-row">
         <Button disabled={testing || !status?.active} onClick={test}>
           <RefreshCw size={15} aria-hidden="true" /> {testing ? 'Converting…' : 'Test conversion'}
         </Button>
         {result && <span className="hint">{result}</span>}
       </div>
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
       {status?.active === 'powerpoint-mac' && (
         <p className="hint">
           The first conversion asks to let ServiceEx control PowerPoint. If it was turned down, allow it in System Settings, Privacy and
@@ -1188,7 +1192,7 @@ function SharingSection() {
   const updateSettings = useOperatorStore((s) => s.updateSettings)
   const status = useSharingStore((s) => s.status)
   const [name, setName] = useState(settings.sharingDeviceName)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
 
   useEffect(() => setName(settings.sharingDeviceName), [settings.sharingDeviceName])
 
@@ -1197,7 +1201,7 @@ function SharingSection() {
     try {
       await action()
     } catch (err) {
-      setError(errorText(err))
+      setError(reportError('Settings', err))
     }
   }
 
@@ -1217,7 +1221,7 @@ function SharingSection() {
       <Toggle checked={settings.sharingEnabled} onChange={(e) => run(() => updateSettings({ sharingEnabled: e.target.checked }))}>
         Share with other ServiceEx computers on this network
       </Toggle>
-      {status?.error && <p className="error">{status.error}</p>}
+      <ErrorNote error={status?.error && describeError(status.error)} />
       {settings.sharingEnabled && status?.port && (
         <p className="hint">
           On as {status.deviceName}
@@ -1258,7 +1262,7 @@ function SharingSection() {
         live.
       </p>
 
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
       <p className="hint">Paired computers, device chips and cues are under Devices below.</p>
     </Section>
   )
@@ -1281,14 +1285,14 @@ function LayoutsSection() {
   const updateSettings = useOperatorStore((s) => s.updateSettings)
   const [openId, setOpenId] = useState<string | null>(null)
   const [names, setNames] = useState<Record<string, string>>({})
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
 
   const save = (action: () => Layout[]) => {
     setError(null)
     try {
-      updateSettings({ layouts: action() }).catch((err) => setError(errorText(err)))
+      updateSettings({ layouts: action() }).catch((err) => setError(reportError('Settings', err)))
     } catch (err) {
-      setError(errorText(err))
+      setError(reportError('Settings', err))
     }
   }
 
@@ -1310,7 +1314,7 @@ function LayoutsSection() {
                     name="active-layout"
                     aria-label={`Use ${layout.name}`}
                     checked={layout.id === activeId}
-                    onChange={() => switchLayout(layout.id).catch((err) => setError(errorText(err)))}
+                    onChange={() => switchLayout(layout.id).catch((err) => setError(reportError('Settings', err)))}
                   />
                 </label>
                 <Input
@@ -1429,7 +1433,7 @@ function LayoutsSection() {
         >
           <Plus size={15} aria-hidden="true" /> New layout
         </Button>
-        {error && <p className="error">{error}</p>}
+        <ErrorNote error={error} />
       </Section>
     </div>
   )
@@ -1444,7 +1448,7 @@ function DevicesSection() {
   const [aliases, setAliases] = useState<Record<string, string>>({})
   const [tests, setTests] = useState<Record<string, { busy: boolean; text: string; ok: boolean }>>({})
   const [forgetting, setForgetting] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const status = useSharingStore((s) => s.status)
   const publicNetworks = status?.publicNetworks ?? []
   // The last address typed stays in the field, for pairing again or with the next computer on that network.
@@ -1471,7 +1475,7 @@ function DevicesSection() {
     try {
       await action()
     } catch (err) {
-      setError(errorText(err))
+      setError(reportError('Settings', err))
     }
   }
 
@@ -1639,7 +1643,7 @@ function DevicesSection() {
           </ul>
         )}
       </div>
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
       <details className="troubleshooting" id={TROUBLESHOOTING_ID}>
         <summary>Cannot see or reach the other computer?</summary>
         <ol>
@@ -1696,12 +1700,12 @@ function LibrarySyncSection() {
   const settings = useOperatorStore((s) => s.settings)
   const updateSettings = useOperatorStore((s) => s.updateSettings)
   const library = useSharingStore((s) => s.library)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
 
   if (!hasFeature('sharing.librarySync')) return null
   const run = (action: () => Promise<unknown>) => {
     setError(null)
-    action().catch((err) => setError(errorText(err)))
+    action().catch((err) => setError(reportError('Settings', err)))
   }
   const options = BANDWIDTH.some((b) => b.value === settings.sharingBandwidthKbps)
     ? BANDWIDTH
@@ -1737,8 +1741,8 @@ function LibrarySyncSection() {
           {library?.paused ?? (library?.lastRunAt ? `Last synced ${new Date(library.lastRunAt).toLocaleString()}` : 'Not synced yet')}
         </span>
       </div>
-      {library?.error && <p className="error">{library.error}</p>}
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={library?.error && describeError(library.error)} />
+      <ErrorNote error={error} />
       {files.length > 0 && (
         <ul className="sync-files">
           {files.map((file) => (
@@ -1768,7 +1772,7 @@ function LivePowerPointSection() {
   const enabled = useOperatorStore((s) => s.settings.presentationLivePowerPoint)
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<LivePowerPointTestResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
 
   async function test() {
     setTesting(true)
@@ -1777,7 +1781,7 @@ function LivePowerPointSection() {
     try {
       setResult(await window.api.livePowerPoint.test())
     } catch (err) {
-      setError(err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(err))
+      setError(reportError('Settings', err))
     } finally {
       setTesting(false)
     }
@@ -1799,7 +1803,7 @@ function LivePowerPointSection() {
           </span>
         )}
       </div>
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
       {result && (
         <>
           <p className="hint">Display: {result.display}</p>
@@ -1857,6 +1861,24 @@ function QuotesSection() {
   )
 }
 
+/** The diagnostics report, for support: what went wrong since the window opened, with the technical details. */
+function DiagnosticsSection() {
+  const [count, setCount] = useState(() => recentProblems().length)
+  // The count is read when the section is drawn and again on each copy; problems are rare enough not to poll.
+  return (
+    <Section icon={<Stethoscope size={16} aria-hidden="true" />} title="Diagnostics">
+      <p className="hint">
+        If something goes wrong, copy the diagnostics and send them to ServiceEx support. They list this version, the system, and the
+        problems since this window opened with their technical details. Nothing is sent by itself.
+      </p>
+      <div className="settings-row" onClickCapture={() => setTimeout(() => setCount(recentProblems().length))}>
+        <CopyDiagnosticsButton />
+        <span className="hint">{count === 0 ? 'No problems recorded' : `${count} problem${count === 1 ? '' : 's'} recorded`}</span>
+      </div>
+    </Section>
+  )
+}
+
 export function SettingsPanel() {
   const settings = useOperatorStore((s) => s.settings)
   const updateSettings = useOperatorStore((s) => s.updateSettings)
@@ -1864,7 +1886,7 @@ export function SettingsPanel() {
   const loadSettings = useOperatorStore((s) => s.loadSettings)
   const [displays, setDisplays] = useState<DisplayInfo[]>([])
   const [message, setMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
 
   useEffect(() => {
     window.api.settings.listDisplays().then(setDisplays, console.error)
@@ -1877,7 +1899,7 @@ export function SettingsPanel() {
       await action()
       if (done) setMessage(done)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Settings', err))
     }
   }
 
@@ -1888,7 +1910,7 @@ export function SettingsPanel() {
     <section className="panel settings-panel">
       <PanelHeader title="Settings" actions={<IconButton label="Close settings" tooltip="Close" icon={<X size={18} />} onClick={() => openSettings(false)} />} />
 
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
       {message && <p className="hint">{message}</p>}
 
       <AccountSection />
@@ -2047,6 +2069,8 @@ export function SettingsPanel() {
           </span>
         </div>
       </Section>
+
+      <DiagnosticsSection />
     </section>
   )
 }

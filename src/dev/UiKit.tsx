@@ -8,6 +8,7 @@ import {
   Card,
   Chip,
   EmptyState,
+  ErrorNote,
   IconButton,
   Input,
   Modal,
@@ -15,6 +16,7 @@ import {
   SegmentedControl,
   Select,
   Tabs,
+  Skeleton,
   Toast,
   ToastStack,
   Toggle,
@@ -124,7 +126,7 @@ export default function UiKit() {
       </header>
 
       <nav className="kit-nav" aria-label="Sections">
-        {['tokens', 'button', 'icon-button', 'input', 'select', 'toggle', 'tabs', 'card', 'chip', 'modal', 'toast', 'empty-state', 'panel-header'].map((id) => (
+        {['tokens', 'button', 'icon-button', 'input', 'select', 'toggle', 'tabs', 'card', 'chip', 'modal', 'toast', 'empty-state', 'error-note', 'skeleton', 'panel-header'].map((id) => (
           <a key={id} href={`#/ui-kit`} onClick={(e) => (e.preventDefault(), document.getElementById(id)?.scrollIntoView())}>
             {id}
           </a>
@@ -408,8 +410,14 @@ export default function UiKit() {
       <Section id="toast" title="Toast">
         <div className="kit-stack">
           {TOAST_TONES.map((tone) => (
-            <Toast key={tone} tone={tone} title={`${tone[0].toUpperCase()}${tone.slice(1)}`} onDismiss={() => undefined}>
-              Saved Sunday morning.serviceex to the Desktop.
+            <Toast
+              key={tone}
+              tone={tone}
+              title={`${tone[0].toUpperCase()}${tone.slice(1)}`}
+              details={tone === 'error' ? 'listen EADDRINUSE: address already in use 0.0.0.0:47800' : undefined}
+              onDismiss={() => undefined}
+            >
+              {tone === 'error' ? 'Another program is already using that network port.' : 'Saved Sunday morning.serviceex to the Desktop.'}
             </Toast>
           ))}
         </div>
@@ -434,13 +442,14 @@ export default function UiKit() {
           <Card>
             <EmptyState
               icon={<CalendarPlus size={20} />}
-              title="No service open"
-              description="Create a service to start a run list."
+              title="No service yet"
+              description="A service is the run list for one gathering."
               action={
                 <Button variant="primary" icon={<Plus size={15} aria-hidden="true" />}>
                   New service
                 </Button>
               }
+              secondaryAction={<Button variant="ghost">Create a sample service</Button>}
             />
           </Card>
           <Card>
@@ -450,11 +459,33 @@ export default function UiKit() {
             <EmptyState
               tone="error"
               icon={<TriangleAlert size={20} />}
-              title="This panel stopped working"
-              description="Your service is safe. Reload the panel to carry on."
-              action={<Button>Reload panel</Button>}
+              title="The Schedule panel stopped working"
+              description="Your service, songs and what is on the screen are safe. Reload the panel to carry on."
+              action={<Button variant="primary">Reload panel</Button>}
+              secondaryAction={<Button>Copy diagnostics</Button>}
               details="TypeError: Cannot read properties of null (reading 'find')"
             />
+          </Card>
+        </div>
+      </Section>
+
+      <Section id="error-note" title="ErrorNote">
+        <div className="kit-grid">
+          <ErrorNote error="That song is no longer in the library." />
+          <ErrorNote
+            error={{ message: 'A file ServiceEx needs could not be found. It may have been moved, renamed or deleted.', details: "ENOENT: no such file or directory, open '/Media/loop.mp4'" }}
+            action={<Button size="sm">Retry</Button>}
+          />
+        </div>
+      </Section>
+
+      <Section id="skeleton" title="Skeleton">
+        <div className="kit-grid">
+          <Card>
+            <Skeleton rows={4} tall label="Loading prices" />
+          </Card>
+          <Card>
+            <Skeleton rows={3} label="Loading the account" />
           </Card>
         </div>
       </Section>

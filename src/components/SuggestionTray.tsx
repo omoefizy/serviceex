@@ -1,5 +1,6 @@
 import { BookOpen, Eye, ListPlus, Pencil, PanelBottom, Pin, Send, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { pinStatement, useListener } from '../lib/listener'
 import { useSuggestions, type ScriptureSuggestion, type StatementSuggestion } from '../lib/scriptureDetection'
 import { canSendCues, openCueMenu, useSharingStore } from '../lib/sharing'
@@ -7,6 +8,7 @@ import { focusLowerThirdHeadline } from '../lib/shortcuts'
 import { quotePayload } from '../lib/slides'
 import { useOperatorStore } from '../store'
 import { QuoteModal } from './QuoteModal'
+import { ErrorNote } from './ui'
 
 /** A heard verse as a cue: its passage, word for word. */
 const verseCue = (s: ScriptureSuggestion) => ({ kind: 'verse' as const, title: s.passage.title, text: s.passage.verses.map((v) => v.text).join('\n'), verses: s.passage.verses })
@@ -37,7 +39,7 @@ export function SuggestionTray() {
   /** Statements pinned to the sermon being recorded, so the button says so. */
   const [pinned, setPinned] = useState<Set<number>>(new Set())
   const recording = useListener((st) => st.sermon)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   // Re-renders when sharing turns on or off, for Send to device.
   useSharingStore((st) => st.status?.enabled)
   const sendable = canSendCues()
@@ -65,7 +67,7 @@ export function SuggestionTray() {
       await addToSchedule('announcement', null, quotePayload(s.text, speaker))
       setScheduled((current) => new Set(current).add(s.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Suggestions', err))
     }
   }
 
@@ -76,7 +78,7 @@ export function SuggestionTray() {
       <span className="suggestion-tray-title">
         <BookOpen size={14} aria-hidden="true" /> Heard
       </span>
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
       <ul className="suggestion-list">
         {suggestions.map((s) =>
           s.type === 'scripture' ? (

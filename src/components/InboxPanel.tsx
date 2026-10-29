@@ -1,9 +1,11 @@
-import { Check, Eye, EyeOff, FileText, Film, Image, Music, Package, PackageOpen, Presentation, X, type LucideIcon } from 'lucide-react'
+import { Check, Eye, EyeOff, FileText, Film, Image, Inbox, Music, Package, PackageOpen, Presentation, Settings, X, type LucideIcon } from 'lucide-react'
 import { useState } from 'react'
 import { formatBytes } from '../../shared/sharing'
 import type { ConflictChoice, InboxConflict, InboxItem, InboxPreview, ShareKind } from '../../shared/types'
-import { applyAcceptResult, errorText, showMessage, useSharingStore } from '../lib/sharing'
+import { reportError, type ErrorLike } from '../lib/errors'
+import { applyAcceptResult, showError, showMessage, useSharingStore } from '../lib/sharing'
 import { useOperatorStore } from '../store'
+import { Button, EmptyState, ErrorNote } from './ui'
 
 const KIND_ICONS: Record<ShareKind, LucideIcon> = {
   package: Package,
@@ -146,7 +148,7 @@ function InboxRow({ item }: { item: InboxItem }) {
   const [preview, setPreview] = useState<InboxPreview | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const [conflicts, setConflicts] = useState<InboxConflict[] | null>(null)
   const Icon = KIND_ICONS[item.kind]
 
@@ -160,7 +162,7 @@ function InboxRow({ item }: { item: InboxItem }) {
     try {
       setPreview(await window.api.sharing.preview(item.id))
     } catch (err) {
-      setError(errorText(err))
+      setError(reportError('Inbox', err))
     }
   }
 
@@ -177,9 +179,9 @@ function InboxRow({ item }: { item: InboxItem }) {
         return
       }
       await applyAcceptResult(result)
-      showMessage(result.message)
+      showMessage(result.message, 'success')
     } catch (err) {
-      setError(errorText(err))
+      setError(reportError('Inbox', err))
     } finally {
       setBusy(false)
     }
@@ -210,13 +212,13 @@ function InboxRow({ item }: { item: InboxItem }) {
           className="button"
           disabled={busy}
           title="Delete it without adding it anywhere"
-          onClick={() => window.api.sharing.reject(item.id).catch((err) => setError(errorText(err)))}
+          onClick={() => window.api.sharing.reject(item.id).catch((err) => setError(reportError('Inbox', err)))}
         >
           <X size={14} aria-hidden="true" /> Reject
         </button>
       </div>
       {previewing && preview && <Preview preview={preview} />}
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
       {conflicts && <ConflictDialog item={item} conflicts={conflicts} onDone={(choices) => accept(choices)} onCancel={() => setConflicts(null)} />}
     </li>
   )
@@ -230,9 +232,9 @@ export function InboxPanel() {
   async function importPackage() {
     try {
       const item = await window.api.sharing.importPackage()
-      if (item) showMessage(`${item.name} is in the Inbox. Preview it, then Accept.`)
+      if (item) showMessage(`${item.name} is in the Inbox. Preview it, then Accept.`, 'success')
     } catch (err) {
-      showMessage(errorText(err), true)
+      showError(err, 'Inbox')
     }
   }
 
@@ -240,12 +242,37 @@ export function InboxPanel() {
     <div className="alerts-panel inbox-panel" role="dialog" aria-label="Inbox">
       <header className="inbox-header">
         <strong>Inbox</strong>
-        <button type="button" className="button" onClick={importPackage} title="Open a .serviceex file, from a USB drive say">
-          <PackageOpen size={14} aria-hidden="true" /> Import package…
-        </button>
+        {/* An empty Inbox offers this in its empty state instead. */}
+        {items.length > 0 && (
+          <button type="button" className="button" onClick={importPackage} title="Open a .serviceex file, from a USB drive say">
+            <PackageOpen size={14} aria-hidden="true" /> Import package…
+          </button>
+        )}
       </header>
       {items.length === 0 ? (
-        <p className="empty">Nothing received. Items other computers send you appear here.</p>
+        <EmptyState
+          compact
+          icon={<Inbox size={20} />}
+          title="Your Inbox is empty"
+          description="Songs, services and media that other ServiceEx computers send you arrive here, to preview before you accept them."
+          action={
+            <Button variant="primary" icon={<PackageOpen size={15} aria-hidden="true" />} onClick={() => void importPackage()}>
+              Import a package
+            </Button>
+          }
+          secondaryAction={
+            <Button
+              variant="ghost"
+              icon={<Settings size={15} aria-hidden="true" />}
+              onClick={() => {
+                useSharingStore.setState({ inboxOpen: false })
+                useOperatorStore.getState().openSettings(true)
+              }}
+            >
+              Sharing settings
+            </Button>
+          }
+        />
       ) : (
         <ul className="inbox-list">
           {items.map((item) => (

@@ -3,6 +3,7 @@ import {
   CalendarPlus,
   ChevronLeft,
   ChevronRight,
+  GripVertical,
   ListPlus,
   Megaphone,
   Music,
@@ -11,21 +12,24 @@ import {
   Plus,
   Presentation,
   ScrollText,
+  Sparkles,
   X,
   type LucideIcon,
 } from 'lucide-react'
 import { useCallback, useEffect, useState, type DragEvent } from 'react'
 import type { AnnouncementPayload, Service, ServiceItem, ServiceItemType, ShareSource } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { droppedPaths, isFileDrag } from '../lib/presentations'
-import { errorText, openSendMenu, SERVICES_CHANGED_EVENT, setShareDrag, showMessage, useSharingStore } from '../lib/sharing'
+import { addSampleSong, SAMPLE_WELCOME, showLibraryTab } from '../lib/samples'
+import { openSendMenu, SERVICES_CHANGED_EVENT, setShareDrag, showMessage, useSharingStore } from '../lib/sharing'
 import { MOD } from '../lib/shortcuts'
-import { useOperatorStore } from '../store'
+import { selectDefaultTranslation, useOperatorStore } from '../store'
 import { AnnouncementModal } from './AnnouncementModal'
 import { NewServiceModal } from './NewServiceModal'
 import { PresentationJobs } from './PresentationsPanel'
 import { SermonModal } from './SermonModal'
 import { SharedItemList, SharedServiceBar } from './SharedServicePanel'
-import { Button, EmptyState, IconButton, PanelHeader, Select } from './ui'
+import { Button, EmptyState, ErrorNote, IconButton, PanelHeader, Select } from './ui'
 
 const TYPE_LABELS: Record<ServiceItemType, string> = {
   song: 'Song',
@@ -51,7 +55,7 @@ function shareSourceOf(item: ServiceItem): ShareSource | null {
 
 function ItemIcon({ type }: { type: ServiceItemType }) {
   const Icon = TYPE_ICONS[type]
-  return <Icon className="item-icon" size={16} role="img" aria-label={TYPE_LABELS[type]} />
+  return <Icon className="item-icon" size={16} aria-hidden="true" />
 }
 
 interface Props {
@@ -65,7 +69,7 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
   const [creating, setCreating] = useState(false)
   const [announcing, setAnnouncing] = useState(false)
   const [sermonOpen, setSermonOpen] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   /** Presentations being imported for the schedule; progress shows in the chips. */
   const [importing, setImporting] = useState(false)
   /** Files are being dragged over the schedule. */
@@ -104,7 +108,7 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
       await action()
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Schedule', err))
     }
   }, [])
 
@@ -129,7 +133,7 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
     if (!service) return
     run(async () => {
       const file = await window.api.sharing.exportPackage(service.id)
-      if (file) showMessage(`Saved ${file}`)
+      if (file) showMessage(`Saved ${file}`, 'success')
     })
   }
 
@@ -137,7 +141,7 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
   function importPackage() {
     window.api.sharing.importPackage().then(
       (item) => item && useSharingStore.setState({ inboxOpen: true, unseen: 0 }),
-      (err) => setError(errorText(err)),
+      (err) => setError(reportError('Schedule', err)),
     )
   }
 
@@ -146,6 +150,28 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
     setServices(await window.api.services.list())
     await openService(created.id)
     setCreating(false)
+  }
+
+  /** A service to try things with: a welcome slide, a public domain hymn and Psalm 23. */
+  function createSampleService() {
+    run(async () => {
+      const created = await window.api.services.create('Sample service', new Date().toISOString().slice(0, 10))
+      await window.api.services.addItem(created.id, 'announcement', null, SAMPLE_WELCOME)
+      const song = await addSampleSong()
+      if (song) await window.api.services.addItem(created.id, 'song', song.id, null)
+      const version = selectDefaultTranslation(useOperatorStore.getState())
+      const psalms = (await window.api.bible.listBooks()).find((b) => /^psalm/i.test(b))
+      const verses = psalms ? await window.api.bible.getRange(version, psalms, 23, 1, 6).catch(() => []) : []
+      if (verses.length > 0) {
+        await window.api.services.addItem(created.id, 'scripture', null, {
+          title: `Psalm 23 ${version}`,
+          verses: verses.map((v) => ({ text: v.text, caption: `${v.book} ${v.chapter}:${v.verse} ${version}` })),
+        })
+      }
+      setServices(await window.api.services.list())
+      await openService(created.id)
+      useOperatorStore.getState().songsChanged()
+    })
   }
 
   async function handleAnnouncement(payload: AnnouncementPayload) {
@@ -274,7 +300,7 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
 
       <SharedServiceBar />
 
-      {error && <p className="error">{error}</p>}
+      <ErrorNote error={error} />
 
       {sharedOpen ? (
         <SharedItemList />
@@ -313,9 +339,13 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
                 setDropIndex(null)
               }}
             >
+              <span className="schedule-item-handle" title="Drag to reorder" aria-hidden="true">
+                <GripVertical size={14} />
+              </span>
               <button
                 className="schedule-item-main"
                 title="Click to preview, double-click to go live"
+                aria-current={item.id === activeItemId ? 'true' : undefined}
                 onClick={() => run(() => loadItem(item))}
                 onDoubleClick={() =>
                   run(async () => {
@@ -323,13 +353,30 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
                   })
                 }
               >
-                {item.type === 'presentation' && item.payload.pages[0] ? (
-                  // Its first slide; the picture changes when the original is saved again.
-                  <img className="schedule-item-thumb" src={item.payload.pages[0]} alt="Presentation" />
-                ) : (
-                  <ItemIcon type={item.type} />
-                )}
-                <span className="schedule-item-title">{item.title}</span>
+                <span className="schedule-item-type" title={TYPE_LABELS[item.type]}>
+                  {item.type === 'presentation' && item.payload.pages[0] ? (
+                    // Its first slide; the picture changes when the original is saved again.
+                    <img className="schedule-item-thumb" src={item.payload.pages[0]} alt="" />
+                  ) : (
+                    <ItemIcon type={item.type} />
+                  )}
+                </span>
+                <span className="schedule-item-text">
+                  <span className="schedule-item-title">{item.title}</span>
+                  <span className="visually-hidden">
+                    {`, ${TYPE_LABELS[item.type]}`}
+                    {item.id === liveItemId ? ', live' : item.id === activeItemId ? ', in preview' : ''}
+                  </span>
+                </span>
+                {item.id === liveItemId ? (
+                  <span className="schedule-item-state live" aria-hidden="true">
+                    Live
+                  </span>
+                ) : item.id === activeItemId ? (
+                  <span className="schedule-item-state preview" aria-hidden="true">
+                    Preview
+                  </span>
+                ) : null}
               </button>
               <IconButton
                 label={`Remove ${item.title} from schedule`}
@@ -340,18 +387,43 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
             </li>
           ))}
           {service && items.length === 0 && (
-            <li>
+            <li className="schedule-empty">
               <EmptyState
                 compact
                 icon={<ListPlus size={20} />}
                 title="Nothing in this service yet"
-                description="Add songs and scripture with their + buttons, or add an announcement below."
+                description="Add songs and scripture from the library with their + buttons, or start with a welcome slide."
+                action={
+                  <Button variant="primary" icon={<Music size={15} aria-hidden="true" />} onClick={() => showLibraryTab('songs')}>
+                    Browse songs
+                  </Button>
+                }
+                secondaryAction={
+                  <Button variant="ghost" icon={<Megaphone size={15} aria-hidden="true" />} onClick={() => run(() => addToSchedule('announcement', null, SAMPLE_WELCOME))}>
+                    Add a welcome slide
+                  </Button>
+                }
               />
             </li>
           )}
           {!service && (
-            <li>
-              <EmptyState compact icon={<CalendarPlus size={20} />} title="No service open" description="Create a service to start a run list." />
+            <li className="schedule-empty">
+              <EmptyState
+                compact
+                icon={<CalendarPlus size={20} />}
+                title="No service yet"
+                description="A service is the run list for one gathering: its songs, scripture and announcements in order."
+                action={
+                  <Button variant="primary" icon={<Plus size={15} aria-hidden="true" />} onClick={() => setCreating(true)}>
+                    New service
+                  </Button>
+                }
+                secondaryAction={
+                  <Button variant="ghost" icon={<Sparkles size={15} aria-hidden="true" />} onClick={createSampleService}>
+                    Create a sample service
+                  </Button>
+                }
+              />
             </li>
           )}
         </ol>

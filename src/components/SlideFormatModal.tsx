@@ -2,9 +2,11 @@ import { Type } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { formatFor, pruneFormats, renameFormat, setFormat } from '../../shared/richText'
 import type { AnnouncementPayload, RichText, ScripturePayload, SlideFormats } from '../../shared/types'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { announcementSlides, withAnnouncementSlideText } from '../lib/slides'
 import { selectDeckTheme, useOperatorStore } from '../store'
 import { SlideFormatter } from './SlideFormatter'
+import { ErrorNote } from './ui'
 
 type TextPayload = ScripturePayload | AnnouncementPayload
 
@@ -30,7 +32,7 @@ export function SlideFormatModal({ itemId, startIndex, onClose }: { itemId: numb
   const [payload, setPayload] = useState<TextPayload | null>(item && (item.type === 'scripture' || item.type === 'announcement') ? item.payload : null)
   const [index, setIndex] = useState(startIndex)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -73,7 +75,7 @@ export function SlideFormatModal({ itemId, startIndex, onClose }: { itemId: numb
       await updateItemPayload(itemId, Object.keys(kept).length > 0 ? { ...rest, formats: kept } : rest)
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Slide format', err))
       setSaving(false)
     }
   }
@@ -112,7 +114,7 @@ export function SlideFormatModal({ itemId, startIndex, onClose }: { itemId: numb
             />
           )}
         </div>
-        {error && <p className="error">{error}</p>}
+        <ErrorNote error={error} />
         <footer className="modal-actions">
           <button type="button" className="button" onClick={onClose}>
             Cancel

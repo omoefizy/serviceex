@@ -1,7 +1,9 @@
 import { Eye, ListPlus } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
+import { reportError, type ErrorLike } from '../lib/errors'
 import { quotePayload, quoteSlide } from '../lib/slides'
 import { useOperatorStore } from '../store'
+import { ErrorNote } from './ui'
 
 interface Props {
   /** The words to start from: a selection in the transcript, or a statement card. */
@@ -23,7 +25,7 @@ export function QuoteModal({ text: initial, onDone, onCancel }: Props) {
   const [text, setText] = useState(initial.trim())
   const [speaker, setSpeaker] = useState(defaultSpeaker)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const words = text.trim() ? text.trim().split(/\s+/).length : 0
   const slide = quoteSlide(text, speaker)
 
@@ -49,7 +51,7 @@ export function QuoteModal({ text: initial, onDone, onCancel }: Props) {
       await addToSchedule('announcement', null, quotePayload(text, speaker))
       onDone(text.trim(), 'schedule')
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(reportError('Quote', err))
       setSaving(false)
     }
   }
@@ -77,7 +79,7 @@ export function QuoteModal({ text: initial, onDone, onCancel }: Props) {
           <p>{text.trim() ? slide.text : '“…”'}</p>
           {slide.caption && <small>{slide.caption}</small>}
         </div>
-        {error && <p className="error">{error}</p>}
+        <ErrorNote error={error} />
         <footer className="modal-actions">
           <button type="button" className="button" onClick={onCancel}>
             Cancel
