@@ -1,4 +1,4 @@
-import { AlertTriangle, BellRing, CircleSlash, Copy, Download, Inbox as InboxIcon, Laptop, Lock, RotateCw, Send, Unplug, Wifi, X } from 'lucide-react'
+import { AlertTriangle, BellRing, CircleSlash, Copy, Download, Inbox as InboxIcon, Laptop, Lock, RotateCw, Send, Unplug, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { formatBytes } from '../../shared/sharing'
 import type { IncomingTransfer, SharePeer, TransferProgress } from '../../shared/types'
@@ -14,10 +14,8 @@ import {
   droppedSources,
   errorText,
   isActiveTransfer,
-  NO_DEVICES_HINT_MS,
   openTroubleshooting,
   sendCueTo,
-  showNoDevicesHint,
   sendTo,
   SHARED_ITEM_DRAG_TYPE,
   showMessage,
@@ -211,20 +209,6 @@ export function NetworkHint({ noDevices, publicNetworks, onDismiss }: { noDevice
   )
 }
 
-/** When no other computer has been online, or null while one is; it starts again when Sharing is turned on. */
-function useQuietSince(enabled: boolean, anyOnline: boolean): number | null {
-  const [since, setSince] = useState<number | null>(null)
-  const [, tick] = useState(0)
-  useEffect(() => {
-    setSince(enabled && !anyOnline ? Date.now() : null)
-    if (!enabled || anyOnline) return
-    // Renders again once the hint is due.
-    const timer = setTimeout(() => tick((n) => n + 1), NO_DEVICES_HINT_MS)
-    return () => clearTimeout(timer)
-  }, [enabled, anyOnline])
-  return since
-}
-
 /** This computer pairing with another: type the code the other one shows. */
 function PairDialog() {
   const pairing = useSharingStore((s) => s.pairing)
@@ -413,19 +397,64 @@ function SendMenu() {
   )
 }
 
-/** The toolbar's sharing controls: device chips, the Inbox, transfers, and the pairing and Send to popups. */
-export function SharingBar() {
+/**
+ * The sharing part of the toolbar's status popover: device chips (drop files or items on them), the network hint,
+ * and transfers in both directions.
+ */
+export function SharingDetails({ noDevices, hintHidden, onHideHint }: { noDevices: boolean; hintHidden: boolean; onHideHint(): void }) {
   const enabled = useSharingStore((s) => s.status?.enabled ?? false)
   const peers = useSharingStore((s) => s.peers)
-  const inboxCount = useSharingStore((s) => s.inbox.length)
-  const unseen = useSharingStore((s) => s.unseen)
-  const inboxOpen = useSharingStore((s) => s.inboxOpen)
   const transfers = useSharingStore((s) => s.transfers)
   const incoming = useSharingStore((s) => s.incoming)
   const publicNetworks = useSharingStore((s) => s.status?.publicNetworks ?? NO_NETWORKS)
-  const [hintHidden, setHintHidden] = useState(false)
-  const message = useSharingStore((s) => s.message)
   const chips = useOperatorStore((s) => s.settings.sharingDeviceChips)
+
+  const shown = peers.filter((p) => p.online || p.paired)
+  const active = transfers.filter(isActiveTransfer).length
+
+  return (
+    <>
+      {enabled && chips && (
+        <div className="device-bar" role="group" aria-label="Computers on the local network">
+          {shown.length === 0 ? (
+            <span className="device-bar-empty" title="Other computers appear here when ServiceEx is open with Sharing on, on the same network">
+              No devices found
+            </span>
+          ) : (
+            shown.map((peer) => <DeviceChip key={peer.id} peer={peer} />)
+          )}
+        </div>
+      )}
+      {enabled && !hintHidden && <NetworkHint noDevices={noDevices} publicNetworks={publicNetworks} onDismiss={onHideHint} />}
+      {incoming.length + transfers.length > 0 && (
+        <div className="transfer-list">
+          {incoming.map((t) => (
+            <IncomingChip key={t.id} transfer={t} />
+          ))}
+          {transfers.map((t) => (
+            <TransferChip key={t.id} transfer={t} />
+          ))}
+          {active > 1 && (
+            <button type="button" className="transfer-action ui-hit" title="Stop every transfer not yet sent, and empty the queue" onClick={cancelAllTransfers}>
+              <X size={11} aria-hidden="true" /> Cancel all
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
+/**
+ * The toolbar's sharing controls that stay in view: the Inbox, the cue tray and passing messages, with the pairing
+ * and Send to popups. Devices and transfers are in the status popover (SharingDetails).
+ */
+export function SharingBar() {
+  const enabled = useSharingStore((s) => s.status?.enabled ?? false)
+  const inboxCount = useSharingStore((s) => s.inbox.length)
+  const unseen = useSharingStore((s) => s.unseen)
+  const inboxOpen = useSharingStore((s) => s.inboxOpen)
+  const message = useSharingStore((s) => s.message)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => startSharing(), [])
@@ -453,38 +482,11 @@ export function SharingBar() {
     }
   }, [inboxOpen])
 
-  const shown = peers.filter((p) => p.online || p.paired)
-  const quietSince = useQuietSince(enabled, peers.some((p) => p.online && !p.disconnected))
-  const active = transfers.filter(isActiveTransfer).length
-
   return (
     <>
-      {enabled && chips && (
-        <div className="device-bar" role="group" aria-label="Computers on the local network">
-          <Wifi size={14} className="device-bar-icon" aria-label="Local network sharing is on" />
-          {shown.length === 0 ? (
-            <span className="device-bar-empty" title="Other computers appear here when ServiceEx is open with Sharing on, on the same network">
-              No devices found
-            </span>
-          ) : (
-            shown.map((peer) => <DeviceChip key={peer.id} peer={peer} />)
-          )}
-        </div>
-      )}
-      {enabled && !hintHidden && <NetworkHint noDevices={showNoDevicesHint(quietSince, Date.now())} publicNetworks={publicNetworks} onDismiss={() => setHintHidden(true)} />}
-      {incoming.map((t) => (
-        <IncomingChip key={t.id} transfer={t} />
-      ))}
-      {transfers.map((t) => (
-        <TransferChip key={t.id} transfer={t} />
-      ))}
-      {active > 1 && (
-        <button type="button" className="transfer-action ui-hit" title="Stop every transfer not yet sent, and empty the queue" onClick={cancelAllTransfers}>
-          <X size={11} aria-hidden="true" /> Cancel all
-        </button>
-      )}
       {message && (
-        <span className={`sharing-message${message.error ? ' error' : ''}`} role={message.error ? 'alert' : 'status'} title={message.text}>
+        // Floats below the toolbar, so a message never pushes the toolbar's controls aside.
+        <span className={`sharing-message sharing-toast${message.error ? ' error' : ''}`} role={message.error ? 'alert' : 'status'} title={message.text}>
           {message.text}
         </span>
       )}

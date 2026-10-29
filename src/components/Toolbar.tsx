@@ -3,10 +3,12 @@ import {
   Cast,
   Check,
   ChevronDown,
+  Ellipsis,
   Eraser,
   EyeOff,
   Image,
   Layers,
+  LayoutPanelLeft,
   Megaphone,
   Monitor,
   MonitorPlay,
@@ -14,19 +16,22 @@ import {
   ScanLine,
   Search,
   Settings,
+  Settings2,
   Square,
   Tv,
   Undo2,
   type LucideIcon,
 } from 'lucide-react'
-import { useEffect, useRef, useState, type RefObject } from 'react'
-import { can, upgradeNote } from '../../shared/features'
+import { useCallback, useRef, useState } from 'react'
+import { can, hasFeature, upgradeNote } from '../../shared/features'
+import { layoutById } from '../../shared/layouts'
 import type { OutputMode } from '../../shared/types'
+import { switchLayout } from '../lib/layouts'
 import { IS_MAC, MOD, MODE_KEYS } from '../lib/shortcuts'
+import { useDismiss } from '../lib/useDismiss'
 import { selectStreamState, useOperatorStore } from '../store'
 import { AlertsPanel } from './AlertsPanel'
-import { LayoutMenu } from './LayoutMenu'
-import { SharingBar } from './SharingBar'
+import { StatusArea } from './StatusArea'
 import { Button, IconButton } from './ui'
 
 const MODE_ICONS: Record<OutputMode, LucideIcon> = { show: Monitor, black: Square, clear: Eraser, logo: Image }
@@ -38,28 +43,12 @@ const LIVE_MENU_MODES: { mode: OutputMode; label: string; key: string }[] = [
   { mode: 'clear', label: 'Clear Text', key: 'C' },
 ]
 
-/** Closes a popup on Escape or on a click outside `ref`. */
-function useDismiss(open: boolean, ref: RefObject<HTMLElement>, close: () => void) {
-  useEffect(() => {
-    if (!open) return
-    const onEvent = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !ref.current?.contains(e.target as Node)) close()
-    }
-    window.addEventListener('mousedown', onEvent)
-    window.addEventListener('keydown', onEvent)
-    return () => {
-      window.removeEventListener('mousedown', onEvent)
-      window.removeEventListener('keydown', onEvent)
-    }
-  }, [open, ref, close])
-}
-
 /** The Alerts button, beside the output modes, and its panel. */
 function AlertsButton() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const showing = useOperatorStore((s) => s.live.alert !== null)
-  useDismiss(open, ref, () => setOpen(false))
+  useDismiss(open, ref, useCallback(() => setOpen(false), []))
   const inPlan = can('alerts')
 
   return (
@@ -138,7 +127,7 @@ function LiveMenu() {
   const testPattern = useOperatorStore((s) => s.streamTestPattern)
   const setTestPattern = useOperatorStore((s) => s.setStreamTestPattern)
 
-  useDismiss(open, ref, () => setOpen(false))
+  useDismiss(open, ref, useCallback(() => setOpen(false), []))
 
   const choose = (action: () => void) => () => {
     action()
@@ -218,6 +207,153 @@ function LiveMenu() {
   )
 }
 
+/** The More menu's items; `onChoose` closes the menu. */
+export function MoreMenuList({ onChoose }: { onChoose(): void }) {
+  const layouts = useOperatorStore((s) => s.settings.layouts)
+  const activeLayout = useOperatorStore((s) => layoutById(s.settings.layouts, s.settings.activeLayoutId))
+  const themeEditorOpen = useOperatorStore((s) => s.themeEditorOpen)
+  const openThemeEditor = useOperatorStore((s) => s.openThemeEditor)
+  const stageOpen = useOperatorStore((s) => s.stageOpen)
+  const toggleStage = useOperatorStore((s) => s.toggleStage)
+  const streamPanelOpen = useOperatorStore((s) => s.streamPanelOpen)
+  const openStreamPanel = useOperatorStore((s) => s.openStreamPanel)
+  const streamOpen = useOperatorStore((s) => s.streamOpen)
+  const sermonsOpen = useOperatorStore((s) => s.sermonsOpen)
+  const openSermons = useOperatorStore((s) => s.openSermons)
+
+  const choose = (action: () => void) => () => {
+    action()
+    onChoose()
+  }
+
+  return (
+    <div className="live-menu-list" role="menu" aria-label="More">
+      {hasFeature('sharing.layouts') && (
+        <>
+          <div className="menu-heading" title={`Which panels this computer shows (${MOD}⌥1 to 9, ${MOD}⇧L for the next)`}>
+            <LayoutPanelLeft size={13} aria-hidden="true" /> Layout
+          </div>
+          {layouts.map((layout, index) => (
+            <button
+              key={layout.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={layout.id === activeLayout.id}
+              onClick={choose(() => switchLayout(layout.id).catch(console.error))}
+            >
+              <Check size={14} aria-hidden="true" style={{ visibility: layout.id === activeLayout.id ? 'visible' : 'hidden' }} />
+              <span>{layout.name}</span>
+              {index < 9 && (
+                <kbd>
+                  {MOD}⌥{index + 1}
+                </kbd>
+              )}
+            </button>
+          ))}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={choose(() => {
+              useOperatorStore.getState().openSettings(true)
+              // Settings scrolls to its Layouts section once it has rendered.
+              requestAnimationFrame(() => document.getElementById('settings-layouts')?.scrollIntoView({ block: 'start' }))
+            })}
+          >
+            <Settings2 size={14} aria-hidden="true" />
+            <span>Edit layouts…</span>
+          </button>
+          <hr />
+        </>
+      )}
+      <button
+        type="button"
+        role="menuitemcheckbox"
+        aria-checked={stageOpen}
+        disabled={!stageOpen && !can('stageDisplay')}
+        title={can('stageDisplay') ? 'The stage display for the worship leader' : upgradeNote('stageDisplay')}
+        onClick={choose(() => toggleStage().catch(console.error))}
+      >
+        <MonitorPlay size={15} aria-hidden="true" />
+        <span>Stage Display</span>
+        {stageOpen && <Check size={14} aria-hidden="true" />}
+      </button>
+      <button
+        type="button"
+        role="menuitemcheckbox"
+        aria-checked={streamPanelOpen}
+        disabled={!streamPanelOpen && !can('multiOutput')}
+        title={can('multiOutput') ? (streamOpen ? 'Stream output, logos and key (the Stream output is open)' : 'Stream output, logos and key') : upgradeNote('multiOutput')}
+        onClick={choose(() => openStreamPanel(!streamPanelOpen))}
+      >
+        <Cast size={15} aria-hidden="true" />
+        <span>Stream</span>
+        {streamPanelOpen && <Check size={14} aria-hidden="true" />}
+      </button>
+      <button
+        type="button"
+        role="menuitemcheckbox"
+        aria-checked={sermonsOpen}
+        title="Sermons: saved listening sessions, their transcripts and exports"
+        onClick={choose(() => openSermons(!sermonsOpen))}
+      >
+        <BookOpenText size={15} aria-hidden="true" />
+        <span>Sermons</span>
+        {sermonsOpen && <Check size={14} aria-hidden="true" />}
+      </button>
+      <button
+        type="button"
+        role="menuitemcheckbox"
+        aria-checked={themeEditorOpen}
+        disabled={!can('themes.editor')}
+        title={can('themes.editor') ? undefined : upgradeNote('themes.editor')}
+        onClick={choose(() => openThemeEditor(!themeEditorOpen))}
+      >
+        <Palette size={15} aria-hidden="true" />
+        <span>Themes</span>
+        {themeEditorOpen && <Check size={14} aria-hidden="true" />}
+      </button>
+    </div>
+  )
+}
+
+/**
+ * The toolbar's More menu: the layout, and the screens used less often during a service (stage display, Stream,
+ * Sermons, Themes). It keeps the toolbar to one row on a 1280 pixel wide laptop.
+ */
+function MoreMenu() {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const activeLayout = useOperatorStore((s) => layoutById(s.settings.layouts, s.settings.activeLayoutId))
+  const themeEditorOpen = useOperatorStore((s) => s.themeEditorOpen)
+  const stageOpen = useOperatorStore((s) => s.stageOpen)
+  const streamPanelOpen = useOperatorStore((s) => s.streamPanelOpen)
+  const streamOpen = useOperatorStore((s) => s.streamOpen)
+  const sermonsOpen = useOperatorStore((s) => s.sermonsOpen)
+
+  useDismiss(open, ref, useCallback(() => setOpen(false), []))
+
+  // Pressed while a screen it opens is showing, so the operator can tell where it came from.
+  const showing = themeEditorOpen || streamPanelOpen || sermonsOpen
+
+  return (
+    <div className="live-menu more-menu" ref={ref}>
+      <IconButton
+        className="toolbar-icon"
+        label="More"
+        tooltip={`More: layout (${activeLayout.name}), stage display, Stream, Sermons and Themes`}
+        icon={<Ellipsis size={18} />}
+        pressed={showing}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {(stageOpen || streamOpen) && <span className="toolbar-icon-dot" aria-hidden="true" />}
+      </IconButton>
+      {open && <MoreMenuList onChoose={() => setOpen(false)} />}
+    </div>
+  )
+}
+
 /** Top bar: the service, what the audience sees right now, the output mode buttons and app-wide actions. */
 export function Toolbar() {
   const service = useOperatorStore((s) => s.service)
@@ -227,17 +363,8 @@ export function Toolbar() {
   const liveTitle = useOperatorStore((s) => s.live.title)
   const setOutputMode = useOperatorStore((s) => s.setOutputMode)
   const setPaletteOpen = useOperatorStore((s) => s.setPaletteOpen)
-  const themeEditorOpen = useOperatorStore((s) => s.themeEditorOpen)
   const settingsOpen = useOperatorStore((s) => s.settingsOpen)
-  const openThemeEditor = useOperatorStore((s) => s.openThemeEditor)
   const openSettings = useOperatorStore((s) => s.openSettings)
-  const stageOpen = useOperatorStore((s) => s.stageOpen)
-  const toggleStage = useOperatorStore((s) => s.toggleStage)
-  const streamPanelOpen = useOperatorStore((s) => s.streamPanelOpen)
-  const openStreamPanel = useOperatorStore((s) => s.openStreamPanel)
-  const sermonsOpen = useOperatorStore((s) => s.sermonsOpen)
-  const openSermons = useOperatorStore((s) => s.openSermons)
-  const streamOpen = useOperatorStore((s) => s.streamOpen)
 
   const status = onAir ? 'live' : mode === 'show' ? 'ready' : mode
 
@@ -280,61 +407,20 @@ export function Toolbar() {
         <AlertsButton />
       </div>
 
-      <SharingBar />
-
+      {/* One row at 1280 pixels: the screens used less often are in More; Settings is always last and in view. */}
       <div className="toolbar-actions">
-        <LayoutMenu />
+        <StatusArea />
         <Button
           className="toolbar-search"
           title={`Search songs, verses and actions (${MOD}K)`}
+          aria-label="Search"
           icon={<Search size={15} aria-hidden="true" />}
           onClick={() => setPaletteOpen(true)}
         >
-          <span>Search</span>
+          <span className="toolbar-search-label">Search</span>
           <kbd>{MOD}K</kbd>
         </Button>
-        {/* The screens scroll sideways when the window is narrow; Settings stays after them, always in view. */}
-        <nav className="toolbar-nav" aria-label="Screens">
-          <IconButton
-            className="toolbar-icon"
-            label="Stage display"
-            tooltip={stageOpen ? 'Close the stage display' : 'Open the stage display for the worship leader'}
-            icon={<MonitorPlay size={18} />}
-            pressed={stageOpen}
-            disabled={!stageOpen && !can('stageDisplay')}
-            disabledTooltip={upgradeNote('stageDisplay')}
-            onClick={() => toggleStage().catch(console.error)}
-          />
-          <IconButton
-            className="toolbar-icon"
-            label="Stream"
-            tooltip={streamOpen ? 'Stream output, logos and key (the Stream output is open)' : 'Stream output, logos and key'}
-            icon={<Cast size={18} />}
-            pressed={streamPanelOpen}
-            disabled={!streamPanelOpen && !can('multiOutput')}
-            disabledTooltip={upgradeNote('multiOutput')}
-            onClick={() => openStreamPanel(!streamPanelOpen)}
-          >
-            {streamOpen && <span className="toolbar-icon-dot" aria-hidden="true" />}
-          </IconButton>
-          <IconButton
-            className="toolbar-icon"
-            label="Sermons"
-            tooltip="Sermons: saved listening sessions, their transcripts and exports"
-            icon={<BookOpenText size={18} />}
-            pressed={sermonsOpen}
-            onClick={() => openSermons(!sermonsOpen)}
-          />
-          <IconButton
-            className="toolbar-icon"
-            label="Themes"
-            icon={<Palette size={18} />}
-            pressed={themeEditorOpen}
-            disabled={!can('themes.editor')}
-            disabledTooltip={upgradeNote('themes.editor')}
-            onClick={() => openThemeEditor(!themeEditorOpen)}
-          />
-        </nav>
+        <MoreMenu />
         <IconButton
           className="toolbar-icon toolbar-settings"
           label="Settings"

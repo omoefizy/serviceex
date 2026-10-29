@@ -1,3 +1,4 @@
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { can } from '../shared/features'
 import { layoutById, showsPanel } from '../shared/layouts'
@@ -20,6 +21,7 @@ import { StreamPanel } from './components/StreamPanel'
 import { Splitter } from './components/Splitter'
 import { ThemeEditor } from './components/ThemeEditor'
 import { Toolbar } from './components/Toolbar'
+import { IconButton } from './components/ui'
 import { highlightKey, toggleHighlightMode } from './lib/highlights'
 import { cycleLayout, switchLayout } from './lib/layouts'
 import { nudgeVerse, stepVerseSize } from './lib/scriptureAdjust'
@@ -43,6 +45,14 @@ type PanelSizes = { library: number; preview: number; schedule: number }
 
 const DEFAULT_SIZES: PanelSizes = { library: 300, preview: 360, schedule: 280 }
 const LIMITS = { library: [200, 520], preview: [260, 720], schedule: [220, 480] } as const
+/**
+ * How far each side column gives way, below its saved width, when the window is too narrow for every column at full
+ * width (1280 by 720 laptops). The centre keeps CENTRE_MIN; the side columns then share what is left.
+ */
+const FLOORS: PanelSizes = { library: 200, preview: 240, schedule: 200 }
+const CENTRE_MIN = 280
+/** The centre's minimum while an editor or Settings is open there: forms need more room than the slide grid. */
+const EDITOR_MIN = 520
 
 const isPanelSizes = (value: unknown): value is PanelSizes =>
   typeof value === 'object' &&
@@ -70,6 +80,7 @@ function App() {
   const [chosenTab, setLibraryTab] = useState<(typeof LIBRARY_TABS)[number]['id']>('songs')
   const [sizes, setSizes] = usePersistentState('worshipdeck.panelSizes', DEFAULT_SIZES, isPanelSizes)
   const [scheduleCollapsed, setScheduleCollapsed] = usePersistentState('worshipdeck.scheduleCollapsed', false, isBoolean)
+  const [libraryCollapsed, setLibraryCollapsed] = usePersistentState('worshipdeck.libraryCollapsed', false, isBoolean)
   const editingSongId = useOperatorStore((s) => s.editingSongId)
   const themeEditorOpen = useOperatorStore((s) => s.themeEditorOpen)
   const settingsOpen = useOperatorStore((s) => s.settingsOpen)
@@ -317,12 +328,14 @@ function App() {
   }, [])
 
   // The columns the layout shows, each with the splitter after it. Without the centre the preview column takes the room.
+  // A side column is its saved width when there is room, and shrinks towards its floor when there is not.
+  const side = (key: keyof PanelSizes) => `minmax(${Math.min(FLOORS[key], sizes[key])}px, ${sizes[key]}px)`
   const columns = [
-    ...(show.library ? [`${sizes.library}px`, 'auto'] : []),
-    ...(show.centre ? ['minmax(360px, 1fr)'] : []),
+    ...(show.library ? (libraryCollapsed ? ['auto'] : [side('library'), 'auto']) : []),
+    ...(show.centre ? [`minmax(${centreOpen ? EDITOR_MIN : CENTRE_MIN}px, 1fr)`] : []),
     ...(show.centre && previewColumn ? ['auto'] : []),
-    ...(previewColumn ? [show.centre ? `${sizes.preview}px` : 'minmax(260px, 1fr)'] : []),
-    ...(show.schedule ? (scheduleCollapsed ? ['auto'] : [...(show.centre || previewColumn ? ['auto'] : []), show.centre || previewColumn ? `${sizes.schedule}px` : '1fr']) : []),
+    ...(previewColumn ? [show.centre ? side('preview') : `minmax(${FLOORS.preview}px, 1fr)`] : []),
+    ...(show.schedule ? (scheduleCollapsed ? ['auto'] : [...(show.centre || previewColumn ? ['auto', side('schedule')] : ['1fr'])]) : []),
   ].join(' ')
 
   return (
@@ -332,43 +345,58 @@ function App() {
       </PanelBoundary>
       <main className="operator" style={{ gridTemplateColumns: columns }}>
         <Slot show={show.library}>
-          <div className="library">
-            <div className="library-tabs" role="tablist">
-              {libraryTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  role="tab"
-                  aria-selected={libraryTab === tab.id}
-                  className={`library-tab${libraryTab === tab.id ? ' active' : ''}`}
-                  onClick={() => setLibraryTab(tab.id)}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-            {/* All stay mounted so each keeps its search text when switching tabs. */}
-            <div className="library-page" hidden={libraryTab !== 'songs'}>
-              <PanelBoundary name="Songs">
-                <SongList />
-              </PanelBoundary>
-            </div>
-            <div className="library-page" hidden={libraryTab !== 'scripture'}>
-              <PanelBoundary name="Scripture">
-                <ScripturePanel />
-              </PanelBoundary>
-            </div>
-            <div className="library-page" hidden={libraryTab !== 'presentations'}>
-              <PanelBoundary name="Presentations">
-                <PresentationsPanel />
-              </PanelBoundary>
-            </div>
-            <div className="library-page" hidden={libraryTab !== 'media'}>
-              <PanelBoundary name="Media">
-                <MediaPanel />
-              </PanelBoundary>
-            </div>
-          </div>
-          <Splitter label="Resize library" value={sizes.library} min={LIMITS.library[0]} max={LIMITS.library[1]} direction={1} onChange={resize('library')} />
+          {libraryCollapsed ? (
+            <aside className="library collapsed">
+              <button className="panel-rail-toggle" aria-expanded={false} title="Show the library" onClick={() => setLibraryCollapsed(false)}>
+                <ChevronRight size={16} aria-hidden="true" />
+                <span className="panel-rail-label">Library</span>
+              </button>
+            </aside>
+          ) : (
+            <>
+              <div className="library">
+                <div className="library-tabs">
+                  <div className="library-tab-list" role="tablist">
+                    {libraryTabs.map((tab) => (
+                      <button
+                        key={tab.id}
+                        role="tab"
+                        aria-selected={libraryTab === tab.id}
+                        className={`library-tab${libraryTab === tab.id ? ' active' : ''}`}
+                        title={tab.label}
+                        onClick={() => setLibraryTab(tab.id)}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                  <IconButton label="Hide library" size="sm" icon={<ChevronLeft size={16} />} aria-expanded={true} onClick={() => setLibraryCollapsed(true)} />
+                </div>
+                {/* All stay mounted so each keeps its search text when switching tabs. */}
+                <div className="library-page" hidden={libraryTab !== 'songs'}>
+                  <PanelBoundary name="Songs">
+                    <SongList />
+                  </PanelBoundary>
+                </div>
+                <div className="library-page" hidden={libraryTab !== 'scripture'}>
+                  <PanelBoundary name="Scripture">
+                    <ScripturePanel />
+                  </PanelBoundary>
+                </div>
+                <div className="library-page" hidden={libraryTab !== 'presentations'}>
+                  <PanelBoundary name="Presentations">
+                    <PresentationsPanel />
+                  </PanelBoundary>
+                </div>
+                <div className="library-page" hidden={libraryTab !== 'media'}>
+                  <PanelBoundary name="Media">
+                    <MediaPanel />
+                  </PanelBoundary>
+                </div>
+              </div>
+              <Splitter label="Resize library" value={sizes.library} min={LIMITS.library[0]} max={LIMITS.library[1]} direction={1} panel=".library" onChange={resize('library')} />
+            </>
+          )}
         </Slot>
         <Slot show={show.centre}>
           {editingSongId !== null ? (
@@ -398,7 +426,7 @@ function App() {
           )}
         </Slot>
         <Slot show={show.centre && previewColumn}>
-          <Splitter label="Resize live output" value={sizes.preview} min={LIMITS.preview[0]} max={LIMITS.preview[1]} direction={-1} onChange={resize('preview')} />
+          <Splitter label="Resize live output" value={sizes.preview} min={LIMITS.preview[0]} max={LIMITS.preview[1]} direction={-1} panel=".preview-column" onChange={resize('preview')} />
         </Slot>
         <div className="preview-column" hidden={!previewColumn}>
           <Slot show={show.live}>
@@ -419,7 +447,7 @@ function App() {
         </div>
         <Slot show={show.schedule}>
           {!scheduleCollapsed && (show.centre || previewColumn) && (
-            <Splitter label="Resize schedule" value={sizes.schedule} min={LIMITS.schedule[0]} max={LIMITS.schedule[1]} direction={-1} onChange={resize('schedule')} />
+            <Splitter label="Resize schedule" value={sizes.schedule} min={LIMITS.schedule[0]} max={LIMITS.schedule[1]} direction={-1} panel=".schedule" onChange={resize('schedule')} />
           )}
           <PanelBoundary name="Schedule">
             <SchedulePanel collapsed={scheduleCollapsed} onCollapsedChange={setScheduleCollapsed} />

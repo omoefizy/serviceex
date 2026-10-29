@@ -22,7 +22,7 @@ const { useListener } = await import('./lib/listener')
 const { SermonsPanel } = await import('./components/SermonsPanel')
 const { StartSermonModal } = await import('./components/StartSermonModal')
 const { ListenerPanel } = await import('./components/ListenerPanel')
-const { Toolbar } = await import('./components/Toolbar')
+const { MoreMenuList, Toolbar } = await import('./components/Toolbar')
 const { default: App } = await import('./App')
 
 /** Rendering outside a browser reads zustand's initial state (see settingsPanel.test), so the change goes there too. */
@@ -47,7 +47,8 @@ describe('Sermons screen', () => {
   })
 
   it('opens in the centre of the app from the toolbar', () => {
-    expect(renderToString(createElement(Toolbar))).toContain('aria-label="Sermons"')
+    expect(renderToString(createElement(Toolbar))).toContain('aria-label="More"')
+    expect(renderToString(createElement(MoreMenuList, { onChoose: () => undefined }))).toContain('<span>Sermons</span>')
     withState(useOperatorStore, { sermonsOpen: true }, () => {
       const html = renderToString(createElement(App))
       expect(html).toContain('sermons-panel')
@@ -57,17 +58,18 @@ describe('Sermons screen', () => {
     })
   })
 
-  it('keeps Settings in the toolbar, pinned after the screens list that scrolls', () => {
+  it('keeps Settings in the toolbar, last, with the other screens in the More menu before it', () => {
     const html = renderToString(createElement(Toolbar))
-    const nav = /<nav class="toolbar-nav"[^>]*>([\s\S]*?)<\/nav>/.exec(html)
-    expect(nav).not.toBeNull()
-    // Every screen added so far is in the list.
-    for (const label of ['Stage display', 'Stream', 'Sermons', 'Themes']) expect(nav![1]).toContain(`aria-label="${label}"`)
-    // Settings is not inside the scrolling list but right after it, and says its shortcut.
-    expect(nav![1]).not.toContain('aria-label="Settings"')
-    const after = html.slice(html.indexOf('</nav>'))
-    expect(after).toMatch(/^<\/nav><button[^>]*toolbar-settings[^>]*aria-label="Settings"/)
-    expect(after).toMatch(/title="Settings \((⌘|Ctrl\+),\)"/)
+    // The screens used less often are in More, so the toolbar fits one row at 1280 pixels.
+    const menu = renderToString(createElement(MoreMenuList, { onChoose: () => undefined }))
+    for (const label of ['Stage Display', 'Stream', 'Sermons', 'Themes']) expect(menu).toContain(`<span>${label}</span>`)
+    for (const label of ['Stage display', 'Sermons', 'Themes']) expect(html).not.toContain(`aria-label="${label}"`)
+    // Settings is the toolbar's last control, right after More, and says its shortcut.
+    const settings = /<button[^>]*toolbar-settings[^>]*aria-label="Settings"[^>]*>/.exec(html)
+    expect(settings).not.toBeNull()
+    expect(html.slice(0, settings!.index)).toMatch(/aria-label="More"[\s\S]*$/)
+    expect(html.slice(settings!.index)).not.toMatch(/<button[\s\S]*<button/)
+    expect(settings![0]).toMatch(/title="Settings \((⌘|Ctrl\+),\)"/)
   })
 
   it('asks for the sermon with optional fields and a Skip button', () => {

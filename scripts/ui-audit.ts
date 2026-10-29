@@ -3,6 +3,10 @@
 //
 //   node scripts/ui-audit.ts
 //
+// It also checks the layout of every screen at each size: it exits with an error, listing what failed (also saved to
+// layout.json), when a screen scrolls sideways, the toolbar wraps to a second row, or a control lies outside the window
+// or is cut off by the panel it sits in.
+//
 // It builds the main process, serves the renderer with Vite (so it can reach the app's stores to set up states such as
 // device chips), and runs the app on a fresh, temporary data folder with invented sample data. Your own library and
 // settings are never opened. Runs with Node's built-in TypeScript support (Node 22.18 or later).
@@ -18,8 +22,10 @@ import react from '@vitejs/plugin-react'
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = path.join(ROOT, 'docs', 'ui-audit')
+/** Common church laptops (1280 by 720 and 1366 by 768) and a full HD screen. */
 const SIZES = [
   { width: 1280, height: 720 },
+  { width: 1366, height: 768 },
   { width: 1920, height: 1080 },
 ] as const
 
@@ -395,6 +401,86 @@ function collectMetrics(): Metrics {
   return m
 }
 
+// ---------- Layout check, run in the page ----------
+
+interface LayoutProblem {
+  kind: 'page-overflow' | 'toolbar-wraps' | 'outside-window' | 'cut-off'
+  what: string
+  detail: string
+}
+
+/**
+ * Whether the screen fits the window: nothing scrolls the page sideways, the toolbar is one row, and every visible
+ * control is inside the window and not cut off by a panel. A control scrolled out of sight in a list that scrolls up
+ * and down is fine; one cut off sideways is not, as nobody scrolls sideways to find a button.
+ */
+function checkLayout(): LayoutProblem[] {
+  const CONTENT = '.output-frame, .output, .theme-canvas, .lt-text-box, .themed-box, .themed-element, .themed-bg, .slide-text, .logo-placeholder'
+  const INTERACTIVE =
+    'button, a[href], input:not([type=hidden]), select, textarea, summary, [role=button], [role=tab], [role=menuitem], [role=checkbox], [role=switch], [role=option], [role=separator][tabindex]'
+  const problems: LayoutProblem[] = []
+  const describe = (el: Element) => {
+    const cls = typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : ''
+    const text = (el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('placeholder') || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40)
+    return `${el.tagName.toLowerCase()}${cls}${text ? ` "${text}"` : ''}`
+  }
+  const px = (n: number) => Math.round(n)
+
+  for (const el of [document.documentElement, document.body, document.getElementById('root'), document.querySelector('.app'), document.querySelector('.operator'), document.querySelector('.toolbar')]) {
+    if (el && el.scrollWidth > el.clientWidth + 1) problems.push({ kind: 'page-overflow', what: describe(el).slice(0, 40), detail: `${el.scrollWidth} px of content in ${el.clientWidth} px` })
+  }
+  const toolbar = document.querySelector('.toolbar')
+  if (toolbar && toolbar.getBoundingClientRect().height > 64) problems.push({ kind: 'toolbar-wraps', what: 'header.toolbar', detail: `${px(toolbar.getBoundingClientRect().height)} px tall` })
+
+  for (const el of Array.from(document.body.querySelectorAll(INTERACTIVE))) {
+    if (el.closest(CONTENT) || el.closest('[hidden]')) continue
+    const r = el.getBoundingClientRect()
+    // Visually hidden inputs (a styled checkbox, a file input behind a button) are 1 px or less.
+    if (r.width <= 1 || r.height <= 1) continue
+    const cs = getComputedStyle(el)
+    if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) === 0) continue
+
+    // The boxes that clip it: its ancestors that are not visible-overflow, following the containing blocks, so an
+    // absolutely placed popup is not counted as clipped by a static ancestor it escapes. A box that scrolls up and down
+    // can bring any of its contents into view, so above it only the scrolling box's own top and bottom need to fit.
+    let top = r.top
+    let bottom = r.bottom
+    let cut: string | null = null
+    let needPositioned = cs.position === 'absolute'
+    if (cs.position !== 'fixed') {
+      for (let n = el.parentElement; n && n !== document.documentElement; n = n.parentElement) {
+        const ns = getComputedStyle(n)
+        if (needPositioned && ns.position === 'static' && ns.transform === 'none') continue
+        needPositioned = ns.position === 'absolute'
+        const box = n.getBoundingClientRect()
+        if (ns.overflowX !== 'visible' && (r.left < box.left - 1 || r.right > box.right + 1)) {
+          cut = `${px(r.left)} to ${px(r.right)} px, outside ${describe(n).slice(0, 40)} (${px(box.left)} to ${px(box.right)} px)`
+          break
+        }
+        if (/(auto|scroll)/.test(ns.overflowY)) {
+          top = Math.max(box.top, Math.min(top, box.bottom))
+          bottom = Math.min(box.bottom, Math.max(bottom, box.top))
+        } else if (/(hidden|clip)/.test(ns.overflowY) && (top < box.top - 1 || bottom > box.bottom + 1)) {
+          cut = `top ${px(top)} to ${px(bottom)} px, outside ${describe(n).slice(0, 40)} (${px(box.top)} to ${px(box.bottom)} px)`
+          break
+        }
+        if (ns.position === 'fixed') break
+      }
+    }
+    // A panel column that does not clip can still be painted over by the next one, so a control must also stay inside
+    // its own column of the operator screen.
+    const column = cs.position === 'fixed' ? null : Array.from(document.querySelectorAll('.operator > :not(.layout-slot), .operator > .layout-slot > *')).find((c) => c.contains(el))
+    const own = column?.getBoundingClientRect()
+    if (!cut && own && !el.closest('.live-menu-list, .status-popover, .modal, .modal-backdrop, [role=menu], [role=dialog]') && (r.left < own.left - 1 || r.right > own.right + 1)) {
+      cut = `${px(r.left)} to ${px(r.right)} px, past its column ${describe(column!).slice(0, 40)} (${px(own.left)} to ${px(own.right)} px)`
+    }
+    if (r.left < -1 || r.right > innerWidth + 1) problems.push({ kind: 'outside-window', what: describe(el), detail: `${px(r.left)} to ${px(r.right)} px in a ${innerWidth} px window` })
+    else if (cut) problems.push({ kind: 'cut-off', what: describe(el), detail: cut })
+    else if (top < -1 || bottom > innerHeight + 1) problems.push({ kind: 'outside-window', what: describe(el), detail: `${px(top)} to ${px(bottom)} px in a ${innerHeight} px window` })
+  }
+  return problems
+}
+
 // ---------- Static scan of the stylesheet and components ----------
 
 function staticScan() {
@@ -516,6 +602,7 @@ async function libraryTab(page: Page, name: string) {
 }
 
 const metrics: Record<string, Metrics> = {}
+const layout: Record<string, LayoutProblem[]> = {}
 const shots: string[] = []
 
 async function shot(page: Page, name: string) {
@@ -523,8 +610,10 @@ async function shot(page: Page, name: string) {
   const file = `${name}.png`
   await page.screenshot({ path: path.join(OUT, file) })
   metrics[name] = await page.evaluate(collectMetrics)
+  layout[name] = await page.evaluate(checkLayout)
   shots.push(file)
-  console.log(`  ${file}`)
+  const failed = layout[name].length
+  console.log(`  ${file}${failed ? `  (${failed} layout problem${failed === 1 ? '' : 's'})` : ''}`)
 }
 
 /** Sizes the operator window's content; falls back to emulating the viewport when the screen is smaller. */
@@ -728,6 +817,11 @@ async function main() {
       await shot(page, `21-command-palette-results${at}`)
       await resetScreens(page)
 
+      // The toolbar's More menu: layouts and the screens used less often.
+      await page.getByRole('button', { name: 'More', exact: true }).click()
+      await shot(page, `21-more-menu${at}`)
+      await page.keyboard.press('Escape')
+
       // Device chips, transfers and the Inbox, with invented computers. Sharing itself stays off, so nothing is
       // advertised on the network.
       await page.evaluate(() => {
@@ -753,6 +847,12 @@ async function main() {
         })
       })
       await shot(page, `22-device-chips${at}`)
+      // Device chips and transfers are in the toolbar's status popover.
+      if (await page.locator('.status-button').count()) {
+        await page.locator('.status-button').click()
+        await shot(page, `22-status-popover${at}`)
+        await page.keyboard.press('Escape')
+      }
       await page.locator('[aria-label^="Inbox,"]').click()
       await shot(page, `23-inbox-open${at}`)
       await resetScreens(page)
@@ -869,7 +969,18 @@ async function main() {
 
     writeFileSync(path.join(OUT, 'metrics.json'), JSON.stringify({ shots, screens: metrics, totals: totals(metrics) }, null, 2))
     writeFileSync(path.join(OUT, 'static.json'), JSON.stringify(staticScan(), null, 2))
+    writeFileSync(path.join(OUT, 'layout.json'), JSON.stringify(layout, null, 2))
     console.log(`Saved ${shots.length} screenshots and the measurements to ${path.relative(ROOT, OUT)}/`)
+
+    const failing = Object.entries(layout).filter(([, problems]) => problems.length > 0)
+    if (failing.length > 0) {
+      console.error(`\nLayout check failed on ${failing.length} of ${Object.keys(layout).length} screens:`)
+      for (const [name, problems] of failing) {
+        console.error(`  ${name}`)
+        for (const p of problems) console.error(`    ${p.kind}: ${p.what}: ${p.detail}`)
+      }
+      process.exitCode = 1
+    } else console.log(`Layout check passed on all ${Object.keys(layout).length} screens at ${SIZES.map((s) => `${s.width}x${s.height}`).join(', ')}.`)
   } finally {
     await app.close().catch(() => undefined)
     await server.close()

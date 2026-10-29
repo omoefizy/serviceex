@@ -13,7 +13,8 @@
     "test": "vitest run",
     "preview": "vite preview",
     "import:bible": "node scripts/import-bible.ts",
-    "fetch:whisper": "node scripts/fetch-whisper.ts"
+    "fetch:whisper": "node scripts/fetch-whisper.ts",
+    "audit:ui": "node scripts/ui-audit.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

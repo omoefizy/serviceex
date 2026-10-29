@@ -1,7 +1,7 @@
 // The sharing controls in the operator window: received PowerPoint files import in the mode the operator chose, the
 // incoming chip with Decline, Cancel and Dismiss on transfers, pairing by a typed address, and the hint shown when no
 // other computer can be found or Windows has the network set to Public.
-import { createElement, Profiler } from 'react'
+import { createElement, Fragment, Profiler } from 'react'
 import { renderToString } from 'react-dom/server'
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -50,7 +50,7 @@ const { applyAcceptResult, beginPairingAt, cancelTransfer, declineIncoming, dism
   './lib/sharing'
 )
 const { chosenImportMode, IMPORT_MODE_KEY } = await import('./lib/presentations')
-const { IncomingChip, NetworkHint, SharingBar } = await import('./components/SharingBar')
+const { IncomingChip, NetworkHint, SharingBar, SharingDetails } = await import('./components/SharingBar')
 
 const sender = 'c'.repeat(32)
 const incoming = (patch: Partial<IncomingTransfer> = {}): IncomingTransfer => ({
@@ -230,7 +230,7 @@ describe('the sharing bar', () => {
   // The mount, and one each for the six loads it starts; a selector returning a new value each time loops past 50.
   const MAX_COMMITS = 8
 
-  /** Mounts the bar, lets the loads started on mount settle, and counts the commits it took. */
+  /** Mounts the bar (with the status popover's sharing details), lets the loads started on mount settle, and counts the commits it took. */
   async function mount(): Promise<{ commits: number; renderer: ReactTestRenderer }> {
     let commits = 0
     let renderer!: ReactTestRenderer
@@ -239,7 +239,8 @@ describe('the sharing bar', () => {
       const onRender = () => {
         if (++commits > MAX_COMMITS * 5) throw new Error(`SharingBar rendered ${commits} times`)
       }
-      renderer = create(createElement(Profiler, { id: 'bar', onRender }, createElement(SharingBar)))
+      const details = createElement(SharingDetails, { noDevices: false, hintHidden: false, onHideHint: () => {} })
+      renderer = create(createElement(Profiler, { id: 'bar', onRender }, createElement(Fragment, null, createElement(SharingBar), details)))
     })
     return { commits, renderer }
   }

@@ -1,14 +1,45 @@
 # ServiceEx UI audit
 
-29 October 2026. The findings below (sections 1 to 3) record the app as it was first audited. The design tokens and shared components proposed in section 2 have since been applied to the toolbar, the Schedule, the Scripture panel and Settings; **[Tokens and shared components: before and after](#tokens-and-shared-components-before-and-after)** has the numbers.
+29 October 2026. The findings below (sections 1 to 3) record the app as it was first audited. The design tokens and shared components proposed in section 2 have since been applied to the toolbar, the Schedule, the Scripture panel and Settings; **[Tokens and shared components: before and after](#tokens-and-shared-components-before-and-after)** has the numbers. The layout at laptop sizes has since been fixed too; **[Layout at laptop sizes: before and after](#layout-at-laptop-sizes-before-and-after)** has the results of the automated layout check.
 
-**How it was made.** `node scripts/ui-audit.ts` builds the main process and serves the renderer with Vite. It then runs the app with Playwright on a fresh temporary data folder, so the real library is never opened, and seeds invented sample data: 6 songs, 2 services, 6 generated gradient backgrounds, and a Psalm 23 item from the bundled KJV. For each state it saves a screenshot and measures every visible element (fonts, colors, spacing, radius, targets, contrast). It also scans the stylesheets (`src/styles/tokens.css`, `src/index.css`, `src/components/ui/ui.css`) and the components directly. Its outputs are `metrics.json` (with a `totals.headline` summary) and `static.json`, next to 84 PNGs in this folder: the 83 app states plus `50-ui-kit.png`, the dev UI kit. Re-run the script to regenerate everything; it keeps this report, and the folder is git-ignored except for the report.
+**How it was made.** `node scripts/ui-audit.ts` builds the main process and serves the renderer with Vite. It then runs the app with Playwright on a fresh temporary data folder, so the real library is never opened, and seeds invented sample data: 6 songs, 2 services, 6 generated gradient backgrounds, and a Psalm 23 item from the bundled KJV. For each state it saves a screenshot and measures every visible element (fonts, colors, spacing, radius, targets, contrast). It also scans the stylesheets (`src/styles/tokens.css`, `src/index.css`, `src/components/ui/ui.css`) and the components directly. It also checks the layout of every screen (see below) and exits with an error if one fails. Its outputs are `metrics.json` (with a `totals.headline` summary), `static.json` and `layout.json`, next to 120 PNGs in this folder: the app states at three sizes plus `50-ui-kit.png`, the dev UI kit. Re-run the script to regenerate everything; it keeps this report, and the folder is git-ignored except for the report.
 
 **Caveats.**
 - Plan gating is off (`ENFORCE_ENTITLEMENTS = false`), so every screen is reachable.
 - A dev build shows the "AI developer key" Settings section, which customers never see.
 - The signed-in account, device chips, transfers and Inbox are invented data injected into the renderer's stores. Sharing itself stayed off, so nothing was advertised on the network.
-- Counts below are element instances summed over every screen at both sizes. They are useful for proportions, not as absolute figures.
+- Counts in sections 1 to 3 are element instances summed over every screen at the two sizes audited then (1280 and 1920). They are useful for proportions, not as absolute figures.
+
+## Layout at laptop sizes: before and after
+
+**The check.** `node scripts/ui-audit.ts` (also `npm run audit:ui`) now runs every operator screen at **1280×720, 1366×768 and 1920×1080** and fails (exit code 1, with each problem listed and saved to `layout.json`) when:
+- the page, `.app` or `.operator` is wider than the window (horizontal overflow);
+- the toolbar is taller than one row (64 px);
+- a visible control lies outside the window;
+- a control is cut off by a box that clips it, or runs past its own panel column into the next one. A control scrolled out of sight inside a list that scrolls up and down is fine; one cut off sideways is not.
+
+Run against the code before this change (same script, same data), and after:
+
+| Size | Screens failing, before | Before: what failed | Screens failing, after |
+|---|---|---|---|
+| 1280×720 | **30 of 30** | All 30 scroll sideways and the toolbar wraps (97 px, or 137 px with sharing on). Alerts, Settings, Hide schedule, the service picker and every schedule Remove button are off the window; the slide zoom slider runs under the Live column (19 screens) | **0 of 32** |
+| 1366×768 | **24 of 30** | The toolbar wraps with sharing on (9); the zoom slider (17) and the theme editor's controls are cut off | **0 of 32** |
+| 1920×1080 | **9 of 30** | The toolbar wraps to two rows with sharing on; with the Inbox open, its item buttons ran off the bottom of the window | **0 of 32** |
+
+The two extra screens after are `21-more-menu` and `22-status-popover`, the new menus open.
+
+**What changed.**
+- **Panels give way instead of overflowing.** Each side column (library, Live/Preview, schedule) is its saved width when there is room, and shrinks towards a floor (200, 240 and 200 px) when there is not. The centre keeps 280 px, or 520 px while an editor or Settings is open there. Columns can be narrower than their contents, which wrap or scroll inside them. At 1280 the default layout now fits with room to spare.
+- **Collapsible library**, like the schedule: a ‹ button in the library tabs folds it to a 36 px rail labelled "Library"; the whole rail brings it back. Both collapsed states are remembered (`worshipdeck.libraryCollapsed`, `worshipdeck.scheduleCollapsed`).
+- **Resizing** works as before (drag or arrow keys, within the same limits). It now starts from the width actually drawn, so a panel squeezed by a narrow window responds at once rather than after a dead zone.
+- **Toolbar: always one row.** Service, LIVE status, Live menu, Show/Black/Clear/Logo, Alerts, the status area, Search, More and Settings. Settings is always last and never shrinks. Below 1600 px the keyboard hints drop from the mode buttons and Search (they stay in the tooltips). Below 1366 px Search becomes an icon. The service name and live title shorten first.
+- **More menu (…):** the layout picker (with Edit layouts…), Stage Display, Stream, Sermons and Themes. The button shows as pressed while one of those screens is open, with a dot while the stage display or Stream output is open. The separate Layout button and the screens' icon strip are gone.
+- **Status area:** one compact button replaces the device chips, transfer chips, network hint and account. It shows sharing on/off, the number of computers online, the overall transfer percentage, whether you are signed in, and a warning sign when something needs attention. Its popover holds the account (plan, email, Account and Plans and Credits buttons) and sharing (device chips, transfers with Cancel/Retry/Decline, the network hint, Sharing settings). Dragging files or a shared item over the button opens the popover, so they can still be dropped on a device chip. The Inbox and cue tray stay as their own icons beside it. Sharing messages float below the toolbar instead of pushing it aside.
+- **Smaller fixes found by the check:** the slide panel's header actions wrap in a narrow centre; the theme editor stacks its theme list above the form when the centre is under 600 px; the font picker fits its card; the schedule's Host and Join buttons shorten long service and computer names; library tabs have less padding (Songs and Media now read in full at 1366).
+
+**Still to watch.**
+- At 1280 with an editor open, the side columns sit near their floors. Library tabs then read "S…", "P…". The library rail is the way to get the room back.
+- The check covers the operator window at the three sizes. The output and stage windows, and the cropped Settings sections, are pictures only.
 
 ## Tokens and shared components: before and after
 
@@ -71,11 +102,11 @@ The before figures come from the saved measurements of the first run. The 180 sm
   - the song list's hover actions, the song and theme editors, Stream, the command palette input;
   - the splitters (7 px, drag handles).
 - **Legacy classes.** `.button`, `.icon-button` and `.input` still style those screens. Migrating them is the same mechanical change.
-- **Layout.** The 1280×720 horizontal overflow (Biggest problems, 1) is unchanged: 31 screens still scroll sideways. It is a layout fix, not a token one.
+- **Layout.** The 1280×720 horizontal overflow (Biggest problems, 1) was not a token problem; it has since been fixed (see Layout at laptop sizes, above).
 
 ## Screens captured
 
-Each operator screen is saved at `@1280` (1280×720) and `@1920` (1920×1080).
+Each operator screen is saved at `@1280` (1280×720), `@1366` (1366×768) and `@1920` (1920×1080).
 
 | # | Screen | Notes |
 |---|---|---|
@@ -91,7 +122,8 @@ Each operator screen is saved at `@1280` (1280×720) and `@1920` (1920×1080).
 | 17, 27 | Plans and Credits | 17 is this build (no server); 27 is signed in |
 | 18–19 | Sermons, Stream | |
 | 20–21 | **Help** | There is no Help screen. The command palette is the nearest thing |
-| 22–23 | Device chips and transfers; Inbox open | |
+| 21 | More menu | `21-more-menu`: layouts, Stage Display, Stream, Sermons, Themes |
+| 22–23 | Device chips and transfers (in the status popover); Inbox open | |
 | 24–26 | Account: unconfigured, signed out, signed in | |
 | 28 | Main, light appearance | |
 | 29–30 | Errors: song deleted while open; a panel that crashed | |

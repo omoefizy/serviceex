@@ -1487,7 +1487,7 @@ function DevicesSection() {
     <Section icon={<Plug size={16} aria-hidden="true" />} title="Devices">
       {hasFeature('sharing.presence') && (
         <Toggle checked={settings.sharingDeviceChips} onChange={(e) => run(() => updateSettings({ sharingDeviceChips: e.target.checked }))}>
-          Device chips in the toolbar, with the title of what each computer has live
+          Device chips in the toolbar status area, with the title of what each computer has live
         </Toggle>
       )}
       <p className="hint">Only the title is shared, never the slide. Turned off, this computer also stops telling the others what it has live.</p>

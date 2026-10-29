@@ -21,7 +21,7 @@ vi.stubGlobal('window', { api })
 
 const { can, ENFORCE_ENTITLEMENTS, FEATURE_KEYS, planOf, setEntitlementEnforcement, setEntitlements, upgradeNote } = await import('../shared/features')
 const { useOperatorStore } = await import('./store')
-const { Toolbar } = await import('./components/Toolbar')
+const { MoreMenuList, Toolbar } = await import('./components/Toolbar')
 const { SettingsPanel } = await import('./components/SettingsPanel')
 const { ImportModal } = await import('./components/ImportModal')
 const { PresentationsPanel } = await import('./components/PresentationsPanel')
@@ -38,7 +38,8 @@ const note = (feature: Parameters<typeof upgradeNote>[0]) => upgradeNote(feature
 
 function render() {
   return {
-    toolbar: renderToString(createElement(Toolbar)),
+    // The screens used less often are in the toolbar's More menu, which renders closed.
+    toolbar: renderToString(createElement(Toolbar)) + renderToString(createElement(MoreMenuList, { onChoose: () => undefined })),
     settings: renderToString(createElement(SettingsPanel)),
     importer: renderToString(createElement(ImportModal, { onClose: () => undefined })),
     presentations: renderToString(createElement(PresentationsPanel)),
@@ -65,8 +66,8 @@ describe('a feature the plan does not include', () => {
       expect(toolbar, feature).toContain(`title="${note(feature)}"`)
     }
     expect(upgradeNote('alerts')).toBe('Alerts is not included in the Basic plan. See Settings, Account.')
-    expect(toolbar).toMatch(/<button[^>]*aria-label="Stage display"[^>]*disabled=""/)
-    expect(toolbar).toMatch(/<button[^>]*aria-label="Themes"[^>]*disabled=""/)
+    expect(toolbar).toMatch(/<button[^>]*disabled=""[^>]*>(?:(?!<\/button>)[\s\S])*Stage Display/)
+    expect(toolbar).toMatch(/<button[^>]*disabled=""[^>]*>(?:(?!<\/button>)[\s\S])*Themes/)
     expect(toolbar).toMatch(/<button[^>]*mode-alert[^>]*disabled=""/)
   })
 
@@ -161,7 +162,7 @@ describe('with ENFORCE_ENTITLEMENTS off, as shipped', () => {
       expect(FEATURE_KEYS.every(can)).toBe(true)
       const { toolbar } = render()
       expect(toolbar).not.toContain('not included in')
-      expect(toolbar).not.toMatch(/<button[^>]*aria-label="(Stage display|Themes)"[^>]*disabled=""/)
+      expect(toolbar).not.toMatch(/<button[^>]*disabled=""[^>]*>(?:(?!<\/button>)[\s\S])*(Stage Display|Themes)/)
       // Asked again (every render asks), each feature is still logged only once.
       FEATURE_KEYS.forEach(can)
       expect(info).toHaveBeenCalledTimes(FEATURE_KEYS.length)

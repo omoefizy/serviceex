@@ -54,15 +54,19 @@ export function SharedServiceBar() {
           title="Let paired computers join this service and edit it together. Changes sync within about a second."
           onClick={() => run(hostOpenService)}
         >
-          <Users size={14} aria-hidden="true" /> Host {service ? `“${service.name}”` : 'a shared service'}
+          <Users size={14} aria-hidden="true" />
+          <span className="shared-bar-label">Host {service ? `“${service.name}”` : 'a shared service'}</span>
         </Button>
         {hosts.map((peer) => (
           <Button
             key={peer.id}
             disabled={busy}
+            title={`Join ${peer.hosting!.name} on ${peer.name}`}
             onClick={() => run(async () => useSharingStore.setState({ shared: await window.api.sharing.joinService(peer.id) }))}
           >
-            Join {peer.hosting!.name} on {peer.name}
+            <span className="shared-bar-label">
+              Join {peer.hosting!.name} on {peer.name}
+            </span>
           </Button>
         ))}
       </div>

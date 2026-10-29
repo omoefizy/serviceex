@@ -192,9 +192,9 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
   if (collapsed) {
     return (
       <aside className="schedule collapsed">
-        <button className="schedule-toggle" aria-expanded={false} onClick={() => onCollapsedChange(false)}>
+        <button className="panel-rail-toggle" aria-expanded={false} title="Show the schedule" onClick={() => onCollapsedChange(false)}>
           <ChevronLeft size={16} aria-hidden="true" />
-          <span className="schedule-toggle-label">Schedule</span>
+          <span className="panel-rail-label">Schedule</span>
         </button>
       </aside>
     )

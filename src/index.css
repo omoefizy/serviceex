@@ -77,11 +77,17 @@ textarea {
   height: 100%;
 }
 
-/* Columns come from App (saved panel widths); splitters sit between them. */
+/* Columns come from App (saved panel widths, which give way in a narrow window); splitters sit between them. */
 .operator {
   display: grid;
   min-height: 0;
   background: var(--bg);
+}
+
+/* A column may be narrower than its contents would like; they wrap or scroll inside it rather than widen the window. */
+.operator > *,
+.operator > .layout-slot > * {
+  min-width: 0;
 }
 
 /* A 1px line with a wider grab area. */
@@ -100,23 +106,28 @@ textarea {
 
 /* ---------- Toolbar ---------- */
 
-/* One row when there is room. A narrow window wraps the controls onto a second row rather than pushing the last of
-   them (Settings) past the window edge, where body { overflow: hidden } would cut them off. */
+/* Always one row, down to a 1280 pixel window: the service name and the live title give way first, then the narrower
+   breakpoints below drop keyboard hints and labels. The screens used less often are in the More menu. */
 .toolbar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: var(--space-2) var(--space-4);
+  gap: var(--space-4);
   min-height: 56px;
   padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--border);
   background: var(--panel);
 }
 
-.toolbar-service {
+.toolbar > * {
+  flex-shrink: 0;
+}
+
+.toolbar > .toolbar-service {
   display: flex;
+  flex: 0 1 auto;
   flex-direction: column;
-  min-width: 0;
+  min-width: 48px;
   max-width: 240px;
 }
 
@@ -133,9 +144,13 @@ textarea {
   font-size: 12px;
 }
 
+.toolbar > .live-indicator {
+  flex: 1 1 0;
+  min-width: 72px;
+}
+
 .live-indicator {
   display: flex;
-  flex: 1;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
@@ -578,32 +593,28 @@ textarea {
   background: transparent;
 }
 
-/* May shrink below its contents: the screens list then scrolls and Settings, after it, stays in view. */
+/* At the right end of the toolbar, Settings last; nothing here shrinks, so Settings is always in view. */
 .toolbar-actions {
   display: flex;
-  flex: 0 1 auto;
   align-items: center;
   gap: var(--space-1);
-  min-width: 0;
   margin-left: auto;
 }
 
-.toolbar-actions > *:not(.toolbar-nav) {
+.toolbar-actions > * {
   flex-shrink: 0;
 }
 
-/* Icon buttons only: their tooltips are native, so scrolling clips nothing. Popups (Layouts) stay outside it. */
-.toolbar-nav {
+.menu-heading {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-.toolbar-nav > * {
-  flex-shrink: 0;
+  padding: var(--space-1-5) var(--space-2) var(--space-0-5);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 /* A Button drawn like a search field; it opens the command palette. */
@@ -620,7 +631,42 @@ textarea {
   margin-left: auto;
 }
 
-/* On the Stream button while the Stream output window is open. */
+/* Laptop widths: the keyboard hints go (they stay in the tooltips), then the Search label. */
+@media (max-width: 1599px) {
+  .toolbar {
+    gap: var(--space-3);
+  }
+
+  .ui-button.mode-button {
+    min-width: 0;
+  }
+
+  .mode-button kbd,
+  .toolbar-search kbd {
+    display: none;
+  }
+
+  .ui-button.toolbar-search {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 1365px) {
+  .toolbar {
+    gap: var(--space-2);
+    padding-inline: var(--space-3);
+  }
+
+  .toolbar > .toolbar-service {
+    max-width: 180px;
+  }
+
+  .toolbar-search-label {
+    display: none;
+  }
+}
+
+/* On the More button while the stage display or the Stream output window is open. */
 .toolbar-icon-dot {
   position: absolute;
   top: 5px;
@@ -897,14 +943,26 @@ textarea {
 
 .library-tabs {
   display: flex;
+  align-items: flex-end;
   gap: var(--space-1);
-  padding: var(--space-3) var(--space-4) 0;
+  padding: var(--space-3) var(--space-2) 0;
   border-bottom: 1px solid var(--border);
+}
+
+.library-tab-list {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.library-tabs > .ui-icon-button {
+  flex-shrink: 0;
+  margin-bottom: var(--space-1);
 }
 
 .library-tab {
   flex: 1;
-  padding: var(--space-1-5) var(--space-2-5);
+  padding: var(--space-1-5) var(--space-1);
   border: 0;
   border-bottom: 2px solid transparent;
   background: none;
@@ -1349,7 +1407,8 @@ textarea {
 
 .theme-picker {
   width: auto;
-  max-width: 220px;
+  min-width: 0;
+  max-width: min(220px, 100%);
   padding: var(--space-1) var(--space-2);
 }
 
@@ -2667,6 +2726,7 @@ textarea {
 /* ---------- Theme editor ---------- */
 
 .theme-editor {
+  container-type: inline-size;
   overflow-y: auto;
 }
 
@@ -2681,6 +2741,25 @@ textarea {
   grid-template-columns: 170px minmax(0, 1fr);
   gap: var(--space-4);
   align-items: start;
+}
+
+/* A narrow centre (a laptop with every panel open): the theme list goes above the form, which gets the full width. */
+@container (max-width: 600px) {
+  .theme-editor-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .theme-editor-body .theme-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  .theme-form .theme-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
 }
 
 .theme-list {
@@ -2879,10 +2958,13 @@ textarea {
 
 .font-picker {
   position: relative;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .font-picker-value {
   width: 200px;
+  max-width: 100%;
   padding: var(--space-1) var(--space-2);
   overflow: hidden;
   text-align: left;
@@ -3168,13 +3250,23 @@ textarea {
 /* ---------- Schedule ---------- */
 
 
-.schedule.collapsed {
+.schedule.collapsed,
+.library.collapsed {
   display: flex;
   width: 36px;
   background: var(--panel);
 }
 
-.schedule-toggle {
+.library.collapsed {
+  border-right: 1px solid var(--border);
+}
+
+.schedule.collapsed {
+  border-left: 1px solid var(--border);
+}
+
+/* A collapsed side panel: the whole rail is the button that brings it back. */
+.panel-rail-toggle {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3188,16 +3280,17 @@ textarea {
   cursor: pointer;
 }
 
-.schedule-toggle:hover {
+.panel-rail-toggle:hover {
+  background: var(--panel-raised);
   color: var(--text);
 }
 
-.schedule-toggle:focus-visible {
+.panel-rail-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
-.schedule-toggle-label {
+.panel-rail-label {
   writing-mode: vertical-rl;
   font-size: 12px;
   letter-spacing: 0.06em;
@@ -3319,9 +3412,15 @@ textarea {
 
 /* ---------- Import and export ---------- */
 
+/* Wraps onto a second line in a narrow panel rather than run under the next one. */
 .panel-header-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: var(--space-1-5);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .import-modal {
@@ -5960,6 +6059,138 @@ textarea {
 
 /* ---------- Sharing ---------- */
 
+/* The toolbar's status: sharing, the other computers and the account in one compact button, with a popover. */
+.status-area {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.status-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--control-md);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--panel-raised);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.status-button:hover,
+.status-button[aria-expanded='true'] {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.status-button[aria-expanded='true'] {
+  background: var(--accent-soft);
+}
+
+.status-button .status-signed-in {
+  color: var(--success);
+}
+
+.status-button .status-warning {
+  color: var(--warning);
+}
+
+.status-count,
+.status-progress {
+  font-variant-numeric: tabular-nums;
+}
+
+.status-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.status-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.status-section + .status-section {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.status-section h3 {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.status-line {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.status-popover .device-bar {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.status-popover .network-hint {
+  max-width: 100%;
+}
+
+.transfer-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+}
+
+.transfer-list .transfer-chip {
+  max-width: 100%;
+}
+
+/* A passing sharing message, floating below the toolbar so it never pushes the toolbar's controls aside. */
+.sharing-toast {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 19;
+  max-width: 360px;
+  padding: var(--space-1-5) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  box-shadow: var(--shadow);
+  color: var(--text);
+}
+
 /* Other ServiceEx computers on the local network, in the toolbar; files and items are dropped on them. */
 .device-bar {
   display: flex;
@@ -6363,24 +6594,6 @@ textarea {
 
 /* ---------- Device sharing: layouts, live titles, cues, the shared service and library sync ---------- */
 
-.layout-menu-button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  max-width: 200px;
-}
-
-.layout-menu-button span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.layout-menu .live-menu-list kbd {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
 /* A chip with the title of what that computer has live. */
 .device-chip:has(.device-live) {
   max-width: 300px;
@@ -6511,6 +6724,20 @@ textarea {
   gap: var(--space-1-5);
   padding: 0 var(--space-3) var(--space-2);
   font-size: 12px;
+}
+
+/* A narrow schedule shortens a long service or computer name rather than widen the window. */
+.shared-bar > .ui-button,
+.shared-bar > .ui-tooltip-wrap {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.shared-bar-label {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
 }
 
 .shared-bar.active .ui-select {
