@@ -63,6 +63,10 @@ function ItemIcon({ type }: { type: ServiceItemType }) {
 
 /** The line under an item's title: its type, and how much is in it. */
 function subtitleOf(item: ServiceItem): string {
+  if (item.type === 'scripture' && item.payload.group) {
+    const count = item.payload.group.passages.length
+    return `Scripture group · ${count} passage${count === 1 ? '' : 's'}`
+  }
   if (item.type === 'scripture') return `Scripture · ${item.payload.verses.length} verse${item.payload.verses.length === 1 ? '' : 's'}`
   if (item.type === 'presentation') return `Presentation · ${item.payload.pages.length} slide${item.payload.pages.length === 1 ? '' : 's'}`
   return TYPE_LABELS[item.type]
@@ -479,7 +483,7 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
                     })
                   }
                 >
-                  <span className="schedule-item-type" title={TYPE_LABELS[item.type]}>
+                  <span className="schedule-item-type" title={item.type === 'scripture' && item.payload.group ? 'Scripture group' : TYPE_LABELS[item.type]}>
                     {item.type === 'presentation' && item.payload.pages[0] ? (
                       // Its first slide; the picture changes when the original is saved again.
                       <img className="schedule-item-thumb" src={item.payload.pages[0]} alt="" />

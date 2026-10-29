@@ -4,6 +4,7 @@
 import type { Entitlements, KeyProvider } from './features'
 import type { LicenseStatus } from './license'
 import type { AccountApi } from './account'
+import type { VersePart } from './parseReference'
 
 /** How a song's sections play and how its slides are cut. */
 export interface SongArrangement {
@@ -46,13 +47,49 @@ export interface Service {
 
 export type ServiceItemType = 'song' | 'scripture' | 'announcement' | 'presentation'
 
+/** One slide of a scripture passage: a verse, part of one, or a combined slide of several passages. */
+export interface ScriptureSlide {
+  text: string
+  caption: string
+  /** The verse's words from the Bible, kept when the slide shows only part of it or edited words. */
+  source?: string
+  /** Shows only part of the verse: "a" up to `split` (an offset into `source`), "b" from it. */
+  part?: { which: VersePart; split: number }
+  /** The words were edited for display (typed, or hidden behind "…"); `source` keeps the Bible's. */
+  edited?: boolean
+  /** A combined slide in two columns: the right column's text; `text` is the left column. */
+  column?: string
+}
+
 /** A scripture passage saved in a service, verses included so it shows without another lookup. */
 export interface ScripturePayload {
   /** Such as "John 3:16-18 KJV". */
   title: string
-  verses: { text: string; caption: string }[]
+  verses: ScriptureSlide[]
   /** Formatting for some of its slides, keyed by slide text. */
   formats?: SlideFormats
+  /** A Scripture group: several passages combined, kept so the group can be opened and edited again. */
+  group?: ScriptureGroup
+}
+
+/** How a combined slide lays out its passages. */
+export type ScriptureGroupLayout = 'stacked' | 'columns'
+
+/** One passage of a Scripture group. */
+export interface ScriptureGroupPassage {
+  /** As asked for, such as "Ephesians 1:19b". */
+  reference: string
+  version: BibleVersionCode
+  /** Its verses, each with its own part and edits. */
+  verses: ScriptureSlide[]
+}
+
+/** Up to four passages on one slide, each under its own reference (see shared/scriptureGroup.ts). */
+export interface ScriptureGroup {
+  layout: ScriptureGroupLayout
+  passages: ScriptureGroupPassage[]
+  /** One slide per passage instead of one for them all, for passages too long to share a slide. */
+  split?: boolean
 }
 
 export interface AnnouncementPayload {

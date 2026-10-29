@@ -1,4 +1,5 @@
 import type { BibleVersionCode, DualLayout, ThemeElement, ThemeStyle, Verse } from '../../shared/types'
+import { naturalSplit, versePartText } from '../../shared/verseParts'
 import type { DeckSlide } from '../store'
 import { parseVerseCaption, verseCaption } from './slides'
 
@@ -64,11 +65,17 @@ export async function translateSlides(slides: DeckSlide[], title: string, to: Tr
       if (!verse) missing.push(`${name} ${to.version}`)
       if (second && !other) missing.push(`${name} ${second.version}`)
       if (!verse || (second && !other)) return slide
-      const next: DeckSlide = { ...slide, text: verse.text, caption: verseCaption(verse, to.version, second?.version) }
+      // Part of a verse splits again at the new wording's natural break; an edit was made for the old words, so it goes.
+      const partOf = (text: string) => (at.part ? versePartText(text, at.part, naturalSplit(text)) : text)
+      const next: DeckSlide = { ...slide, text: partOf(verse.text), caption: verseCaption(verse, to.version, second?.version, at.part) }
       delete next.rich
       delete next.unmarked
       delete next.second
-      if (second && other) next.second = { text: other.text, layout: second.layout }
+      delete next.edited
+      delete next.source
+      delete next.part
+      if (at.part) Object.assign(next, { source: verse.text, part: { which: at.part, split: naturalSplit(verse.text) } })
+      if (second && other) next.second = { text: partOf(other.text), layout: second.layout }
       return next
     }),
   )

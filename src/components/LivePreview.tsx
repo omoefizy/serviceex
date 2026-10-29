@@ -9,6 +9,7 @@ import {
   EyeOff,
   Highlighter,
   ListOrdered,
+  Pencil,
   MousePointerClick,
   Presentation,
   RefreshCw,
@@ -24,6 +25,7 @@ import { comparePos, type RichPos } from '../../shared/richText'
 import type { DualTranslation, HighlightKind, LivePowerPointStatus, OutputState } from '../../shared/types'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { pickHighlightColor } from '../lib/highlights'
+import { editScriptureText } from '../lib/scriptureGroup'
 import { MOD } from '../lib/shortcuts'
 import { parseVerseCaption, slideLines } from '../lib/slides'
 import { slideTranslation } from '../lib/translations'
@@ -39,10 +41,11 @@ import {
   type DeckSlide,
   type TranslationTarget,
 } from '../store'
+import { CombineTray } from './CombineModal'
 import { OutputScreen } from './OutputView'
 import { ScriptureQuickAdjust } from './ScriptureDisplay'
 import { ThemedSlide } from './ThemedSlide'
-import { Button, ErrorNote, IconButton, Panel, Select } from './ui'
+import { Button, Chip, ErrorNote, IconButton, Panel, Select } from './ui'
 
 /** "Slide 2 of 5" across the corner of a screen, when it shows a slide. */
 function SlideBadge({ index, count }: { index: number | null; count: number }) {
@@ -416,6 +419,7 @@ export function PreviewMonitor() {
   const logoUrl = useOperatorStore((s) => s.settings.logoUrl)
   const goLiveHighlighted = useOperatorStore((s) => s.goLiveHighlighted)
   const waiting = useOperatorStore((s) => (s.live.slideIndex === null ? 0 : s.live.slides.length - s.live.slideIndex - 1))
+  const scripture = useOperatorStore((s) => s.deckType === 'scripture')
   const [toolsOpen, setToolsOpen] = useState(false)
   const [queueOpen, setQueueOpen] = useState(false)
 
@@ -426,10 +430,25 @@ export function PreviewMonitor() {
       meta={
         <span className="monitor-meta" title={(highlightIndex !== null && deckTitle) || undefined}>
           {previewSlide ? 'Next to go live' : 'Nothing selected'}
+          {previewSlide?.edited && (
+            <Chip tone="warning" className="edited-chip" title="The words were edited for this item; the Bible text is unchanged">
+              Edited
+            </Chip>
+          )}
         </span>
       }
       actions={
         <>
+          {scripture && previewSlide && highlightIndex !== null && (
+            <IconButton
+              size="sm"
+              className="monitor-header-button"
+              label="Edit text"
+              tooltip="Edit text: change the words, hide some with “…”, or move a part’s split"
+              icon={<Pencil size={15} />}
+              onClick={() => editScriptureText(highlightIndex)}
+            />
+          )}
           <HeaderPopover
             label="Queue"
             text="Queue"
@@ -454,6 +473,7 @@ export function PreviewMonitor() {
         </>
       }
     >
+      <CombineTray />
       <MonitorStage where="preview" notes={<TranslationBar where="preview" part="note" />}>
         {previewSlide ? (
           <ThemedSlide theme={previewTheme} text={previewSlide.text} caption={previewSlide.caption} copyright={previewSlide.copyright} rich={previewSlide.rich} logoUrl={logoUrl} />
@@ -638,7 +658,7 @@ function UpNextMeta() {
 /** "John 3:17" from a verse caption ("John 3:17 KJV"); a song's section label, or the slide's number. */
 function slideName(slide: DeckSlide, index: number): string {
   const verse = slide.caption ? parseVerseCaption(slide.caption) : null
-  if (verse) return `${verse.book} ${verse.chapter}:${verse.verse}`
+  if (verse) return `${verse.book} ${verse.chapter}:${verse.verse}${verse.part ?? ''}`
   return slide.label || slide.caption || `Slide ${index + 1}`
 }
 

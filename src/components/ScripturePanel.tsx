@@ -5,7 +5,7 @@ import { can, upgradeNote } from '../../shared/features'
 import { BOOK_NAMES, formatReference, NEW_TESTAMENT_BOOKS, OLD_TESTAMENT_BOOKS, parseReference } from '../../shared/parseReference'
 import type { AiError, BibleVersion, BibleVersionCode, Testament, Verse } from '../../shared/types'
 import { describeError, reportError, type ErrorLike } from '../lib/errors'
-import { itemTitle, passageOf, previewPassage, type ResultItem } from '../lib/scripture'
+import { fetchPassage, itemTitle, passageOf, previewPassage, type ResultItem } from '../lib/scripture'
 import { parseVerseCaption } from '../lib/slides'
 import {
   isVersionFilter,
@@ -129,7 +129,12 @@ export function ScripturePanel({ toolbar = null }: { toolbar?: HTMLElement | nul
     return () => clearTimeout(timer)
   }, [input])
 
-  const view = useMemo(() => readScriptureQuery(query), [query])
+  /** The book last listed, for a chapter and verse typed without one ("1:19a"). */
+  const lastBook = useRef<string | null>(null)
+  const view = useMemo(() => readScriptureQuery(query, lastBook.current), [query])
+  useEffect(() => {
+    if (view.kind === 'chapter') lastBook.current = view.ref.book
+  }, [view])
   const asText = forceText === query && query.trim().length >= 2
   const textMode = !meaning && (asText || view.kind === 'text')
   const listView = !meaning && !textMode && (view.kind === 'books' || view.kind === 'chapter') ? view : null
@@ -265,14 +270,16 @@ export function ScripturePanel({ toolbar = null }: { toolbar?: HTMLElement | nul
     if (listView?.kind === 'books') return completeBook(item.book)
     const range = items.filter((i) => i.version === item.version && isMarked(i))
     const asRange = range.length > 1 && range.includes(item)
+    // A typed verse part ("Ephesians 1:19b") reads the reference as typed, cut to its parts.
+    const parts = chapter !== null && (chapter.startPart !== undefined || chapter.endPart !== undefined) && isMarked(item)
     try {
-      const passage = await passageOf(asRange ? range : [item], asRange ? 'range' : 'sequence')
+      const passage = parts ? await fetchPassage(chapter, item.version) : await passageOf(asRange ? range : [item], asRange ? 'range' : 'sequence')
       if (!passage) throw new Error('Those verses could not be read from the Bible.')
       previewPassage(passage)
       setError(null)
-      remember(meaning ? meaning.topic : textMode ? query : asRange && chapter ? formatReference(chapter) : formatReference(item))
+      remember(meaning ? meaning.topic : textMode ? query : (asRange || parts) && chapter ? formatReference(chapter) : formatReference(item))
       if (live) {
-        useOperatorStore.getState().goLive(asRange ? range.indexOf(item) : 0)
+        useOperatorStore.getState().goLive(asRange || parts ? Math.max(range.indexOf(item), 0) : 0)
         // Hand the keyboard back to slide navigation, so the arrows step the live verse.
         inputRef.current?.blur()
       }
@@ -309,7 +316,7 @@ export function ScripturePanel({ toolbar = null }: { toolbar?: HTMLElement | nul
     } else if (e.key === 'Enter') {
       e.preventDefault()
       // Typed faster than the debounce: wait for the list of what is in the box.
-      if (input !== query && readScriptureQuery(input).kind !== 'text') {
+      if (input !== query && readScriptureQuery(input, lastBook.current).kind !== 'text') {
         pending.current = { input, live: mod }
         setQuery(input)
       } else choose(active, mod)

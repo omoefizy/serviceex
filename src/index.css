@@ -9379,6 +9379,273 @@ svg.lucide {
   height: max(100%, var(--hit-min));
 }
 
+/* ---------- Scripture: Edit text, verse parts and Scripture groups ---------- */
+
+.edited-chip {
+  margin-left: var(--space-1-5);
+  vertical-align: middle;
+}
+
+/* A slide whose words were edited for this item. */
+.slide-edited {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  z-index: 2;
+  padding: 1px var(--space-1-5);
+  border-radius: 4px;
+  background: var(--screen-scrim);
+  color: var(--warning-fill);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.slide-row .slide-edited {
+  top: 6px;
+  bottom: auto;
+  left: auto;
+  right: 52px;
+}
+
+.slide-edit-text {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  z-index: 3;
+  display: inline-flex;
+  padding: 3px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--screen-scrim);
+  color: var(--screen-fg-soft);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.slide-cell:hover .slide-edit-text,
+.slide-edit-text:focus-visible {
+  opacity: 1;
+}
+
+.slide-edit-text:hover {
+  background: var(--accent-strong);
+  color: var(--text-on-fill);
+}
+
+/* The thumbnail's own badge sits in that corner; the button covers it only on hover. */
+.slide-list .slide-edit-text {
+  top: 50%;
+  right: 28px;
+  transform: translateY(-50%);
+}
+
+.scripture-text-editor .ui-modal-body,
+.combine-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.text-editor-part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+
+.text-editor-row,
+.text-editor-tools,
+.combine-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.split-words {
+  margin: 0;
+  line-height: 1.9;
+  user-select: none;
+  touch-action: none;
+}
+
+.split-words.dragging {
+  cursor: ew-resize;
+}
+
+.split-word {
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.split-word.in {
+  color: var(--text-1);
+}
+
+/* Where part b begins: a bar with a handle, dragged between words. */
+.split-marker {
+  display: inline-block;
+  position: relative;
+  width: 4px;
+  height: 1.4em;
+  margin: 0 var(--space-1) 0 0;
+  border-radius: var(--radius-full);
+  background: var(--accent-bright);
+  vertical-align: middle;
+  cursor: ew-resize;
+}
+
+.split-marker::before {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--accent-bright);
+  transform: translateX(-50%);
+  content: '';
+}
+
+.split-marker:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+
+.text-editor-label {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.text-editor-text {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  font-size: var(--text-md);
+  line-height: 1.5;
+}
+
+.text-editor-preview,
+.combine-slide {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--screen-bg);
+}
+
+.text-editor-preview {
+  width: min(100%, 360px);
+}
+
+.combine-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.combine-note.warning {
+  color: var(--warning);
+}
+
+.combine-passages,
+.combine-verses,
+.combine-chips {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.combine-passages {
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.combine-passage {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+
+.combine-passage-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.combine-passage-head strong {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-md);
+}
+
+.combine-verses {
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-1-5);
+}
+
+.combine-verse {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.combine-verse > :not(.combine-verse-text) {
+  flex: none;
+  width: auto;
+}
+
+.combine-verse-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.combine-slides {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.preview-card .ui-panel-title {
+  flex: none;
+}
+
+.preview-card .ui-panel-meta {
+  min-width: 0;
+}
+
+.combine-tray {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: 0;
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+.combine-tray .combine-chips {
+  flex: 1;
+}
+
+.combine-chips {
+  gap: var(--space-1);
+  min-width: 0;
+  overflow-x: auto;
+}
+
 /* ---------- Narrower and shorter windows ---------- */
 
 /* Below 1280 pixels the finder's search gives way first, and the Order of service is a rail (App). */

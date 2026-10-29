@@ -6,6 +6,7 @@ import { can } from '../shared/features'
 import { DEFAULT_LAYOUT_ID, PRESET_LAYOUTS } from '../shared/layouts'
 import { formatFor, matching, trimRich, type RichRange } from '../shared/richText'
 import { adjustTheme, isEmptyAdjust } from '../shared/scriptureLook'
+import { captionWithPart } from '../shared/verseEdit'
 import { DEFAULT_FONT, DEFAULT_THEME_STYLE } from '../shared/themes'
 import { themeForContent } from '../shared/textAreas'
 import type {
@@ -32,6 +33,7 @@ import type {
   RichText,
   ScriptureAdjust,
   ScripturePayload,
+  ScriptureSlide,
   ServiceItemPayload,
   ServiceItem,
   ServiceItemType,
@@ -48,6 +50,7 @@ import type {
   Verse,
 } from '../shared/types'
 import { announcementSlides, parseVerseCaption, quoteSlide, verseCaption } from './lib/slides'
+import { columnsTheme } from './lib/scriptureColumns'
 import { PRIORITY_BAND_COLOR, PRIORITY_PASSES, runDurationMs } from './lib/ticker'
 import { dualTheme, missingNote, slideTranslation, translateSlides, type Translation } from './lib/translations'
 import { CONTENT_COLORS } from './styles/contentColors'
@@ -86,6 +89,14 @@ export interface DeckSlide {
   second?: { text: string; layout: DualTranslation['layout'] }
   /** Quick adjustments to this verse alone (the Aa popover), over its theme; they stay through a change of translation. */
   adjust?: ScriptureAdjust
+  /** A scripture slide's Bible words, kept when it shows part of the verse or edited words (see ScriptureSlide). */
+  source?: string
+  /** Part of the verse: "a" up to `split` in `source`, "b" from it. */
+  part?: ScriptureSlide['part']
+  /** The words were edited for display; `source` keeps the Bible's. */
+  edited?: boolean
+  /** A combined scripture slide in two columns: the right column's words. */
+  column?: string
 }
 
 /** Where a translation change goes: the preview's scripture, or the live scripture. */
@@ -382,6 +393,11 @@ interface OperatorState {
   songDeleted(id: number): Promise<void>
   /** Saves a scripture or announcement item's new payload (its slides' words and formatting) and shows it in the grid. */
   updateItemPayload(itemId: number, payload: ScripturePayload | AnnouncementPayload): Promise<void>
+  /**
+   * Shows scripture slide `index` of the grid as `slide` (part of the verse, or edited words). On a service item it is
+   * saved with that item only; the Bible text never changes. A slide that is live waits for Resend.
+   */
+  editScriptureSlide(index: number, slide: ScriptureSlide): Promise<void>
   loadPresentations(): Promise<void>
   /** Imports files or image folders into the Presentations library, .pptx files in `mode`; resolves to what was imported. */
   importPresentations(paths: string[], mode?: PresentationMode): Promise<Presentation[]>
@@ -1324,6 +1340,29 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     markLiveStale(`item:${itemId}`)
   },
 
+  async editScriptureSlide(index, slide) {
+    const { slides, deckKey, deckType, service, activeItemId } = get()
+    const old = slides[index]
+    if (!old || deckType !== 'scripture') return
+    const item = service?.items.find((i) => i.id === activeItemId)
+    const stored = item?.type === 'scripture' && deckKey === `item:${item.id}` && !item.payload.group ? item.payload.verses[index] : undefined
+    // Saved with the item only while the grid shows the verse as stored (not switched to another translation).
+    if (item && stored && sameVerse(stored.caption, old.caption)) {
+      const verse = scriptureSlideOf({ ...slide, caption: captionWithPart(stored.caption, slide.part?.which ?? null) })
+      await get().updateItemPayload(item.id, { ...(item.payload as ScripturePayload), verses: (item.payload as ScripturePayload).verses.map((v, i) => (i === index ? verse : v)) })
+      return
+    }
+    // A lookup in the grid: the edit lasts while it is loaded.
+    const next: DeckSlide = { ...old, ...scriptureSlideOf(slide) }
+    for (const key of ['source', 'part', 'edited'] as const) if (!(key in slide)) delete next[key]
+    if (next.text !== old.text) {
+      delete next.rich
+      delete next.unmarked
+    }
+    set({ slides: slides.map((s, i) => (i === index ? next : s)) })
+    if (deckKey) markLiveStale(deckKey)
+  },
+
   async songDeleted(id) {
     const { selectedSong, service, songsVersion, editingSongId } = get()
     set({ songsVersion: songsVersion + 1, editingSongId: editingSongId === id ? null : editingSongId })
@@ -1733,7 +1772,31 @@ const richOf = (formats: SlideFormats | undefined, text: string) => {
 }
 
 /** Scripture or announcement slides with their stored formatting. */
-const withFormats = (slides: { text: string; caption: string }[], formats: SlideFormats | undefined): DeckSlide[] =>
+/** A slide's words for the stage display: both columns of a two-column slide, one under the other. */
+const stageText = (slide: DeckSlide) => (slide.column === undefined ? slide.text : `${slide.text}\n${slide.column}`)
+
+/** Two slide captions name the same verse in the same translation, whatever the part letter or second translation. */
+function sameVerse(a: string, b: string): boolean {
+  const x = parseVerseCaption(a)
+  const y = parseVerseCaption(b)
+  if (!x || !y) return a === b
+  return x.book === y.book && x.chapter === y.chapter && x.verse === y.verse && x.version === y.version
+}
+
+/** A scripture slide's own fields, as a service item keeps them. */
+function scriptureSlideOf(slide: ScriptureSlide): ScriptureSlide {
+  const { text, caption, source, part, edited, column } = slide
+  return {
+    text,
+    caption,
+    ...(source !== undefined ? { source } : {}),
+    ...(part ? { part } : {}),
+    ...(edited ? { edited } : {}),
+    ...(column !== undefined ? { column } : {}),
+  }
+}
+
+const withFormats = (slides: ScriptureSlide[], formats: SlideFormats | undefined): DeckSlide[] =>
   slides.map((slide) => ({ ...slide, ...richOf(formats, slide.text) }))
 
 const mediaBackground = (item: MediaItem): ThemeBackground =>
@@ -1946,8 +2009,9 @@ export function selectStageState(s: OperatorState): StageState {
   const items = s.service?.items ?? []
   const nextItem = live.scheduleItemId === null ? undefined : items[items.findIndex((item) => item.id === live.scheduleItemId) + 1]
   return {
-    current: current ? { text: current.text, caption: current.caption, rich: current.rich ?? null } : null,
-    next: next ? { text: next.text, caption: next.caption, rich: next.rich ?? null } : null,
+    // A two-column scripture slide reads as one column on the stage display.
+    current: current ? { text: stageText(current), caption: current.caption, rich: current.column === undefined ? (current.rich ?? null) : null } : null,
+    next: next ? { text: stageText(next), caption: next.caption, rich: next.column === undefined ? (next.rich ?? null) : null } : null,
     title: live.title,
     nextItemTitle: nextItem?.title ?? null,
     mode: live.mode,
@@ -1960,7 +2024,7 @@ export function slideTheme(theme: ThemeStyle, slide: DeckSlide | null | undefine
   if (slide?.native) return slide.native
   // Quick adjustments go on first, so both translations of a dual slide take them.
   const adjusted = adjustTheme(theme, slide?.adjust)
-  const look = slide?.second ? dualTheme(adjusted, slide.second) : adjusted
+  const look = slide?.column !== undefined ? columnsTheme(adjusted, slide.text, slide.column) : slide?.second ? dualTheme(adjusted, slide.second) : adjusted
   if (!slide?.background) return look
   // A presentation page is the whole slide, so the theme's shapes and images stay off it.
   return {

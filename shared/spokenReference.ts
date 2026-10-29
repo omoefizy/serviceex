@@ -6,7 +6,7 @@
 // "chapter two" alone resolve. When the words allow several readings, the most likely comes first with up to two
 // alternatives.
 
-import { BOOK_NAMES, formatReference, parseReference, type ScriptureReference } from './parseReference'
+import { BOOK_NAMES, formatReference, parseReference, type ScriptureReference, type VersePart } from './parseReference'
 
 export interface ReferenceCandidate {
   reference: ScriptureReference
@@ -264,6 +264,18 @@ function fuzzyBooks(word: string): { entry: BookWords; distance: number }[] {
 
 const isNumber = (token: string | undefined) => token !== undefined && /^\d{1,3}$/.test(token)
 
+/**
+ * A verse part after a verse number at `i`: "19b" as written, or "nineteen b" spoken. A spoken "a" is mostly the word,
+ * so it counts only at the end or before a range word ("nineteen a to twenty"). Null when there is none.
+ */
+function partAt(tokens: string[], i: number): VersePart | null {
+  const token = tokens[i]
+  if (token === '#a' || token === '#b') return token[1] as VersePart
+  if (token === 'b') return 'b'
+  if (token === 'a' && (i === tokens.length - 1 || RANGE_WORDS.has(tokens[i + 1]))) return 'a'
+  return null
+}
+
 /** Lowercase tokens with number words as digits; "3:16" and "16-18" split into their parts, "versus" read as "verse". */
 function tokenize(text: string): string[] {
   return numberWordsToDigits(text)
@@ -273,10 +285,15 @@ function tokenize(text: string): string[] {
     .split(/\s+/)
     .filter(Boolean)
     .flatMap((t) => {
-      const colon = /^(\d+):(\d+)(?:[-–—](\d+))?$/.exec(t)
-      if (colon) return [colon[1], ':', colon[2], ...(colon[3] ? ['-', colon[3]] : [])]
-      const dash = /^(\d+)[-–—](\d+)$/.exec(t)
-      if (dash) return [dash[1], '-', dash[2]]
+      // A written verse part ("19b") is marked so it is never read as the word "a".
+      const part = (letter: string | undefined) => (letter ? [`#${letter}`] : [])
+      const colon = /^(\d+):(\d+)([ab])?(?:[-–—](\d+)([ab])?)?$/.exec(t)
+      if (colon) return [colon[1], ':', colon[2], ...part(colon[3]), ...(colon[4] ? ['-', colon[4], ...part(colon[5])] : [])]
+      const dash = /^(\d+)([ab])?[-–—](\d+)([ab])?$/.exec(t)
+      if (dash) return [dash[1], ...part(dash[2]), '-', dash[3], ...part(dash[4])]
+      const lettered = /^(\d{1,3})([ab])$/.exec(t)
+      if (lettered) return [lettered[1], ...part(lettered[2])]
+      if (t === 'bee') return ['b']
       if (t === 'verses' || t === 'versus' || t === 'vs' || t === 'vers') return ['verse']
       if (t === 'colon') return [':']
       if (t === 'chapters') return ['chapter']
@@ -325,7 +342,7 @@ export function readTranscript(text: string, context: ReferenceContext, now = Da
     found.push({
       ...top,
       alternatives: rest.slice(0, 2),
-      heard: tokens.slice(reading.start, reading.end).join(' ').replace(/ : /g, ':').replace(/ - /g, '-'),
+      heard: tokens.slice(reading.start, reading.end).join(' ').replace(/ : /g, ':').replace(/ - /g, '-').replace(/ #([ab])\b/g, '$1'),
       complete: reading.complete,
       fromContext: reading.fromContext,
       end: reading.end,
@@ -472,12 +489,17 @@ function rank(candidates: ReferenceCandidate[]): ReferenceCandidate[] {
 }
 
 const verseText = (read: NumbersRead) =>
-  read.verseStart === null ? '' : `:${read.verseStart}${read.verseEnd !== read.verseStart ? `-${read.verseEnd}` : ''}`
+  read.verseStart === null
+    ? ''
+    : `:${read.verseStart}${read.startPart ?? ''}${read.verseEnd !== read.verseStart ? `-${read.verseEnd}${read.endPart ?? ''}` : ''}`
 
 interface NumbersRead {
   chapter: number
   verseStart: number | null
   verseEnd: number | null
+  /** The part of the first verse ("nineteen b"), and of the last verse of a range. */
+  startPart?: VersePart
+  endPart?: VersePart
   chapterWord: boolean
   /** How the verse was marked: the word "verse", a colon, "and", a bare second number, or not at all. */
   verseCue: 'word' | 'colon' | 'and' | 'bare' | null
@@ -554,17 +576,23 @@ function readNumbers(tokens: string[], at: number, book: string): NumbersRead[] 
   }
 
   let verseEnd = verseStart
+  let startPart: VersePart | undefined
+  let endPart: VersePart | undefined
   if (verseStart !== null) {
+    startPart = partAt(tokens, i) ?? undefined
+    if (startPart) i++
     const rangeWord = tokens[i]
     const isRange = RANGE_WORDS.has(rangeWord) || (rangeWord === 'and' && verseCue === 'word')
     const next = tokens[i + 1] === 'verse' ? i + 2 : i + 1
     if (isRange && isNumber(tokens[next]) && Number(tokens[next]) > verseStart) {
       verseEnd = Number(tokens[next])
       i = next + 1
+      endPart = partAt(tokens, i) ?? undefined
+      if (endPart) i++
     }
   }
   // Ends on a cue with nothing after it, or on a round number that may continue ("twenty" before "three").
   const last = Number(tokens[i - 1])
   const complete = !(i === tokens.length - 1 && DANGLING.has(tokens[i])) && !(i === tokens.length && last >= 20 && last % 10 === 0)
-  return [{ chapter, verseStart, verseEnd, chapterWord, verseCue, penalty: 0, end: i, complete }]
+  return [{ chapter, verseStart, verseEnd, startPart, endPart, chapterWord, verseCue, penalty: 0, end: i, complete }]
 }

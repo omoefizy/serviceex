@@ -6,7 +6,17 @@ export interface ScriptureReference {
   verseStart: number | null
   /** Equal to `verseStart` for a single verse; null with `verseStart`. */
   verseEnd: number | null
+  /**
+   * Only part of the first verse: "a" its first part, "b" the rest (see shared/verseParts.ts). For a single verse,
+   * `startPart` and `endPart` are the same. Absent for the whole verse.
+   */
+  startPart?: VersePart
+  /** Only part of the last verse. */
+  endPart?: VersePart
 }
+
+/** "a" is the first part of a verse, up to its natural break nearest the middle; "b" is the rest. */
+export type VersePart = 'a' | 'b'
 
 /**
  * Book names in Bible order, matching the names the importer stores, each with its common abbreviations.
@@ -108,13 +118,36 @@ function findBook(numberWord: string | undefined, name: string): string | null {
 }
 
 /**
- * Optional book number ("1", "ii", "first"), book name, chapter, then an optional verse or verse range.
- * The verse may follow a colon, a dot or a space: "jn 3:16", "jn 3.16", "john 3 16-18".
+ * Optional book number ("1", "ii", "first"), book name, chapter, then an optional verse or verse range, each verse
+ * maybe with a part letter. The verse may follow a colon, a dot or a space: "jn 3:16", "jn 3.16", "john 3 16-18",
+ * "eph 1:19b", "eph 1:19b to 20a".
  */
 const REFERENCE =
-  /^(?:([123])\s*|(i{1,3}|1st|2nd|3rd|first|second|third)\s+)?([a-z][a-z ]*?)\s*(\d+)(?:\s*[:.]\s*|\s+)?(?:(\d+)(?:\s*[-–—]\s*(\d+))?)?$/
+  /^(?:([123])\s*|(i{1,3}|1st|2nd|3rd|first|second|third)\s+)?([a-z][a-z ]*?)\s*(\d+)(?:\s*[:.]\s*|\s+)?(?:(\d+)\s*([ab])?(?:\s*(?:[-–—]|to|through|thru)\s*(\d+)\s*([ab])?)?)?$/
 
-/** Turns typed input such as "jn 3:16", "john 3 16-18" or "1 cor 13:4" into a reference, or null. */
+/**
+ * The verse numbers and part letters of a reference, checked: "19b-20a" is fine, "19b-19a" and "20-19" are not, and
+ * "19a-19b" is the whole of verse 19. Null when invalid.
+ */
+function verseSpan(
+  verseStart: number,
+  startPart: VersePart | undefined,
+  end: number | undefined,
+  endLetter: VersePart | undefined,
+): Pick<ScriptureReference, 'verseStart' | 'verseEnd' | 'startPart' | 'endPart'> | null {
+  const verseEnd = end ?? verseStart
+  if (verseStart < 1 || verseEnd < verseStart) return null
+  if (end === undefined) return { verseStart, verseEnd, ...(startPart ? { startPart, endPart: startPart } : {}) }
+  if (verseEnd > verseStart) return { verseStart, verseEnd, ...(startPart ? { startPart } : {}), ...(endLetter ? { endPart: endLetter } : {}) }
+  // Within one verse, from its start (or from b) to its end (or the end of a).
+  const fromB = startPart === 'b'
+  const toA = endLetter === 'a'
+  if (fromB && toA) return null
+  const only: VersePart | null = fromB ? 'b' : toA ? 'a' : null
+  return { verseStart, verseEnd, ...(only ? { startPart: only, endPart: only } : {}) }
+}
+
+/** Turns typed input such as "jn 3:16", "john 3 16-18", "1 cor 13:4" or "eph 1:19b" into a reference, or null. */
 export function parseReference(input: string): ScriptureReference | null {
   const normalized = input
     .toLowerCase()
@@ -124,25 +157,33 @@ export function parseReference(input: string): ScriptureReference | null {
 
   const match = REFERENCE.exec(normalized)
   if (!match) return null
-  const [, digit, word, name, chapterText, startText, endText] = match
+  const [, digit, word, name, chapterText, startText, startLetter, endText, endLetter] = match
 
   const book = findBook(digit ?? word, name.trim())
   const chapter = Number(chapterText)
   if (!book || chapter < 1) return null
 
   if (startText === undefined) return { book, chapter, verseStart: null, verseEnd: null }
-  const verseStart = Number(startText)
-  const verseEnd = endText === undefined ? verseStart : Number(endText)
-  if (verseStart < 1 || verseEnd < verseStart) return null
-  return { book, chapter, verseStart, verseEnd }
+  const span = verseSpan(Number(startText), startLetter as VersePart | undefined, endText === undefined ? undefined : Number(endText), endLetter as VersePart | undefined)
+  return span && { book, chapter, ...span }
 }
 
-/** "John 3:16", "John 3:16-18" or "John 3". */
-export function formatReference({ book, chapter, verseStart, verseEnd }: ScriptureReference): string {
+/** "John 3:16", "John 3:16-18", "John 3", or with parts "Ephesians 1:19b" and "Ephesians 1:19b-20a". */
+export function formatReference({ book, chapter, verseStart, verseEnd, startPart, endPart }: ScriptureReference): string {
   if (verseStart === null) return `${book} ${chapter}`
   return verseEnd !== null && verseEnd !== verseStart
-    ? `${book} ${chapter}:${verseStart}-${verseEnd}`
-    : `${book} ${chapter}:${verseStart}`
+    ? `${book} ${chapter}:${verseStart}${startPart ?? ''}-${verseEnd}${endPart ?? ''}`
+    : `${book} ${chapter}:${verseStart}${startPart ?? ''}`
+}
+
+/**
+ * A chapter and verse typed without a book, such as "1:19a" or "3:16-18", read in `book` (the one being read).
+ * Null when it is not such a reference.
+ */
+export function parseBooklessReference(input: string, book: string | null): ScriptureReference | null {
+  const text = input.trim().toLowerCase()
+  if (!book || !/^\d+\s*[:.]\s*\d+/.test(text)) return null
+  return parseReference(`${book} ${text}`)
 }
 
 // ---------- Typing a reference ----------

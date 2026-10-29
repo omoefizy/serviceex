@@ -3,6 +3,7 @@
 // than wall time means a computer whose clock is wrong cannot win or lose by it. Deleting sets a flag instead of
 // removing the item, so a delete made offline still reaches everyone. Nothing here touches Electron or the DOM.
 
+import { sanitizeScriptureGroup, sanitizeScriptureSlide } from './scriptureGroup'
 import type { ItemFilter, SharedItem, SharedItemType, SharedPayload } from './types'
 
 const ID = /^[0-9a-f]{32}$/
@@ -112,14 +113,18 @@ export function cleanPayload(type: SharedItemType, value: unknown): SharedPayloa
         arrangement: { order: strings(arrangement.order, 200, 100), linesPerSlide: lines === 2 || lines === 3 || lines === 4 ? lines : null },
       }
     }
-    case 'scripture':
+    case 'scripture': {
+      // Parts, edits and a Scripture group's second column travel too; a group arrives ready to edit again.
+      const group = sanitizeScriptureGroup(value.group)
       return {
         title,
         verses: (Array.isArray(value.verses) ? value.verses : [])
           .filter(isObject)
           .slice(0, 500)
-          .map((verse) => ({ text: text(verse.text, 5000), caption: text(verse.caption, 300) })),
+          .map((verse) => sanitizeScriptureSlide({ ...verse, text: text(verse.text, 5000), caption: text(verse.caption, 300) }, 5000)!),
+        ...(group ? { group } : {}),
       }
+    }
     case 'announcement':
       return {
         title,

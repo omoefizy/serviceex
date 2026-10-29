@@ -2,6 +2,7 @@ import { Type } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { formatFor, pruneFormats, renameFormat, setFormat } from '../../shared/richText'
 import type { AnnouncementPayload, RichText, ScripturePayload, SlideFormats } from '../../shared/types'
+import { withSlideText as withVerseText } from '../../shared/verseEdit'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { announcementSlides, withAnnouncementSlideText } from '../lib/slides'
 import { selectDeckTheme, useOperatorStore } from '../store'
@@ -17,7 +18,8 @@ const slidesOf = (payload: TextPayload) => (isScripture(payload) ? payload.verse
 /** The payload with slide `index` saying `text`. */
 function withSlideText(payload: TextPayload, index: number, text: string): TextPayload {
   if (!isScripture(payload)) return withAnnouncementSlideText(payload, index, text)
-  return { ...payload, verses: payload.verses.map((verse, i) => (i === index ? { ...verse, text } : verse)) }
+  // The Bible's words stay with the verse, so it shows as edited and can be reset.
+  return { ...payload, verses: payload.verses.map((verse, i) => (i === index ? withVerseText(verse, text) : verse)) }
 }
 
 /**

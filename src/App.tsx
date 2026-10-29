@@ -2,6 +2,7 @@ import { X } from 'lucide-react'
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { can } from '../shared/features'
 import { layoutById, showsPanel } from '../shared/layouts'
+import { CombineHost } from './components/CombineModal'
 import { CommandPalette } from './components/CommandPalette'
 import { ListenerPanel } from './components/ListenerPanel'
 import { LiveMonitor, PreviewMonitor } from './components/LivePreview'
@@ -13,6 +14,7 @@ import { PresentationsPanel } from './components/PresentationsPanel'
 import { SchedulePanel } from './components/SchedulePanel'
 import { SermonsPanel } from './components/SermonsPanel'
 import { ScripturePanel } from './components/ScripturePanel'
+import { ScriptureEditHost } from './components/ScriptureTextEditor'
 import { SettingsPanel } from './components/SettingsPanel'
 import { SlideGrid } from './components/SlideGrid'
 import { SongEditor } from './components/SongEditor'
@@ -546,6 +548,8 @@ function App() {
       <StatusBar showListener={show.listener} transcriptOpen={transcriptOpen && show.listener} />
       {paletteOpen && <CommandPalette />}
       {plansOpen && <PlansModal />}
+      <ScriptureEditHost />
+      <CombineHost />
       {welcome.open && <WelcomeScreen onAccount={welcome.toAccount} onContinue={welcome.continueWithoutAccount} />}
     </div>
   )

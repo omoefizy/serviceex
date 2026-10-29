@@ -1,12 +1,17 @@
-import { Eye, ListPlus, Send } from 'lucide-react'
+import { Eye, Layers, ListPlus, Send } from 'lucide-react'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
 import { formatReference } from '../../shared/parseReference'
 import { reportError, type ErrorLike } from '../lib/errors'
-import { canMakeRange, passageOf, previewPassage, resultSegments, type ResultItem } from '../lib/scripture'
+import { canMakeRange, passageOf, passagesOf, previewPassage, resultSegments, type ResultItem } from '../lib/scripture'
+import { useCombine } from '../lib/scriptureGroup'
+import { IS_MAC } from '../lib/shortcuts'
 import { canSendCues, openCueMenu, useSharingStore } from '../lib/sharing'
 import { verseCaption } from '../lib/slides'
 import { selectLiveSlide, selectPreviewSlide, useOperatorStore } from '../store'
 import { Button, ErrorNote, IconButton, SegmentedControl } from './ui'
+
+/** Ctrl+click, or Cmd+click on a Mac. */
+const MOD_CLICK = IS_MAC ? 'Cmd+click' : 'Ctrl+click'
 
 export interface VerseResultsHandle {
   /** Ticks or unticks the row at `index` (Space in the search box). */
@@ -58,12 +63,17 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [mode, setMode] = useState<'range' | 'sequence'>('sequence')
   const [error, setError] = useState<ErrorLike | null>(null)
+  /** The row last ticked by a click, where Shift+click starts its run. */
+  const anchor = useRef<number | null>(null)
   const sentinel = useRef<HTMLDivElement>(null)
   const rows = useRef<(HTMLTableRowElement | null)[]>([])
   const scrolledFor = useRef<string | null>(null)
   const scrolledAt = useRef(-1)
 
-  useEffect(() => setSelected(new Set()), [resetKey])
+  useEffect(() => {
+    setSelected(new Set())
+    anchor.current = null
+  }, [resetKey])
 
   // Keep the active row in view; for a new search or verse, put it at the top with what follows below it.
   useEffect(() => {
@@ -122,6 +132,23 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
     })
   }
 
+  /** Shift+click: ticks every row from the last one clicked to this one. */
+  function selectRun(index: number) {
+    const from = anchor.current ?? index
+    const run = items.slice(Math.min(from, index), Math.max(from, index) + 1)
+    setSelected((current) => new Set([...current, ...run.map((item) => item.key)]))
+  }
+
+  /** The ticked verses as passages in the combine tray, neighbouring verses as one range. */
+  function addToCombine() {
+    setError(null)
+    const tray = useCombine.getState()
+    const passages = passagesOf(chosen)
+    const added = passages.filter((passage) => tray.add(passage)).length
+    if (added < passages.length) setError(`The tray holds at most four passages${added > 0 ? `; ${added} added` : ''}.`)
+    else setSelected(new Set())
+  }
+
   useImperativeHandle(ref, () => ({ toggle: (index) => items[index] && toggle(items[index].key) }), [items])
 
   return (
@@ -155,6 +182,9 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
             onClick={() => use(chosen, effectiveMode, 'schedule')}
           >
             <ListPlus size={15} aria-hidden="true" /> Schedule
+          </Button>
+          <Button size="sm" title="Put these in the tray on the Preview header, to combine on one slide with other passages" onClick={addToCombine}>
+            <Layers size={15} aria-hidden="true" /> Add to combine
           </Button>
           {sendable && (
             <Button size="sm" title="Send to device: a cue in another computer's tray" onClick={(e) => use(chosen, effectiveMode, 'send', e)}>
@@ -197,7 +227,7 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
                     caption && caption === previewCaption ? 'preview' : '',
                   ].join(' ')}
                   aria-selected={index === active}
-                  title={sendable ? 'Click to preview, double-click to go live, right-click to send to another computer' : 'Click to preview, double-click to go live'}
+                  title={`Click to preview, double-click to go live, ${MOD_CLICK} or Shift+click to select${sendable ? ', right-click to send to another computer' : ''}`}
                   onContextMenu={(e) => {
                     if (!sendable) return
                     e.preventDefault()
@@ -205,15 +235,27 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
                   }}
                   // Keep the keyboard in the search box.
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
+                  onClick={(e) => {
                     onActiveChange(index)
-                    onOpen(item, false)
+                    // Ctrl or Cmd+click ticks the row; Shift+click ticks the run from the last one ticked.
+                    if (e.shiftKey) selectRun(index)
+                    else if (e.metaKey || e.ctrlKey) toggle(item.key)
+                    else return onOpen(item, false)
+                    anchor.current = index
                   }}
-                  onDoubleClick={() => onOpen(item, true)}
+                  onDoubleClick={(e) => !(e.shiftKey || e.metaKey || e.ctrlKey) && onOpen(item, true)}
                 >
                   <td className="verse-table-tick" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
                     <label className="input-hit">
-                      <input type="checkbox" aria-label={`Select ${reference} ${item.version}`} checked={selected.has(item.key)} onChange={() => toggle(item.key)} />
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${reference} ${item.version}`}
+                        checked={selected.has(item.key)}
+                        onChange={() => {
+                          toggle(item.key)
+                          anchor.current = index
+                        }}
+                      />
                     </label>
                   </td>
                   {!oneVersion && <td className="verse-table-version">{item.version}</td>}

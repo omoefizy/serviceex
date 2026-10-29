@@ -1,6 +1,7 @@
 import {
   BOOK_NAMES,
   formatReference,
+  parseBooklessReference,
   parseReference,
   readReferenceInput,
   wholeBookName,
@@ -92,9 +93,10 @@ const inBibleOrder = (books: string[]) => [...books].sort((a, b) => BOOK_NAMES.i
 
 /**
  * Reads the Scripture search box. `words` is set for single words such as "job", "mark" or "number", which are also
- * book names or starts of one, so the list can offer to search the verses for them instead.
+ * book names or starts of one, so the list can offer to search the verses for them instead. A chapter and verse with no
+ * book ("1:19a") reads in `book`, the book being read, when there is one.
  */
-export function readScriptureQuery(query: string): ScriptureQuery {
+export function readScriptureQuery(query: string, book: string | null = null): ScriptureQuery {
   const trimmed = query.trim()
   if (/^[123]$/.test(trimmed)) return { kind: 'books', books: BOOK_NAMES.filter((book) => book.startsWith(`${trimmed} `)), words: false }
   const words = /^[a-z]{3,}$/i.test(trimmed)
@@ -110,8 +112,8 @@ export function readScriptureQuery(query: string): ScriptureQuery {
   }
   if (reading?.stage === 'chapter') return chapterOf(reading.book, Number(reading.chapterPrefix || 1))
   if (reading?.stage === 'verse') return chapterOf(reading.book, reading.chapter, reading.versePrefix ? Number(reading.versePrefix) : null)
-  const ref = parseReference(query)
-  if (ref) return chapterOf(ref.book, ref.chapter, ref.verseStart, ref.verseEnd)
+  const ref = parseReference(query) ?? parseBooklessReference(query, book)
+  if (ref) return { kind: 'chapter', ref, words }
   return trimmed.length >= 2 ? { kind: 'text', query } : { kind: 'none' }
 }
 

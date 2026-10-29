@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
-import { AlertTriangle, Clapperboard, Columns2, CornerUpLeft, ImageOff, LayoutGrid, List, MonitorUp, RefreshCw, StickyNote, Type, ZoomIn } from 'lucide-react'
+import { AlertTriangle, Clapperboard, Columns2, CornerUpLeft, ImageOff, Layers, LayoutGrid, List, MonitorUp, Pencil, RefreshCw, StickyNote, Type, ZoomIn } from 'lucide-react'
 import { MEDIA_DRAG_TYPE } from '../lib/media'
+import { editScriptureText } from '../lib/scriptureGroup'
 import { sectionColor } from '../lib/sections'
 import { slideLines } from '../lib/slides'
 import { MOD } from '../lib/shortcuts'
@@ -20,6 +21,17 @@ function AnimatedMark() {
   return (
     <span className="slide-animated" title={ANIMATED_HINT} aria-label={ANIMATED_HINT} role="img">
       <Clapperboard size={12} aria-hidden="true" />
+    </span>
+  )
+}
+
+const EDITED_HINT = 'Edited for this item; the Bible text is unchanged'
+
+/** Marks a scripture slide whose words were edited for display. */
+function EditedMark() {
+  return (
+    <span className="slide-edited" title={EDITED_HINT} aria-label={EDITED_HINT} role="img">
+      Edited
     </span>
   )
 }
@@ -68,6 +80,11 @@ export function SlideGrid() {
   const formattableItemId = useOperatorStore((s) => {
     const item = s.service?.items.find((i) => i.id === s.activeItemId)
     return item && s.deckKey === `item:${item.id}` && (item.type === 'scripture' || item.type === 'announcement') ? item.id : null
+  })
+  /** A Scripture group from the Order of service, which opens in the combine editor. */
+  const groupItemId = useOperatorStore((s) => {
+    const item = s.service?.items.find((i) => i.id === s.activeItemId)
+    return item?.type === 'scripture' && item.payload.group && s.deckKey === `item:${item.id}` ? item.id : null
   })
   const editSong = useOperatorStore((s) => s.editSong)
   const selectedSongId = useOperatorStore((s) => (s.deckType === 'song' ? (s.selectedSong?.id ?? null) : null))
@@ -175,7 +192,12 @@ export function SlideGrid() {
               </option>
             ))}
           </select>
-          {(formattableItemId !== null || selectedSongId !== null) && (
+          {groupItemId !== null && (
+            <button type="button" className="icon-button" aria-label="Edit Scripture group" title="Edit the Scripture group: its passages, parts, words and layout" onClick={() => editScriptureText(0)}>
+              <Layers size={15} />
+            </button>
+          )}
+          {(formattableItemId !== null || selectedSongId !== null) && groupItemId === null && (
             <button
               type="button"
               className="icon-button"
@@ -244,7 +266,7 @@ export function SlideGrid() {
 
       {view === 'list' ? (
         <div className="slide-list" ref={gridRef}>
-          {slides.map(({ text, caption, label, page, pageText, animated, warnings }, index) => (
+          {slides.map(({ text, caption, label, page, pageText, animated, warnings, edited }, index) => (
             <div
               key={index}
               className={`slide-cell${dropIndex === index ? ' drop' : ''}`}
@@ -277,16 +299,22 @@ export function SlideGrid() {
                   {/* A scripture slide's reference; a song's only caption is its copyright, which is left out. */}
                   {caption && deckType !== 'song' && <span className="slide-row-caption">{caption}</span>}
                 </span>
+                {edited && <EditedMark />}
                 {animated && <AnimatedMark />}
                 {warnings && <WarningMark warnings={warnings} />}
               </button>
+              {deckType === 'scripture' && (
+                <button className="slide-edit-text" aria-label={`Edit text of slide ${index + 1}`} title="Edit text" onClick={() => editScriptureText(index)}>
+                  <Pencil size={12} aria-hidden="true" />
+                </button>
+              )}
             </div>
           ))}
         </div>
       ) : (
         <div className="slide-grid" ref={gridRef} style={{ '--thumb-width': `${thumbWidth}px` } as CSSProperties}>
           {windowed && windowed.padTop > 0 && <div className="slide-grid-spacer" style={{ height: windowed.padTop }} aria-hidden="true" />}
-          {(windowed ? slides.slice(windowed.start, windowed.end) : slides).map(({ text, caption, rich, label, background, page, animated, warnings }, offset) => {
+          {(windowed ? slides.slice(windowed.start, windowed.end) : slides).map(({ text, caption, rich, label, background, page, animated, warnings, edited }, offset) => {
             const index = offset + (windowed?.start ?? 0)
             return (
             <div
@@ -307,9 +335,15 @@ export function SlideGrid() {
                 <span className="slide-number">{index + 1}</span>
                 {index === liveIndexHere && <span className="slide-live-chip">LIVE</span>}
                 {label && <span className="slide-caption section-label">{label}</span>}
+                {edited && <EditedMark />}
                 {animated && <AnimatedMark />}
                 {warnings && <WarningMark warnings={warnings} />}
               </button>
+              {deckType === 'scripture' && (
+                <button className="slide-edit-text" aria-label={`Edit text of slide ${index + 1}`} title="Edit text" onClick={() => editScriptureText(index)}>
+                  <Pencil size={12} aria-hidden="true" />
+                </button>
+              )}
               {nativePresentation && (
                 <button
                   className="slide-bg-clear"

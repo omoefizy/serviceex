@@ -17,6 +17,7 @@ import {
   updateItemPayload,
 } from '../db/services'
 import { sanitizeSlideFormats } from '../../shared/richText'
+import { sanitizeScriptureGroup, sanitizeScriptureSlide } from '../../shared/scriptureGroup'
 
 // Arguments arrive from the renderer, so check their shape before they reach the database.
 
@@ -54,12 +55,12 @@ function assertScripture(value: unknown): ScripturePayload {
     throw new TypeError('Scripture needs a title and at least one verse')
   }
   const verses = payload.verses.map((verse) => {
-    if (typeof verse?.text !== 'string' || typeof verse.caption !== 'string') {
-      throw new TypeError('Each verse needs text and a caption')
-    }
-    return { text: verse.text, caption: verse.caption }
+    const slide = sanitizeScriptureSlide(verse)
+    if (!slide) throw new TypeError('Each verse needs text and a caption')
+    return slide
   })
-  return { title: assertTitle(payload.title), verses, ...formatsOf(payload.formats) }
+  const group = payload.group === undefined ? undefined : sanitizeScriptureGroup(payload.group)
+  return { title: assertTitle(payload.title), verses, ...formatsOf(payload.formats), ...(group ? { group } : {}) }
 }
 
 /** Slide formatting, checked against its schema; none is left out. */

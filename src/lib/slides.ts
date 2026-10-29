@@ -1,21 +1,29 @@
+import type { VersePart } from '../../shared/parseReference'
 import type { AnnouncementPayload, BibleVersionCode, Verse } from '../../shared/types'
 import { CONTENT_COLORS } from '../styles/contentColors'
 
 /**
  * The caption every scripture slide carries, such as "John 3:16 KJV"; with a second translation on the slide,
- * both versions, such as "John 3:16 KJV · WEB".
+ * both versions, such as "John 3:16 KJV · WEB"; for part of a verse, its letter, such as "Ephesians 1:19b KJV".
  */
-export const verseCaption = (verse: Verse, version: BibleVersionCode, second?: BibleVersionCode) =>
-  `${verse.book} ${verse.chapter}:${verse.verse} ${version}${second ? ` · ${second}` : ''}`
+export const verseCaption = (verse: Verse, version: BibleVersionCode, second?: BibleVersionCode, part?: VersePart) =>
+  `${verse.book} ${verse.chapter}:${verse.verse}${part ?? ''} ${version}${second ? ` · ${second}` : ''}`
 
 /** Reads a scripture slide's caption (see verseCaption) back into its verse and versions; null for any other caption. */
 export function parseVerseCaption(
   caption: string,
-): { book: string; chapter: number; verse: number; version: BibleVersionCode; second?: BibleVersionCode } | null {
-  const match = /^(.+) (\d+):(\d+) (\S+)(?: · (\S+))?$/.exec(caption)
+): { book: string; chapter: number; verse: number; version: BibleVersionCode; second?: BibleVersionCode; part?: VersePart } | null {
+  const match = /^(.+) (\d+):(\d+)([ab])? (\S+)(?: · (\S+))?$/.exec(caption)
   if (!match) return null
-  const at = { book: match[1], chapter: Number(match[2]), verse: Number(match[3]), version: match[4] }
-  return match[5] ? { ...at, second: match[5] } : at
+  const at: { book: string; chapter: number; verse: number; version: BibleVersionCode; second?: BibleVersionCode; part?: VersePart } = {
+    book: match[1],
+    chapter: Number(match[2]),
+    verse: Number(match[3]),
+    version: match[5],
+  }
+  if (match[6]) at.second = match[6]
+  if (match[4]) at.part = match[4] as VersePart
+  return at
 }
 
 /** Splits text into slide texts on blank lines, dropping empty chunks. Songs use buildSongSlides in shared/lyrics.ts. */
