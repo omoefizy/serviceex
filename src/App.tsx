@@ -1,9 +1,11 @@
 import { X } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { can } from '../shared/features'
 import { layoutById, showsPanel } from '../shared/layouts'
 import { CommandPalette } from './components/CommandPalette'
-import { LiveMonitor, PreviewMonitor, QueueCard, UpNextMeta } from './components/LivePreview'
+import { ListenerPanel } from './components/ListenerPanel'
+import { LiveMonitor, PreviewMonitor } from './components/LivePreview'
+import { LowerThirdCard } from './components/LowerThirdPanel'
 import { PlansModal } from './components/PlansModal'
 import { MediaPanel } from './components/MediaPanel'
 import { PanelBoundary } from './components/PanelBoundary'
@@ -15,6 +17,7 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { SlideGrid } from './components/SlideGrid'
 import { SongEditor } from './components/SongEditor'
 import { SongList } from './components/SongList'
+import { Splitter } from './components/Splitter'
 import { StatusBar } from './components/StatusBar'
 import { StreamPanel } from './components/StreamPanel'
 import { SuggestionTray } from './components/SuggestionTray'
@@ -27,7 +30,7 @@ import { cycleLayout, switchLayout } from './lib/layouts'
 import { nudgeVerse, stepVerseSize } from './lib/scriptureAdjust'
 import { focusLowerThirdHeadline, isTyping, MODE_KEYS } from './lib/shortcuts'
 import { SHOW_LIBRARY_TAB_EVENT } from './lib/samples'
-import { SHOW_SERVICE_PICKER_EVENT } from './lib/shell'
+import { SHOW_SERVICE_PICKER_EVENT, TRANSCRIPT_DRAWER_EVENT } from './lib/shell'
 import { slideTranslation } from './lib/translations'
 import { usePersistentState } from './lib/usePersistentState'
 import { useWelcome } from './lib/welcome'
@@ -45,6 +48,21 @@ import {
 } from './store'
 
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
+
+/**
+ * What the splitters resize: the Order of service's width, the monitors' column width and the finder's height. A size
+ * left out is the stylesheet's default (--order-width, --monitor-column-width, --finder-height); a double click on a
+ * splitter puts it back. The middle column keeps at least its stylesheet minimum, so a column cannot squeeze it away.
+ */
+type PanelKey = 'order' | 'right' | 'finder'
+type PanelSizes = Partial<Record<PanelKey, number>>
+const LIMITS: Record<PanelKey, readonly [number, number]> = { order: [180, 420], right: [300, 600], finder: [140, 560] }
+const SIZE_VARS: Record<PanelKey, string> = { order: '--order-width', right: '--monitor-column-width', finder: '--finder-height' }
+
+const isPanelSizes = (value: unknown): value is PanelSizes =>
+  typeof value === 'object' &&
+  value !== null &&
+  Object.entries(value).every(([key, size]) => key in LIMITS && typeof size === 'number' && size >= LIMITS[key as PanelKey][0] && size <= LIMITS[key as PanelKey][1])
 
 /** Whether the window matches a media query, following it as the window is resized. */
 function useMediaQuery(media: string): boolean {
@@ -82,13 +100,15 @@ function App() {
   const railWidth = useMediaQuery('(max-width: 1279px)')
   // Below 1280 pixels the Order of service is a rail unless it was opened out for now.
   const [orderOpenedOut, setOrderOpenedOut] = useState(false)
-  /** The full slide grid, open over the finder. */
-  const [slidesDrawerOpen, setSlidesDrawerOpen] = useState(false)
+  const [sizes, setSizes] = usePersistentState<PanelSizes>('serviceex.panelSizes', {}, isPanelSizes)
+  /** The live transcript, docked over the finder in the middle column. */
+  const [transcriptOpen, setTranscriptOpen] = useState(false)
   /** The finder's tab row, where the Scripture tab puts its translation and search. */
   const [finderTools, setFinderTools] = useState<HTMLDivElement | null>(null)
   const welcome = useWelcome()
   const [scheduleCollapsed, setScheduleCollapsed] = usePersistentState('worshipdeck.scheduleCollapsed', false, isBoolean)
   const editingSongId = useOperatorStore((s) => s.editingSongId)
+  const slidesItem = useOperatorStore((s) => s.deckType === 'song' || s.deckType === 'presentation')
 
   // An empty state elsewhere asking for a library tab, such as the schedule's Browse songs.
   useEffect(() => {
@@ -96,7 +116,7 @@ function App() {
       const tab = (e as CustomEvent<string>).detail
       if (!LIBRARY_TABS.some((t) => t.id === tab)) return
       setLibraryTab(tab as (typeof LIBRARY_TABS)[number]['id'])
-      setSlidesDrawerOpen(false)
+      setTranscriptOpen(false)
     }
     window.addEventListener(SHOW_LIBRARY_TAB_EVENT, show)
     return () => window.removeEventListener(SHOW_LIBRARY_TAB_EVENT, show)
@@ -112,6 +132,26 @@ function App() {
     window.addEventListener(SHOW_SERVICE_PICKER_EVENT, show)
     return () => window.removeEventListener(SHOW_SERVICE_PICKER_EVENT, show)
   }, [setScheduleCollapsed])
+  // The listening chip and the status bar's Transcript button open, close or toggle the transcript.
+  useEffect(() => {
+    const onRequest = (e: Event) => {
+      const wanted = (e as CustomEvent<boolean | undefined>).detail
+      setTranscriptOpen((open) => wanted ?? !open)
+    }
+    window.addEventListener(TRANSCRIPT_DRAWER_EVENT, onRequest)
+    return () => window.removeEventListener(TRANSCRIPT_DRAWER_EVENT, onRequest)
+  }, [])
+
+  // Escape closes the transcript, unless a dialog inside it has the keyboard.
+  useEffect(() => {
+    if (!transcriptOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !(e.target as Element | null)?.closest?.('[role="dialog"]')) setTranscriptOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [transcriptOpen])
+
   const themeEditorOpen = useOperatorStore((s) => s.themeEditorOpen)
   const settingsOpen = useOperatorStore((s) => s.settingsOpen)
   const streamPanelOpen = useOperatorStore((s) => s.streamPanelOpen)
@@ -133,12 +173,35 @@ function App() {
     listener: showsPanel(layout, 'listener'),
     schedule: showsPanel(layout, 'schedule'),
   }
-  const rightColumn = show.live || show.centre
+  const rightColumn = show.live || show.points
+  /** The middle column's main area: every slide of a song or presentation, else everything heard in the sermon. */
+  const slidesMain = show.centre && slidesItem
   const orderRail = scheduleCollapsed || (railWidth && !orderOpenedOut)
   const setOrderRail = (rail: boolean) => {
     if (railWidth) setOrderOpenedOut(!rail)
     if (!rail || !railWidth) setScheduleCollapsed(rail)
   }
+  const resize = (key: PanelKey) => (value: number) => setSizes((current) => ({ ...current, [key]: value }))
+  const resetSize = (key: PanelKey) => () =>
+    setSizes((current) => {
+      const next = { ...current }
+      delete next[key]
+      return next
+    })
+  const sizeVars = Object.fromEntries(Object.entries(sizes).map(([key, size]) => [SIZE_VARS[key as PanelKey], `${size}px`])) as CSSProperties
+  const splitter = (key: PanelKey, label: string, orientation: 'vertical' | 'horizontal', direction: 1 | -1, panel: string) => (
+    <Splitter
+      label={label}
+      value={sizes[key] ?? null}
+      min={LIMITS[key][0]}
+      max={LIMITS[key][1]}
+      orientation={orientation}
+      direction={direction}
+      panel={panel}
+      onChange={resize(key)}
+      onReset={resetSize(key)}
+    />
+  )
 
   useEffect(() => {
     const st = useOperatorStore.getState()
@@ -360,8 +423,9 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  // Three columns after docs/design/Main2.reference.html: the Order of service (236px, a 64px rail below 1280 pixels),
-  // the middle (Heard in the sermon over the finder) and the monitors (352px). Nothing scrolls but the lists inside.
+  // Three columns: the Order of service (236px, a 64px rail below 1280 pixels), the middle (Heard in the sermon, the
+  // main area, the finder) and the monitors (Live, Preview, Lower third; 352px). Splitters between them resize them.
+  // Nothing scrolls but the lists inside.
   return (
     <div className="app">
       <PanelBoundary name="Toolbar" layout="bar">
@@ -373,13 +437,14 @@ function App() {
         </PanelBoundary>
       )}
       {/* Hidden, not unmounted, while Settings is open: every panel keeps its search text and state. */}
-      <main className="operator" hidden={settingsOpen}>
+      <main className="operator" hidden={settingsOpen} style={sizeVars}>
         <Slot show={show.schedule}>
           <div className={`operator-order${orderRail ? ' rail' : ''}`}>
             <PanelBoundary name="Schedule">
               <SchedulePanel collapsed={orderRail} onCollapsedChange={setOrderRail} />
             </PanelBoundary>
           </div>
+          {!orderRail && splitter('order', 'Resize the order of service', 'vertical', 1, '.operator-order')}
         </Slot>
         <div className="operator-middle">
           {centreOpen &&
@@ -403,9 +468,17 @@ function App() {
           {/* Stays mounted under an editor, so the heard verses and every search keep their state. */}
           <div className="operator-middle-live" hidden={centreOpen}>
             <PanelBoundary name="Suggestions">
-              <SuggestionTray />
+              <SuggestionTray fullList={!slidesMain} />
             </PanelBoundary>
+            {slidesMain && (
+              <div className="operator-main">
+                <PanelBoundary key="slides" name="Slides">
+                  <SlideGrid />
+                </PanelBoundary>
+              </div>
+            )}
             <Slot show={show.library}>
+              {splitter('finder', 'Resize the finder', 'horizontal', -1, '.finder')}
               <section className="finder" aria-label="Finder">
                 <div className="finder-head">
                   <Tabs<(typeof LIBRARY_TABS)[number]['id']>
@@ -441,41 +514,36 @@ function App() {
                 </div>
               </section>
             </Slot>
-            {/* Every slide of the item, full size, over the finder; mounted throughout so the grid keeps its place. */}
-            {show.centre && (
-              <aside id="slides-drawer" className="slides-drawer" aria-label="All slides" hidden={!slidesDrawerOpen}>
-                <div className="slides-drawer-head">
-                  <UpNextMeta />
-                  <IconButton size="sm" label="Close all slides" icon={<X size={16} />} onClick={() => setSlidesDrawerOpen(false)} />
-                </div>
-                <PanelBoundary key="slides" name="Slides">
-                  <SlideGrid />
-                </PanelBoundary>
-              </aside>
-            )}
           </div>
+          {/* Docked in the middle column, over the finder, so it never covers Preview or Live. Always mounted, so
+              listening carries on and the transcript keeps its place while it is shut. */}
+          <aside id="transcript-panel" className="transcript-dock" hidden={!transcriptOpen || !show.listener} aria-label="Live transcript">
+            <IconButton className="transcript-dock-close" label="Close the transcript" icon={<X size={18} />} onClick={() => setTranscriptOpen(false)} />
+            <ListenerPanel />
+          </aside>
         </div>
         <Slot show={rightColumn}>
+          {splitter('right', 'Resize the monitors', 'vertical', -1, '.operator-right')}
           <div className="operator-right">
             {show.live && (
               <>
+                <PanelBoundary name="Live">
+                  <LiveMonitor />
+                </PanelBoundary>
                 <PanelBoundary name="Preview">
                   <PreviewMonitor />
                 </PanelBoundary>
-                <PanelBoundary name="Live">
-                  <LiveMonitor lowerThird={show.points} />
-                </PanelBoundary>
               </>
             )}
-            {show.centre && (
-              <PanelBoundary name="Queue">
-                <QueueCard gridOpen={slidesDrawerOpen} onGridOpenChange={setSlidesDrawerOpen} />
+            {show.points && (
+              <PanelBoundary name="Lower third">
+                <LowerThirdCard />
               </PanelBoundary>
             )}
           </div>
         </Slot>
       </main>
-      <StatusBar showListener={show.listener} />
+      <StatusBar showListener={show.listener} transcriptOpen={transcriptOpen && show.listener} />
       {paletteOpen && <CommandPalette />}
       {plansOpen && <PlansModal />}
       {welcome.open && <WelcomeScreen onAccount={welcome.toAccount} onContinue={welcome.continueWithoutAccount} />}

@@ -442,7 +442,7 @@ function collectMetrics(): Metrics {
 // ---------- Layout check, run in the page ----------
 
 interface LayoutProblem {
-  kind: 'page-overflow' | 'toolbar-wraps' | 'outside-window' | 'cut-off'
+  kind: 'page-overflow' | 'toolbar-wraps' | 'outside-window' | 'cut-off' | 'covers-monitors'
   what: string
   detail: string
 }
@@ -485,6 +485,15 @@ function checkLayout(): LayoutProblem[] {
   }
   for (const el of [document.body, document.getElementById('root'), document.querySelector('.app'), document.querySelector('.operator:not([hidden])'), document.querySelector('.settings-page')]) {
     if (el && el.scrollHeight > el.clientHeight + 1) problems.push({ kind: 'page-overflow', what: describe(el).slice(0, 40), detail: `${el.scrollHeight} px of content in ${el.clientHeight} px tall` })
+  }
+  // The transcript and the list of everything heard open in the middle column: neither covers Live or Preview.
+  const monitors = document.querySelector('.operator-right')?.getBoundingClientRect()
+  for (const el of Array.from(document.querySelectorAll('.transcript-dock, .heard-all-popover'))) {
+    if (!monitors || el.closest('[hidden]')) continue
+    const r = el.getBoundingClientRect()
+    if (r.width > 0 && r.right > monitors.left + 1 && r.left < monitors.right - 1 && r.bottom > monitors.top + 1 && r.top < monitors.bottom - 1) {
+      problems.push({ kind: 'covers-monitors', what: describe(el).slice(0, 40), detail: `right edge at ${px(r.right)} px, the monitors start at ${px(monitors.left)} px` })
+    }
   }
   const toolbar = document.querySelector('.toolbar')
   if (toolbar && toolbar.getBoundingClientRect().height > 64) problems.push({ kind: 'toolbar-wraps', what: 'header.toolbar', detail: `${px(toolbar.getBoundingClientRect().height)} px tall` })
@@ -850,6 +859,11 @@ async function compareScreens(page: Page, serviceId: number, size: { width: numb
   }, serviceId)
   await page.waitForTimeout(400)
   await compareShot(page, 'main', size)
+  if (!COMPARE_ONLY) {
+    await page.locator('.heard-strip').getByRole('button', { name: /^See all/ }).click()
+    await shot(page, `12-heard-see-all@${size.width}`)
+    await page.keyboard.press('Escape')
+  }
   await page.getByLabel('Search scripture').fill('')
   await page.evaluate(() => (window as unknown as AuditWindow).__audit.suggestions.getState().clear())
 
@@ -1055,6 +1069,22 @@ async function main() {
 
       await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().goLive(1))
       await shot(page, `12-main-live${at}`)
+
+      // From the right column: the Queue under Preview's header and the lower third's Edit style, then the transcript
+      // docked in the middle column (it must not cover Live or Preview).
+      await page.locator('.preview-card').getByRole('button', { name: /^Queue/ }).click()
+      await shot(page, `12-queue-popover${at}`)
+      await page.keyboard.press('Escape')
+      if (await page.locator('.lower-third-card').count()) {
+        await page.locator('.lower-third-card').getByRole('button', { name: 'Edit style' }).click()
+        await shot(page, `12-lower-third-style${at}`)
+        await page.keyboard.press('Escape')
+      }
+      if (await page.locator('.statusbar').getByRole('button', { name: 'Transcript' }).count()) {
+        await page.locator('.statusbar').getByRole('button', { name: 'Transcript' }).click()
+        await shot(page, `12-transcript-docked${at}`)
+        await page.getByRole('button', { name: 'Close the transcript' }).click()
+      }
 
       await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().setOutputMode('black'))
       await shot(page, `13-main-live-black${at}`)

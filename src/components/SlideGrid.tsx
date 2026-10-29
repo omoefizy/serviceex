@@ -43,6 +43,7 @@ export function SlideGrid() {
   /** The live slide's index in this grid, only when the grid shows the live item. */
   const liveIndexHere = browsingLive ? live.slideIndex : null
   const goLive = useOperatorStore((s) => s.goLive)
+  const setHighlight = useOperatorStore((s) => s.setHighlight)
   const goLiveHighlighted = useOperatorStore((s) => s.goLiveHighlighted)
   const jumpToLive = useOperatorStore((s) => s.jumpToLive)
   const resendLive = useOperatorStore((s) => s.resendLive)
@@ -70,10 +71,10 @@ export function SlideGrid() {
   const editSong = useOperatorStore((s) => s.editSong)
   const selectedSongId = useOperatorStore((s) => (s.deckType === 'song' ? (s.selectedSong?.id ?? null) : null))
   const [formatting, setFormatting] = useState(false)
-  /** Thumbnail width in pixels, from the zoom slider. */
+  /** Thumbnail width in pixels, from the zoom slider; the grid never draws them under 180. */
   const [thumbWidth, setThumbWidth] = usePersistentState(
     'worshipdeck.thumbWidth',
-    200,
+    180,
     (v): v is number => typeof v === 'number' && v >= 120 && v <= 400,
   )
   /** Thumbnails, or compact numbered rows of slide text. */
@@ -110,13 +111,19 @@ export function SlideGrid() {
     },
   })
 
-  // Keep the preview highlight, and the live slide when this is the live item, in view as the keys move them.
+  // Keep the preview highlight, and the live slide when this is the live item, in view as the keys move them. Only the
+  // grid scrolls: scrollIntoView would also scroll the card (and the column) that clip it.
   useEffect(() => {
+    const grid = gridRef.current
+    if (!grid) return
     for (const index of [highlightIndex, liveIndexHere]) {
-      if (index === null) continue
-      gridRef.current?.querySelector<HTMLElement>(`[data-index="${index}"]`)?.scrollIntoView({ block: 'nearest' })
+      const cell = index === null ? null : grid.querySelector<HTMLElement>(`[data-index="${index}"]`)
+      if (!cell) continue
+      const top = cell.getBoundingClientRect().top - grid.getBoundingClientRect().top + grid.scrollTop
+      if (top < grid.scrollTop) grid.scrollTop = top
+      else if (top + cell.offsetHeight > grid.scrollTop + grid.clientHeight) grid.scrollTop = top + cell.offsetHeight - grid.clientHeight
     }
-  }, [highlightIndex, liveIndexHere])
+  }, [highlightIndex, liveIndexHere, view])
 
   /** The grid shows the live item, but its theme or content changed since it went live. */
   const liveDiffers = browsingLive && (live.stale || JSON.stringify(theme) !== JSON.stringify(live.theme))
@@ -170,7 +177,7 @@ export function SlideGrid() {
             <input
               type="range"
               aria-label="Thumbnail size"
-              min={120}
+              min={180}
               max={400}
               step={20}
               value={thumbWidth}
@@ -205,8 +212,8 @@ export function SlideGrid() {
       </div>
       {title !== null && (
         <p className="hint slide-hint">
-          Click a slide or press Enter to go live · ↑ ↓ preview (next or previous verse when scripture is live) · ← → live
-          slide · {MOD}↓ next schedule item
+          Click a slide to preview it, double click or Enter to go live · ↑ ↓ preview (next or previous verse when scripture
+          is live) · ← → live slide · {MOD}↓ next schedule item
         </p>
       )}
 
@@ -226,8 +233,9 @@ export function SlideGrid() {
                 className={`slide-row${index === liveIndexHere ? ' live' : ''}${index === highlightIndex ? ' preview' : ''}`}
                 style={label ? ({ '--section-color': sectionColor(label) } as CSSProperties) : undefined}
                 aria-label={`Slide ${index + 1}${label ? `, ${label}` : ''}${index === liveIndexHere ? ', live' : ''}${index === highlightIndex ? ', in preview' : ''}`}
-                title="Go live with this slide"
-                onClick={() => goLive(index)}
+                title="Click to preview, double click to go live"
+                onClick={() => setHighlight(index)}
+                onDoubleClick={() => goLive(index)}
               >
                 <span className="slide-row-number">{index + 1}</span>
                 <span className="slide-row-bar" aria-hidden="true" />
@@ -266,11 +274,13 @@ export function SlideGrid() {
                 className={`slide-card themed${index === liveIndexHere ? ' live' : ''}${index === highlightIndex ? ' preview' : ''}`}
                 style={label ? ({ '--section-color': sectionColor(label) } as CSSProperties) : undefined}
                 aria-label={`Slide ${index + 1}${label ? `, ${label}` : ''}${index === liveIndexHere ? ', live' : ''}${index === highlightIndex ? ', in preview' : ''}`}
-                title="Go live with this slide"
-                onClick={() => goLive(index)}
+                title="Click to preview, double click to go live"
+                onClick={() => setHighlight(index)}
+                onDoubleClick={() => goLive(index)}
               >
                 <ThemedSlide theme={slideThemes[index]} text={text} caption={caption} rich={rich} still />
                 <span className="slide-number">{index + 1}</span>
+                {index === liveIndexHere && <span className="slide-live-chip">LIVE</span>}
                 {label && <span className="slide-caption section-label">{label}</span>}
                 {animated && <AnimatedMark />}
                 {warnings && <WarningMark warnings={warnings} />}

@@ -8,9 +8,8 @@ import {
   Eraser,
   EyeOff,
   Highlighter,
-  LayoutGrid,
+  ListOrdered,
   MousePointerClick,
-  PanelBottom,
   Presentation,
   RefreshCw,
   SlidersHorizontal,
@@ -25,12 +24,11 @@ import { comparePos, type RichPos } from '../../shared/richText'
 import type { DualTranslation, HighlightKind, LivePowerPointStatus, OutputState } from '../../shared/types'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { pickHighlightColor } from '../lib/highlights'
-import { MOD, SHOW_LOWER_THIRD_EVENT } from '../lib/shortcuts'
+import { MOD } from '../lib/shortcuts'
 import { parseVerseCaption, slideLines } from '../lib/slides'
 import { slideTranslation } from '../lib/translations'
 import { useDismiss } from '../lib/useDismiss'
 import {
-  selectBrowsingLive,
   selectDeckTheme,
   selectLiveSlide,
   selectMarkTarget,
@@ -41,7 +39,6 @@ import {
   type DeckSlide,
   type TranslationTarget,
 } from '../store'
-import { LowerThirdPanel } from './LowerThirdPanel'
 import { OutputScreen } from './OutputView'
 import { ScriptureQuickAdjust } from './ScriptureDisplay'
 import { ThemedSlide } from './ThemedSlide'
@@ -363,6 +360,8 @@ interface HeaderPopoverProps {
   onOpenChange(open: boolean): void
   /** Marks the button, such as while the lower third is on screen. */
   active?: boolean
+  /** A count over the button, such as the slides waiting in the queue. */
+  badge?: number
   className?: string
   children: ReactNode
 }
@@ -371,7 +370,7 @@ interface HeaderPopoverProps {
  * A button in a monitor's header and the popover it opens under it. The contents stay mounted while it is shut, so
  * they keep their state (and Cmd+L can reach the lower third headline).
  */
-function HeaderPopover({ label, icon, text, tooltip, open, onOpenChange, active = false, className, children }: HeaderPopoverProps) {
+export function HeaderPopover({ label, icon, text, tooltip, open, onOpenChange, active = false, badge, className, children }: HeaderPopoverProps) {
   const ref = useRef<HTMLDivElement>(null)
   const close = useCallback(() => onOpenChange(false), [onOpenChange])
   useDismiss(open, ref, close)
@@ -381,6 +380,7 @@ function HeaderPopover({ label, icon, text, tooltip, open, onOpenChange, active 
       {text ? (
         <Button size="sm" variant="ghost" className={`monitor-header-button${active ? ' active' : ''}`} icon={icon} title={tooltip} {...common}>
           {text}
+          {badge !== undefined && <span className="monitor-header-badge">{badge}</span>}
         </Button>
       ) : (
         <IconButton size="sm" className={`monitor-header-button${active ? ' active' : ''}`} label={label} tooltip={tooltip} icon={icon} {...common} />
@@ -415,7 +415,9 @@ export function PreviewMonitor() {
   const slideCount = useOperatorStore((s) => s.slides.length)
   const logoUrl = useOperatorStore((s) => s.settings.logoUrl)
   const goLiveHighlighted = useOperatorStore((s) => s.goLiveHighlighted)
+  const waiting = useOperatorStore((s) => (s.live.slideIndex === null ? 0 : s.live.slides.length - s.live.slideIndex - 1))
   const [toolsOpen, setToolsOpen] = useState(false)
+  const [queueOpen, setQueueOpen] = useState(false)
 
   return (
     <Panel
@@ -427,10 +429,29 @@ export function PreviewMonitor() {
         </span>
       }
       actions={
-        <HeaderPopover label="Preview tools" tooltip="Highlighting and translations for the preview" icon={<SlidersHorizontal size={16} />} open={toolsOpen} onOpenChange={setToolsOpen}>
-          <HighlightBar where="preview" />
-          <TranslationBar where="preview" part="chips" />
-        </HeaderPopover>
+        <>
+          <HeaderPopover
+            label="Queue"
+            text="Queue"
+            tooltip="The slides of the live item still to come: what Next brings on screen"
+            icon={<ListOrdered size={15} aria-hidden="true" />}
+            badge={waiting}
+            open={queueOpen}
+            onOpenChange={setQueueOpen}
+            className="queue-popover"
+          >
+            <div className="queue-popover-head">
+              <strong>Queue</strong>
+              <span className="monitor-meta">{waiting} waiting</span>
+              <UpNextMeta />
+            </div>
+            <WaitingList />
+          </HeaderPopover>
+          <HeaderPopover label="Preview tools" tooltip="Highlighting and translations for the preview" icon={<SlidersHorizontal size={16} />} open={toolsOpen} onOpenChange={setToolsOpen}>
+            <HighlightBar where="preview" />
+            <TranslationBar where="preview" part="chips" />
+          </HeaderPopover>
+        </>
       }
     >
       <MonitorStage where="preview" notes={<TranslationBar where="preview" part="note" />}>
@@ -450,10 +471,10 @@ export function PreviewMonitor() {
 
 /**
  * Live: exactly what the projector shows, with Previous and Next. Its tools (highlighting, crossfade, translations,
- * the output drawn here, Go Back) and the lower third open as popovers from the header; PowerPoint's status, Resend and
- * notes show over the screen.
+ * the output drawn here, Go Back) open as a popover from the header; PowerPoint's status, Resend and notes show over
+ * the screen.
  */
-export function LiveMonitor({ lowerThird }: { lowerThird: boolean }) {
+export function LiveMonitor() {
   const live = useOperatorStore((s) => s.live)
   const fadeMs = useOperatorStore((s) => s.settings.fadeMs)
   const setFadeMs = useOperatorStore((s) => s.setFadeMs)
@@ -467,19 +488,9 @@ export function LiveMonitor({ lowerThird }: { lowerThird: boolean }) {
   const canGoBack = useOperatorStore((s) => s.liveHistory.length > 0)
   const powerPoint = useOperatorStore((s) => s.live.powerPoint && s.settings.presentationLivePowerPoint)
   const powerPointStatus = useOperatorStore((s) => s.livePowerPoint)
-  const lowerThirdLive = useOperatorStore((s) => s.live.lowerThird !== null)
   const [dismissedFailure, setDismissedFailure] = useState(0)
   const [error, setError] = useState<ErrorLike | null>(null)
   const [toolsOpen, setToolsOpen] = useState(false)
-  const [lowerThirdOpen, setLowerThirdOpen] = useState(false)
-
-  // Cmd+L and Send to Lower Third open the lower third, to put the keyboard in its headline.
-  useEffect(() => {
-    if (!lowerThird) return
-    const open = () => setLowerThirdOpen(true)
-    window.addEventListener(SHOW_LOWER_THIRD_EVENT, open)
-    return () => window.removeEventListener(SHOW_LOWER_THIRD_EVENT, open)
-  }, [lowerThird])
 
   async function resend() {
     try {
@@ -531,20 +542,6 @@ export function LiveMonitor({ lowerThird }: { lowerThird: boolean }) {
       meta={<OnAirChip />}
       actions={
         <>
-          {lowerThird && (
-            <HeaderPopover
-              label="Lower third"
-              text="Lower third"
-              tooltip={`The lower third: its text, style, Show and Hide (${MOD}L)`}
-              icon={<PanelBottom size={15} aria-hidden="true" />}
-              open={lowerThirdOpen}
-              onOpenChange={setLowerThirdOpen}
-              active={lowerThirdLive}
-              className="lower-third-popover"
-            >
-              <LowerThirdPanel />
-            </HeaderPopover>
-          )}
           <HeaderPopover label="Live tools" tooltip="Highlighting, crossfade, translations, Go Back" icon={<SlidersHorizontal size={16} />} open={toolsOpen} onOpenChange={setToolsOpen} className="live-tools-popover">
             <HighlightBar where="live" />
             <label className="fade-control">
@@ -629,7 +626,7 @@ function Transport() {
 }
 
 /** "Sermon, then Offering": the next items in the Order of service after the live one. */
-export function UpNextMeta() {
+function UpNextMeta() {
   const next = useOperatorStore((s) => {
     const items = s.service?.items ?? []
     const at = items.findIndex((item) => item.id === s.live.scheduleItemId)
@@ -663,85 +660,5 @@ function WaitingList() {
         )
       })}
     </ol>
-  )
-}
-
-/** The item's slides as small thumbnails, two to a row: click previews one, double-click sends it live. */
-function SlideThumbs() {
-  const slides = useOperatorStore((s) => s.slides)
-  const song = useOperatorStore((s) => s.selectedSong)
-  const highlightIndex = useOperatorStore((s) => s.highlightIndex)
-  const theme = useOperatorStore(selectDeckTheme)
-  const liveIndexHere = useOperatorStore((s) => (selectBrowsingLive(s) ? s.live.slideIndex : null))
-  const setHighlight = useOperatorStore((s) => s.setHighlight)
-  const goLive = useOperatorStore((s) => s.goLive)
-  const slideThemes = useMemo(() => slides.map((slide) => slideTheme(theme, slide)), [slides, theme])
-  const listRef = useRef<HTMLDivElement>(null)
-
-  // Keep the preview highlight and the live slide in view as the keys move them. Only the list scrolls: scrollIntoView
-  // would also scroll the card (and the column) that clip it.
-  useEffect(() => {
-    const list = listRef.current
-    if (!list) return
-    for (const index of [highlightIndex, liveIndexHere]) {
-      const thumb = index === null ? null : list.querySelector<HTMLElement>(`[data-index="${index}"]`)
-      if (!thumb) continue
-      // The list is positioned, so offsetTop is from its top.
-      const top = thumb.offsetTop
-      if (top < list.scrollTop) list.scrollTop = top
-      else if (top + thumb.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = top + thumb.offsetHeight - list.clientHeight
-    }
-  }, [highlightIndex, liveIndexHere])
-
-  if (slides.length === 0) return <p className="queue-note">{song ? 'This song has no lyrics.' : 'This item has no slides.'}</p>
-  return (
-    <div className="queue-thumbs" ref={listRef}>
-      {slides.map((slide, index) => (
-        <button
-          key={index}
-          type="button"
-          data-index={index}
-          className={`slide-card queue-thumb${index === liveIndexHere ? ' live' : ''}${index === highlightIndex ? ' preview' : ''}`}
-          aria-label={`Slide ${index + 1}${slide.label ? `, ${slide.label}` : ''}${index === liveIndexHere ? ', live' : ''}${index === highlightIndex ? ', in preview' : ''}`}
-          title="Click to preview, double-click to go live"
-          onClick={() => setHighlight(index)}
-          onDoubleClick={() => goLive(index)}
-        >
-          <ThemedSlide theme={slideThemes[index]} text={slide.text} caption={slide.caption} rich={slide.rich} still />
-          <span className="slide-number">{index + 1}</span>
-        </button>
-      ))}
-    </div>
-  )
-}
-
-/**
- * The card under Live. With a song or presentation in the grid it is Slides: the item's slides as thumbnails. Otherwise
- * it is Queue: the slides of the live item still to come. Its grid button opens every slide, full size, over the finder.
- */
-export function QueueCard({ gridOpen, onGridOpenChange }: { gridOpen: boolean; onGridOpenChange(open: boolean): void }) {
-  const slidesMode = useOperatorStore((s) => s.deckType === 'song' || s.deckType === 'presentation')
-  const slideCount = useOperatorStore((s) => s.slides.length)
-  const waiting = useOperatorStore((s) => (s.live.slideIndex === null ? 0 : s.live.slides.length - s.live.slideIndex - 1))
-  return (
-    <Panel
-      className={`queue-card${slidesMode ? ' queue-card--slides' : ''}`}
-      title={slidesMode ? 'Slides' : 'Queue'}
-      meta={<span className="monitor-meta">{slidesMode ? `${slideCount} slide${slideCount === 1 ? '' : 's'}` : `${waiting} waiting`}</span>}
-      actions={
-        <IconButton
-          size="sm"
-          label="All slides"
-          tooltip="Every slide of the item, full size, over the finder"
-          icon={<LayoutGrid size={16} />}
-          aria-expanded={gridOpen}
-          aria-controls="slides-drawer"
-          pressed={gridOpen}
-          onClick={() => onGridOpenChange(!gridOpen)}
-        />
-      }
-    >
-      {slidesMode ? <SlideThumbs /> : <WaitingList />}
-    </Panel>
   )
 }

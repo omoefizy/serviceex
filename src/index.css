@@ -27,6 +27,11 @@ body.resizing {
   user-select: none;
 }
 
+body.resizing-rows {
+  cursor: row-resize;
+  user-select: none;
+}
+
 *,
 *::before,
 *::after {
@@ -6904,6 +6909,243 @@ svg.lucide {
   min-height: 100%;
 }
 
+/* The strip at the top of the middle column: the newest two heard, side by side, with See all for the rest. */
+.heard-strip {
+  position: relative;
+  z-index: 18;
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  gap: var(--space-2-5);
+  height: 88px;
+  padding: var(--space-2) var(--space-2) var(--space-2) 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.heard-strip.flash {
+  animation: suggestion-flash 0.4s ease-in-out 3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heard-strip.flash {
+    animation: none;
+  }
+}
+
+.heard-strip-head {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  width: 132px;
+  min-width: 0;
+}
+
+.heard-strip-head .heard-title {
+  overflow: hidden;
+  font-size: var(--text-md);
+  text-overflow: ellipsis;
+}
+
+.heard-strip-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: calc(-1 * var(--space-2));
+}
+
+.heard-strip-actions .ui-button {
+  height: 28px;
+  padding: 0 var(--space-2);
+}
+
+.heard-strip-actions .ui-button.heard-clear {
+  margin-left: 0;
+}
+
+.heard-all-anchor {
+  position: relative;
+}
+
+.heard-all-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 2 * var(--shell-gap)));
+  max-height: min(440px, calc(100vh - var(--topbar-height) - var(--statusbar-height) - 140px));
+  padding-top: var(--space-2-5);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+
+.heard-all-popover[hidden] {
+  display: none;
+}
+
+.heard-all-popover > .ui-error-note {
+  margin: 0 var(--space-2-5) var(--space-2);
+}
+
+.heard-mini-list {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.heard-mini {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-1-5) var(--space-2) var(--space-1-5) var(--space-2-5);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.heard-mini.previewed {
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+}
+
+.heard-mini.live {
+  opacity: 0.8;
+}
+
+.heard-mini-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: 0;
+}
+
+.heard-mini-top .heard-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.heard-mini-top > .ui-button {
+  flex: none;
+  height: 28px;
+  padding: 0 var(--space-2);
+}
+
+.heard-mini-text {
+  display: flex;
+  gap: var(--space-1-5);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.heard-mini-words {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.heard-strip-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
+
+/* ---------- The main area: every slide of a song or presentation, or everything heard ---------- */
+
+.operator-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: 14px;
+}
+
+.operator-main > .slide-panel {
+  flex: 1;
+  gap: var(--space-2);
+  min-height: 0;
+  padding: var(--space-2-5) var(--space-3) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.operator-main > .slide-panel > .panel-header {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.operator-main > .slide-panel > .panel-header > h2 {
+  min-width: 0;
+}
+
+.operator-main > .slide-panel .slide-hint {
+  display: none;
+}
+
+.operator-main > .slide-panel > .slide-grid {
+  grid-template-columns: repeat(auto-fill, minmax(max(180px, var(--thumb-width, 180px)), 1fr));
+  gap: var(--space-2-5);
+}
+
+.operator-main > .slide-panel > :is(.slide-grid, .slide-list) {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.operator-main > .slide-panel .slide-card.preview {
+  box-shadow: 0 0 0 2px var(--accent-bright);
+}
+
+.operator-main > .slide-panel .slide-card.live {
+  box-shadow: 0 0 0 2px var(--live-red);
+}
+
+.slide-live-chip {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  z-index: 2;
+  padding: 1px var(--space-1-5);
+  border-radius: 4px;
+  background: var(--live-strong);
+  color: var(--screen-fg);
+  font-size: 10px;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+}
+
+.operator-main.heard-card {
+  border-radius: 14px;
+}
+
 /* ---------- Finder ---------- */
 
 .library {
@@ -7032,34 +7274,36 @@ svg.lucide {
   max-height: calc(100vh - var(--topbar-height) - var(--statusbar-height) - 24px);
 }
 
-.transcript-drawer {
-  position: fixed;
-  top: calc(var(--topbar-height) + var(--shell-gap));
-  right: var(--shell-gap);
-  bottom: calc(var(--statusbar-height) + var(--shell-gap));
-  z-index: 30;
+/* The live transcript, docked in the middle column over the finder: it never covers Preview or Live. */
+.transcript-dock {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 16;
   display: flex;
   flex-direction: column;
-  width: min(440px, calc(100vw - 2 * var(--shell-gap)));
+  height: max(var(--finder-height), 240px);
+  max-height: 100%;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xl);
+  border-radius: 14px;
   background: var(--panel);
   box-shadow: var(--shadow-3);
   overflow: hidden;
 }
 
-.transcript-drawer[hidden] {
+.transcript-dock[hidden] {
   display: none;
 }
 
-.transcript-drawer-close {
+.transcript-dock-close {
   position: absolute;
   top: var(--space-3);
   right: var(--space-3);
   z-index: 1;
 }
 
-.transcript-drawer .listener-panel {
+.transcript-dock .listener-panel {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -7067,7 +7311,7 @@ svg.lucide {
   border-radius: 0;
 }
 
-.transcript-drawer .listener-panel > .panel-header {
+.transcript-dock .listener-panel > .panel-header {
   padding-right: 48px;
 }
 
@@ -8007,8 +8251,10 @@ svg.lucide {
 }
 
 /* ---------- Operator screen after docs/design/Main2.reference.html (drawn at 1366 by 768) ----------
-   Everything at once: the Order of service, the middle column (Heard in the sermon over the finder) and the monitors
-   (Preview, Live, Queue). The page never scrolls; each panel may shrink to nothing, and only the lists inside scroll. */
+   Everything at once: the Order of service, the middle column (Heard in the sermon, the main area, the finder) and the
+   monitors (Live, Preview, Lower third). Splitters between them resize them (App); a window too small for the sizes
+   chosen shrinks the side columns towards their floors before the middle goes under its minimum. The page never
+   scrolls; only the lists inside do. */
 
 .operator {
   display: flex;
@@ -8036,17 +8282,18 @@ svg.lucide {
 }
 
 .operator-order {
-  flex: none;
-  width: var(--order-width);
+  flex: 0 1 var(--order-width);
+  min-width: 180px;
 }
 
 .operator-order.rail {
-  width: var(--order-rail-width);
+  flex-basis: var(--order-rail-width);
+  min-width: var(--order-rail-width);
 }
 
 .operator-order > *,
-.operator-middle > :not(.operator-middle-live),
-.operator-middle-live > :is(.heard-card) {
+.operator-middle > :not(.operator-middle-live, .transcript-dock),
+.operator-middle-live > .operator-main {
   flex: 1 1 0;
   min-height: 0;
 }
@@ -8054,6 +8301,7 @@ svg.lucide {
 .operator-middle {
   position: relative;
   flex: 1 1 0;
+  min-width: 360px;
 }
 
 .operator-middle-live {
@@ -8066,9 +8314,41 @@ svg.lucide {
 }
 
 .operator-right {
-  flex: none;
+  flex: 0 1 var(--monitor-column-width);
   gap: var(--shell-gap);
-  width: var(--monitor-column-width);
+  min-width: 300px;
+}
+
+/* Splitters: an 8px hit area in the 10px gap between two panels, drawing a line while hovered or dragged. */
+.splitter {
+  position: relative;
+  z-index: 5;
+  flex: none;
+  background: none;
+  touch-action: none;
+}
+
+.splitter.vertical {
+  width: 8px;
+  margin: 0 calc((8px + var(--shell-gap)) / -2);
+  cursor: col-resize;
+}
+
+.splitter.horizontal {
+  height: 8px;
+  margin: calc((8px + var(--shell-gap)) / -2) 0;
+  cursor: row-resize;
+}
+
+.splitter:hover,
+.splitter:focus-visible,
+.splitter:active {
+  outline: none;
+  background: linear-gradient(var(--accent-bright), var(--accent-bright)) center / 2px 40% no-repeat;
+}
+
+.splitter.horizontal:is(:hover, :focus-visible, :active) {
+  background-size: 40% 2px;
 }
 
 /* Panel headers in this screen: 15px Bricolage titles, 40 to 48px tall. */
@@ -8317,10 +8597,9 @@ svg.lucide {
 .finder {
   position: relative;
   display: flex;
-  flex: none;
+  flex: 0 1 var(--finder-height);
   flex-direction: column;
-  height: var(--finder-height);
-  min-height: 0;
+  min-height: 140px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--panel);
@@ -8580,55 +8859,13 @@ svg.lucide {
   padding: var(--space-1) var(--space-2);
 }
 
-/* The full slide grid, over the finder. */
-.slides-drawer {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 15;
-  display: flex;
-  flex-direction: column;
-  height: var(--finder-height);
-  border: 1px solid var(--border-strong);
-  border-radius: 14px;
-  background: var(--panel);
-  box-shadow: var(--shadow-3);
-  overflow: hidden;
-}
-
-.slides-drawer[hidden] {
-  display: none;
-}
-
-.slides-drawer-head {
-  position: absolute;
-  top: var(--space-2);
-  right: var(--space-2);
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  max-width: 50%;
-}
-
-.slides-drawer > .slide-panel {
-  flex: 1;
-  min-height: 0;
-  border: 0;
-  border-radius: 0;
-  overflow-y: auto;
-}
-
-.slides-drawer > .slide-panel > .panel-header {
-  padding-right: 48px;
-}
-
-/* ---------- Preview, Live and Queue ---------- */
+/* ---------- Live, Preview and Lower third ---------- */
 
 .operator-right > .ui-panel {
   flex: 0 1 auto;
   border-radius: 14px;
+  /* The header popovers (Queue, tools, Edit style) reach outside the card; the screens shrink to fit, so nothing else does. */
+  overflow: visible;
 }
 
 .operator-right .ui-panel-head {
@@ -8641,7 +8878,7 @@ svg.lucide {
   min-width: 0;
 }
 
-/* Preview's and Queue's note sits at the right, before the header's buttons, as in the design. */
+/* Preview's note sits at the right, before the header's buttons, as in the design. */
 .operator-right .ui-panel:not(.live-card) .ui-panel-meta {
   margin-left: auto;
 }
@@ -8683,7 +8920,7 @@ svg.lucide {
   container-type: size;
 }
 
-/* When the column is short the screens give a little height (staying 16:9) so the Queue keeps at least its header. */
+/* When the column is short the screens give a little height (staying 16:9) so the Lower third keeps its room. */
 .monitor-card > .monitor-stage {
   flex: 0 1 auto;
 }
@@ -8839,11 +9076,98 @@ svg.lucide {
   background: none;
 }
 
-/* Queue (scripture) and Slides (a song or presentation): the rest of the column, scrolling inside. */
-/* At least its header and the list's padding, so neither is cut off; the monitors give the height. */
-.operator-right > .ui-panel.queue-card {
-  flex: 1 1 0;
-  min-height: 54px;
+/* Queue, from the Preview header: the slides of the live item still to come. */
+.monitor-header-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+  line-height: 18px;
+  text-align: center;
+}
+
+.monitor-popover.queue-popover {
+  gap: var(--space-2);
+  width: 320px;
+  max-height: min(320px, calc(100vh - var(--topbar-height) - var(--statusbar-height) - 200px));
+  padding: var(--space-3) 0 var(--space-1);
+}
+
+.queue-popover-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  padding: 0 14px;
+}
+
+.queue-popover-head .up-next-meta {
+  flex-basis: 100%;
+  font-size: var(--text-xs);
+}
+
+.queue-popover .queue-list {
+  overflow-y: auto;
+}
+
+/* The Lower third card, under Preview: the headline, saved lines and the Show and Hide toggle in one row. */
+.operator-right > .ui-panel.lower-third-card {
+  flex: none;
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.lower-third-card > .ui-panel-head {
+  min-height: 40px;
+  padding: 0;
+}
+
+.lower-third-card.on-air {
+  box-shadow: inset 0 0 0 1px var(--live-red);
+}
+
+.lower-third-card .lower-third-status {
+  line-height: 18px;
+}
+
+.lower-third-card-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.lower-third-card-row > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.lower-third-saved {
+  flex: none;
+  width: 76px;
+  height: var(--control-md);
+  padding: 0 var(--space-2);
+}
+
+.button.lower-third-toggle {
+  flex: none;
+  height: var(--control-md);
+}
+
+.button.lower-third-toggle.on {
+  border-color: var(--live-red);
+  background: var(--live-soft);
+  color: var(--live-chip-text);
+}
+
+/* Edit style opens above the card, at the bottom of the column. */
+.monitor-popover.above {
+  top: auto;
+  bottom: calc(100% + 6px);
 }
 
 .queue-note {
@@ -8896,51 +9220,6 @@ svg.lucide {
   white-space: nowrap;
 }
 
-.queue-thumbs {
-  position: relative;
-  display: grid;
-  flex: 1;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-content: start;
-  gap: var(--space-2);
-  min-height: 0;
-  padding: 0 var(--space-3) var(--space-3);
-  overflow-y: auto;
-}
-
-.slide-card.queue-thumb {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: var(--screen-bg);
-  box-shadow: inset 0 0 0 1px var(--border-strong);
-  overflow: hidden;
-  cursor: pointer;
-}
-
-.slide-card.queue-thumb.preview {
-  box-shadow: 0 0 0 2px var(--accent-bright);
-}
-
-.slide-card.queue-thumb.live {
-  box-shadow: 0 0 0 2px var(--live-red);
-}
-
-.queue-thumb .slide-number {
-  position: absolute;
-  bottom: 3px;
-  left: 4px;
-  z-index: 1;
-  padding: 0 4px;
-  border-radius: 4px;
-  background: var(--screen-scrim);
-  color: var(--screen-fg);
-  font-size: 10px;
-}
-
 /* ---------- Status bar: 36px ---------- */
 
 .statusbar .ui-button,
@@ -8967,13 +9246,9 @@ svg.lucide {
   }
 }
 
-/* Below 720 pixels of height the finder is shorter, and the Queue gives the monitors its room. */
+/* Below 720 pixels of height the finder is shorter. */
 @media (max-height: 719px) {
   :root {
     --finder-height: var(--finder-height-short);
-  }
-
-  .operator-right > .ui-panel.queue-card {
-    display: none;
   }
 }

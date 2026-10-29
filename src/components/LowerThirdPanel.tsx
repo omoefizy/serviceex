@@ -1,4 +1,4 @@
-import { Bookmark, EyeOff, ListPlus, Pin, PinOff, Play, RefreshCw, SkipForward, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { Bookmark, EyeOff, ListPlus, Paintbrush, Pin, PinOff, Play, RefreshCw, SkipForward, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { hasFormatting, matching, plainText, richOrPlain, trimRich } from '../../shared/richText'
 import type { AppSettings, LowerThirdAnimation, RichText, SavedLowerThirdLine } from '../../shared/types'
@@ -10,7 +10,8 @@ import { LowerThirdGraphic } from './LowerThird'
 import { LowerThirdEditor } from './LowerThirdEditor'
 import type { FormatControl } from './FormatToolbar'
 import { RichTextEditor } from './RichTextEditor'
-import { ErrorNote } from './ui'
+import { HeaderPopover } from './LivePreview'
+import { ErrorNote, Panel } from './ui'
 
 const ANIMATIONS: { value: LowerThirdAnimation; label: string }[] = [
   { value: 'slide', label: 'Slide' },
@@ -31,41 +32,18 @@ const sameLine = (a: LowerThirdLine, b: LowerThirdLine) =>
 const LINE_CONTROLS_OFF: FormatControl[] = ['align', 'justify', 'verticalAlign', 'lineHeight']
 
 /**
- * Types a lower third and puts it on the Stream output. Enter shows it, Esc hides it, Up and Down step through the
- * lines used this service, and Cmd+L (Ctrl+L) jumps here from anywhere. Below: saved lines and a sermon's points.
+ * Typing a lower third: the draft, and the keys in its fields. Enter shows it (or, with one up, updates it in place),
+ * Esc hides it, and Up and Down step through the lines used this service.
  */
-export function LowerThirdPanel() {
-  const settings = useOperatorStore((s) => s.settings)
-  const updateSettings = useOperatorStore((s) => s.updateSettings)
-  const live = useOperatorStore((s) => s.live.lowerThird)
+function useLowerThirdTyping() {
   const draft = useOperatorStore((s) => s.lowerThirdDraft)
   const history = useOperatorStore((s) => s.lowerThirdHistory)
-  const templates = useOperatorStore((s) => s.lowerThirdTemplates)
-  const templateStyle = useOperatorStore(selectLowerThirdStyle)
-  const pointIndex = useOperatorStore((s) => s.lowerThirdPointIndex)
   const setDraft = useOperatorStore((s) => s.setLowerThirdDraft)
   const show = useOperatorStore((s) => s.showLowerThird)
   const hide = useOperatorStore((s) => s.hideLowerThird)
-  const showPoint = useOperatorStore((s) => s.showLowerThirdPoint)
-  const nextPoint = useOperatorStore((s) => s.nextLowerThirdPoint)
-  const queuePoints = useOperatorStore((s) => s.queueLowerThirdPoints)
-  const [editorOpen, setEditorOpen] = useState(false)
-  const [pasted, setPasted] = useState('')
-  const [error, setError] = useState<ErrorLike | null>(null)
   /** Where Up and Down are in the history: -1 is the line being typed, kept in `typed` meanwhile. */
   const historyIndex = useRef(-1)
   const typed = useRef<LowerThirdLine>(draft)
-
-  const empty = !draft.headline.trim() && !draft.body.trim()
-  const edited = live !== null && !empty && !sameLine(draft, live)
-  const points = settings.lowerThirdPoints
-  const saved = [...settings.lowerThirdSavedLines].sort((a, b) => Number(b.pinned) - Number(a.pinned))
-  const templateId = templates.some((t) => t.id === settings.lowerThirdTemplateId) ? settings.lowerThirdTemplateId : (templates[0]?.id ?? null)
-
-  const save = (patch: Partial<AppSettings>) => {
-    setError(null)
-    updateSettings(patch).catch((err) => setError(reportError('Lower third', err)))
-  }
 
   function type(patch: Partial<LowerThirdLine>) {
     historyIndex.current = -1
@@ -97,6 +75,153 @@ export function LowerThirdPanel() {
       e.preventDefault()
       step(e.key === 'ArrowUp' ? 1 : -1)
     }
+  }
+
+  return { draft, history, type, typeField, onKeyDown }
+}
+
+/** The headline field, the one Cmd+L (Ctrl+L) jumps to. */
+function HeadlineField({ typing }: { typing: ReturnType<typeof useLowerThirdTyping> }) {
+  return (
+    <RichTextEditor
+      id={LOWER_THIRD_HEADLINE_ID}
+      placeholder={`Lower third text (${MOD}L)`}
+      ariaLabel="Headline"
+      singleLine
+      maxLength={300}
+      toolbar="focus"
+      disabled={LINE_CONTROLS_OFF}
+      base={null}
+      value={richOrPlain(typing.draft.headlineRich, typing.draft.headline)}
+      onChange={(rich) => typing.typeField('headline', rich)}
+      onKeyDown={typing.onKeyDown}
+    />
+  )
+}
+
+/**
+ * The Lower third card under Preview: the headline, a picker of the saved lines, and Show and Hide in one toggle that
+ * reads ON AIR while it is up. Edit style opens the whole panel (body, template, saved lines, points, animation).
+ */
+export function LowerThirdCard() {
+  const live = useOperatorStore((s) => s.live.lowerThird)
+  const savedLines = useOperatorStore((s) => s.settings.lowerThirdSavedLines)
+  const show = useOperatorStore((s) => s.showLowerThird)
+  const hide = useOperatorStore((s) => s.hideLowerThird)
+  const typing = useLowerThirdTyping()
+  const [styleOpen, setStyleOpen] = useState(false)
+  const { draft } = typing
+  const empty = !draft.headline.trim() && !draft.body.trim()
+  const edited = live !== null && !empty && !sameLine(draft, live)
+  const saved = [...savedLines].sort((a, b) => Number(b.pinned) - Number(a.pinned))
+
+  return (
+    <Panel
+      className={`lower-third-card${live ? ' on-air' : ''}`}
+      title="Lower third"
+      meta={
+        <span className={`lower-third-status${live ? ' live' : ''}`} role="status">
+          {live ? 'ON AIR' : 'Off'}
+        </span>
+      }
+      actions={
+        <HeaderPopover
+          label="Lower third style"
+          text="Edit style"
+          tooltip="Body text, template, saved lines, points, animation and timing"
+          icon={<Paintbrush size={14} aria-hidden="true" />}
+          open={styleOpen}
+          onOpenChange={setStyleOpen}
+          className="lower-third-popover above"
+        >
+          <LowerThirdPanel headline={false} />
+        </HeaderPopover>
+      }
+    >
+      <div className="lower-third-card-row">
+        <HeadlineField typing={typing} />
+        {saved.length > 0 && (
+          <select
+            className="input lower-third-saved"
+            aria-label="Saved lower thirds"
+            title="Put a saved line in the field; Enter or Show puts it up"
+            value=""
+            onChange={(e) => {
+              const line = saved.find((l) => l.id === e.target.value)
+              if (line) typing.type({ headline: line.headline, body: line.body, headlineRich: line.headlineRich, bodyRich: line.bodyRich })
+            }}
+          >
+            <option value="" disabled>
+              Saved
+            </option>
+            {saved.map((line) => (
+              <option key={line.id} value={line.id}>
+                {line.body ? `${line.headline} · ${line.body}` : line.headline}
+              </option>
+            ))}
+          </select>
+        )}
+        {edited ? (
+          <button type="button" className="button primary lower-third-toggle" onClick={show} title={`Change the live lower third to this (Enter or ${MOD}Enter)`}>
+            <RefreshCw size={14} aria-hidden="true" /> Update
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={`button lower-third-toggle${live ? ' on' : ' primary'}`}
+            aria-pressed={live !== null}
+            disabled={!live && empty}
+            title={live ? 'On air. Take it off (Esc)' : 'Show it on the Stream output (Enter)'}
+            onClick={live ? hide : show}
+          >
+            {live ? (
+              <>
+                <EyeOff size={14} aria-hidden="true" /> Hide
+              </>
+            ) : (
+              <>
+                <Play size={14} aria-hidden="true" /> Show
+              </>
+            )}
+          </button>
+        )}
+      </div>
+    </Panel>
+  )
+}
+
+/**
+ * Types a lower third and puts it on the Stream output. Enter shows it, Esc hides it, Up and Down step through the
+ * lines used this service, and Cmd+L (Ctrl+L) jumps to the headline from anywhere. Below: saved lines and a sermon's
+ * points. Without `headline` it leaves the headline to the Lower third card, which shows it.
+ */
+export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
+  const settings = useOperatorStore((s) => s.settings)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const live = useOperatorStore((s) => s.live.lowerThird)
+  const templates = useOperatorStore((s) => s.lowerThirdTemplates)
+  const templateStyle = useOperatorStore(selectLowerThirdStyle)
+  const pointIndex = useOperatorStore((s) => s.lowerThirdPointIndex)
+  const show = useOperatorStore((s) => s.showLowerThird)
+  const hide = useOperatorStore((s) => s.hideLowerThird)
+  const showPoint = useOperatorStore((s) => s.showLowerThirdPoint)
+  const nextPoint = useOperatorStore((s) => s.nextLowerThirdPoint)
+  const queuePoints = useOperatorStore((s) => s.queueLowerThirdPoints)
+  const typing = useLowerThirdTyping()
+  const { draft, history, type, typeField, onKeyDown } = typing
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [pasted, setPasted] = useState('')
+  const [error, setError] = useState<ErrorLike | null>(null)
+
+  const empty = !draft.headline.trim() && !draft.body.trim()
+  const edited = live !== null && !empty && !sameLine(draft, live)
+  const points = settings.lowerThirdPoints
+  const saved = [...settings.lowerThirdSavedLines].sort((a, b) => Number(b.pinned) - Number(a.pinned))
+  const templateId = templates.some((t) => t.id === settings.lowerThirdTemplateId) ? settings.lowerThirdTemplateId : (templates[0]?.id ?? null)
+
+  const save = (patch: Partial<AppSettings>) => {
+    setError(null)
+    updateSettings(patch).catch((err) => setError(reportError('Lower third', err)))
   }
 
   function saveLine() {
@@ -137,19 +262,7 @@ export function LowerThirdPanel() {
         </button>
       </header>
 
-      <RichTextEditor
-        id={LOWER_THIRD_HEADLINE_ID}
-        placeholder={`Headline (${MOD}L)`}
-        ariaLabel="Headline"
-        singleLine
-        maxLength={300}
-        toolbar="focus"
-        disabled={LINE_CONTROLS_OFF}
-        base={null}
-        value={richOrPlain(draft.headlineRich, draft.headline)}
-        onChange={(rich) => typeField('headline', rich)}
-        onKeyDown={onKeyDown}
-      />
+      {headline && <HeadlineField typing={typing} />}
       <RichTextEditor
         placeholder="Body"
         ariaLabel="Body"

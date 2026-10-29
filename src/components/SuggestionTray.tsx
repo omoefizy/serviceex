@@ -63,8 +63,11 @@ function MenuItem({ close, title, disabled, onClick, children }: { close(): void
  * Heard in the sermon: verses heard in the live transcript, and statements the AI picked from it, newest first. Preview
  * puts one in the Preview monitor; Show live puts it in the preview and sends it on screen, as Enter or Send to live
  * would. Verses disappear after two minutes and statements after three, or when dismissed.
+ *
+ * A slim strip shows the newest two, with See all for the whole list in a popover. With `fullList` (scripture in the
+ * grid, or nothing) the whole list also fills the middle column under the strip.
  */
-export function SuggestionTray() {
+export function SuggestionTray({ fullList }: { fullList: boolean }) {
   const { suggestions, previewedId, flashKey, preview, dismiss, editStatement } = useSuggestions()
   const service = useOperatorStore((s) => s.service)
   const speaker = useOperatorStore((s) => s.settings.quoteSpeakerName)
@@ -72,6 +75,10 @@ export function SuggestionTray() {
   const setLowerThirdDraft = useOperatorStore((s) => s.setLowerThirdDraft)
   const liveDeckKey = useOperatorStore((s) => (s.live.slideIndex !== null ? s.live.deckKey : null))
   const [flashing, setFlashing] = useState(false)
+  const [allOpen, setAllOpen] = useState(false)
+  const allRef = useRef<HTMLDivElement>(null)
+  const closeAll = useCallback(() => setAllOpen(false), [])
+  useDismiss(allOpen, allRef, closeAll)
   const [editing, setEditing] = useState<StatementSuggestion | null>(null)
   /** Statements saved to the schedule this session, so the menu says so. */
   const [scheduled, setScheduled] = useState<Set<number>>(new Set())
@@ -267,18 +274,37 @@ export function SuggestionTray() {
     )
   }
 
-  return (
-    <section className={`heard-card${flashing ? ' flash' : ''}`} aria-label="Scripture and statements heard in the sermon">
-      <header className="heard-head">
-        <h2 className="heard-title">Heard in the sermon</h2>
-        <span className={`heard-status${listening ? ' on' : ''}`} title={listener.why}>
-          <span className="heard-status-dot" aria-hidden="true" />
-          {listener.label.toUpperCase()}
-        </span>
-        <Button size="sm" variant="ghost" className="heard-clear" title="Dismiss every row" disabled={!showing} onClick={() => suggestions.forEach((s) => dismiss(s.id))}>
-          Clear all
-        </Button>
-      </header>
+  /** A small card in the strip: the reference and its buttons, then the match and one line of the words. */
+  function compactCard(s: Suggestion) {
+    const previewed = s.id === previewedId
+    const scripture = s.type === 'scripture'
+    return (
+      <li key={s.id} className={`heard-mini${previewed ? ' previewed' : ''}${isLive(s) ? ' live' : ''}${scripture ? '' : ' statement'}`}>
+        <div className="heard-mini-top">
+          <strong className="heard-label" title={scripture ? s.label : undefined}>
+            {scripture ? s.label : 'Statement'}
+          </strong>
+          {actions(s, previewed)}
+        </div>
+        <button
+          type="button"
+          className="heard-mini-text"
+          title={scripture ? `Heard: "${s.heard}" · ${Math.round(s.confidence * 100)}% sure. Click to preview.` : `Said at ${timeOf(s.heardAt)}. Click to preview it as a quote slide.`}
+          onClick={(e) => toPreview(s, e)}
+        >
+          {scripture ? (
+            <span className={`heard-meta${s.confidence >= 0.9 ? ' strong' : ''}`}>{Math.round(s.confidence * 100)}%</span>
+          ) : (
+            <span className="heard-meta">{timeOf(s.heardAt)}</span>
+          )}
+          <span className="heard-mini-words">{scripture ? s.text : `“${s.text}”`}</span>
+        </button>
+      </li>
+    )
+  }
+
+  const list = (
+    <>
       <ErrorNote error={error} />
       {showing ? (
         <ul className="heard-list">{suggestions.map((s) => (s.type === 'scripture' ? scriptureRow(s) : statementRow(s)))}</ul>
@@ -289,6 +315,50 @@ export function SuggestionTray() {
           title="Nothing heard yet"
           description={listening ? 'Verses the speaker names or quotes show here, newest first.' : 'Start listening and the verses the speaker names or quotes show here.'}
         />
+      )}
+    </>
+  )
+
+  return (
+    <>
+      <section className={`heard-strip${flashing ? ' flash' : ''}`} aria-label="Scripture and statements heard in the sermon">
+        <header className="heard-strip-head">
+          <h2 className="heard-title">Heard in the sermon</h2>
+          <span className={`heard-status${listening ? ' on' : ''}`} title={listener.why}>
+            <span className="heard-status-dot" aria-hidden="true" />
+            {listener.label.toUpperCase()}
+          </span>
+          <div className="heard-strip-actions">
+            <div className="heard-all-anchor" ref={allRef}>
+              <Button size="sm" variant="ghost" className="heard-see-all" title="Every verse and statement heard" aria-haspopup="dialog" aria-expanded={allOpen} onClick={() => setAllOpen(!allOpen)}>
+                See all{showing ? ` (${suggestions.length})` : ''}
+              </Button>
+              <div className="heard-all-popover" role="dialog" aria-label="Everything heard in the sermon" hidden={!allOpen}>
+                {allOpen && list}
+              </div>
+            </div>
+            <Button size="sm" variant="ghost" className="heard-clear" title="Dismiss every row" disabled={!showing} onClick={() => suggestions.forEach((s) => dismiss(s.id))}>
+              Clear all
+            </Button>
+          </div>
+        </header>
+        {showing ? (
+          <ul className="heard-mini-list">{suggestions.slice(0, 2).map(compactCard)}</ul>
+        ) : (
+          <p className="heard-strip-empty">
+            <Sparkles size={16} aria-hidden="true" />
+            {listening ? 'Nothing heard yet. Verses the speaker names or quotes show here.' : 'Start listening and the verses the speaker names or quotes show here.'}
+          </p>
+        )}
+      </section>
+      {fullList && (
+        <section className="heard-card operator-main" aria-label="Everything heard in the sermon">
+          <header className="heard-head">
+            <h2 className="heard-title">All heard</h2>
+            <span className="monitor-meta">{showing ? `${suggestions.length} newest first` : 'Nothing yet'}</span>
+          </header>
+          {list}
+        </section>
       )}
       {editing && (
         <QuoteModal
@@ -302,6 +372,6 @@ export function SuggestionTray() {
           }}
         />
       )}
-    </section>
+    </>
   )
 }
