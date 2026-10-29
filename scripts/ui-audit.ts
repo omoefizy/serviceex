@@ -203,11 +203,31 @@ function collectMetrics(): Metrics {
   const INTERACTIVE =
     'button, a[href], input:not([type=hidden]), select, textarea, summary, [role=button], [role=tab], [role=menuitem], [role=checkbox], [role=switch], [role=option], [tabindex]:not([tabindex="-1"])'
   type Rgba = { r: number; g: number; b: number; a: number }
+  /** sRGB from linear light, 0 to 255. */
+  const encode = (v: number) => 255 * Math.min(1, Math.max(0, v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055))
+  /** Computed colors come as rgb(), or as color(srgb …), oklab() or oklch() when a token mixes or derives them. */
   const parse = (value: string): Rgba | null => {
-    const m = /rgba?\(([^)]+)\)/.exec(value)
+    const m = /(rgba?|color|oklab|oklch)\(([^)]+)\)/.exec(value)
     if (!m) return null
-    const p = m[1].split(/[\s,/]+/).filter(Boolean).map(Number)
-    return { r: p[0], g: p[1], b: p[2], a: p[3] ?? 1 }
+    const [main, alpha] = m[2].split('/')
+    const parts = main.trim().split(/[\s,]+/).filter(Boolean)
+    const a = alpha !== undefined ? Number(alpha.trim()) : m[1] === 'rgba' && parts[3] !== undefined ? Number(parts[3]) : 1
+    if (m[1] === 'rgb' || m[1] === 'rgba') return { r: Number(parts[0]), g: Number(parts[1]), b: Number(parts[2]), a }
+    if (m[1] === 'color') {
+      if (parts[0] !== 'srgb') return null
+      return { r: Number(parts[1]) * 255, g: Number(parts[2]) * 255, b: Number(parts[3]) * 255, a }
+    }
+    const n = parts.map((p) => (p.endsWith('%') ? Number(p.slice(0, -1)) / 100 : Number(p)))
+    const [L, A, B] = m[1] === 'oklab' ? n : [n[0], n[1] * Math.cos((n[2] * Math.PI) / 180), n[1] * Math.sin((n[2] * Math.PI) / 180)]
+    const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3
+    const mm = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3
+    const ss = (L - 0.0894841775 * A - 1.291485548 * B) ** 3
+    return {
+      r: encode(4.0767416621 * l - 3.3077115913 * mm + 0.2309699292 * ss),
+      g: encode(-1.2684380046 * l + 2.6097574011 * mm - 0.3413193965 * ss),
+      b: encode(-0.0041960863 * l - 0.7034186147 * mm + 1.707614701 * ss),
+      a,
+    }
   }
   const hex = (c: Rgba) =>
     '#' + [c.r, c.g, c.b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('') + (c.a < 1 ? ` @${Math.round(c.a * 100) / 100}` : '')
@@ -765,6 +785,8 @@ async function main() {
       page = app.windows().find((w) => w.url().startsWith('http') && !w.url().includes('#/'))
     }
     if (!page) throw new Error('The operator window did not open')
+    // A step that cannot happen fails after 30 seconds instead of waiting forever.
+    page.setDefaultTimeout(30_000)
     await page.waitForSelector('.toolbar', { timeout: 60_000 })
     // The output opens full screen on a second display by default; keep it a window, and the look predictable.
     await page.evaluate(() => window.api.settings.set({ outputDisplay: 'window', appearance: 'dark' }))
@@ -772,6 +794,13 @@ async function main() {
     await installHooks(page)
 
     console.log('First run, no data:')
+    // The welcome shows once, until a choice is made; it is shot at each size, then dismissed.
+    await page.waitForSelector('.welcome', { timeout: 10_000 }).catch(() => console.warn('  The first run welcome did not show'))
+    for (const size of SIZES) {
+      await setSize(app, page, size)
+      if (await page.locator('.welcome').count()) await shot(page, `00-welcome@${size.width}`)
+    }
+    if (await page.locator('.welcome').count()) await page.getByRole('button', { name: 'Continue without an account' }).click()
     for (const size of SIZES) {
       await setSize(app, page, size)
       await shot(page, `01-first-run@${size.width}`)
@@ -821,7 +850,7 @@ async function main() {
       await page.locator('.song-list').getByText(SONGS[0].title, { exact: true }).first().click()
       await shot(page, `03-song-list-selected${at}`)
 
-      await page.getByRole('button', { name: 'Add song' }).click()
+      await page.getByRole('button', { name: 'Add song', exact: true }).click()
       await shot(page, `04-add-song-modal${at}`)
       await resetScreens(page)
 
@@ -844,7 +873,7 @@ async function main() {
 
       await libraryTab(page, 'Media')
       await shot(page, `09-media-library${at}`)
-      await libraryTab(page, 'Presentations')
+      await libraryTab(page, 'Slides')
       await shot(page, `10-presentations-empty${at}`)
       await libraryTab(page, 'Songs')
 

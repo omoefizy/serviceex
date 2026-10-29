@@ -2,82 +2,122 @@
  * Design tokens: every color, size and depth the operator UI uses. Components and src/index.css read these and never
  * hard-code a color. Dark is the default; light mode redefines the color roles below.
  *
+ * The brand accent is one variable, --accent. Its bright form, tint, ring and hover are all derived from it, so swapping
+ * the final brand color is a one-line change.
+ *
  * Contrast (WCAG AA, 4.5:1 for text) is checked by scripts/ui-audit.ts. The pairs that matter most:
- *   --text-on-fill on --accent-strong 4.56, on --live-strong 4.65, on --mode-show 5.02
- *   --live-text on its pill (--live-soft over --bg-1) 4.88; light mode 4.91
- *   --text-2 on --bg-1 5.57, --text-3 on --bg-1 4.69, --error on --bg-1 7.17
- * Errors are rose, at least 13 (CIE76 ΔE) from every live red in both modes, so an error never reads as on air.
+ *   --ink on --accent 4.88; white on --live 4.90
+ *   --text-3 (muted) on --panel 6.01, on --raised 5.49; --accent-bright on --panel 7.38; --error on --panel 8.07
+ * Errors are coral (--error), never the live red: red means on air and nothing else.
  */
 
 :root {
-  /* ---------- Color: dark (default) ---------- */
+  /* ---------- Brand ---------- */
+
+  /* The one accent. Everything below that is blue comes from it. */
+  --accent: #0087cb;
+  /* Focus rings, the active tab underline, links and highlights. #00afef for the default accent. */
+  --accent-bright: oklch(from var(--accent) calc(l + 0.113) calc(c + 0.007) calc(h - 7.9));
+  --accent-hover: color-mix(in srgb, var(--accent), white 12%);
+  --accent-pressed: color-mix(in srgb, var(--accent), black 12%);
+  /* Selected rows: the tint plus a 1px inset ring. */
+  --accent-tint: color-mix(in srgb, var(--accent) 16%, transparent);
+  --accent-ring: color-mix(in srgb, var(--accent-bright) 45%, transparent);
+  --selected-ring: inset 0 0 0 1px var(--accent-ring);
+  /* Text and icons on an accent fill (4.8:1). */
+  --ink: #031018;
+
+  /* ---------- Surfaces and lines ---------- */
+
+  --bg: #070b16;
+  --panel: #0d1324;
+  --raised: #141c33;
+  /* Pressed and hovered raised surfaces. */
+  --raised-2: #1a2440;
+  --line: rgb(173 196 255 / 0.09);
+  --line-strong: rgb(173 196 255 / 0.18);
+
+  /* ---------- Text ---------- */
+
+  --text: #eef2fa;
+  --text-secondary: #b4bed4;
+  --muted: #8793af;
+
+  /* ---------- Status ---------- */
+
+  /* On air and LIVE only, always with white text. */
+  --live-red: #d62b43;
+  --on-live: #ffffff;
+  --success: #3ddc97;
+  --warning: #f5b94a;
+  /* Distinct from the live red: an error never reads as on air. */
+  --error: #ff8a7a;
+
+  /* ---------- Semantic roles (the names the stylesheets use) ---------- */
 
   /* Background levels: app → panel → raised (inputs, cards, hover) → pressed. */
-  --bg-0: #0f1115;
-  --bg-1: #171a21;
-  --bg-2: #1f232c;
-  --bg-3: #262b34;
-  /* Panels, menus, popovers and modals sit on --surface. */
-  --surface: var(--bg-1);
-  --surface-raised: var(--bg-2);
-  --scrim: rgb(0 0 0 / 0.6);
+  --bg-0: var(--bg);
+  --bg-1: var(--panel);
+  --bg-2: var(--raised);
+  --bg-3: var(--raised-2);
+  --surface: var(--panel);
+  --surface-raised: var(--raised);
+  --scrim: rgb(3 6 14 / 0.72);
 
-  --border-subtle: #22262e;
-  --border: #2a2f3a;
-  --border-strong: #3c4350;
+  --border-subtle: var(--line);
+  --border: var(--line);
+  --border-strong: var(--line-strong);
 
-  --text-1: #e6e8ec;
-  --text-2: #8b92a0;
-  /* Placeholders and hints: the lowest level that still reads at 4.5:1 on --bg-1. */
-  --text-3: #7d8594;
-  /* Text and icons on any saturated fill (accent, live, modes, badges). */
-  --text-on-fill: #ffffff;
-  /* Text on an amber fill, where white does not read. */
-  --text-on-warning: #1a1306;
+  --text-1: var(--text);
+  --text-2: var(--text-secondary);
+  /* Placeholders, hints and explanations. */
+  --text-3: var(--muted);
+  /* Text and icons on an accent or status fill. Live fills use --on-live. */
+  --text-on-fill: var(--ink);
+  --text-on-warning: var(--ink);
 
-  /* One blue. --accent for text, icons, borders and focus; --accent-strong for fills behind --text-on-fill. */
-  --accent: #4f8cff;
-  --accent-strong: #3370e6;
-  --accent-strong-hover: #2b64d4;
-  --accent-soft: rgb(79 140 255 / 0.15);
+  /* Accent fills behind --ink; hover and tint. */
+  --accent-strong: var(--accent);
+  --accent-strong-hover: var(--accent-hover);
+  --accent-soft: var(--accent-tint);
 
   /* Live means on air, and nothing else: never errors. */
-  --live: #e5484d;
-  --live-strong: #d6393e;
-  --live-text: #ec6a6e;
-  --live-soft: rgb(229 72 77 / 0.15);
+  --live: var(--live-red);
+  --live-strong: var(--live-red);
+  /* Live red as text on a dark surface (the solid pill is preferred). */
+  --live-text: #ff5d73;
+  --live-soft: color-mix(in srgb, var(--live-red) 18%, transparent);
   /* Red text on a white pill inside a live fill (the alert chip's Stop). */
-  --live-ink: #b91c1c;
+  --live-ink: #a3142a;
 
-  --success: #22c55e;
-  --success-soft: rgb(34 197 94 / 0.15);
-  /* The one amber. */
-  --warning: #f59e0b;
-  --warning-soft: rgb(245 158 11 / 0.14);
-  /* Amber behind --text-on-warning, the same in both modes. */
-  --warning-fill: #f59e0b;
-  --error: #fb7fa0;
-  --error-strong: #c2185b;
-  --error-soft: rgb(251 127 160 / 0.15);
-  --info: var(--accent);
+  --success-soft: color-mix(in srgb, var(--success) 15%, transparent);
+  --warning-soft: color-mix(in srgb, var(--warning) 15%, transparent);
+  --warning-fill: var(--warning);
+  --error-strong: var(--error);
+  --error-soft: color-mix(in srgb, var(--error) 15%, transparent);
+  --info: var(--accent-bright);
 
-  /* Output modes, each filled only while active. Show, Clear and Logo carry white text at 4.5:1 or more. */
-  --mode-show: #15803d;
-  --mode-black: #4b5563;
-  --mode-clear: #027bba;
-  --mode-logo: #7c3aed;
+  /* Output modes, each filled only while active. Show is on air (red); Clear is the accent; Black and Logo neutral. */
+  --mode-show: var(--live-red);
+  --mode-black: var(--raised-2);
+  --mode-clear: var(--accent);
+  --mode-logo: var(--raised-2);
   --mode-alert: var(--warning-fill);
 
-  /* AI suggestions and tags. */
-  --ai: #a78bfa;
-  --ai-soft: rgb(139 92 246 / 0.18);
+  /* AI suggestions and tags use the accent; there is no second brand hue. */
+  --ai: var(--accent-bright);
+  --ai-soft: var(--accent-tint);
   /* Marks the words a search or highlight matched, and title guides on the Stream output. */
-  --highlight: #facc15;
+  --highlight: var(--warning);
   /* Sermon quotes: the sample card and the quote marks beside statements. */
   --quote-gold: #d6b98c;
   --quote-ink: #fdfaf3;
-  --quote-bg-from: #1e1b2e;
-  --quote-bg-to: #0b0a12;
+  --quote-bg-from: #141c33;
+  --quote-bg-to: #070b16;
+
+  /* The first run welcome: accent into navy, with rising lines in the bright accent. */
+  --welcome-from: var(--accent);
+  --welcome-to: #0a1636;
 
   /* Screens: anything that stands for the projector (previews, thumbnails, the stage display). These stay dark in
      light mode, because the projector does. */
@@ -93,14 +133,19 @@
 
   /* ---------- Type ---------- */
 
-  --font-ui: Inter, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+  /* Bundled with @fontsource (src/main.tsx), so the app looks the same offline. */
+  --font-ui: 'Figtree', system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --font-display: 'Bricolage Grotesque', 'Figtree', system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --text-xs: 11px;
   --text-sm: 12px;
   --text-md: 13px;
   --text-base: 14px;
   --text-lg: 15px;
+  /* Panel titles: Bricolage 17px 600. */
+  --text-title: 17px;
   --text-xl: 18px;
+  --text-display: 34px;
   --leading-tight: 1.25;
   --leading: 1.45;
   --weight-regular: 400;
@@ -125,41 +170,63 @@
 
   /* ---------- Radius ---------- */
 
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
+  /* Badges and keyboard hints. */
+  --radius-xs: 4px;
+  /* Buttons. */
+  --radius-sm: 8px;
+  /* Inputs and selects. */
+  --radius-md: 10px;
+  /* Cards inside a panel. */
+  --radius-lg: 12px;
+  /* Panels. */
+  --radius-xl: 16px;
   --radius-full: 999px;
 
   /* ---------- Shadow ---------- */
 
   --shadow-1: 0 4px 12px rgb(0 0 0 / 0.4);
-  --shadow-2: 0 8px 24px rgb(0 0 0 / 0.4);
-  --shadow-3: 0 12px 32px rgb(0 0 0 / 0.45);
+  --shadow-2: 0 8px 24px rgb(0 0 0 / 0.45);
+  --shadow-3: 0 16px 40px rgb(0 0 0 / 0.5);
   --shadow-inset-hairline: inset 0 0 0 1px rgb(0 0 0 / 0.25);
-  --focus-ring-color: var(--accent);
-  --focus-ring: 0 0 0 2px var(--bg-1), 0 0 0 4px var(--focus-ring-color);
+  --focus-ring-color: var(--accent-bright);
+  --focus-ring: 0 0 0 2px var(--accent-bright);
 
   /* ---------- Controls and motion ---------- */
 
-  /* Every button, input and select is one of these heights. Below 32px a control gets an invisible 32px hit area. */
-  --control-sm: 28px;
-  --control-md: 32px;
+  /* Every button, input and select is one of these heights; primary actions are xl. Nothing clickable is under 32px. */
+  --control-sm: 32px;
+  --control-md: 36px;
   --control-lg: 40px;
+  --control-xl: 44px;
   --hit-min: 32px;
+  --icon-stroke: 1.7;
   --duration-fast: 120ms;
   --duration: 180ms;
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 
+  /* ---------- Shell ---------- */
+
+  --topbar-height: 60px;
+  --statusbar-height: 44px;
+  --shell-gap: 12px;
+  --order-width: 300px;
+  --finder-width: 400px;
+  --settings-nav-width: 300px;
+  --settings-content-width: 760px;
+
   /* ---------- Older names, kept as aliases ---------- */
 
-  --bg: var(--bg-0);
-  --panel: var(--bg-1);
   --panel-raised: var(--bg-2);
-  --text: var(--text-1);
   --text-muted: var(--text-2);
-  --next: var(--accent);
+  --next: var(--accent-bright);
   --shadow: var(--shadow-3);
   --radius: var(--radius-lg);
+}
+
+@media (max-width: 1365px) {
+  :root {
+    --finder-width: 340px;
+  }
 }
 
 /* ---------- Color: light ---------- */
@@ -167,72 +234,52 @@
 /* Light mode: chosen in Settings, or following the system when Settings says "System". The two blocks must match. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme='dark']) {
-    --bg-0: #eef0f4;
-    --bg-1: #ffffff;
-    --bg-2: #f2f4f7;
-    --bg-3: #e6e9ef;
-    --scrim: rgb(15 23 42 / 0.45);
-    --border-subtle: #e3e6ec;
-    --border: #d5d9e1;
-    --border-strong: #b9bfcb;
-    --text-1: #161a21;
-    --text-2: #5d6676;
-    --text-3: #646c7a;
-    --accent: #2563eb;
-    --accent-strong: #2563eb;
-    --accent-strong-hover: #1d4fd0;
-    --accent-soft: rgb(37 99 235 / 0.12);
-    --live: #dc2626;
-    --live-strong: #dc2626;
-    --live-text: #c81e1e;
-    --live-soft: rgb(220 38 38 / 0.1);
-    --success: #15803d;
-    --success-soft: rgb(21 128 61 / 0.12);
-    --warning: #b45309;
-    --warning-soft: rgb(217 119 6 / 0.14);
-    --error: #be123c;
-    --error-strong: #be123c;
-    --error-soft: rgb(190 18 60 / 0.1);
-    --ai: #7c3aed;
-    --ai-soft: rgb(124 58 237 / 0.12);
-    --shadow-1: 0 4px 12px rgb(15 23 42 / 0.14);
-    --shadow-2: 0 8px 24px rgb(15 23 42 / 0.16);
-    --shadow-3: 0 12px 32px rgb(15 23 42 / 0.18);
+    --bg: #eef1f7;
+    --panel: #ffffff;
+    --raised: #f3f5fa;
+    --raised-2: #e6eaf3;
+    --line: rgb(13 19 36 / 0.1);
+    --line-strong: rgb(13 19 36 / 0.2);
+    --text: #0d1324;
+    --text-secondary: #3a4560;
+    --muted: #5b6680;
+    --accent-bright: color-mix(in srgb, var(--accent), black 18%);
+    --accent-tint: color-mix(in srgb, var(--accent) 12%, transparent);
+    --live-text: #b51d33;
+    --live-soft: color-mix(in srgb, var(--live-red) 10%, transparent);
+    --success: #12814f;
+    --warning: #9a5b00;
+    --warning-fill: #f5b94a;
+    --error: #b4321f;
+    --scrim: rgb(13 19 36 / 0.45);
+    --shadow-1: 0 4px 12px rgb(13 19 36 / 0.12);
+    --shadow-2: 0 8px 24px rgb(13 19 36 / 0.14);
+    --shadow-3: 0 16px 40px rgb(13 19 36 / 0.16);
     color-scheme: light;
   }
 }
 
 :root[data-theme='light'] {
-  --bg-0: #eef0f4;
-  --bg-1: #ffffff;
-  --bg-2: #f2f4f7;
-  --bg-3: #e6e9ef;
-  --scrim: rgb(15 23 42 / 0.45);
-  --border-subtle: #e3e6ec;
-  --border: #d5d9e1;
-  --border-strong: #b9bfcb;
-  --text-1: #161a21;
-  --text-2: #5d6676;
-  --text-3: #646c7a;
-  --accent: #2563eb;
-  --accent-strong: #2563eb;
-  --accent-strong-hover: #1d4fd0;
-  --accent-soft: rgb(37 99 235 / 0.12);
-  --live: #dc2626;
-  --live-strong: #dc2626;
-  --live-text: #c81e1e;
-  --live-soft: rgb(220 38 38 / 0.1);
-  --success: #15803d;
-  --success-soft: rgb(21 128 61 / 0.12);
-  --warning: #b45309;
-  --warning-soft: rgb(217 119 6 / 0.14);
-  --error: #be123c;
-  --error-strong: #be123c;
-  --error-soft: rgb(190 18 60 / 0.1);
-  --ai: #7c3aed;
-  --ai-soft: rgb(124 58 237 / 0.12);
-  --shadow-1: 0 4px 12px rgb(15 23 42 / 0.14);
-  --shadow-2: 0 8px 24px rgb(15 23 42 / 0.16);
-  --shadow-3: 0 12px 32px rgb(15 23 42 / 0.18);
+  --bg: #eef1f7;
+  --panel: #ffffff;
+  --raised: #f3f5fa;
+  --raised-2: #e6eaf3;
+  --line: rgb(13 19 36 / 0.1);
+  --line-strong: rgb(13 19 36 / 0.2);
+  --text: #0d1324;
+  --text-secondary: #3a4560;
+  --muted: #5b6680;
+  --accent-bright: color-mix(in srgb, var(--accent), black 18%);
+  --accent-tint: color-mix(in srgb, var(--accent) 12%, transparent);
+  --live-text: #b51d33;
+  --live-soft: color-mix(in srgb, var(--live-red) 10%, transparent);
+  --success: #12814f;
+  --warning: #9a5b00;
+  --warning-fill: #f5b94a;
+  --error: #b4321f;
+  --scrim: rgb(13 19 36 / 0.45);
+  --shadow-1: 0 4px 12px rgb(13 19 36 / 0.12);
+  --shadow-2: 0 8px 24px rgb(13 19 36 / 0.14);
+  --shadow-3: 0 16px 40px rgb(13 19 36 / 0.16);
   color-scheme: light;
 }

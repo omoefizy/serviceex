@@ -2,6 +2,7 @@
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import type { MediaItem } from '../../shared/types'
+import { CONTENT_COLORS } from '../styles/contentColors'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -94,7 +95,7 @@ function slideCanvas(): [HTMLCanvasElement, CanvasRenderingContext2D] {
   canvas.height = SLIDE_HEIGHT
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Canvas is not available')
-  context.fillStyle = '#000000'
+  context.fillStyle = CONTENT_COLORS.black
   context.fillRect(0, 0, SLIDE_WIDTH, SLIDE_HEIGHT)
   return [canvas, context]
 }
@@ -125,7 +126,7 @@ export async function drawPdfSlides(
       const viewport = page.getViewport({ scale: box.scale, offsetX: box.x, offsetY: box.y })
       const [canvas, context] = slideCanvas()
       // Pages without a background are transparent; slides need white paper behind them.
-      context.fillStyle = '#ffffff'
+      context.fillStyle = CONTENT_COLORS.white
       context.fillRect(box.x, box.y, box.w, box.h)
       // The print intent draws in one go; the display intent waits on requestAnimationFrame, which stalls in a
       // hidden window.

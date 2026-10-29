@@ -28,6 +28,7 @@ import {
 import type { RichMarks, RichParagraph, RichText, ThemeTextProps } from '../../shared/types'
 import { FormatToolbar, type FormatControl, type FormatPatch, type FormatState } from './FormatToolbar'
 import { paragraphCss, spanStyle } from '../lib/richText'
+import { CONTENT_COLORS } from '../styles/contentColors'
 
 // A small word processor for slide text. The formatted text (shared/richText.ts) is the model: typing, deleting and
 // pasting are turned into model edits from `beforeinput`, and the editing surface is redrawn from the model, so only
@@ -190,7 +191,7 @@ function stepPos(rich: RichText, pos: RichPos, delta: -1 | 1): RichPos {
   return { p: pos.p, o: pos.o + (high >= 0xd800 && high <= 0xdbff ? 2 : 1) }
 }
 
-const toHex = (color: string | undefined) => (color && /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(color) ? color : '#ffffff')
+const toHex = (color: string | undefined) => (color && /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(color) ? color : CONTENT_COLORS.white)
 
 /** What the toolbar shows: the selection's marks where set, else the theme's look (`base`). */
 function formatState(rich: RichText, selection: RichRange, pending: RichMarksPatch | null, base: ThemeTextProps | null | undefined): FormatState {

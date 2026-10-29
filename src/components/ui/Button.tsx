@@ -2,8 +2,8 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { cx } from './cx'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
-/** sm 28px (with a 32px hit area), md 32px, lg 40px: the only button heights there are. */
-export type ControlSize = 'sm' | 'md' | 'lg'
+/** sm 32px, md 36px, lg 40px, xl 44px (primary actions): the only button heights there are. */
+export type ControlSize = 'sm' | 'md' | 'lg' | 'xl'
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant

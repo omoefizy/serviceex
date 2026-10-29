@@ -15,6 +15,7 @@ import { FontPicker } from './FontPicker'
 import { Color, Range, Row, Segmented } from './ThemeEditor'
 import { ThemedSlide } from './ThemedSlide'
 import { Button, ErrorNote, Toggle } from './ui'
+import { SCRIPTURE_TEXT_COLORS } from '../styles/contentColors'
 
 const SAMPLE = {
   text: 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.',
@@ -33,14 +34,7 @@ function Warnings({ warnings }: { warnings: string[] }) {
   ))
 }
 
-const SWATCHES = [
-  { color: '#ffffff', label: 'White' },
-  { color: '#fff4d6', label: 'Cream' },
-  { color: '#ffd400', label: 'Yellow' },
-  { color: '#9cc9ff', label: 'Light blue' },
-  { color: '#9be7b0', label: 'Light green' },
-  { color: '#111111', label: 'Black' },
-]
+const SWATCHES = SCRIPTURE_TEXT_COLORS
 
 /**
  * The Aa button over the Live or Preview box while it shows scripture: size, color, position, font and bold for this

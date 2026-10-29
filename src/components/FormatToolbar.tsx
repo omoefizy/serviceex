@@ -21,6 +21,7 @@ import type { RichMarksPatch, RichParagraphPatch } from '../../shared/richText'
 import type { RichAlign, TextCase } from '../../shared/types'
 import { MOD } from '../lib/shortcuts'
 import { FontPicker } from './FontPicker'
+import { CONTENT_COLORS } from '../styles/contentColors'
 
 /** What the toolbar shows for the current selection: the formatting where set, else the theme's look. */
 export interface FormatState {
@@ -68,7 +69,7 @@ const VERTICAL: { value: FormatState['verticalAlign']; label: string; icon: Luci
 const keepSelection = (e: MouseEvent) => e.preventDefault()
 
 /** A color input takes only #rrggbb. */
-const hex6 = (value: string) => (/^#[0-9a-f]{6}$/i.test(value) ? value : /^#[0-9a-f]{3}$/i.test(value) ? `#${[...value.slice(1)].map((c) => c + c).join('')}` : '#ffffff')
+const hex6 = (value: string) => (/^#[0-9a-f]{6}$/i.test(value) ? value : /^#[0-9a-f]{3}$/i.test(value) ? `#${[...value.slice(1)].map((c) => c + c).join('')}` : CONTENT_COLORS.white)
 
 function ToolButton({ label, icon: Icon, pressed, disabled, onClick }: { label: string; icon: LucideIcon; pressed?: boolean; disabled?: boolean; onClick(): void }) {
   return (
@@ -136,7 +137,7 @@ export function FormatToolbar({
             type="color"
             aria-label="Highlight color"
             disabled={off('highlight')}
-            value={state.highlight ?? '#ffff00'}
+            value={state.highlight ?? CONTENT_COLORS.highlighter}
             onChange={(e) => onChange({ highlight: e.target.value }, false)}
           />
         </label>

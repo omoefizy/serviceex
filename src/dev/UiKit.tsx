@@ -12,17 +12,21 @@ import {
   IconButton,
   Input,
   Modal,
+  Panel,
   PanelHeader,
   SegmentedControl,
   Select,
   Tabs,
   Skeleton,
+  StatusDot,
+  Switch,
   Toast,
   ToastStack,
   Toggle,
   type ButtonVariant,
   type ChipTone,
   type ControlSize,
+  type StatusTone,
   type ToastTone,
 } from '../components/ui'
 import './ui-kit.css'
@@ -35,7 +39,9 @@ const STATES = [
 ] as const
 
 const VARIANTS: ButtonVariant[] = ['primary', 'secondary', 'ghost', 'danger']
-const SIZES: ControlSize[] = ['sm', 'md', 'lg']
+const SIZES: ControlSize[] = ['sm', 'md', 'lg', 'xl']
+const HEIGHTS: Record<ControlSize, string> = { sm: '32px', md: '36px', lg: '40px', xl: '44px' }
+const STATUS_TONES: StatusTone[] = ['success', 'warning', 'error', 'live', 'accent', 'neutral']
 const TONES: ChipTone[] = ['neutral', 'accent', 'live', 'success', 'warning', 'error']
 const TOAST_TONES: ToastTone[] = ['info', 'success', 'warning', 'error']
 
@@ -43,8 +49,8 @@ const COLOR_GROUPS: { title: string; tokens: string[] }[] = [
   { title: 'Background', tokens: ['--bg-0', '--bg-1', '--bg-2', '--bg-3', '--surface', '--surface-raised'] },
   { title: 'Border', tokens: ['--border-subtle', '--border', '--border-strong'] },
   { title: 'Text', tokens: ['--text-1', '--text-2', '--text-3', '--text-on-fill', '--text-on-warning'] },
-  { title: 'Accent', tokens: ['--accent', '--accent-strong', '--accent-strong-hover', '--accent-soft'] },
-  { title: 'Live', tokens: ['--live', '--live-strong', '--live-text', '--live-soft'] },
+  { title: 'Accent', tokens: ['--accent', '--accent-bright', '--accent-hover', '--accent-tint', '--ink'] },
+  { title: 'Live', tokens: ['--live-red', '--on-live', '--live-text', '--live-soft'] },
   {
     title: 'Status',
     tokens: ['--success', '--success-soft', '--warning', '--warning-fill', '--warning-soft', '--error', '--error-strong', '--error-soft'],
@@ -52,11 +58,11 @@ const COLOR_GROUPS: { title: string; tokens: string[] }[] = [
   { title: 'Output modes', tokens: ['--mode-show', '--mode-black', '--mode-clear', '--mode-logo', '--mode-alert'] },
   { title: 'Other', tokens: ['--ai', '--highlight', '--quote-gold', '--screen-bg', '--screen-fg-muted', '--scrim'] },
 ]
-const TYPE_SCALE = ['--text-xs', '--text-sm', '--text-md', '--text-base', '--text-lg', '--text-xl']
+const TYPE_SCALE = ['--text-xs', '--text-sm', '--text-md', '--text-base', '--text-lg', '--text-title', '--text-xl']
 const SPACES = ['--space-1', '--space-2', '--space-3', '--space-4', '--space-5', '--space-6', '--space-8', '--space-10']
-const RADII = ['--radius-sm', '--radius-md', '--radius-lg', '--radius-full']
+const RADII = ['--radius-sm', '--radius-md', '--radius-lg', '--radius-xl', '--radius-full']
 const SHADOWS = ['--shadow-1', '--shadow-2', '--shadow-3']
-const CONTROLS = ['--control-sm', '--control-md', '--control-lg']
+const CONTROLS = ['--control-sm', '--control-md', '--control-lg', '--control-xl']
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
@@ -198,7 +204,7 @@ export default function UiKit() {
         <Row label="Sizes">
           {SIZES.map((size) => (
             <Button key={size} size={size} variant="primary" icon={<Download size={15} aria-hidden="true" />}>
-              {size} {size === 'sm' ? '28px' : size === 'md' ? '32px' : '40px'}
+              {size} {HEIGHTS[size]}
             </Button>
           ))}
         </Row>
@@ -222,7 +228,7 @@ export default function UiKit() {
           {SIZES.map((size) => (
             <IconButton key={size} size={size} label={`Copy (${size})`} icon={<Copy size={size === 'lg' ? 18 : 16} />} />
           ))}
-          <span className="kit-note">sm draws at 28px inside an invisible 32px hit area</span>
+          <span className="kit-note">every size has an invisible 40px hit area</span>
         </Row>
       </Section>
 
@@ -267,16 +273,16 @@ export default function UiKit() {
           <Toggle checked={toggles.b} onChange={(e) => setToggles({ ...toggles, b: e.target.checked })}>
             On
           </Toggle>
-          <Toggle checked={false} readOnly data-force="hover">
+          <Toggle checked={false} data-force="hover">
             Hover
           </Toggle>
-          <Toggle checked readOnly data-force="focus">
+          <Toggle checked data-force="focus">
             Focus
           </Toggle>
-          <Toggle checked={false} disabled readOnly>
+          <Toggle checked={false} disabled>
             Disabled off
           </Toggle>
-          <Toggle checked disabled readOnly>
+          <Toggle checked disabled>
             Disabled on
           </Toggle>
         </Row>
@@ -334,7 +340,7 @@ export default function UiKit() {
               </>
             }
           >
-            <Toggle checked readOnly>
+            <Toggle checked>
               Auto go live on schedule next
             </Toggle>
             <p className="kit-note">A card stacks its children with its own gap.</p>
@@ -488,6 +494,28 @@ export default function UiKit() {
             <Skeleton rows={3} label="Loading the account" />
           </Card>
         </div>
+      </Section>
+
+      <Section id="switch" title="Switch and StatusDot">
+        <Row label="Switch">
+          <Switch aria-label="Off" checked={false} onCheckedChange={() => undefined} />
+          <Switch aria-label="On" checked onCheckedChange={() => undefined} />
+          <Switch aria-label="Focus" checked={false} data-force="focus" onCheckedChange={() => undefined} />
+          <Switch aria-label="Disabled" checked disabled onCheckedChange={() => undefined} />
+        </Row>
+        <Row label="StatusDot">
+          {STATUS_TONES.map((tone) => (
+            <span key={tone} className="kit-note">
+              <StatusDot tone={tone} pulse={tone === 'success'} /> {tone}
+            </span>
+          ))}
+        </Row>
+      </Section>
+
+      <Section id="panel" title="Panel">
+        <Panel title="Order of service" meta="6 items" actions={<Button size="sm">Add</Button>} footer={<Button size="lg">Add song, slide or verse</Button>}>
+          <p className="kit-note">A panel: 16px corners, a Bricolage 17px title, the body under it.</p>
+        </Panel>
       </Section>
 
       <Section id="panel-header" title="PanelHeader">

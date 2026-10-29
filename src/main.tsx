@@ -7,6 +7,13 @@ import { StageView } from './components/StageView'
 import { StreamView } from './components/StreamView'
 import { installFonts } from './lib/fonts'
 import { setEntitlements } from '../shared/features'
+// The UI fonts are bundled, not linked, so the app looks the same offline.
+import '@fontsource/figtree/400.css'
+import '@fontsource/figtree/500.css'
+import '@fontsource/figtree/600.css'
+import '@fontsource/figtree/700.css'
+import '@fontsource/bricolage-grotesque/600.css'
+import '@fontsource/bricolage-grotesque/700.css'
 import './index.css'
 
 installFonts()

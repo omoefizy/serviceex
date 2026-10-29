@@ -2,9 +2,10 @@ import {
   AlertTriangle,
   Baseline,
   Bold,
+  ChevronLeft,
+  ChevronRight,
   Columns2,
   Eraser,
-  Eye,
   EyeOff,
   Highlighter,
   MousePointerClick,
@@ -36,7 +37,7 @@ import {
 import { OutputScreen } from './OutputView'
 import { ScriptureQuickAdjust } from './ScriptureDisplay'
 import { ThemedSlide } from './ThemedSlide'
-import { ErrorNote } from './ui'
+import { Button, Card, ErrorNote, IconButton, Panel, Select } from './ui'
 
 /** "Slide 2 of 5" across the corner of a screen, when it shows a slide. */
 function SlideBadge({ index, count }: { index: number | null; count: number }) {
@@ -105,9 +106,7 @@ function TranslationBar({ where }: { where: TranslationTarget }) {
     <p className={`translation-note${note.error ? ' error' : ''}`} role={note.error ? 'alert' : 'status'}>
       {note.error && <AlertTriangle size={13} aria-hidden="true" />}
       <span>{note.text}</span>
-      <button type="button" className="icon-button" aria-label="Dismiss" onClick={dismissNote}>
-        <X size={12} aria-hidden="true" />
-      </button>
+      <IconButton size="sm" label="Dismiss" icon={<X size={14} />} onClick={dismissNote} />
     </p>
   )
   if (!current || versions.length === 0) return noteLine || null
@@ -320,20 +319,37 @@ function useWordMarking(where: TranslationTarget) {
   return { marking, handlers: { onMouseDown, onMouseUp } }
 }
 
+/** LIVE while a slide is on air; otherwise the output mode, or READY. */
+function OnAirChip() {
+  const mode = useOperatorStore((s) => s.live.mode)
+  const onAir = useOperatorStore((s) => s.live.mode === 'show' && s.live.slideIndex !== null)
+  if (onAir) {
+    return (
+      <span className="on-air-chip live" role="status">
+        <span className="live-dot" aria-hidden="true" /> LIVE
+      </span>
+    )
+  }
+  return (
+    <span className="on-air-chip" role="status">
+      {mode === 'show' ? 'READY' : mode.toUpperCase()}
+    </span>
+  )
+}
+
+/** What the screen here draws: the projector's output, or nothing (to save effort on a slow computer). */
+const SCREEN_CHOICES = [
+  { value: 'output', label: 'Main output' },
+  { value: 'off', label: 'Preview off' },
+] as const
+
 /**
- * LIVE shows the live snapshot, exactly what the projector shows. PREVIEW shows the highlighted slide of the item
- * in the grid, with its theme; Enter or Go Live sends it.
+ * On screen: the live snapshot, exactly what the projector shows, with its highlighting, translations, PowerPoint
+ * status, resend and crossfade.
  */
-export function LivePreview() {
+export function OnScreenPanel() {
   const live = useOperatorStore((s) => s.live)
-  const previewSlide = useOperatorStore(selectPreviewSlide)
-  const deckTheme = useOperatorStore(selectDeckTheme)
-  const previewTheme = useMemo(() => slideTheme(deckTheme, previewSlide), [deckTheme, previewSlide])
-  const deckTitle = useOperatorStore((s) => s.deckTitle)
-  const highlightIndex = useOperatorStore((s) => s.highlightIndex)
-  const slideCount = useOperatorStore((s) => s.slides.length)
   const fadeMs = useOperatorStore((s) => s.settings.fadeMs)
-  const logoUrl = useOperatorStore((s) => s.settings.logoUrl)
   const setFadeMs = useOperatorStore((s) => s.setFadeMs)
   const resendLive = useOperatorStore((s) => s.resendLive)
   const goBack = useOperatorStore((s) => s.goBack)
@@ -346,7 +362,6 @@ export function LivePreview() {
   const powerPoint = useOperatorStore((s) => s.live.powerPoint && s.settings.presentationLivePowerPoint)
   const powerPointStatus = useOperatorStore((s) => s.livePowerPoint)
   const liveMarking = useWordMarking('live')
-  const previewMarking = useWordMarking('preview')
   const [dismissedFailure, setDismissedFailure] = useState(0)
   const [error, setError] = useState<ErrorLike | null>(null)
 
@@ -360,95 +375,172 @@ export function LivePreview() {
   }
 
   return (
-    <section className="panel preview-panel">
-      <header className="panel-header">
-        <h2>Live</h2>
-        <button
-          type="button"
-          className={`button preview-output-toggle${previewOutput ? ' active' : ''}`}
-          aria-pressed={previewOutput}
-          onClick={() => updateSettings({ previewOutput: !previewOutput }).catch(console.error)}
-          title={previewOutput ? 'Stop drawing the output here' : 'Show what the output shows'}
-        >
-          {previewOutput ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />} Preview Output
-        </button>
-        <button type="button" className="button go-back-button" disabled={!canGoBack} onClick={goBack} title="Put the previous live slide back on screen">
-          <Undo2 size={14} aria-hidden="true" /> Go Back
-        </button>
-      </header>
-      <HighlightBar where="live" />
-      <div className={`preview-screen live${liveMarking.marking ? ' marking' : ''}`} {...liveMarking.handlers}>
-        {output ? <OutputScreen state={output} /> : <p className="empty">Preview Output is off</p>}
-        <SlideBadge index={live.slideIndex} count={live.slides.length} />
-      </div>
-      <p className="screen-label">
-        {(live.slideIndex !== null && live.title) || 'Nothing live'}
-        {live.mode !== 'show' && <span className="screen-mode"> · {live.mode.toUpperCase()}</span>}
-      </p>
-      <TranslationBar where="live" />
-      {powerPoint && (
-        // The output shows PowerPoint's own slide show; the screen above shows the still slide.
-        <p className="powerpoint-status" aria-live="polite">
-          <Presentation size={13} aria-hidden="true" /> PowerPoint · {powerPointText(powerPointStatus)}
-        </p>
-      )}
-      {powerPointStatus.phase === 'failed' && powerPointStatus.message && powerPointStatus.failures !== dismissedFailure && (
-        <p className="powerpoint-failure" role="alert">
-          <AlertTriangle size={13} aria-hidden="true" />
-          <span>{powerPointStatus.message}</span>
-          <button type="button" className="icon-button" aria-label="Dismiss" onClick={() => setDismissedFailure(powerPointStatus.failures)}>
-            <X size={12} aria-hidden="true" />
-          </button>
-        </p>
-      )}
-      {live.stale &&
-        (live.itemType === 'presentation' ? (
-          // The original was saved again; the output keeps the older slides until resent (see Auto refresh live).
-          <span className="stale-chip" title="The presentation was saved again after it went live">
-            <RefreshCw size={13} aria-hidden="true" /> Updated
-            <button type="button" className="stale-chip-action" onClick={resend}>
-              Resend
-            </button>
-          </span>
-        ) : (
-          <button type="button" className="stale-chip" onClick={resend} title="The live item was edited after it went live">
-            <RefreshCw size={13} aria-hidden="true" /> Live version is older, resend
-          </button>
-        ))}
-      <ErrorNote error={error} />
-
-      <label className="fade-control">
-        <span>Crossfade</span>
-        <input
-          type="range"
-          min={0}
-          max={1500}
-          step={100}
-          value={fadeMs}
-          onChange={(e) => setFadeMs(Number(e.target.value)).catch(console.error)}
-        />
-        <span className="fade-value">{(fadeMs / 1000).toFixed(1)} s</span>
-      </label>
-
-      <h2 className="preview-subheading">Preview</h2>
-      <HighlightBar where="preview" />
-      <div className={`preview-screen preview${previewMarking.marking ? ' marking' : ''}`} {...previewMarking.handlers}>
-        {previewSlide ? (
-          <ThemedSlide
-            theme={previewTheme}
-            text={previewSlide.text}
-            caption={previewSlide.caption}
-            copyright={previewSlide.copyright}
-            rich={previewSlide.rich}
-            logoUrl={logoUrl}
-          />
-        ) : (
-          <p className="empty">Select something to preview</p>
+    <Panel
+      className="preview-panel on-screen-panel"
+      title="On screen"
+      meta={<OnAirChip />}
+      actions={
+        <>
+          <Select
+            className="on-screen-output"
+            aria-label="Output shown here"
+            title={previewOutput ? 'Stop drawing the output here' : 'Show what the output shows'}
+            value={previewOutput ? 'output' : 'off'}
+            onChange={(e) => updateSettings({ previewOutput: e.target.value === 'output' }).catch(console.error)}
+          >
+            {SCREEN_CHOICES.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </Select>
+          <IconButton label="Go Back" tooltip="Go Back: put the previous live slide back on screen" icon={<Undo2 size={18} />} disabled={!canGoBack} onClick={goBack} />
+        </>
+      }
+    >
+      <div className="on-screen-body">
+        <div className={`preview-screen live${liveMarking.marking ? ' marking' : ''}`} {...liveMarking.handlers}>
+          {output ? (
+            <OutputScreen state={output} />
+          ) : (
+            <p className="screen-off">
+              <EyeOff size={18} aria-hidden="true" /> The preview is off. Choose Main output to draw it here.
+            </p>
+          )}
+          <SlideBadge index={live.slideIndex} count={live.slides.length} />
+        </div>
+        <HighlightBar where="live" />
+        <div className="on-screen-meta">
+          <p className="screen-label">
+            {(live.slideIndex !== null && live.title) || 'Nothing live'}
+            {live.mode !== 'show' && <span className="screen-mode"> · {live.mode.toUpperCase()}</span>}
+          </p>
+          <label className="fade-control">
+            <span>Crossfade</span>
+            <input type="range" min={0} max={1500} step={100} value={fadeMs} onChange={(e) => setFadeMs(Number(e.target.value)).catch(console.error)} />
+            <span className="fade-value">{(fadeMs / 1000).toFixed(1)} s</span>
+          </label>
+        </div>
+        <TranslationBar where="live" />
+        {powerPoint && (
+          // The output shows PowerPoint's own slide show; the screen above shows the still slide.
+          <p className="powerpoint-status" aria-live="polite">
+            <Presentation size={13} aria-hidden="true" /> PowerPoint · {powerPointText(powerPointStatus)}
+          </p>
         )}
-        <SlideBadge index={previewSlide ? highlightIndex : null} count={slideCount} />
+        {powerPointStatus.phase === 'failed' && powerPointStatus.message && powerPointStatus.failures !== dismissedFailure && (
+          <p className="powerpoint-failure" role="alert">
+            <AlertTriangle size={13} aria-hidden="true" />
+            <span>{powerPointStatus.message}</span>
+            <IconButton size="sm" label="Dismiss" icon={<X size={14} />} onClick={() => setDismissedFailure(powerPointStatus.failures)} />
+          </p>
+        )}
+        {live.stale &&
+          (live.itemType === 'presentation' ? (
+            // The original was saved again; the output keeps the older slides until resent (see Auto refresh live).
+            <span className="stale-chip" title="The presentation was saved again after it went live">
+              <RefreshCw size={13} aria-hidden="true" /> Updated
+              <Button size="sm" variant="ghost" className="stale-chip-action" onClick={resend}>
+                Resend
+              </Button>
+            </span>
+          ) : (
+            <Button size="sm" className="stale-chip" onClick={resend} title="The live item was edited after it went live" icon={<RefreshCw size={13} aria-hidden="true" />}>
+              Live version is older, resend
+            </Button>
+          ))}
+        <ErrorNote error={error} />
       </div>
-      <p className="screen-label">{(highlightIndex !== null && deckTitle) || 'Nothing selected'}</p>
-      <TranslationBar where="preview" />
-    </section>
+    </Panel>
+  )
+}
+
+/** Previous and Next for the live item: the same as the Left and Right keys. */
+export function Transport() {
+  const nothingLive = useOperatorStore((s) => s.live.slideIndex === null)
+  const previousSlide = useOperatorStore((s) => s.previousSlide)
+  const nextSlide = useOperatorStore((s) => s.nextSlide)
+  return (
+    <div className="transport" role="group" aria-label="Live slide">
+      <Button size="xl" className="transport-previous" disabled={nothingLive} icon={<ChevronLeft size={20} aria-hidden="true" />} onClick={previousSlide} aria-keyshortcuts="ArrowLeft">
+        Previous <kbd>←</kbd>
+      </Button>
+      <Button
+        size="xl"
+        variant="primary"
+        className="transport-next"
+        disabled={nothingLive}
+        iconEnd={<ChevronRight size={20} aria-hidden="true" />}
+        onClick={nextSlide}
+        aria-keyshortcuts="ArrowRight"
+      >
+        Next <kbd>→</kbd>
+      </Button>
+    </div>
+  )
+}
+
+/** The three slides after the live one, as they will look. */
+export function UpNextCard() {
+  const live = useOperatorStore((s) => s.live)
+  const logoUrl = useOperatorStore((s) => s.settings.logoUrl)
+  const start = live.slideIndex === null ? null : live.slideIndex + 1
+  const upcoming = start === null ? [] : live.slides.slice(start, start + 3)
+  return (
+    <Card className="up-next" title="Up next">
+      {upcoming.length === 0 ? (
+        <p className="up-next-empty">{start === null ? 'Nothing is live yet.' : 'This is the last slide of the item.'}</p>
+      ) : (
+        <ol className="up-next-list">
+          {upcoming.map((slide, i) => (
+            <li key={start! + i} className="up-next-item">
+              <div className="up-next-thumb">
+                <ThemedSlide theme={slideTheme(live.theme, slide)} text={slide.text} caption={slide.caption} rich={slide.rich} logoUrl={logoUrl} still />
+              </div>
+              <span className="up-next-label">
+                {start! + i + 1}
+                {slide.label ? ` · ${slide.label}` : ''}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </Card>
+  )
+}
+
+/** PREVIEW: the highlighted slide of the item in the grid, with its theme; Enter or Go Live sends it. */
+export function PreviewPanel() {
+  const previewSlide = useOperatorStore(selectPreviewSlide)
+  const deckTheme = useOperatorStore(selectDeckTheme)
+  const previewTheme = useMemo(() => slideTheme(deckTheme, previewSlide), [deckTheme, previewSlide])
+  const deckTitle = useOperatorStore((s) => s.deckTitle)
+  const highlightIndex = useOperatorStore((s) => s.highlightIndex)
+  const slideCount = useOperatorStore((s) => s.slides.length)
+  const logoUrl = useOperatorStore((s) => s.settings.logoUrl)
+  const previewMarking = useWordMarking('preview')
+
+  return (
+    <Panel className="preview-panel preview-only-panel" title="Preview" meta={<span className="screen-label-inline">{(highlightIndex !== null && deckTitle) || 'Nothing selected'}</span>}>
+      <div className="on-screen-body">
+        <HighlightBar where="preview" />
+        <div className={`preview-screen preview${previewMarking.marking ? ' marking' : ''}`} {...previewMarking.handlers}>
+          {previewSlide ? (
+            <ThemedSlide
+              theme={previewTheme}
+              text={previewSlide.text}
+              caption={previewSlide.caption}
+              copyright={previewSlide.copyright}
+              rich={previewSlide.rich}
+              logoUrl={logoUrl}
+            />
+          ) : (
+            <p className="screen-off">Select a slide to preview it here.</p>
+          )}
+          <SlideBadge index={previewSlide ? highlightIndex : null} count={slideCount} />
+        </div>
+        <TranslationBar where="preview" />
+      </div>
+    </Panel>
   )
 }

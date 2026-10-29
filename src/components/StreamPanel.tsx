@@ -6,6 +6,7 @@ import { usePersistentState } from '../lib/usePersistentState'
 import { selectStreamState, useOperatorStore } from '../store'
 import { StreamScreen } from './StreamView'
 import { ErrorNote } from './ui'
+import { CONTENT_COLORS } from '../styles/contentColors'
 
 const RESOLUTIONS: { value: StreamResolution; label: string }[] = [
   { value: '1280x720', label: '1280×720 (720p)' },
@@ -265,8 +266,8 @@ export function StreamPanel() {
             <>
               <input type="color" aria-label="Key color" value={settings.streamKeyColor} onChange={(e) => save({ streamKeyColor: e.target.value })} />
               <span className="hint">{settings.streamKeyColor.toUpperCase()}</span>
-              {settings.streamKeyColor !== '#00ff00' && (
-                <button type="button" className="button" onClick={() => save({ streamKeyColor: '#00ff00' })}>
+              {settings.streamKeyColor !== CONTENT_COLORS.chromaGreen && (
+                <button type="button" className="button" onClick={() => save({ streamKeyColor: CONTENT_COLORS.chromaGreen })}>
                   Reset to green
                 </button>
               )}

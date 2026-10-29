@@ -21,7 +21,7 @@ import { useVerseSearch } from '../lib/useVerseSearch'
 import { selectDefaultTranslation, selectLiveSlide, useOperatorStore } from '../store'
 import { AiButton } from './AiButton'
 import { BibleImportModal } from './BibleImportModal'
-import { Button, Chip, EmptyState, ErrorNote, IconButton, Input, PanelHeader, Select } from './ui'
+import { Button, Chip, EmptyState, ErrorNote, IconButton, Input, Select } from './ui'
 import { VerseResults, VerseText, type VerseResultsHandle } from './VerseResults'
 
 const DEBOUNCE_MS = 60
@@ -468,13 +468,30 @@ export function ScripturePanel() {
 
   return (
     <section className="panel scripture-panel">
-      <PanelHeader title="Scripture" />
-
+      <h2 className="visually-hidden">Scripture</h2>
       <form className="scripture-search" onSubmit={(e: FormEvent) => e.preventDefault()}>
+        <div className="scripture-version-row">
+          <Select aria-label="Translation" title="The translation to search; All searches every installed version" value={version} onChange={(e) => setVersion(e.target.value as VersionFilter)}>
+            {[{ code: 'both', name: 'All installed versions' }, ...installed].map((v) => (
+              <option key={v.code} value={v.code} title={v.name}>
+                {v.code === 'both' ? 'All versions' : `${v.code} · ${v.name}`}
+              </option>
+            ))}
+          </Select>
+          <IconButton
+            label="Import a Bible version"
+            tooltip="Import a Bible version your church owns"
+            icon={<BookPlus size={18} />}
+            disabled={!can('bible.extraVersions')}
+            disabledTooltip={upgradeNote('bible.extraVersions')}
+            onClick={() => setImportOpen(true)}
+          />
+        </div>
         <div className="scripture-search-row">
           <Input
             ref={inputRef}
             className="scripture-input"
+            size="lg"
             type="search"
             aria-label="Search scripture"
             aria-controls="scripture-list"
@@ -539,25 +556,6 @@ export function ScripturePanel() {
       )}
 
       <div className="scripture-body">
-        <nav className="version-list" aria-label="Bible versions">
-          {[{ code: 'both', name: 'Search every installed version' }, ...installed].map((v) => (
-            <Button key={v.code} size="sm" className="version-item" pressed={version === v.code} title={v.name} onClick={() => setVersion(v.code)}>
-              {v.code === 'both' ? 'All' : v.code}
-            </Button>
-          ))}
-          <Button
-            size="sm"
-            className="version-item version-import"
-            title="Import a Bible version your church owns"
-            disabled={!can('bible.extraVersions')}
-            disabledTooltip={upgradeNote('bible.extraVersions')}
-            icon={<BookPlus size={14} aria-hidden="true" />}
-            onClick={() => setImportOpen(true)}
-          >
-            Import
-          </Button>
-        </nav>
-
         <div className="scripture-results">
           <ErrorNote error={error} />
           <ErrorNote error={meaningError && describeError(meaningError)} />

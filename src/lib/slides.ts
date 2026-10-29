@@ -1,4 +1,5 @@
 import type { AnnouncementPayload, BibleVersionCode, Verse } from '../../shared/types'
+import { CONTENT_COLORS } from '../styles/contentColors'
 
 /**
  * The caption every scripture slide carries, such as "John 3:16 KJV"; with a second translation on the slide,
@@ -33,7 +34,7 @@ export interface SlideLine {
 }
 
 /** The colour of a {reference} line on any theme. */
-export const REFERENCE_LINE_COLOR = '#ffd400'
+export const REFERENCE_LINE_COLOR = CONTENT_COLORS.referenceLine
 
 /**
  * Splits slide text into lines. A line wholly in [brackets] under another line is a translation, shown smaller; a

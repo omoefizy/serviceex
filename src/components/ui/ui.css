@@ -1,7 +1,7 @@
 /*
  * The shared components in src/components/ui. Everything here reads src/styles/tokens.css: no color, height or radius
- * is written out. Controls come in three heights (--control-sm, -md, -lg); a control under --hit-min gets an invisible
- * hit area of that size, centred on it.
+ * is written out. Controls come in four heights (--control-sm 32, -md 36, -lg 40, -xl 44 for primary actions). Icon
+ * buttons draw at 36px with an invisible 40px hit area; nothing clickable is under --hit-min.
  *
  * Each state selector also matches data-force="hover | focus | active", so the dev UI kit (#/ui-kit) can show every
  * state side by side. :is() keeps the specificity of the plain pseudo-class.
@@ -44,11 +44,12 @@
   gap: var(--space-1-5);
   height: var(--_height);
   padding: 0 var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--text-1);
   font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
@@ -75,8 +76,21 @@
   padding: 0 var(--space-4);
 }
 
+/* Primary actions: Next, Show on screen, Create a free account. */
+.ui-button--xl {
+  --_height: var(--control-xl);
+  gap: var(--space-2);
+  padding: 0 var(--space-5);
+  font-size: var(--text-lg);
+}
+
+.ui-button kbd {
+  border-color: currentColor;
+}
+
 .ui-button:is(:hover, [data-force~='hover']):not(:disabled) {
-  border-color: var(--text-2);
+  border-color: var(--text-3);
+  background: var(--bg-2);
 }
 
 .ui-button:is(:active, [data-force~='active']):not(:disabled) {
@@ -89,7 +103,7 @@
 }
 
 .ui-button[aria-pressed='true'] {
-  border-color: var(--accent);
+  border-color: var(--accent-bright);
   background: var(--accent-soft);
 }
 
@@ -133,7 +147,7 @@
 /* Disabled is grey for every variant, so a disabled red or blue button never reads as live or ready. */
 .ui-button:disabled {
   border-color: var(--border);
-  background: var(--bg-2);
+  background: transparent;
   color: var(--text-3);
   cursor: default;
 }
@@ -156,7 +170,7 @@
   height: var(--_size);
   padding: 0;
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--text-2);
   line-height: 1;
@@ -165,6 +179,21 @@
     background-color var(--duration-fast) var(--ease),
     border-color var(--duration-fast) var(--ease),
     color var(--duration-fast) var(--ease);
+}
+
+/* A 40px hit area whatever the drawn size. */
+.ui-icon-button::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, 40px);
+  height: max(100%, 40px);
+  transform: translate(-50%, -50%);
+}
+
+.ui-icon-button svg {
+  stroke-width: var(--icon-stroke);
 }
 
 .ui-icon-button--sm {
@@ -191,7 +220,7 @@
 }
 
 .ui-icon-button[aria-pressed='true'] {
-  border-color: var(--accent);
+  border-color: var(--accent-bright);
   background: var(--accent-soft);
   color: var(--text-1);
 }
@@ -215,6 +244,12 @@
   color: var(--text-1);
   font: inherit;
   transition: border-color var(--duration-fast) var(--ease);
+}
+
+.ui-input--sm,
+.ui-select--sm .ui-select-field {
+  height: var(--control-sm);
+  font-size: var(--text-md);
 }
 
 .ui-input--lg,
@@ -273,77 +308,80 @@
   pointer-events: none;
 }
 
-/* ---------- Toggle (a switch) ---------- */
+/* ---------- Switch and Toggle ---------- */
 
-.ui-toggle {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--control-md);
-  cursor: pointer;
-}
-
-/* The real checkbox covers the whole row, so the label is the hit area and screen readers meet a switch. */
-.ui-toggle-input {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: inherit;
-}
-
-.ui-toggle-track {
+.ui-switch {
   position: relative;
   flex-shrink: 0;
-  width: 32px;
-  height: 18px;
+  width: 48px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-full);
-  background: var(--border-strong);
-  transition: background-color var(--duration) var(--ease);
+  background: var(--bg-3);
+  cursor: pointer;
+  transition:
+    background-color var(--duration) var(--ease),
+    border-color var(--duration) var(--ease);
 }
 
-.ui-toggle-track::after {
-  content: '';
+.ui-switch-thumb {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 14px;
-  height: 14px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: var(--text-1);
-  transition: transform var(--duration) var(--ease);
+  background: var(--text-2);
+  transition:
+    transform var(--duration) var(--ease),
+    background-color var(--duration) var(--ease);
 }
 
-.ui-toggle:is(:hover, [data-force~='hover']) .ui-toggle-input:not(:disabled) + .ui-toggle-track {
-  background: var(--text-3);
+.ui-switch:is(:hover, [data-force~='hover']):not(:disabled) {
+  border-color: var(--text-3);
 }
 
-.ui-toggle-input:checked + .ui-toggle-track,
-.ui-toggle:is(:hover, [data-force~='hover']) .ui-toggle-input:checked:not(:disabled) + .ui-toggle-track {
-  background: var(--accent-strong);
+.ui-switch[aria-checked='true'] {
+  border-color: var(--accent);
+  background: var(--accent);
 }
 
-.ui-toggle-input:checked + .ui-toggle-track::after {
-  background: var(--text-on-fill);
-  transform: translateX(14px);
+.ui-switch[aria-checked='true'] .ui-switch-thumb {
+  background: var(--ink);
+  transform: translateX(20px);
 }
 
-.ui-toggle-input:is(:focus-visible, [data-force~='focus']) + .ui-toggle-track {
+.ui-switch:is(:focus-visible, [data-force~='focus']) {
   outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
 
-.ui-toggle:has(.ui-toggle-input:disabled) {
-  color: var(--text-3);
+.ui-switch:disabled {
+  opacity: 0.45;
   cursor: default;
 }
 
-.ui-toggle-input:disabled + .ui-toggle-track {
-  opacity: 0.5;
+/* A label and its switch: the label first, the switch at the end of the row. */
+.ui-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--control-md);
+}
+
+.ui-toggle-label {
+  min-width: 0;
+  cursor: pointer;
+}
+
+.ui-toggle.is-disabled {
+  color: var(--text-3);
+}
+
+.ui-toggle.is-disabled .ui-toggle-label {
+  cursor: default;
 }
 
 /* ---------- SegmentedControl ---------- */
@@ -424,7 +462,7 @@
   justify-content: center;
   gap: var(--space-1-5);
   min-width: 0;
-  height: var(--control-md);
+  height: var(--control-lg);
   padding: 0 var(--space-2-5);
   border: 0;
   border-bottom: 2px solid transparent;
@@ -448,7 +486,7 @@
 }
 
 .ui-tab[aria-selected='true'] {
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--accent-bright);
   color: var(--text-1);
 }
 
@@ -512,7 +550,7 @@
   align-items: center;
   gap: var(--space-1);
   max-width: 100%;
-  height: 24px;
+  height: 28px;
   padding: 0 var(--space-2-5);
   border: 1px solid var(--_tone);
   border-radius: var(--radius-full);
@@ -529,7 +567,7 @@
 }
 
 .ui-chip--accent {
-  --_tone: var(--accent);
+  --_tone: var(--accent-bright);
   background: var(--accent-soft);
 }
 
@@ -592,7 +630,7 @@ button.ui-chip:is(:focus-visible, [data-force~='focus']),
 }
 
 button.ui-chip[aria-pressed='true'] {
-  --_tone: var(--accent);
+  --_tone: var(--accent-bright);
   background: var(--accent-soft);
 }
 
@@ -655,8 +693,8 @@ button.ui-chip:disabled {
   flex-direction: column;
   width: min(480px, 100%);
   max-height: 100%;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
   background: var(--surface);
   box-shadow: var(--shadow-3);
 }
@@ -681,7 +719,8 @@ button.ui-chip:disabled {
 .ui-modal-title {
   margin: 0;
   color: var(--text-1);
-  font-size: var(--text-lg);
+  font-family: var(--font-display);
+  font-size: var(--text-title);
   font-weight: var(--weight-semibold);
   letter-spacing: 0;
   text-transform: none;
@@ -1022,8 +1061,8 @@ button.ui-chip:disabled {
   .ui-icon-button,
   .ui-input,
   .ui-select-field,
-  .ui-toggle-track,
-  .ui-toggle-track::after,
+  .ui-switch,
+  .ui-switch-thumb,
   .ui-segmented-item,
   .ui-tab,
   button.ui-chip {
@@ -1042,4 +1081,112 @@ button.ui-chip:disabled {
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* ---------- Panel ---------- */
+
+.ui-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.ui-panel-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 56px;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+}
+
+.ui-panel-title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-1);
+  font-family: var(--font-display);
+  font-size: var(--text-title);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.ui-panel-meta {
+  flex-shrink: 0;
+  color: var(--text-3);
+  font-size: var(--text-md);
+}
+
+.ui-panel-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+.ui-panel-footer {
+  flex-shrink: 0;
+  padding: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+/* ---------- StatusDot ---------- */
+
+.ui-status-dot {
+  --_tone: var(--text-3);
+  display: inline-block;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--_tone);
+}
+
+.ui-status-dot--success {
+  --_tone: var(--success);
+}
+
+.ui-status-dot--warning {
+  --_tone: var(--warning);
+}
+
+.ui-status-dot--error {
+  --_tone: var(--error);
+}
+
+.ui-status-dot--live {
+  --_tone: var(--live-red);
+}
+
+.ui-status-dot--accent {
+  --_tone: var(--accent-bright);
+}
+
+.ui-status-dot.is-pulsing {
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--_tone) 60%, transparent);
+  animation: ui-status-pulse 1.8s var(--ease) infinite;
+}
+
+@keyframes ui-status-pulse {
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-status-dot.is-pulsing {
+    animation: none;
+  }
 }

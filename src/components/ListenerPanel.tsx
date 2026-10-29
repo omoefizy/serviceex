@@ -5,9 +5,10 @@ import { formatHours, isLowBalance } from '../../shared/account'
 import { can } from '../../shared/features'
 import { shortDate } from '../../shared/serviceErrors'
 import { sermonTitle } from '../../shared/sermons'
-import type { SermonInput, SpeechEngineId, SpeechMode } from '../../shared/types'
+import type { SermonInput, SpeechEngineId } from '../../shared/types'
 import { openPlans, useAccount } from '../lib/account'
-import { useListener, type ListenerStatus } from '../lib/listener'
+import { useListener } from '../lib/listener'
+import { chipOf } from '../lib/listenerStatus'
 import type { MicDevice, MicState, SignalAdvice } from '../lib/mic'
 import { useDetectionDebug } from '../lib/scriptureDetection'
 import { useOperatorStore } from '../store'
@@ -15,40 +16,6 @@ import { LevelMeter } from './LevelMeter'
 import { QuoteModal } from './QuoteModal'
 import { StartSermonModal } from './StartSermonModal'
 import { ErrorNote } from './ui'
-
-const MODE_LABELS: Record<SpeechMode, string> = { cloud: 'Cloud', offline: 'Offline', reconnecting: 'Reconnecting' }
-
-interface Chip {
-  label: string
-  /** Which engine, beside Listening. */
-  detail?: string
-  tone: string
-  why: string
-}
-
-/**
- * The status chip: Listening (Cloud or Offline), Reconnecting or Restarting while running; Stopped or Error otherwise;
- * with why as its tooltip.
- */
-function chipOf(status: ListenerStatus, mode: SpeechMode | null, reason: string, error: string | null, restarting: string | null): Chip {
-  if (restarting && (status === 'listening' || status === 'connecting')) return { label: 'Restarting', tone: 'busy', why: restarting }
-  switch (status) {
-    case 'listening':
-      if (mode === 'reconnecting') return { label: 'Reconnecting', tone: 'reconnecting', why: reason }
-      return mode
-        ? { label: 'Listening', detail: MODE_LABELS[mode], tone: mode, why: reason }
-        : { label: 'Listening', tone: 'cloud', why: 'Listening.' }
-    case 'starting':
-    case 'connecting':
-      return { label: 'Starting', tone: 'busy', why: status === 'starting' ? 'Opening the microphone.' : 'Connecting to the speech engine.' }
-    case 'stopping':
-      return { label: 'Stopping', tone: 'busy', why: 'Finishing the last words before stopping.' }
-    case 'error':
-      return { label: 'Error', tone: 'error', why: error ?? 'The listener stopped with an error.' }
-    default:
-      return { label: 'Stopped', tone: 'stopped', why: 'Not listening. Press Start Listening to begin.' }
-  }
-}
 
 const ENGINE_LABELS: Record<SpeechEngineId, string> = { auto: 'Auto', deepgram: 'Cloud only', whisper: 'Offline only' }
 /** Outside developer builds Settings offers only Cloud (which falls back to offline) and Offline. */

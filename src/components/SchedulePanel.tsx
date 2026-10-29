@@ -1,6 +1,7 @@
 import {
   BookOpen,
   CalendarPlus,
+  Check,
   ChevronLeft,
   ChevronRight,
   GripVertical,
@@ -16,20 +17,21 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react'
-import { useCallback, useEffect, useState, type DragEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import type { AnnouncementPayload, Service, ServiceItem, ServiceItemType, ShareSource } from '../../shared/types'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { droppedPaths, isFileDrag } from '../lib/presentations'
 import { addSampleSong, SAMPLE_WELCOME, showLibraryTab } from '../lib/samples'
 import { openSendMenu, SERVICES_CHANGED_EVENT, setShareDrag, showMessage, useSharingStore } from '../lib/sharing'
 import { MOD } from '../lib/shortcuts'
+import { useDismiss } from '../lib/useDismiss'
 import { selectDefaultTranslation, useOperatorStore } from '../store'
 import { AnnouncementModal } from './AnnouncementModal'
 import { NewServiceModal } from './NewServiceModal'
 import { PresentationJobs } from './PresentationsPanel'
 import { SermonModal } from './SermonModal'
 import { SharedItemList, SharedServiceBar } from './SharedServicePanel'
-import { Button, EmptyState, ErrorNote, IconButton, PanelHeader, Select } from './ui'
+import { Button, EmptyState, ErrorNote, IconButton, Select } from './ui'
 
 const TYPE_LABELS: Record<ServiceItemType, string> = {
   song: 'Song',
@@ -55,7 +57,62 @@ function shareSourceOf(item: ServiceItem): ShareSource | null {
 
 function ItemIcon({ type }: { type: ServiceItemType }) {
   const Icon = TYPE_ICONS[type]
-  return <Icon className="item-icon" size={16} aria-hidden="true" />
+  return <Icon className="item-icon" size={18} aria-hidden="true" />
+}
+
+/** The line under an item's title: its type, and how much is in it. */
+function subtitleOf(item: ServiceItem): string {
+  if (item.type === 'scripture') return `Scripture · ${item.payload.verses.length} verse${item.payload.verses.length === 1 ? '' : 's'}`
+  if (item.type === 'presentation') return `Presentation · ${item.payload.pages.length} slide${item.payload.pages.length === 1 ? '' : 's'}`
+  return TYPE_LABELS[item.type]
+}
+
+/** The header's Add menu: the items that are made here rather than found in the finder. */
+function AddMenu({ disabled, importing, onAnnouncement, onPresentation, onSermon }: { disabled: boolean; importing: boolean; onAnnouncement(): void; onPresentation(): void; onSermon(): void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useDismiss(open, ref, useCallback(() => setOpen(false), []))
+  const choose = (action: () => void) => () => {
+    setOpen(false)
+    action()
+  }
+  return (
+    <div className="live-menu schedule-add" ref={ref}>
+      <Button size="sm" icon={<Plus size={16} aria-hidden="true" />} disabled={disabled} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+        Add
+      </Button>
+      {open && (
+        <div className="live-menu-list" role="menu" aria-label="Add to the order of service">
+          <button type="button" role="menuitem" onClick={choose(() => showLibraryTab('songs'))}>
+            <Music size={16} aria-hidden="true" />
+            <span>Song…</span>
+          </button>
+          <button type="button" role="menuitem" onClick={choose(() => showLibraryTab('scripture'))}>
+            <BookOpen size={16} aria-hidden="true" />
+            <span>Verse…</span>
+          </button>
+          <button type="button" role="menuitem" onClick={choose(onAnnouncement)}>
+            <Megaphone size={16} aria-hidden="true" />
+            <span>Announcement</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={importing}
+            title="PowerPoint, PDF or images, one slide per page; or drop files and folders on the order of service"
+            onClick={choose(onPresentation)}
+          >
+            <Presentation size={16} aria-hidden="true" />
+            <span>Presentation</span>
+          </button>
+          <button type="button" role="menuitem" title="Turn a sermon outline into points and scripture" onClick={choose(onSermon)}>
+            <ScrollText size={16} aria-hidden="true" />
+            <span>Sermon outline</span>
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 interface Props {
@@ -92,6 +149,7 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
   const serviceVersions = useOperatorStore((s) => s.settings.scriptureServiceVersions)
   const updateSettings = useOperatorStore((s) => s.updateSettings)
   const items = service?.items ?? []
+  const liveIndex = items.findIndex((item) => item.id === liveItemId)
   const serviceVersion = service ? (serviceVersions[String(service.id)] ?? '') : ''
 
   /** The open service's own default translation; empty uses the one in Settings. */
@@ -218,9 +276,9 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
   if (collapsed) {
     return (
       <aside className="schedule collapsed">
-        <button className="panel-rail-toggle" aria-expanded={false} title="Show the schedule" onClick={() => onCollapsedChange(false)}>
-          <ChevronLeft size={16} aria-hidden="true" />
-          <span className="panel-rail-label">Schedule</span>
+        <button className="panel-rail-toggle" aria-expanded={false} title="Show the order of service" onClick={() => onCollapsedChange(false)}>
+          <ChevronRight size={16} aria-hidden="true" />
+          <span className="panel-rail-label">Order of service</span>
         </button>
       </aside>
     )
@@ -245,27 +303,25 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
         importPresentations(droppedPaths(e))
       }}
     >
-      <PanelHeader
-        title="Schedule"
-        actions={
-          <>
-            {service && bibleVersions.length > 0 && (
-              <label className="schedule-translation" title="The translation references open in during this service">
-                <BookOpen size={13} aria-hidden="true" />
-                <Select aria-label="Translation for this service" value={serviceVersion} onChange={(e) => setServiceVersion(e.target.value)}>
-                  <option value="">Default ({defaultVersion})</option>
-                  {bibleVersions.map((v) => (
-                    <option key={v.code} value={v.code} title={v.name}>
-                      {v.code}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-            )}
-            <IconButton label="Hide schedule" icon={<ChevronRight size={16} />} aria-expanded={true} onClick={() => onCollapsedChange(true)} />
-          </>
-        }
-      />
+      <header className="panel-header ui-panel-head schedule-head">
+        <h2 className="ui-panel-title">Order of service</h2>
+        {service && (
+          <span className="ui-panel-meta count-badge" title={`${items.length} item${items.length === 1 ? '' : 's'}`}>
+            {items.length}
+            <span className="visually-hidden"> item{items.length === 1 ? '' : 's'}</span>
+          </span>
+        )}
+        <div className="ui-panel-actions">
+          <AddMenu
+            disabled={!service}
+            importing={importing}
+            onAnnouncement={() => setAnnouncing(true)}
+            onPresentation={() => window.api.presentations.pick('files').then(importPresentations, console.error)}
+            onSermon={() => setSermonOpen(true)}
+          />
+          <IconButton label="Hide the order of service" icon={<ChevronLeft size={18} />} aria-expanded={true} onClick={() => onCollapsedChange(true)} />
+        </div>
+      </header>
 
       <div className="schedule-picker">
         <Select
@@ -284,9 +340,22 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
           ))}
         </Select>
         <div className="schedule-picker-actions">
-          <Button icon={<Plus size={15} aria-hidden="true" />} onClick={() => setCreating(true)}>
+          <Button size="sm" icon={<Plus size={16} aria-hidden="true" />} onClick={() => setCreating(true)}>
             New service
           </Button>
+          {service && bibleVersions.length > 0 && (
+            <label className="schedule-translation" title="The translation references open in during this service">
+              <BookOpen size={16} aria-hidden="true" />
+              <Select size="sm" aria-label="Translation for this service" value={serviceVersion} onChange={(e) => setServiceVersion(e.target.value)}>
+                <option value="">Default ({defaultVersion})</option>
+                {bibleVersions.map((v) => (
+                  <option key={v.code} value={v.code} title={v.name}>
+                    {v.code}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          )}
           <IconButton
             label="Export package"
             tooltip="Export package: this service as one .serviceex file, for a USB drive"
@@ -306,86 +375,97 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
         <SharedItemList />
       ) : (
         <ol className="schedule-items">
-          {items.map((item, index) => (
-            <li
-              key={item.id}
-              draggable
-              className={[
-                'schedule-item',
-                item.id === activeItemId && 'active',
-                item.id === liveItemId && 'on-air',
-                item.id === dragId && 'dragging',
-                dropIndex === index && 'drop-before',
-                dropIndex === items.length && index === items.length - 1 && 'drop-after',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              onDragStart={(e) => {
-                setDragId(item.id)
-                e.dataTransfer.effectAllowed = 'move'
-                e.dataTransfer.setData('text/plain', String(item.id))
-                // It can also be dropped on a device chip to send it.
-                const source = shareSourceOf(item)
-                if (source) setShareDrag(e, source)
-              }}
-              onContextMenu={(e) => {
-                const source = shareSourceOf(item)
-                if (source) openSendMenu(e, [source])
-              }}
-              onDragOver={(e) => handleDragOver(e, index)}
-              onDrop={handleDrop}
-              onDragEnd={() => {
-                setDragId(null)
-                setDropIndex(null)
-              }}
-            >
-              <span className="schedule-item-handle" title="Drag to reorder" aria-hidden="true">
-                <GripVertical size={14} />
-              </span>
-              <button
-                className="schedule-item-main"
-                title="Click to preview, double-click to go live"
-                aria-current={item.id === activeItemId ? 'true' : undefined}
-                onClick={() => run(() => loadItem(item))}
-                onDoubleClick={() =>
-                  run(async () => {
-                    if (await loadItem(item)) useOperatorStore.getState().goLive(0)
-                  })
-                }
+          {items.map((item, index) => {
+            const done = liveIndex !== -1 && index < liveIndex
+            const next = liveIndex !== -1 && index === liveIndex + 1
+            return (
+              <li
+                key={item.id}
+                draggable
+                className={[
+                  'schedule-item',
+                  item.id === activeItemId && 'active',
+                  item.id === liveItemId && 'on-air',
+                  done && 'done',
+                  item.id === dragId && 'dragging',
+                  dropIndex === index && 'drop-before',
+                  dropIndex === items.length && index === items.length - 1 && 'drop-after',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                onDragStart={(e) => {
+                  setDragId(item.id)
+                  e.dataTransfer.effectAllowed = 'move'
+                  e.dataTransfer.setData('text/plain', String(item.id))
+                  // It can also be dropped on a device chip to send it.
+                  const source = shareSourceOf(item)
+                  if (source) setShareDrag(e, source)
+                }}
+                onContextMenu={(e) => {
+                  const source = shareSourceOf(item)
+                  if (source) openSendMenu(e, [source])
+                }}
+                onDragOver={(e) => handleDragOver(e, index)}
+                onDrop={handleDrop}
+                onDragEnd={() => {
+                  setDragId(null)
+                  setDropIndex(null)
+                }}
               >
-                <span className="schedule-item-type" title={TYPE_LABELS[item.type]}>
-                  {item.type === 'presentation' && item.payload.pages[0] ? (
-                    // Its first slide; the picture changes when the original is saved again.
-                    <img className="schedule-item-thumb" src={item.payload.pages[0]} alt="" />
-                  ) : (
-                    <ItemIcon type={item.type} />
-                  )}
+                <span className="schedule-item-handle" title="Drag to reorder" aria-hidden="true">
+                  <GripVertical size={14} />
                 </span>
-                <span className="schedule-item-text">
-                  <span className="schedule-item-title">{item.title}</span>
-                  <span className="visually-hidden">
-                    {`, ${TYPE_LABELS[item.type]}`}
-                    {item.id === liveItemId ? ', live' : item.id === activeItemId ? ', in preview' : ''}
+                <button
+                  className="schedule-item-main"
+                  title="Click to preview, double-click to go live"
+                  aria-current={item.id === activeItemId ? 'true' : undefined}
+                  onClick={() => run(() => loadItem(item))}
+                  onDoubleClick={() =>
+                    run(async () => {
+                      if (await loadItem(item)) useOperatorStore.getState().goLive(0)
+                    })
+                  }
+                >
+                  <span className="schedule-item-type" title={TYPE_LABELS[item.type]}>
+                    {item.type === 'presentation' && item.payload.pages[0] ? (
+                      // Its first slide; the picture changes when the original is saved again.
+                      <img className="schedule-item-thumb" src={item.payload.pages[0]} alt="" />
+                    ) : (
+                      <ItemIcon type={item.type} />
+                    )}
                   </span>
-                </span>
-                {item.id === liveItemId ? (
-                  <span className="schedule-item-state live" aria-hidden="true">
-                    Live
+                  <span className="schedule-item-text">
+                    <span className="schedule-item-title">{item.title}</span>
+                    <span className="schedule-item-subtitle">{subtitleOf(item)}</span>
+                    <span className="visually-hidden">
+                      {item.id === liveItemId ? ', on screen now' : item.id === activeItemId ? ', in preview' : next ? ', next' : done ? ', done' : ''}
+                    </span>
                   </span>
-                ) : item.id === activeItemId ? (
-                  <span className="schedule-item-state preview" aria-hidden="true">
-                    Preview
-                  </span>
-                ) : null}
-              </button>
-              <IconButton
-                label={`Remove ${item.title} from schedule`}
-                tooltip="Remove from schedule"
-                icon={<X size={14} />}
-                onClick={() => run(() => removeFromSchedule(item.id))}
-              />
-            </li>
-          ))}
+                  {item.id === liveItemId ? (
+                    <span className="schedule-item-state now" aria-hidden="true">
+                      Now
+                    </span>
+                  ) : next ? (
+                    <span className="schedule-item-state next" aria-hidden="true">
+                      Next
+                    </span>
+                  ) : item.id === activeItemId ? (
+                    <span className="schedule-item-state preview" aria-hidden="true">
+                      Preview
+                    </span>
+                  ) : done ? (
+                    <Check className="schedule-item-done" size={18} aria-hidden="true" />
+                  ) : null}
+                </button>
+                <IconButton
+                  label={`Remove ${item.title} from the order of service`}
+                  tooltip="Remove from the order of service"
+                  icon={<X size={14} />}
+                  onClick={() => run(() => removeFromSchedule(item.id))}
+                />
+              </li>
+            )
+          })}
           {service && items.length === 0 && (
             <li className="schedule-empty">
               <EmptyState
@@ -430,24 +510,8 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
       )}
 
       <footer className="schedule-footer">
-        <Button icon={<Megaphone size={15} aria-hidden="true" />} disabled={!service} onClick={() => setAnnouncing(true)}>
-          Announcement
-        </Button>
-        <Button
-          icon={<Presentation size={15} aria-hidden="true" />}
-          disabled={!service || importing}
-          onClick={() => window.api.presentations.pick('files').then(importPresentations, console.error)}
-          title="PowerPoint, PDF or images, one slide per page; or drop files and folders on the schedule"
-        >
-          Presentation
-        </Button>
-        <Button
-          icon={<ScrollText size={15} aria-hidden="true" />}
-          disabled={!service}
-          onClick={() => setSermonOpen(true)}
-          title="Turn a sermon outline into points and scripture"
-        >
-          Sermon
+        <Button size="lg" className="schedule-add-footer" icon={<Plus size={18} aria-hidden="true" />} disabled={!service} onClick={() => showLibraryTab('songs')}>
+          Add song, slide or verse
         </Button>
         <span className="hint">{MOD}↓ next item</span>
       </footer>

@@ -49,6 +49,7 @@ import type {
 import { announcementSlides, parseVerseCaption, quoteSlide, verseCaption } from './lib/slides'
 import { PRIORITY_BAND_COLOR, PRIORITY_PASSES, runDurationMs } from './lib/ticker'
 import { dualTheme, missingNote, slideTranslation, translateSlides, type Translation } from './lib/translations'
+import { CONTENT_COLORS } from './styles/contentColors'
 
 export interface DeckSlide {
   text: string
@@ -455,8 +456,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   alertPosition: 'bottom',
   alertSpeed: 14,
   alertFontSize: 5,
-  alertTextColor: '#ffffff',
-  alertBandColor: '#0a0e1c',
+  alertTextColor: CONTENT_COLORS.alertText,
+  alertBandColor: CONTENT_COLORS.alertBand,
   alertBandOpacity: 0.85,
   alertBandHeight: 9,
   alertLoops: 0,
@@ -471,7 +472,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   streamDisplay: 'window',
   streamResolution: '1920x1080',
   streamKeyMode: 'chroma',
-  streamKeyColor: '#00ff00',
+  streamKeyColor: CONTENT_COLORS.chromaGreen,
   streamSlideContent: 'full',
   logoItems: [],
   logoLayerVisible: true,

@@ -8,7 +8,6 @@ import { usePersistentState } from '../lib/usePersistentState'
 import { selectBaseThemeId, selectBrowsingLive, selectDeckPresentation, selectDeckTheme, slideTheme, useOperatorStore } from '../store'
 import { NativeSlideEditor } from './NativeSlideEditor'
 import { SlideFormatModal } from './SlideFormatModal'
-import { SuggestionTray } from './SuggestionTray'
 import { ThemedSlide } from './ThemedSlide'
 
 type SlideView = 'grid' | 'list'
@@ -180,7 +179,6 @@ export function SlideGrid() {
           </label>
         </div>
       </header>
-      <SuggestionTray />
       <div className="grid-live-bar">
         {live.deckKey !== null && !browsingLive && (
           <span className="live-chip" title="What the projector is showing">

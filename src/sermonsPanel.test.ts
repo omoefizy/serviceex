@@ -53,7 +53,7 @@ describe('Sermons screen', () => {
       const html = renderToString(createElement(App))
       expect(html).toContain('sermons-panel')
       // The rest of the app is still there.
-      expect(html).toContain('Schedule')
+      expect(html).toContain('Order of service')
       expect(html).not.toContain('This panel had a problem')
     })
   })
@@ -62,7 +62,7 @@ describe('Sermons screen', () => {
     const html = renderToString(createElement(Toolbar))
     // The screens used less often are in More, so the toolbar fits one row at 1280 pixels.
     const menu = renderToString(createElement(MoreMenuList, { onChoose: () => undefined }))
-    for (const label of ['Stage Display', 'Stream', 'Sermons', 'Themes']) expect(menu).toContain(`<span>${label}</span>`)
+    for (const label of ['Stage Display', 'Studio', 'Sermons', 'Themes']) expect(menu).toContain(`<span>${label}</span>`)
     for (const label of ['Stage display', 'Sermons', 'Themes']) expect(html).not.toContain(`aria-label="${label}"`)
     // Settings is the toolbar's last control, right after More, and says its shortcut.
     const settings = /<button[^>]*toolbar-settings[^>]*aria-label="Settings"[^>]*>/.exec(html)

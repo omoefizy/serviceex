@@ -2,6 +2,8 @@
 
 29 October 2026. The findings below (sections 1 to 3) record the app as it was first audited. The design tokens and shared components proposed in section 2 have since been applied to the toolbar, the Schedule, the Scripture panel and Settings; **[Tokens and shared components: before and after](#tokens-and-shared-components-before-and-after)** has the numbers. The layout at laptop sizes has since been fixed too; **[Layout at laptop sizes: before and after](#layout-at-laptop-sizes-before-and-after)** has the results of the automated layout check. Empty, error, loading and toast states have since been finished; **[Unfinished states: before and after](#unfinished-states-before-and-after)** has what changed and the new state check.
 
+The 2026 visual design (new palette, Figtree and Bricolage Grotesque, the three panel operator screen, the Settings page and the first run welcome) is the latest change; **[2026 design: before and after](#2026-design-before-and-after)** has its numbers.
+
 **How it was made.** `node scripts/ui-audit.ts` builds the main process and serves the renderer with Vite. It then runs the app with Playwright on a fresh temporary data folder, so the real library is never opened, and seeds invented sample data: 6 songs, 2 services, 6 generated gradient backgrounds, and a Psalm 23 item from the bundled KJV. For each state it saves a screenshot and measures every visible element (fonts, colors, spacing, radius, targets, contrast). It also scans the stylesheets (`src/styles/tokens.css`, `src/index.css`, `src/components/ui/ui.css`) and the components directly. It also checks the layout of every screen (see below) and exits with an error if one fails. It also checks the state of every screen (see below). Its outputs are `metrics.json` (with a `totals.headline` summary), `static.json`, `layout.json` and `states.json`, next to 150 PNGs in this folder: the app states at three sizes plus `50-ui-kit.png`, the dev UI kit. Re-run the script to regenerate everything; it keeps this report, and the folder is git-ignored except for the report.
 
 **Caveats.**
@@ -9,6 +11,42 @@
 - A dev build shows the "AI developer key" Settings section, which customers never see.
 - The signed-in account, device chips, transfers and Inbox are invented data injected into the renderer's stores. Sharing itself stayed off, so nothing was advertised on the network.
 - Counts in sections 1 to 3 are element instances summed over every screen at the two sizes audited then (1280 and 1920). They are useful for proportions, not as absolute figures.
+
+## 2026 design: before and after
+
+**What changed.** Behaviour and logic are unchanged; every action calls the same store function it did before.
+- **Tokens** (`src/styles/tokens.css`): the new palette (bg #070B16, panel #0D1324, raised #141C33, lines at 9% and 18%, text #EEF2FA / #B4BED4 / #8793AF, live red #D62B43, success, warning, error coral #FF8A7A). The accent is one variable, `--accent` (#0087CB); `--accent-bright`, the tint, the selected-row ring and the hover are derived from it, so the final brand color is a one-line change. Radii 8 / 10 / 12 / 16, control heights 32 / 36 / 40 / 44, icon stroke 1.7. The older role names (`--bg-1`, `--text-2`, `--accent-strong`, …) now point at the new values.
+- **Fonts:** Figtree (UI) and Bricolage Grotesque (titles, wordmark) are bundled with `@fontsource` and imported in `src/main.tsx`; no network font links.
+- **Content colors** (slide, stage and Stream defaults saved into themes and settings) moved out of components into `src/styles/contentColors.ts`. They stay hex because themes and color inputs need hex.
+- **Components** (`src/components/ui/`): Button gains `xl` (44px) and is outlined by default; IconButton has a 40px hit area; new **Switch** (button, role switch, 48×28), **StatusDot** and **Panel**; Toggle now draws a Switch; Input and Select gain `sm`; `Segmented` alias. The UI kit (`#/ui-kit`) shows them.
+- **Operator screen:** top bar 60px (logo mark, wordmark, service button with "Saved just now", listening chip, BLACK / CLEAR / ON AIR group, Alerts, More, Settings last). Order of service on the left (300px, count badge, Add menu, 34px type tiles, done checks, NOW in the accent tint and ring, NEXT, footer button). Centre: On screen (LIVE chip, output selector), Previous and Next (Next primary, both with key hints), then a scroll region with Up next (three thumbnails, hidden below 1366), the slides, Preview and the lower third. Finder on the right (400px, 340px below 1366) with Scripture, Songs, Slides and Media tabs, "Heard in the sermon" above them, the translation as a select. Status bar 44px: listener state, level, latest transcript line, Transcript (opens the listener as a drawer), devices and plan. Both side panels collapse to 44px rails and remember it; the 12px gaps are the resize handles.
+- **More menu** holds what the old Live menu and Search did: Go Back, Logo, the output windows, Logo Layer, test pattern, Themes, Studio (Stream), Sermons, layouts, Devices, Sharing, Search and Help.
+- **Settings** is a page of its own, not a column over the app: Back to service, a 300px nav built from the sections on the page (Account, Service, Devices, Support), the section in view marked, a 760px column of cards with one setting per row, and the plan card with Manage plan.
+- **First run welcome:** split screen, shown once on a computer that is not signed in; Create a free account and Log in open Settings at Account.
+
+**The audit.** Same script and data. It now reads colors given as `color(srgb …)`, `oklab()` and `oklch()` (the derived accent tokens), shoots the welcome (`00-welcome`), uses the Slides tab name, and gives up on a stuck step after 30 seconds instead of hanging. 128 screens, up from 125.
+
+| Measure | Before | After |
+|---|---|---|
+| Hex colors written outside the tokens, stylesheets | 0 | **0** |
+| Hex colors written in components | 20 in 9 files (slide and stage defaults) | **0**; they are in `contentColors.ts` |
+| Distinct colors rendered (text + background + border) | 52 (9 + 37 + 24) | 51 (11 + 37 + 21) |
+| Font families rendered | 2 (Inter or the system font, mono) | **3 by design:** Figtree, Bricolage Grotesque, mono |
+| Control button heights | 28, 32, 33, 34, 38, 40 | **32, 36, 40, 44** |
+| Distinct button style combinations | 91 | 92 |
+| Input and select heights | 23, 25, 27, 29, 32, 37, 38, 40 | 25, 32, 36, 37, 38, 40 |
+| Click targets under 32px (unique) | 84 | **6** |
+| Contrast failures, WCAG AA (unique) | 11 (2 on enabled controls) | **4 (2 on enabled controls)** |
+| Screens failing the layout check at 1280×720 | 0 of 43 | **0 of 44** (0 of 42 at 1366, 0 of 42 at 1920) |
+
+**Contrast, the pairs that matter:** ink #031018 on the accent 4.88; white on the live red 4.90; muted on panel 6.01 and on raised 5.49; bright accent on panel 7.38; error on panel 8.07. Two fixes came from the audit itself: Go Live had picked up ink text on red (3.93, now white) and the key hints on Previous and Next were at 85% opacity (4.17, now full).
+
+**What is left.**
+- The 2 enabled contrast failures are the white song section labels on the teal and amber section colors (2.49 and 2.15), slide content that was failing before too.
+- The 6 small targets: the two 12px splitters (they are the gaps between panels, full height), the thumbnail size and crossfade range sliders (16px tall), the command palette's search field (25px), and the Switch itself (48×28, the size asked for; its label row is the larger target in Settings).
+- Inputs at 37 and 38px are the older `.input` fields inside the editors, which keep their padding; they were not part of this pass.
+- "Heard in the sermon" offers **Show in preview**, not "Show on screen": the suggestion goes to the preview, as it always has, and Enter or Go Live puts it on screen. Making it go straight to air would change behaviour.
+- At 1280×720 the scroll region under Previous and Next is about 180px tall; the slides scroll inside it.
 
 ## Unfinished states: before and after
 

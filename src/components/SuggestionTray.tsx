@@ -1,4 +1,4 @@
-import { BookOpen, Eye, ListPlus, Pencil, PanelBottom, Pin, Send, X } from 'lucide-react'
+import { Eye, ListPlus, Pencil, PanelBottom, Pin, Send, Sparkles, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { pinStatement, useListener } from '../lib/listener'
@@ -8,7 +8,7 @@ import { focusLowerThirdHeadline } from '../lib/shortcuts'
 import { quotePayload } from '../lib/slides'
 import { useOperatorStore } from '../store'
 import { QuoteModal } from './QuoteModal'
-import { ErrorNote } from './ui'
+import { Button, ErrorNote, IconButton } from './ui'
 
 /** A heard verse as a cue: its passage, word for word. */
 const verseCue = (s: ScriptureSuggestion) => ({ kind: 'verse' as const, title: s.passage.title, text: s.passage.verses.map((v) => v.text).join('\n'), verses: s.passage.verses })
@@ -36,6 +36,8 @@ export function SuggestionTray() {
   const [editing, setEditing] = useState<StatementSuggestion | null>(null)
   /** Statements saved to the schedule this session, so the button says so. */
   const [scheduled, setScheduled] = useState<Set<number>>(new Set())
+  /** Verses added to the order of service this session, so the button says so. */
+  const [ordered, setOrdered] = useState<Set<number>>(new Set())
   /** Statements pinned to the sermon being recorded, so the button says so. */
   const [pinned, setPinned] = useState<Set<number>>(new Set())
   const recording = useListener((st) => st.sermon)
@@ -71,13 +73,23 @@ export function SuggestionTray() {
     }
   }
 
+  async function addVerse(s: ScriptureSuggestion) {
+    setError(null)
+    try {
+      await addToSchedule('scripture', null, s.passage)
+      setOrdered((current) => new Set(current).add(s.id))
+    } catch (err) {
+      setError(reportError('Suggestions', err))
+    }
+  }
+
   if (suggestions.length === 0) return null
 
   return (
     <div className={`suggestion-tray${flashing ? ' flash' : ''}`} role="region" aria-label="Scripture and statements heard in the sermon">
-      <span className="suggestion-tray-title">
-        <BookOpen size={14} aria-hidden="true" /> Heard
-      </span>
+      <h3 className="suggestion-tray-title">
+        <Sparkles size={16} aria-hidden="true" /> Heard in the sermon
+      </h3>
       <ErrorNote error={error} />
       <ul className="suggestion-list">
         {suggestions.map((s) =>
@@ -95,6 +107,7 @@ export function SuggestionTray() {
               >
                 <span className="suggestion-head">
                   <strong className="suggestion-label">{s.label}</strong>
+                  <span className={`suggestion-match${s.confidence >= 0.9 ? ' strong' : ''}`}>{Math.round(s.confidence * 100)}% match</span>
                   {s.kind === 'quote' && <span className="suggestion-tag">Possible quote{s.version !== 'KJV' ? ` · ${s.version}` : ''}</span>}
                   {s.kind === 'ai' && <span className="suggestion-tag ai">AI suggested</span>}
                   <span className="suggestion-time" title={`Heard at ${timeOf(s.heardAt)}`}>
@@ -107,6 +120,25 @@ export function SuggestionTray() {
                     : s.text}
                 </span>
               </button>
+              <div className="suggestion-actions">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={<Eye size={15} aria-hidden="true" />}
+                  title="Show it in the preview; Enter or Go Live then puts it on screen"
+                  onClick={(e) => {
+                    preview(s.id)
+                    e.currentTarget.blur()
+                  }}
+                >
+                  Show in preview
+                </Button>
+                <span title={service ? `Add it to ${service.name}` : 'Create or pick a service first'}>
+                  <Button size="sm" icon={<ListPlus size={15} aria-hidden="true" />} disabled={!service || ordered.has(s.id)} onClick={() => addVerse(s)}>
+                    {ordered.has(s.id) ? 'Added' : 'Add to order'}
+                  </Button>
+                </span>
+              </div>
               {s.alternatives.length > 0 && (
                 <div className="suggestion-alternatives" role="group" aria-label={`Other readings of ${s.label}`}>
                   <span>or</span>
@@ -127,19 +159,16 @@ export function SuggestionTray() {
                 </div>
               )}
               {sendable && (
-                <button
-                  type="button"
+                <IconButton
+                  size="sm"
                   className="suggestion-send"
-                  aria-label={`Send ${s.label} to another computer`}
-                  title="Send to device: a cue in that computer's tray. It does not go live there."
+                  label={`Send ${s.label} to another computer`}
+                  tooltip="Send to device: a cue in that computer's tray. It does not go live there."
+                  icon={<Send size={15} />}
                   onClick={(e) => openCueMenu(e, verseCue(s))}
-                >
-                  <Send size={12} aria-hidden="true" />
-                </button>
+                />
               )}
-              <button type="button" className="suggestion-dismiss" aria-label={`Dismiss ${s.label}`} title="Dismiss" onClick={() => dismiss(s.id)}>
-                <X size={13} aria-hidden="true" />
-              </button>
+              <IconButton size="sm" className="suggestion-dismiss" label={`Dismiss ${s.label}`} tooltip="Dismiss" icon={<X size={15} />} onClick={() => dismiss(s.id)} />
             </li>
           ) : (
             <li key={s.id} className={`suggestion statement${s.id === previewedId ? ' previewed' : ''}`}>
@@ -151,9 +180,8 @@ export function SuggestionTray() {
                 <span className="suggestion-text">“{s.text}”</span>
               </div>
               <div className="suggestion-actions">
-                <button
-                  type="button"
-                  className="button"
+                <Button
+                  size="sm"
                   title="Show it as a quote slide in the preview; Enter or Go Live sends it"
                   onClick={(e) => {
                     preview(s.id)
@@ -161,13 +189,12 @@ export function SuggestionTray() {
                   }}
                 >
                   <Eye size={13} aria-hidden="true" /> Preview
-                </button>
-                <button type="button" className="button" title="Fix spelling or trim words first" onClick={() => setEditing(s)}>
+                </Button>
+                <Button size="sm" title="Fix spelling or trim words first" onClick={() => setEditing(s)}>
                   <Pencil size={13} aria-hidden="true" /> Edit
-                </button>
-                <button
-                  type="button"
-                  className="button"
+                </Button>
+                <Button
+                  size="sm"
                   title="Put it in the Lower Third fields; press Enter there to show it"
                   onClick={() => {
                     // Fills the fields only: it goes live when the operator presses Enter.
@@ -176,16 +203,15 @@ export function SuggestionTray() {
                   }}
                 >
                   <PanelBottom size={13} aria-hidden="true" /> Send to Lower Third
-                </button>
+                </Button>
                 <span title={service ? `Save it to ${service.name} as a quote, to use again` : 'Create or pick a service first'}>
-                  <button type="button" className="button" disabled={!service || scheduled.has(s.id)} onClick={() => schedule(s)}>
+                  <Button size="sm" disabled={!service || scheduled.has(s.id)} onClick={() => schedule(s)}>
                     <ListPlus size={13} aria-hidden="true" /> {scheduled.has(s.id) ? 'Added' : 'Add to Schedule'}
-                  </button>
+                  </Button>
                 </span>
                 {recording && (
-                  <button
-                    type="button"
-                    className="button"
+                  <Button
+                    size="sm"
                     disabled={pinned.has(s.id)}
                     title={`Pin it to the sermon “${recording.title}”, for its slides and exports`}
                     onClick={() => {
@@ -194,22 +220,19 @@ export function SuggestionTray() {
                     }}
                   >
                     <Pin size={13} aria-hidden="true" /> {pinned.has(s.id) ? 'Pinned' : 'Pin to Sermon'}
-                  </button>
+                  </Button>
                 )}
                 {sendable && (
-                  <button
-                    type="button"
-                    className="button"
+                  <Button
+                    size="sm"
                     title="Send to device: the exact words as a cue in that computer's tray. It does not go live there."
                     onClick={(e) => openCueMenu(e, { kind: 'text', title: 'Statement', text: s.text })}
                   >
                     <Send size={13} aria-hidden="true" /> Send to device
-                  </button>
+                  </Button>
                 )}
               </div>
-              <button type="button" className="suggestion-dismiss" aria-label="Dismiss statement" title="Dismiss" onClick={() => dismiss(s.id)}>
-                <X size={13} aria-hidden="true" />
-              </button>
+              <IconButton size="sm" className="suggestion-dismiss" label="Dismiss statement" tooltip="Dismiss" icon={<X size={15} />} onClick={() => dismiss(s.id)} />
             </li>
           ),
         )}

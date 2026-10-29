@@ -2,6 +2,7 @@
 // percent of screen height unless named in pixels, so every screen size scrolls in step.
 
 import type { AlertLayout } from '../../shared/types'
+import { CONTENT_COLORS } from '../styles/contentColors'
 
 /** The band stays inside this margin, in percent, on every side of the screen: the projector's safe area. */
 export const SAFE_MARGIN = 5
@@ -12,7 +13,7 @@ export const TICKER_FONT = "'Helvetica Neue', Inter, 'Segoe UI', Arial, sans-ser
 export const TICKER_WEIGHT = 700
 /** A priority message scrolls through this many times before the normal messages carry on. */
 export const PRIORITY_PASSES = 2
-export const PRIORITY_BAND_COLOR = '#c81e1e'
+export const PRIORITY_BAND_COLOR = CONTENT_COLORS.priorityBand
 /** Scroll speeds for the Slow, Medium and Fast buttons, in percent of screen height per second. */
 export const SPEED_PRESETS = { slow: 8, medium: 14, fast: 22 } as const
 

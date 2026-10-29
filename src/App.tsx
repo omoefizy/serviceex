@@ -3,9 +3,8 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { can } from '../shared/features'
 import { layoutById, showsPanel } from '../shared/layouts'
 import { CommandPalette } from './components/CommandPalette'
-import { LivePreview } from './components/LivePreview'
+import { OnScreenPanel, PreviewPanel, Transport, UpNextCard } from './components/LivePreview'
 import { LowerThirdPanel } from './components/LowerThirdPanel'
-import { ListenerPanel } from './components/ListenerPanel'
 import { PlansModal } from './components/PlansModal'
 import { MediaPanel } from './components/MediaPanel'
 import { PanelBoundary } from './components/PanelBoundary'
@@ -17,18 +16,23 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { SlideGrid } from './components/SlideGrid'
 import { SongEditor } from './components/SongEditor'
 import { SongList } from './components/SongList'
+import { StatusBar } from './components/StatusBar'
 import { StreamPanel } from './components/StreamPanel'
+import { SuggestionTray } from './components/SuggestionTray'
 import { Splitter } from './components/Splitter'
 import { ThemeEditor } from './components/ThemeEditor'
 import { Toolbar } from './components/Toolbar'
-import { IconButton } from './components/ui'
+import { IconButton, Tabs } from './components/ui'
+import { WelcomeScreen } from './components/WelcomeScreen'
 import { highlightKey, toggleHighlightMode } from './lib/highlights'
 import { cycleLayout, switchLayout } from './lib/layouts'
 import { nudgeVerse, stepVerseSize } from './lib/scriptureAdjust'
 import { focusLowerThirdHeadline, isTyping, MODE_KEYS } from './lib/shortcuts'
 import { SHOW_LIBRARY_TAB_EVENT } from './lib/samples'
+import { SHOW_SERVICE_PICKER_EVENT } from './lib/shell'
 import { slideTranslation } from './lib/translations'
 import { usePersistentState } from './lib/usePersistentState'
+import { useWelcome } from './lib/welcome'
 import { usePlansOpen } from './lib/account'
 import {
   selectBrowsingLive,
@@ -42,18 +46,19 @@ import {
   useOperatorStore,
 } from './store'
 
-type PanelSizes = { library: number; preview: number; schedule: number }
+/** The two side columns: the Order of service on the left, the finder on the right. The centre takes the rest. */
+type PanelSizes = { order: number; finder: number }
 
-const DEFAULT_SIZES: PanelSizes = { library: 300, preview: 360, schedule: 280 }
-const LIMITS = { library: [200, 520], preview: [260, 720], schedule: [220, 480] } as const
-/**
- * How far each side column gives way, below its saved width, when the window is too narrow for every column at full
- * width (1280 by 720 laptops). The centre keeps CENTRE_MIN; the side columns then share what is left.
- */
-const FLOORS: PanelSizes = { library: 200, preview: 240, schedule: 200 }
-const CENTRE_MIN = 280
-/** The centre's minimum while an editor or Settings is open there: forms need more room than the slide grid. */
+const DEFAULT_SIZES: PanelSizes = { order: 300, finder: 400 }
+const LIMITS = { order: [240, 440], finder: [300, 560] } as const
+/** How far each side column gives way, below its saved width, when the window is too narrow (1280 by 720 laptops). */
+const FLOORS: PanelSizes = { order: 240, finder: 300 }
+/** Below 1366 pixels the finder is at most this wide. */
+const NARROW_FINDER = 340
+const CENTRE_MIN = 420
+/** The centre's minimum while an editor is open there: forms need more room than the live screen. */
 const EDITOR_MIN = 520
+const RAIL = 44
 
 const isPanelSizes = (value: unknown): value is PanelSizes =>
   typeof value === 'object' &&
@@ -61,10 +66,24 @@ const isPanelSizes = (value: unknown): value is PanelSizes =>
   (Object.keys(LIMITS) as (keyof PanelSizes)[]).every((key) => typeof (value as PanelSizes)[key] === 'number')
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
 
+/** True below 1366 pixels, where the finder narrows and Up next hides. */
+function useNarrowWindow(): boolean {
+  const query = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 1365px)') : null
+  const [narrow, setNarrow] = useState(query?.matches ?? false)
+  useEffect(() => {
+    if (!query) return
+    const change = () => setNarrow(query.matches)
+    query.addEventListener('change', change)
+    return () => query.removeEventListener('change', change)
+  }, [query])
+  return narrow
+}
+
+/** The finder's tabs. Slides is the Presentations library. */
 const LIBRARY_TABS = [
-  { id: 'songs', label: 'Songs' },
   { id: 'scripture', label: 'Scripture' },
-  { id: 'presentations', label: 'Presentations' },
+  { id: 'songs', label: 'Songs' },
+  { id: 'presentations', label: 'Slides' },
   { id: 'media', label: 'Media' },
 ] as const
 
@@ -78,8 +97,10 @@ function Slot({ show, children }: { show: boolean; children: ReactNode }) {
 }
 
 function App() {
-  const [chosenTab, setLibraryTab] = useState<(typeof LIBRARY_TABS)[number]['id']>('songs')
-  const [sizes, setSizes] = usePersistentState('worshipdeck.panelSizes', DEFAULT_SIZES, isPanelSizes)
+  const [chosenTab, setLibraryTab] = useState<(typeof LIBRARY_TABS)[number]['id']>('scripture')
+  const [sizes, setSizes] = usePersistentState('serviceex.panelWidths', DEFAULT_SIZES, isPanelSizes)
+  const narrow = useNarrowWindow()
+  const welcome = useWelcome()
   const [scheduleCollapsed, setScheduleCollapsed] = usePersistentState('worshipdeck.scheduleCollapsed', false, isBoolean)
   const [libraryCollapsed, setLibraryCollapsed] = usePersistentState('worshipdeck.libraryCollapsed', false, isBoolean)
   const editingSongId = useOperatorStore((s) => s.editingSongId)
@@ -95,6 +116,16 @@ function App() {
     window.addEventListener(SHOW_LIBRARY_TAB_EVENT, show)
     return () => window.removeEventListener(SHOW_LIBRARY_TAB_EVENT, show)
   }, [setLibraryCollapsed])
+
+  // The top bar's service button: the Order of service unfolds with the keyboard on its service picker.
+  useEffect(() => {
+    const show = () => {
+      setScheduleCollapsed(false)
+      requestAnimationFrame(() => document.querySelector<HTMLSelectElement>('.schedule-picker select')?.focus())
+    }
+    window.addEventListener(SHOW_SERVICE_PICKER_EVENT, show)
+    return () => window.removeEventListener(SHOW_SERVICE_PICKER_EVENT, show)
+  }, [setScheduleCollapsed])
   const themeEditorOpen = useOperatorStore((s) => s.themeEditorOpen)
   const settingsOpen = useOperatorStore((s) => s.settingsOpen)
   const streamPanelOpen = useOperatorStore((s) => s.streamPanelOpen)
@@ -106,8 +137,8 @@ function App() {
   // A tab whose feature the plan leaves out is not shown.
   const libraryTabs = LIBRARY_TABS.filter((tab) => showsPanel(layout, tab.id) && (tab.id !== 'media' || can('mediaLibrary')))
   const libraryTab = libraryTabs.some((tab) => tab.id === chosenTab) ? chosenTab : (libraryTabs[0]?.id ?? chosenTab)
-  // Editors and Settings open in the centre whatever the layout, so they can always be reached.
-  const centreOpen = editingSongId !== null || themeEditorOpen || settingsOpen || streamPanelOpen || sermonsOpen
+  // Editors open in the centre whatever the layout, so they can always be reached. Settings is a page of its own.
+  const centreOpen = editingSongId !== null || themeEditorOpen || streamPanelOpen || sermonsOpen
   const show = {
     library: libraryTabs.length > 0,
     centre: showsPanel(layout, 'slides') || centreOpen,
@@ -116,7 +147,7 @@ function App() {
     listener: showsPanel(layout, 'listener'),
     schedule: showsPanel(layout, 'schedule'),
   }
-  const previewColumn = show.live || show.points || show.listener
+  const centreColumn = show.centre || show.live || show.points
 
   const resize = (key: keyof PanelSizes) => (value: number) => setSizes((current) => ({ ...current, [key]: value }))
 
@@ -340,15 +371,16 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  // The columns the layout shows, each with the splitter after it. Without the centre the preview column takes the room.
-  // A side column is its saved width when there is room, and shrinks towards its floor when there is not.
-  const side = (key: keyof PanelSizes) => `minmax(${Math.min(FLOORS[key], sizes[key])}px, ${sizes[key]}px)`
+  // The columns the layout shows, with a 12px splitter as the gap between each. A side column is its saved width when
+  // there is room, and shrinks towards its floor when there is not; below 1366 pixels the finder is at most 340.
+  const width = (key: keyof PanelSizes) => (key === 'finder' && narrow ? Math.min(sizes.finder, NARROW_FINDER) : sizes[key])
+  const side = (key: keyof PanelSizes) => `minmax(${Math.min(FLOORS[key], width(key))}px, ${width(key)}px)`
   const columns = [
-    ...(show.library ? (libraryCollapsed ? ['auto'] : [side('library'), 'auto']) : []),
-    ...(show.centre ? [`minmax(${centreOpen ? EDITOR_MIN : CENTRE_MIN}px, 1fr)`] : []),
-    ...(show.centre && previewColumn ? ['auto'] : []),
-    ...(previewColumn ? [show.centre ? side('preview') : `minmax(${FLOORS.preview}px, 1fr)`] : []),
-    ...(show.schedule ? (scheduleCollapsed ? ['auto'] : [...(show.centre || previewColumn ? ['auto', side('schedule')] : ['1fr'])]) : []),
+    ...(show.schedule ? [scheduleCollapsed ? `${RAIL}px` : side('order')] : []),
+    ...(show.schedule && (centreColumn || show.library) ? ['auto'] : []),
+    ...(centreColumn ? [`minmax(${centreOpen ? EDITOR_MIN : CENTRE_MIN}px, 1fr)`] : []),
+    ...(show.library && centreColumn ? ['auto'] : []),
+    ...(show.library ? [libraryCollapsed ? `${RAIL}px` : centreColumn ? side('finder') : '1fr'] : []),
   ].join(' ')
 
   return (
@@ -356,119 +388,135 @@ function App() {
       <PanelBoundary name="Toolbar" layout="bar">
         <Toolbar />
       </PanelBoundary>
-      <main className="operator" style={{ gridTemplateColumns: columns }}>
-        <Slot show={show.library}>
-          {libraryCollapsed ? (
-            <aside className="library collapsed">
-              <button className="panel-rail-toggle" aria-expanded={false} title="Show the library" onClick={() => setLibraryCollapsed(false)}>
-                <ChevronRight size={16} aria-hidden="true" />
-                <span className="panel-rail-label">Library</span>
-              </button>
-            </aside>
-          ) : (
-            <>
-              <div className="library">
-                <div className="library-tabs">
-                  <div className="library-tab-list" role="tablist">
-                    {libraryTabs.map((tab) => (
-                      <button
-                        key={tab.id}
-                        role="tab"
-                        aria-selected={libraryTab === tab.id}
-                        className={`library-tab${libraryTab === tab.id ? ' active' : ''}`}
-                        title={tab.label}
-                        onClick={() => setLibraryTab(tab.id)}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-                  <IconButton label="Hide library" size="sm" icon={<ChevronLeft size={16} />} aria-expanded={true} onClick={() => setLibraryCollapsed(true)} />
-                </div>
-                {/* All stay mounted so each keeps its search text when switching tabs. */}
-                <div className="library-page" hidden={libraryTab !== 'songs'}>
-                  <PanelBoundary name="Songs">
-                    <SongList />
-                  </PanelBoundary>
-                </div>
-                <div className="library-page" hidden={libraryTab !== 'scripture'}>
-                  <PanelBoundary name="Scripture">
-                    <ScripturePanel />
-                  </PanelBoundary>
-                </div>
-                <div className="library-page" hidden={libraryTab !== 'presentations'}>
-                  <PanelBoundary name="Presentations">
-                    <PresentationsPanel />
-                  </PanelBoundary>
-                </div>
-                <div className="library-page" hidden={libraryTab !== 'media'}>
-                  <PanelBoundary name="Media">
-                    <MediaPanel />
-                  </PanelBoundary>
-                </div>
-              </div>
-              <Splitter label="Resize library" value={sizes.library} min={LIMITS.library[0]} max={LIMITS.library[1]} direction={1} panel=".library" onChange={resize('library')} />
-            </>
-          )}
-        </Slot>
-        <Slot show={show.centre}>
-          {editingSongId !== null ? (
-            <PanelBoundary key="songEditor" name="Song editor">
-              <SongEditor key={editingSongId} songId={editingSongId} />
-            </PanelBoundary>
-          ) : themeEditorOpen ? (
-            <PanelBoundary key="themes" name="Themes">
-              <ThemeEditor />
-            </PanelBoundary>
-          ) : settingsOpen ? (
-            <PanelBoundary key="settings" name="Settings">
-              <SettingsPanel />
-            </PanelBoundary>
-          ) : streamPanelOpen ? (
-            <PanelBoundary key="stream" name="Stream">
-              <StreamPanel />
-            </PanelBoundary>
-          ) : sermonsOpen ? (
-            <PanelBoundary key="sermons" name="Sermons">
-              <SermonsPanel />
-            </PanelBoundary>
-          ) : (
-            <PanelBoundary key="slides" name="Slides">
-              <SlideGrid />
-            </PanelBoundary>
-          )}
-        </Slot>
-        <Slot show={show.centre && previewColumn}>
-          <Splitter label="Resize live output" value={sizes.preview} min={LIMITS.preview[0]} max={LIMITS.preview[1]} direction={-1} panel=".preview-column" onChange={resize('preview')} />
-        </Slot>
-        <div className="preview-column" hidden={!previewColumn}>
-          <Slot show={show.live}>
-            <PanelBoundary name="Output controls">
-              <LivePreview />
-            </PanelBoundary>
-          </Slot>
-          <Slot show={show.points}>
-            <PanelBoundary name="Lower third">
-              <LowerThirdPanel />
-            </PanelBoundary>
-          </Slot>
-          <Slot show={show.listener}>
-            <PanelBoundary name="Listener">
-              <ListenerPanel />
-            </PanelBoundary>
-          </Slot>
-        </div>
+      {settingsOpen && (
+        <PanelBoundary key="settings" name="Settings">
+          <SettingsPanel />
+        </PanelBoundary>
+      )}
+      {/* Hidden, not unmounted, while Settings is open: every panel keeps its search text and state. */}
+      <main className="operator" hidden={settingsOpen} style={{ gridTemplateColumns: columns }}>
         <Slot show={show.schedule}>
-          {!scheduleCollapsed && (show.centre || previewColumn) && (
-            <Splitter label="Resize schedule" value={sizes.schedule} min={LIMITS.schedule[0]} max={LIMITS.schedule[1]} direction={-1} panel=".schedule" onChange={resize('schedule')} />
-          )}
           <PanelBoundary name="Schedule">
             <SchedulePanel collapsed={scheduleCollapsed} onCollapsedChange={setScheduleCollapsed} />
           </PanelBoundary>
+          {(centreColumn || show.library) &&
+            (scheduleCollapsed ? (
+              <span className="shell-gap" aria-hidden="true" />
+            ) : (
+              <Splitter label="Resize the order of service" value={sizes.order} min={LIMITS.order[0]} max={LIMITS.order[1]} direction={1} panel=".schedule" onChange={resize('order')} />
+            ))}
+        </Slot>
+        <div className="stage-column" hidden={!centreColumn}>
+          {centreOpen ? (
+            editingSongId !== null ? (
+              <PanelBoundary key="songEditor" name="Song editor">
+                <SongEditor key={editingSongId} songId={editingSongId} />
+              </PanelBoundary>
+            ) : themeEditorOpen ? (
+              <PanelBoundary key="themes" name="Themes">
+                <ThemeEditor />
+              </PanelBoundary>
+            ) : streamPanelOpen ? (
+              <PanelBoundary key="stream" name="Stream">
+                <StreamPanel />
+              </PanelBoundary>
+            ) : (
+              <PanelBoundary key="sermons" name="Sermons">
+                <SermonsPanel />
+              </PanelBoundary>
+            )
+          ) : null}
+          {/* The live screen stays mounted under an editor, so its state survives. */}
+          <div className="stage-live" hidden={centreOpen}>
+            {/* On screen and Previous/Next stay put; what is below scrolls on its own, so picking a slide never
+                scrolls the live screen away. */}
+            <Slot show={show.live}>
+              <PanelBoundary name="On screen">
+                <OnScreenPanel />
+              </PanelBoundary>
+              <Transport />
+            </Slot>
+            <div className="stage-scroll">
+              <Slot show={show.live && !narrow}>
+                <UpNextCard />
+              </Slot>
+              <Slot show={show.centre}>
+                <PanelBoundary key="slides" name="Slides">
+                  <SlideGrid />
+                </PanelBoundary>
+              </Slot>
+              <Slot show={show.live}>
+                <PanelBoundary name="Preview">
+                  <PreviewPanel />
+                </PanelBoundary>
+              </Slot>
+              <Slot show={show.points}>
+                <PanelBoundary name="Lower third">
+                  <LowerThirdPanel />
+                </PanelBoundary>
+              </Slot>
+            </div>
+          </div>
+        </div>
+        <Slot show={show.library}>
+          {centreColumn &&
+            (libraryCollapsed ? (
+              <span className="shell-gap" aria-hidden="true" />
+            ) : (
+              <Splitter label="Resize the finder" value={sizes.finder} min={LIMITS.finder[0]} max={LIMITS.finder[1]} direction={-1} panel=".library" onChange={resize('finder')} />
+            ))}
+          {libraryCollapsed ? (
+            <aside className="library collapsed">
+              <button className="panel-rail-toggle" aria-expanded={false} title="Show the finder" onClick={() => setLibraryCollapsed(false)}>
+                <ChevronLeft size={16} aria-hidden="true" />
+                <span className="panel-rail-label">Finder</span>
+              </button>
+            </aside>
+          ) : (
+            <div className="library">
+              <div className="library-tabs">
+                <Tabs<(typeof LIBRARY_TABS)[number]['id']>
+                  className="library-tab-list"
+                  aria-label="Finder"
+                  idPrefix="finder"
+                  tabs={libraryTabs.map((tab) => ({ id: tab.id, label: tab.label }))}
+                  value={libraryTab}
+                  onChange={setLibraryTab}
+                />
+                <IconButton label="Hide the finder" icon={<ChevronRight size={18} />} aria-expanded={true} onClick={() => setLibraryCollapsed(true)} />
+              </div>
+              <PanelBoundary name="Suggestions">
+                <SuggestionTray />
+              </PanelBoundary>
+              {/* All stay mounted so each keeps its search text when switching tabs. */}
+              <div className="library-page" id="finder-panel-songs" role="tabpanel" aria-labelledby="finder-tab-songs" hidden={libraryTab !== 'songs'}>
+                <PanelBoundary name="Songs">
+                  <SongList />
+                </PanelBoundary>
+              </div>
+              <div className="library-page" id="finder-panel-scripture" role="tabpanel" aria-labelledby="finder-tab-scripture" hidden={libraryTab !== 'scripture'}>
+                <PanelBoundary name="Scripture">
+                  <ScripturePanel />
+                </PanelBoundary>
+              </div>
+              <div className="library-page" id="finder-panel-presentations" role="tabpanel" aria-labelledby="finder-tab-presentations" hidden={libraryTab !== 'presentations'}>
+                <PanelBoundary name="Presentations">
+                  <PresentationsPanel />
+                </PanelBoundary>
+              </div>
+              <div className="library-page" id="finder-panel-media" role="tabpanel" aria-labelledby="finder-tab-media" hidden={libraryTab !== 'media'}>
+                <PanelBoundary name="Media">
+                  <MediaPanel />
+                </PanelBoundary>
+              </div>
+            </div>
+          )}
         </Slot>
       </main>
+      <StatusBar showListener={show.listener} />
       {paletteOpen && <CommandPalette />}
       {plansOpen && <PlansModal />}
+      {welcome.open && <WelcomeScreen onDone={welcome.dismiss} />}
     </div>
   )
 }

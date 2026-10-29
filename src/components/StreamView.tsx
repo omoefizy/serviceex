@@ -4,6 +4,7 @@ import { ACTION_SAFE, TITLE_SAFE } from '../lib/stream'
 import { Overlays } from './Overlays'
 import { SlideLayers } from './OutputView'
 import { DefaultFontContext } from './themedSlideLayers'
+import { CONTENT_COLORS } from '../styles/contentColors'
 
 const NO_MARGINS = { top: 0, right: 0, bottom: 0, left: 0 }
 
@@ -25,7 +26,7 @@ export function TestPattern({ width: w, height: h, fill, label }: { width: numbe
   return (
     <svg className="stream-test-pattern" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-label="Test pattern">
       <rect width={w} height={h} fill={fill} />
-      <rect x={line / 2} y={line / 2} width={w - line} height={h - line} fill="none" stroke="#ffffff" strokeWidth={line} />
+      <rect x={line / 2} y={line / 2} width={w - line} height={h - line} fill="none" stroke={CONTENT_COLORS.white} strokeWidth={line} />
       {corners.map(([x, y]) => {
         const dx = x === 0 ? 1 : -1
         const dy = y === 0 ? 1 : -1
@@ -33,14 +34,14 @@ export function TestPattern({ width: w, height: h, fill, label }: { width: numbe
           <path
             key={`${x},${y}`}
             d={`M${x} ${y}h${dx * arm}v${dy * thick}h${-dx * (arm - thick)}v${dy * (arm - thick)}h${-dx * thick}z`}
-            fill="#ff00ff"
+            fill={CONTENT_COLORS.guideMagenta}
           />
         )
       })}
-      <rect {...safe(ACTION_SAFE)} fill="none" stroke="#ffffff" strokeWidth={line / 2} strokeDasharray={`${h * 0.02} ${h * 0.015}`} />
-      <rect {...safe(TITLE_SAFE)} fill="none" stroke="#ffffff" strokeWidth={line / 2} strokeOpacity={0.6} strokeDasharray={`${h * 0.01} ${h * 0.015}`} />
-      <path d={`M${w / 2 - arm / 2} ${h / 2}h${arm}M${w / 2} ${h / 2 - arm / 2}v${arm}`} stroke="#ffffff" strokeWidth={line} />
-      <text x={w / 2} y={h / 2 + arm} textAnchor="middle" fontSize={h * 0.035} fill="#ffffff" stroke="#000000" strokeWidth={h * 0.003} paintOrder="stroke" fontFamily="Helvetica Neue, Arial, sans-serif" fontWeight={700}>
+      <rect {...safe(ACTION_SAFE)} fill="none" stroke={CONTENT_COLORS.white} strokeWidth={line / 2} strokeDasharray={`${h * 0.02} ${h * 0.015}`} />
+      <rect {...safe(TITLE_SAFE)} fill="none" stroke={CONTENT_COLORS.white} strokeWidth={line / 2} strokeOpacity={0.6} strokeDasharray={`${h * 0.01} ${h * 0.015}`} />
+      <path d={`M${w / 2 - arm / 2} ${h / 2}h${arm}M${w / 2} ${h / 2 - arm / 2}v${arm}`} stroke={CONTENT_COLORS.white} strokeWidth={line} />
+      <text x={w / 2} y={h / 2 + arm} textAnchor="middle" fontSize={h * 0.035} fill={CONTENT_COLORS.white} stroke={CONTENT_COLORS.black} strokeWidth={h * 0.003} paintOrder="stroke" fontFamily="Helvetica Neue, Arial, sans-serif" fontWeight={700}>
         {label}
       </text>
     </svg>
@@ -75,7 +76,7 @@ export function StreamScreen({ state, guides = false }: { state: StreamState | n
     <DefaultFontContext.Provider value={state.defaultFont}>
       <div className="stream-fit">
         <div className="stream-screen" style={{ aspectRatio: `${width} / ${height}`, width: `min(100cqw, ${(100 * width) / height}cqh)` }}>
-          <div className="stream-key" style={{ background: keyMode === 'luma' ? '#000000' : keyColor }} />
+          <div className="stream-key" style={{ background: keyMode === 'luma' ? CONTENT_COLORS.black : keyColor }} />
           <Overlays overlays={state.overlays} lowerThird={!state.lowerThirdOnTop} />
           <SlideLayers state={slide} keyed />
           {state.lowerThirdOnTop && <Overlays overlays={state.overlays} logos={false} />}
@@ -83,7 +84,7 @@ export function StreamScreen({ state, guides = false }: { state: StreamState | n
             <TestPattern
               width={width}
               height={height}
-              fill={keyMode === 'luma' ? '#000000' : keyColor}
+              fill={keyMode === 'luma' ? CONTENT_COLORS.black : keyColor}
               label={`${width}×${height} · ${keyMode === 'luma' ? 'Luma key' : `Chroma ${keyColor.toUpperCase()}`}`}
             />
           )}

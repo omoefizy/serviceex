@@ -7,6 +7,7 @@ import { useOperatorStore } from '../store'
 import { LowerThirdGraphic } from './LowerThird'
 import { FontPicker, MissingFontChips } from './FontPicker'
 import { ErrorNote } from './ui'
+import { CONTENT_COLORS } from '../styles/contentColors'
 
 const WEIGHTS = [300, 400, 500, 600, 700, 800, 900]
 const CASES: { value: TextCase; label: string }[] = [
@@ -207,7 +208,7 @@ export function LowerThirdEditor({ onClose }: { onClose: () => void }) {
     drag.current = null
   }
 
-  const keyColor = settings.streamKeyMode === 'luma' ? '#000000' : settings.streamKeyColor
+  const keyColor = settings.streamKeyMode === 'luma' ? CONTENT_COLORS.black : settings.streamKeyColor
   const parts: Part[] = style?.logo.enabled ? ['frame', 'logo', 'headline', 'body'] : ['frame', 'headline', 'body']
 
   return (

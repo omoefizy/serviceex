@@ -6,6 +6,7 @@ import { Overlays } from './Overlays'
 import { TestPattern } from './StreamView'
 import { ThemedSlide } from './ThemedSlide'
 import { backdropKey, DefaultFontContext, underKey } from './themedSlideLayers'
+import { CONTENT_COLORS } from '../styles/contentColors'
 
 interface Frame {
   key: number
@@ -173,7 +174,7 @@ export function OutputScreen({ state, width = 1920, height = 1080 }: { state: Ou
         {state?.overlays && <Overlays overlays={state.overlays} />}
         <AlertBand alert={state?.alert ?? null} />
       </div>
-      {state?.testPattern && <TestPattern width={width} height={height} fill="#000000" label={`Output ${width}×${height}`} />}
+      {state?.testPattern && <TestPattern width={width} height={height} fill={CONTENT_COLORS.black} label={`Output ${width}×${height}`} />}
     </DefaultFontContext.Provider>
   )
 }

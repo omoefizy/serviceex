@@ -11,6 +11,7 @@ import { FormatToolbar, type FormatControl, type FormatPatch, type FormatState }
 import { MediaPickerModal } from './MediaGrid'
 import { ErrorNote, SegmentedControl, Select } from './ui'
 import { ThemedSlide } from './ThemedSlide'
+import { CONTENT_COLORS } from '../styles/contentColors'
 
 const SAMPLES = {
   song: {
@@ -238,10 +239,10 @@ export function ThemeEditor() {
   function setBackgroundKind(kind: ThemeBackground['kind']) {
     if (!style || style.background.kind === kind) return
     const current = style.background
-    const color = current.kind === 'solid' || current.kind === 'smoke' ? current.color : current.kind === 'gradient' ? current.from : '#000000'
+    const color = current.kind === 'solid' || current.kind === 'smoke' ? current.color : current.kind === 'gradient' ? current.from : CONTENT_COLORS.black
     if (kind === 'solid') update({ background: { kind, color } })
-    else if (kind === 'gradient') update({ background: { kind, from: color, to: '#333333', angle: 160 } })
-    else if (kind === 'smoke') update({ background: { kind, color, smoke: '#5a7bc4' } })
+    else if (kind === 'gradient') update({ background: { kind, from: color, to: CONTENT_COLORS.gradientEnd, angle: 160 } })
+    else if (kind === 'smoke') update({ background: { kind, color, smoke: CONTENT_COLORS.smoke } })
     else if (kind === 'none') update({ background: { kind } })
     else setPicking(kind)
   }

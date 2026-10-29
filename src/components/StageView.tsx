@@ -3,13 +3,14 @@ import { DEFAULT_TEXT_PROPS } from '../../shared/themes'
 import type { StageState, ThemeStyle } from '../../shared/types'
 import { AlertBand } from './AlertBand'
 import { ThemedSlide } from './ThemedSlide'
+import { CONTENT_COLORS } from '../styles/contentColors'
 
 const NO_SHADOW = { ...DEFAULT_TEXT_PROPS.shadow, enabled: false }
 
 /** Plain, high-contrast text for reading at a glance, with the reference under it; the audience's theme does not matter here. */
 const stageStyle = (color: string, fontWeight: number): ThemeStyle => ({
   category: 'song',
-  background: { kind: 'solid', color: '#000000' },
+  background: { kind: 'solid', color: CONTENT_COLORS.black },
   overlay: 0,
   keyTransparent: false,
   elements: [
@@ -20,12 +21,12 @@ const stageStyle = (color: string, fontWeight: number): ThemeStyle => ({
       box: { x: 3, y: 90, width: 94, height: 6 },
       locked: false,
       attached: true,
-      text: { ...DEFAULT_TEXT_PROPS, sizeMode: 'fixed', fontSize: 3.2, fontWeight: 500, color: '#9ca3af', lineHeight: 1.2, shadow: NO_SHADOW },
+      text: { ...DEFAULT_TEXT_PROPS, sizeMode: 'fixed', fontSize: 3.2, fontWeight: 500, color: CONTENT_COLORS.stageMuted, lineHeight: 1.2, shadow: NO_SHADOW },
     },
   ],
 })
-const CURRENT_STYLE = stageStyle('#ffffff', 700)
-const NEXT_STYLE = stageStyle('#facc15', 600)
+const CURRENT_STYLE = stageStyle(CONTENT_COLORS.white, 700)
+const NEXT_STYLE = stageStyle(CONTENT_COLORS.stageNext, 600)
 
 const MODE_WARNINGS: Record<string, string> = {
   black: 'Output is BLACK',

@@ -2,21 +2,11 @@ import { AlertTriangle, ChevronDown, CircleUser, Wifi, WifiOff } from 'lucide-re
 import { useCallback, useRef, useState } from 'react'
 import { openPlans, useAccount } from '../lib/account'
 import { canDropOnDevice, SHARED_ITEM_DRAG_TYPE } from '../lib/sharing'
+import { openSettingsAt } from '../lib/shell'
 import { useDismiss } from '../lib/useDismiss'
-import { useOperatorStore } from '../store'
 import { useSharingSummary } from '../lib/useSharingSummary'
 import { SharingBar, SharingDetails } from './SharingBar'
 import { Button } from './ui'
-
-/** Opens Settings at the section with this title. */
-function openSettingsAt(title: string) {
-  useOperatorStore.getState().openSettings(true)
-  // Settings scrolls to the section once it has rendered.
-  requestAnimationFrame(() => {
-    const section = Array.from(document.querySelectorAll('.settings-section')).find((el) => el.querySelector('h3')?.textContent?.trim() === title)
-    section?.scrollIntoView({ block: 'start' })
-  })
-}
 
 /**
  * The toolbar's status: one compact button for sharing, the other computers and the account, with the details in a

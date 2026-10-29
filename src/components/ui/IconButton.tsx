@@ -15,7 +15,7 @@ export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
   disabledTooltip?: string
 }
 
-/** A square button with only an icon. At least 32px to hit: sm draws at 28px inside an invisible 32px area. */
+/** A square button with only an icon, drawn at 32 to 44px inside an invisible 40px hit area, with a tooltip and aria-label. */
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
   { label, icon, tooltip, size = 'md', pressed, disabledTooltip, className, type = 'button', children, ...props },
   ref,
