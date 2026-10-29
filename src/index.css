@@ -1043,6 +1043,11 @@ textarea {
   padding: 2px;
 }
 
+/* Stands in for rows of a large deck that are scrolled out of view (see useVirtualGrid). */
+.slide-grid-spacer {
+  grid-column: 1 / -1;
+}
+
 .slide-card {
   position: relative;
   display: flex;
@@ -2418,6 +2423,123 @@ textarea {
   border: 1px solid var(--border);
   border-radius: 4px;
   overflow: hidden;
+}
+
+/* ---------- Text area editor: the rectangle over the theme preview ---------- */
+
+.text-area-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.text-area-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.text-area-history {
+  display: flex;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+.text-area-stage {
+  /* Handles on the slide's edges stay whole. */
+  overflow: visible;
+  touch-action: none;
+  user-select: none;
+}
+
+.text-area-rect {
+  position: absolute;
+  z-index: 2;
+  border: 1.5px dashed var(--accent-bright);
+  background: color-mix(in srgb, var(--accent-bright) 8%, transparent);
+  cursor: move;
+}
+
+.text-area-rect:focus-visible,
+.text-area-stage.dragging .text-area-rect {
+  border-style: solid;
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent-bright);
+}
+
+.text-area-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 1px var(--space-1);
+  background: var(--accent-bright);
+  color: var(--panel);
+  font-size: 10px;
+  font-weight: 600;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.text-area-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border: 1.5px solid var(--accent-bright);
+  border-radius: 2px;
+  background: var(--panel-raised);
+}
+
+.text-area-handle.nw { top: 0; left: 0; cursor: nwse-resize; }
+.text-area-handle.n { top: 0; left: 50%; cursor: ns-resize; }
+.text-area-handle.ne { top: 0; left: 100%; cursor: nesw-resize; }
+.text-area-handle.e { top: 50%; left: 100%; cursor: ew-resize; }
+.text-area-handle.se { top: 100%; left: 100%; cursor: nwse-resize; }
+.text-area-handle.s { top: 100%; left: 50%; cursor: ns-resize; }
+.text-area-handle.sw { top: 100%; left: 0; cursor: nesw-resize; }
+.text-area-handle.w { top: 50%; left: 0; cursor: ew-resize; }
+
+.text-area-guides {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.text-area-safe {
+  position: absolute;
+  border: 1px dashed color-mix(in srgb, var(--text-muted) 70%, transparent);
+}
+
+.text-area-guide {
+  position: absolute;
+  background: color-mix(in srgb, var(--text-muted) 55%, transparent);
+}
+
+.text-area-guide.x { top: 0; bottom: 0; width: 1px; }
+.text-area-guide.y { left: 0; right: 0; height: 1px; }
+
+.text-area-guide.snapped {
+  background: var(--live);
+  box-shadow: 0 0 0 0.5px var(--live);
+}
+
+.text-area-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.text-area-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.text-area-field .input {
+  width: 72px;
 }
 
 .theme-actions {
@@ -4893,6 +5015,26 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.progress-chip-bar {
+  flex: 0 0 64px;
+  height: 4px;
+  accent-color: var(--accent-bright);
+}
+
+.progress-chip .progress-chip-action {
+  padding: 0 var(--space-1);
+  border: 0;
+  background: none;
+  color: var(--accent-bright);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.progress-chip .progress-chip-action:hover {
+  text-decoration: underline;
 }
 
 .progress-chip.failed {

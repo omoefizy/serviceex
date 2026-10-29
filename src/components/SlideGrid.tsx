@@ -5,6 +5,7 @@ import { sectionColor } from '../lib/sections'
 import { slideLines } from '../lib/slides'
 import { MOD } from '../lib/shortcuts'
 import { usePersistentState } from '../lib/usePersistentState'
+import { useVirtualGrid } from '../lib/useVirtualGrid'
 import { selectBaseThemeId, selectBrowsingLive, selectDeckPresentation, selectDeckTheme, slideTheme, useOperatorStore } from '../store'
 import { NativeSlideEditor } from './NativeSlideEditor'
 import { SlideFormatModal } from './SlideFormatModal'
@@ -82,7 +83,16 @@ export function SlideGrid() {
   const gridRef = useRef<HTMLDivElement>(null)
   /** The slide a library item is being dragged over. */
   const [dropIndex, setDropIndex] = useState<number | null>(null)
-  const slideThemes = useMemo(() => slides.map((slide) => slideTheme(theme, slide)), [slides, theme])
+  // A presentation page shows its small picture in the grid; the preview and live output load the full one.
+  const slideThemes = useMemo(
+    () =>
+      slides.map((slide) =>
+        slideTheme(theme, slide.page && slide.thumb && slide.background?.kind === 'image' ? { ...slide, background: { ...slide.background, src: slide.thumb } } : slide),
+      ),
+    [slides, theme],
+  )
+  /** Only the rows in view, for large decks. */
+  const windowed = useVirtualGrid(gridRef, slides.length, thumbWidth, view === 'grid')
 
   // Presentation pages are their own picture, so they take no background.
   const canDrop = (e: DragEvent, index: number) =>
@@ -117,12 +127,24 @@ export function SlideGrid() {
     const grid = gridRef.current
     if (!grid) return
     for (const index of [highlightIndex, liveIndexHere]) {
-      const cell = index === null ? null : grid.querySelector<HTMLElement>(`[data-index="${index}"]`)
-      if (!cell) continue
-      const top = cell.getBoundingClientRect().top - grid.getBoundingClientRect().top + grid.scrollTop
+      if (index === null) continue
+      let top: number
+      let height: number
+      if (windowed) {
+        // The slide may not be rendered: place it from the layout.
+        top = windowed.rowTop(index)
+        height = windowed.rowHeight
+      } else {
+        const cell = grid.querySelector<HTMLElement>(`[data-index="${index}"]`)
+        if (!cell) continue
+        top = cell.getBoundingClientRect().top - grid.getBoundingClientRect().top + grid.scrollTop
+        height = cell.offsetHeight
+      }
       if (top < grid.scrollTop) grid.scrollTop = top
-      else if (top + cell.offsetHeight > grid.scrollTop + grid.clientHeight) grid.scrollTop = top + cell.offsetHeight - grid.clientHeight
+      else if (top + height > grid.scrollTop + grid.clientHeight) grid.scrollTop = top + height - grid.clientHeight
     }
+    // The window moves with the scroll; only a new slide to show matters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightIndex, liveIndexHere, view])
 
   /** The grid shows the live item, but its theme or content changed since it went live. */
@@ -263,7 +285,10 @@ export function SlideGrid() {
         </div>
       ) : (
         <div className="slide-grid" ref={gridRef} style={{ '--thumb-width': `${thumbWidth}px` } as CSSProperties}>
-          {slides.map(({ text, caption, rich, label, background, page, animated, warnings }, index) => (
+          {windowed && windowed.padTop > 0 && <div className="slide-grid-spacer" style={{ height: windowed.padTop }} aria-hidden="true" />}
+          {(windowed ? slides.slice(windowed.start, windowed.end) : slides).map(({ text, caption, rich, label, background, page, animated, warnings }, offset) => {
+            const index = offset + (windowed?.start ?? 0)
+            return (
             <div
               key={index}
               className={`slide-cell${dropIndex === index ? ' drop' : ''}`}
@@ -306,7 +331,9 @@ export function SlideGrid() {
                 </button>
               )}
             </div>
-          ))}
+            )
+          })}
+          {windowed && windowed.padBottom > 0 && <div className="slide-grid-spacer" style={{ height: windowed.padBottom }} aria-hidden="true" />}
         </div>
       )}
       {formatting && formattableItemId !== null && (

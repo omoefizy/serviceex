@@ -134,6 +134,7 @@ const presentations: PresentationsApi = {
   openOriginal: (id) => ipcRenderer.invoke('presentations:openOriginal', id),
   engineStatus: () => ipcRenderer.invoke('presentations:engineStatus'),
   testConversion: () => ipcRenderer.invoke('presentations:testConversion'),
+  cancel: (key) => ipcRenderer.invoke('presentations:cancel', key),
   onProgress(listener) {
     const handler = (_event: Electron.IpcRendererEvent, progress: PresentationProgress) => listener(progress)
     ipcRenderer.on('presentations:progress', handler)
@@ -173,8 +174,19 @@ const rasterizer: RasterizerApi = {
     ipcRenderer.on('rasterize:job', handler)
     return () => ipcRenderer.off('rasterize:job', handler)
   },
+  onCancel(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, jobId: number) => listener(jobId)
+    ipcRenderer.on('rasterize:cancel', handler)
+    return () => ipcRenderer.off('rasterize:cancel', handler)
+  },
+  onWant(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, jobId: number, index: number) => listener(jobId, index)
+    ipcRenderer.on('rasterize:want', handler)
+    return () => ipcRenderer.off('rasterize:want', handler)
+  },
   ready: () => ipcRenderer.send('rasterize:ready'),
-  page: (jobId, index, total, png, text) => ipcRenderer.send('rasterize:page', jobId, index, total, png, text),
+  thumb: (jobId, index, total, jpeg, text) => ipcRenderer.send('rasterize:thumb', jobId, index, total, jpeg, text),
+  page: (jobId, index, total, png) => ipcRenderer.send('rasterize:page', jobId, index, total, png),
   done: (jobId) => ipcRenderer.send('rasterize:done', jobId),
   fail: (jobId, message) => ipcRenderer.send('rasterize:fail', jobId, message),
 }

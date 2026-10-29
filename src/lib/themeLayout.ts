@@ -179,3 +179,43 @@ export function placeElement(elements: ThemeElement[], element: ThemeElement): T
   if (index === -1) return [...elements, element]
   return elements.map((e, i) => (i === index ? element : e))
 }
+
+/** The text area editor keeps words this far in from each edge, in percent of the slide: the title safe area. */
+export const SAFE_MARGIN = 5
+
+/** What the text area editor snaps to: the slide's centre lines and the safe margin on each side. */
+export const TEXT_AREA_TARGETS = { x: [SAFE_MARGIN, 50, 100 - SAFE_MARGIN], y: [SAFE_MARGIN, 50, 100 - SAFE_MARGIN] }
+
+/**
+ * Resizes a box from a handle keeping its shape (width over height, in percent of the slide, which on a 16:9 slide
+ * is its shape on screen too). Corners follow whichever side moved further and keep the opposite corner still; side
+ * handles grow the other side about the centre. The box shrinks to stay on the slide.
+ */
+export function resizeKeepingAspect(box: ThemeBox, handle: Handle, dx: number, dy: number): ThemeBox {
+  const ratio = box.width / box.height
+  const free = resizeBox(box, handle, dx, dy, null).box
+  let width: number
+  let height: number
+  if (handle === 'n' || handle === 's') {
+    height = free.height
+    width = height * ratio
+  } else if (handle === 'e' || handle === 'w') {
+    width = free.width
+    height = width / ratio
+  } else if (Math.abs(free.width - box.width) / box.width >= Math.abs(free.height - box.height) / box.height) {
+    width = free.width
+    height = width / ratio
+  } else {
+    height = free.height
+    width = height * ratio
+  }
+  // Never larger than the slide allows, at the same shape.
+  const scale = Math.min(1, 100 / width, 100 / height)
+  width = Math.max(MIN_SIZE, width * scale)
+  height = Math.max(MIN_SIZE, height * scale)
+  const right = box.x + box.width
+  const bottom = box.y + box.height
+  const x = handle.includes('w') ? right - width : handle.includes('e') ? box.x : box.x + (box.width - width) / 2
+  const y = handle.includes('n') ? bottom - height : handle.includes('s') ? box.y : box.y + (box.height - height) / 2
+  return clampBox({ x, y, width, height })
+}

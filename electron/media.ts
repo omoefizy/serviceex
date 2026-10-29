@@ -24,6 +24,15 @@ export function registerMediaScheme(): void {
 }
 
 let inboxResolver: ((id: string) => string | null) | null = null
+let deckWaiter: ((hash: string, file: string) => Promise<void> | null) | null = null
+
+/**
+ * How wd-media://deck/ waits for a slide picture a running import has not drawn yet (see PresentationLibrary
+ * whenWritten): the picture is drawn next and the request answered once it is written.
+ */
+export function setDeckWaiter(waiter: (hash: string, file: string) => Promise<void> | null): void {
+  deckWaiter = waiter
+}
 
 /** How wd-media://inbox/<id> finds a received file (see sharing). */
 export function setInboxResolver(resolver: (id: string) => string | null): void {
@@ -35,11 +44,15 @@ export function registerMediaProtocol(): void {
     const url = new URL(request.url)
     const name = decodeURIComponent(url.pathname.replace(/^\//, ''))
     let file: string
+    /** Named by its content (a hash), so it never changes and the renderer may keep it. */
+    let immutable = false
     if (url.host === 'deck') {
-      // Only a slide picture, or a native slide's picture, inside a presentation's cache folder.
-      const match = /^([0-9a-f]{64})\/(slide-\d{3}\.png|native\/[0-9a-f]{64}\.(?:png|jpe?g|gif|webp|svg|bmp))$/.exec(name)
+      // Only a slide picture, its thumbnail, or a native slide's picture, inside a presentation's cache folder.
+      const match = /^([0-9a-f]{64})\/(slide-\d{3}\.png|thumb-\d{3}\.jpg|native\/[0-9a-f]{64}\.(?:png|jpe?g|gif|webp|svg|bmp))$/.exec(name)
       if (!match) return new Response('Not found', { status: 404 })
+      await deckWaiter?.(match[1], match[2])
       file = path.join(presentationsDir(), match[1], ...match[2].split('/'))
+      immutable = true
     } else if (url.host === 'inbox') {
       // Only an Inbox item's file, by its id, for previewing it before it is accepted.
       const inboxFile = /^[0-9a-f]{32}$/.test(name) ? inboxResolver?.(name) : null
@@ -60,6 +73,7 @@ export function registerMediaProtocol(): void {
     // The renderer draws library files onto a canvas to make thumbnails, which needs CORS.
     const headers = new Headers(response.headers)
     headers.set('Access-Control-Allow-Origin', '*')
+    if (immutable && response.ok) headers.set('Cache-Control', 'public, max-age=31536000, immutable')
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
   })
 }

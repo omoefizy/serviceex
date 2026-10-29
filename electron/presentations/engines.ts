@@ -10,6 +10,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { PresentationEngineId, PresentationEngineSetting, PresentationEngineStatus } from '../../shared/types'
+import { ImportCancelledError } from './library'
 
 export const MAC_POWERPOINT = '/Applications/Microsoft PowerPoint.app'
 /** PowerPoint for Mac is sandboxed; a copy inside its own container opens without a "Grant File Access" prompt. */
@@ -24,11 +25,15 @@ interface RunError extends Error {
   timedOut: boolean
 }
 
-/** Runs a program without a shell or a window; rejects with its error output, noting a timeout. */
-function run(command: string, args: string[], timeoutMs: number): Promise<string> {
+/**
+ * Runs a program without a shell or a window; rejects with its error output, noting a timeout. Aborting the signal
+ * stops the program and rejects with ImportCancelledError.
+ */
+function run(command: string, args: string[], timeoutMs: number, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(command, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile(command, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 16 * 1024 * 1024, signal }, (error, stdout, stderr) => {
       if (!error) return resolve(stdout)
+      if (signal?.aborted) return reject(new ImportCancelledError())
       const failure = error as RunError
       failure.stderr = String(stderr ?? '').trim()
       failure.timedOut = (error as { killed?: boolean }).killed === true
@@ -104,7 +109,7 @@ export interface ComSlide {
 }
 
 /** Exports each slide as a PNG into `outDir` with desktop PowerPoint through COM, read only and in the background. */
-export async function exportWithWindowsPowerPoint(file: string, outDir: string, script: string): Promise<ComSlide[]> {
+export async function exportWithWindowsPowerPoint(file: string, outDir: string, script: string, signal?: AbortSignal): Promise<ComSlide[]> {
   const work = await mkdtemp(path.join(os.tmpdir(), 'worshipdeck-ppt-'))
   try {
     const copy = path.join(work, `presentation${path.extname(file)}`)
@@ -113,7 +118,9 @@ export async function exportWithWindowsPowerPoint(file: string, outDir: string, 
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-InputPath', copy, '-OutputDir', outDir],
       CONVERT_TIMEOUT_MS,
+      signal,
     ).catch((error: RunError) => {
+      if (error instanceof ImportCancelledError) throw error
       throw new Error(
         error.timedOut
           ? 'PowerPoint took longer than 5 minutes to export the slides.'
@@ -157,7 +164,7 @@ function macPowerPointError(error: RunError, name: string): Error {
  * opens the copy, saves it as a PDF and closes it without saving. PowerPoint is quit afterwards only if this
  * started it. Resolves to the PDF's bytes.
  */
-export async function exportWithMacPowerPoint(file: string, script: string): Promise<Uint8Array> {
+export async function exportWithMacPowerPoint(file: string, script: string, signal?: AbortSignal): Promise<Uint8Array> {
   const parent = await mkdir(MAC_POWERPOINT_TMP, { recursive: true }).then(
     () => MAC_POWERPOINT_TMP,
     () => os.tmpdir(),
@@ -168,7 +175,8 @@ export async function exportWithMacPowerPoint(file: string, script: string): Pro
     const pdf = path.join(work, 'presentation.pdf')
     await copyFile(file, copy)
     // The first run asks the operator to let WorshipDeck control PowerPoint; osascript waits for the answer.
-    await run('osascript', [script, copy, pdf], MAC_TIMEOUT_MS).catch((error: RunError) => {
+    await run('osascript', [script, copy, pdf], MAC_TIMEOUT_MS, signal).catch((error: RunError) => {
+      if (error instanceof ImportCancelledError) throw error
       throw macPowerPointError(error, path.basename(file))
     })
     if (!existsSync(pdf)) throw new Error(`PowerPoint did not write a PDF of ${path.basename(file)}.`)
@@ -179,7 +187,7 @@ export async function exportWithMacPowerPoint(file: string, script: string): Pro
 }
 
 /** Converts to PDF with LibreOffice headless, using its own profile so it runs even while LibreOffice is open. */
-export async function exportWithLibreOffice(file: string, soffice: string): Promise<Uint8Array> {
+export async function exportWithLibreOffice(file: string, soffice: string, signal?: AbortSignal): Promise<Uint8Array> {
   const work = await mkdtemp(path.join(os.tmpdir(), 'worshipdeck-lo-'))
   try {
     const copy = path.join(work, `presentation${path.extname(file)}`)
@@ -189,7 +197,9 @@ export async function exportWithLibreOffice(file: string, soffice: string): Prom
       soffice,
       [`-env:UserInstallation=${profile}`, '--headless', '--norestore', '--nolockcheck', '--convert-to', 'pdf', '--outdir', work, copy],
       CONVERT_TIMEOUT_MS,
+      signal,
     ).catch((error: RunError) => {
+      if (error instanceof ImportCancelledError) throw error
       throw new Error(
         error.timedOut
           ? 'LibreOffice took longer than 5 minutes to convert the presentation.'

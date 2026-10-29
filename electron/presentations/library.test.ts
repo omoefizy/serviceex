@@ -8,7 +8,8 @@ import PptxGenJS from 'pptxgenjs'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ThemeElement } from '../../shared/types'
 import { makeTempDir, removeTemp } from '../tempDir.test-helper'
-import { PresentationLibrary, type Converter, type PresentationRecord, type PresentationStore } from './library'
+import { PresentationLibrary, plainImportError, type Converter, type PresentationRecord, type PresentationStore } from './library'
+import type { PresentationProgress } from '../../shared/types'
 import { readNativeSlides, resolveNativeMedia } from './native'
 import { readPptx } from './pptx'
 
@@ -202,5 +203,115 @@ describe('PresentationLibrary', () => {
     expect(again.id).toBe(first.id)
     expect(library.list()).toHaveLength(1)
     expect(conversions).toBe(1)
+  })
+
+  describe('streaming imports', () => {
+    /** A converter that writes three slides, a thumbnail of each first, then the full pictures when let go. */
+    function streamingLibrary() {
+      const progress: PresentationProgress[] = []
+      let release = () => {}
+      const released = new Promise<void>((resolve) => (release = resolve))
+      const wanted: number[] = []
+      const streaming: Converter = async (_source, outDir, report, job) => {
+        job?.setWant?.((index) => wanted.push(index))
+        const files = [0, 1, 2].map((i) => ({ file: `slide-00${i + 1}.png`, thumb: `thumb-00${i + 1}.jpg`, text: `Slide ${i + 1}` }))
+        for (const [i, page] of files.entries()) {
+          await writeFile(path.join(outDir, page.thumb), 'jpg')
+          job?.onSlide?.(i, 3, page)
+        }
+        await Promise.race([
+          released,
+          new Promise((_, reject) => job?.signal?.addEventListener('abort', () => reject(new Error('stopped')))),
+        ])
+        for (const [i, page] of files.entries()) {
+          await writeFile(path.join(outDir, page.file), 'png')
+          job?.onFull?.(i)
+          report(`Importing ${i + 1} of 3…`, i + 1, 3)
+        }
+        return { engine: 'test', slides: files.map((f) => ({ ...f, title: '', notes: '', animated: false })) }
+      }
+      const lib = new PresentationLibrary({
+        cacheDir: path.join(root, 'stream-cache'),
+        store: memoryStore(),
+        convert: streaming,
+        onProgress: (p) => progress.push(p),
+        fileUrl: (hash, file) => `wd-media://deck/${hash}/${file}`,
+      })
+      return { lib, progress, release, wanted }
+    }
+
+    it('shows slides before the import finishes and draws a wanted slide next', async () => {
+      const { lib, progress, release, wanted } = streamingLibrary()
+      const file = path.join(root, 'Psalms.pdf')
+      await writeFile(file, 'pdf')
+      const importing = lib.import([file])
+      await until(() => progress.some((p) => p.slides?.length === 3))
+      const shown = progress.find((p) => p.slides?.length === 3) as PresentationProgress
+      expect(shown.cancellable).toBe(true)
+      expect(shown.slides?.[0].thumb).toMatch(/^wd-media:\/\/deck\/[0-9a-f]{64}\/thumb-001\.jpg$/)
+      const hash = /deck\/([0-9a-f]{64})\//.exec(shown.slides?.[2].image ?? '')?.[1] as string
+
+      // The thumbnail is on disk; the full picture is asked for and waited on.
+      expect(lib.whenWritten(hash, 'thumb-003.jpg')).toBeNull()
+      const full = lib.whenWritten(hash, 'slide-003.png')
+      expect(full).not.toBeNull()
+      expect(wanted).toEqual([2])
+      release()
+      await full
+      expect(existsSync(path.join(lib.cacheFolder(hash), 'slide-003.png'))).toBe(true)
+
+      const [record] = await importing
+      expect(record.slides.map((s) => s.thumb)).toEqual(['thumb-001.jpg', 'thumb-002.jpg', 'thumb-003.jpg'])
+      const messages = progress.map((p) => p.message)
+      expect(messages).toEqual(expect.arrayContaining(['Importing 1 of 3…', 'Importing 2 of 3…', 'Finishing full size 0 of 3…', 'Finishing full size 3 of 3…']))
+      expect(progress.at(-1)).toMatchObject({ finished: true, message: '3 slides ready' })
+      expect(progress.at(-1)?.slides).toBeUndefined()
+    })
+
+    it('cancels an import, leaving nothing behind and importing the rest', async () => {
+      const { lib, progress, release } = streamingLibrary()
+      const first = path.join(root, 'Hymns.pdf')
+      const second = path.join(root, 'Notices.pdf')
+      await writeFile(first, 'first')
+      await writeFile(second, 'second')
+      const importing = lib.import([first, second])
+      await until(() => progress.some((p) => p.key === first && p.slides?.length === 3))
+      const hash = /deck\/([0-9a-f]{64})\//.exec(progress.find((p) => p.slides?.length)?.slides?.[0].image ?? '')?.[1] as string
+      expect(lib.cancel(first)).toBe(true)
+      await until(() => progress.some((p) => p.key === second && p.slides?.length === 3))
+      release()
+      const records = await importing
+      expect(records.map((r) => r.title)).toEqual(['Notices'])
+      expect(progress.find((p) => p.key === first && p.finished)).toMatchObject({ cancelled: true, message: 'Import cancelled' })
+      expect(progress.find((p) => p.key === first && p.finished)?.error).toBeUndefined()
+      expect(existsSync(lib.cacheFolder(hash))).toBe(false)
+      expect(lib.cancel(first)).toBe(false)
+    })
+
+    it('imports the same file from another place from the cache, at once', async () => {
+      const { lib, progress, release } = streamingLibrary()
+      release()
+      const file = path.join(root, 'Advent.pdf')
+      const copy = path.join(root, 'Advent copy.pdf')
+      await writeFile(file, 'advent')
+      await writeFile(copy, 'advent')
+      const [first] = await lib.import([file])
+      const count = progress.length
+      const [again] = await lib.import([copy])
+      expect(again.hash).toBe(first.hash)
+      expect(again.id).not.toBe(first.id)
+      // No conversion: no progress at all.
+      expect(progress).toHaveLength(count)
+    })
+  })
+
+  it('says what went wrong in plain words', () => {
+    const missing = Object.assign(new Error('ENOENT: no such file or directory, open /x/Easter.pptx'), { code: 'ENOENT' })
+    expect(plainImportError(missing, 'Easter')).toBe('Easter could not be found. It may have been moved or deleted.')
+    expect(plainImportError(new Error('Invalid PDF structure.'), 'Easter')).toBe('Easter is damaged or is not a PDF ServiceEx can read.')
+    expect(plainImportError(new Error('The slide renderer stopped'), 'Easter')).toBe('Drawing the slides stopped unexpectedly. Try importing again.')
+    expect(plainImportError(new Error('PowerPoint took longer than 5 minutes to export the slides.'), 'Easter')).toBe(
+      'PowerPoint took longer than 5 minutes to export the slides.',
+    )
   })
 })

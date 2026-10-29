@@ -9,6 +9,7 @@ import type {
   ThemeContentType,
   ThemeElement,
   ThemeStyle,
+  ThemeTextAreas,
   ThemeTextParagraph,
   ThemeTextProps,
   ThemeTextRun,
@@ -588,7 +589,11 @@ function normalizeElement(value: unknown, id: string): ThemeElement | null {
  */
 export function normalizeTheme(value: unknown, legacyCategory: ThemeCategory = 'song'): ThemeStyle {
   const v = fieldsOf(value)
-  if (!Array.isArray(v.elements)) return migrateLegacy(readLegacy(v), oneOf(v.category, THEME_CATEGORIES, legacyCategory))
+  if (!Array.isArray(v.elements)) {
+    const migrated = migrateLegacy(readLegacy(v), oneOf(v.category, THEME_CATEGORIES, legacyCategory))
+    const textAreas = normalizeTextAreas(undefined, migrated.elements)
+    return textAreas ? { ...migrated, textAreas } : migrated
+  }
   const ids = new Set<string>()
   const elements: ThemeElement[] = []
   for (const [index, item] of v.elements.slice(0, MAX_ELEMENTS).entries()) {
@@ -600,13 +605,30 @@ export function normalizeTheme(value: unknown, legacyCategory: ThemeCategory = '
     ids.add(id)
     elements.push(element)
   }
+  const textAreas = normalizeTextAreas(v.textAreas, elements)
   return {
     category: oneOf(v.category, THEME_CATEGORIES, 'song'),
     background: normalizeBackground(v.background, DEFAULT_THEME_STYLE.background),
     overlay: number(v.overlay, 0, 0, 1),
     keyTransparent: flag(v.keyTransparent, false),
     elements,
+    ...(textAreas ? { textAreas } : {}),
+    ...(v.referencePlacement === 'inside' || v.referencePlacement === 'below' ? { referencePlacement: v.referencePlacement } : {}),
   }
+}
+
+/** The theme's main text box: the first text box with no fixed words of its own, as ThemedSlide draws it. */
+export const mainTextElement = (elements: ThemeElement[]) => elements.find((e): e is Extract<ThemeElement, { kind: 'text' }> => e.kind === 'text')
+
+/**
+ * The scripture and song text areas, each checked. One missing (every theme saved before text areas) starts where
+ * the main text box is, so nothing moves. None without a main text box.
+ */
+export function normalizeTextAreas(value: unknown, elements: ThemeElement[]): ThemeTextAreas | undefined {
+  const main = mainTextElement(elements)
+  if (!main) return undefined
+  const v = fieldsOf(value)
+  return { scripture: normalizeBox(v.scripture, main.box), song: normalizeBox(v.song, main.box) }
 }
 
 /** True for a theme stored before the layout editor, which normalizeTheme migrates. */

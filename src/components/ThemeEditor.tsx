@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { replaceThemeFont, themeFonts } from '../../shared/fonts'
 import { THEME_CONTENT_TYPES } from '../../shared/themes'
-import type { Theme, ThemeBackground, ThemeBox, ThemeContentType, ThemeElement, ThemeStyle, ThemeTextElement, ThemeTextProps } from '../../shared/types'
+import { themeForContent } from '../../shared/textAreas'
+import type { TextAreaContent, Theme, ThemeBackground, ThemeBox, ThemeContentType, ThemeElement, ThemeStyle, ThemeTextElement, ThemeTextProps } from '../../shared/types'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { selectBaseThemeId, useOperatorStore } from '../store'
 import { openSendMenu, setShareDrag } from '../lib/sharing'
@@ -10,6 +11,7 @@ import { MissingFontChips } from './FontPicker'
 import { FormatToolbar, type FormatControl, type FormatPatch, type FormatState } from './FormatToolbar'
 import { MediaPickerModal } from './MediaGrid'
 import { ErrorNote, SegmentedControl, Select } from './ui'
+import { TextAreaFields, TextAreaStage } from './TextAreaEditor'
 import { ThemedSlide } from './ThemedSlide'
 import { CONTENT_COLORS } from '../styles/contentColors'
 
@@ -30,6 +32,13 @@ const SAMPLES = {
     caption: '',
   },
 }
+
+/** What undo and redo step through in the text area editor. */
+type AreaSnapshot = Pick<ThemeStyle, 'textAreas' | 'referencePlacement'>
+const UNDO_LIMIT = 100
+
+/** The sample that shows a text area's content in the preview. */
+const SAMPLE_FOR: Record<TextAreaContent, keyof typeof SAMPLES> = { scripture: 'scripture', song: 'song' }
 
 const CONTENT_LABELS: Record<ThemeContentType, string> = { song: 'Songs', scripture: 'Scripture', announcement: 'Announcements', quote: 'Quotes', lowerThird: 'Lower thirds', logo: 'Logos' }
 const WEIGHTS = [300, 400, 500, 600, 700, 800, 900]
@@ -175,6 +184,14 @@ export function ThemeEditor() {
   const [error, setError] = useState<ErrorLike | null>(null)
   /** Which kind of background the library picker is open for. */
   const [picking, setPicking] = useState<'image' | 'video' | null>(null)
+  /** Which text area the rectangle over the preview edits. */
+  const [area, setArea] = useState<TextAreaContent>('song')
+  const [lockAspect, setLockAspect] = useState(false)
+  /** Text area changes to undo and redo, for the theme being edited. */
+  const history = useRef<{ past: AreaSnapshot[]; future: AreaSnapshot[] }>({ past: [], future: [] })
+  const [, setHistoryVersion] = useState(0)
+  const styleRef = useRef(style)
+  styleRef.current = style
 
   const selected = themes.find((t) => t.id === selectedId) ?? null
   const dirty = selected !== null && style !== null && (name !== selected.name || JSON.stringify(style) !== JSON.stringify(selected.style))
@@ -191,6 +208,9 @@ export function ThemeEditor() {
       setName(theme.name)
       setStyle(theme.style)
       setConfirmingDelete(false)
+      history.current = { past: [], future: [] }
+      setHistoryVersion((v) => v + 1)
+      if (theme.style.category === 'scripture' || theme.style.category === 'song') chooseArea(theme.style.category)
     }
     // Only on selection changes; reloading the list after a save must not overwrite the form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -213,6 +233,47 @@ export function ThemeEditor() {
   }
 
   const update = (patch: Partial<ThemeStyle>) => setStyle((s) => s && { ...s, ...patch })
+
+  function chooseArea(content: TextAreaContent) {
+    setArea(content)
+    setSample(SAMPLE_FOR[content])
+  }
+
+  const snapshotOf = (s: ThemeStyle): AreaSnapshot => ({ textAreas: s.textAreas, referencePlacement: s.referencePlacement })
+  /** Marks where an undo of the next text area change goes back to. */
+  function beginAreaChange() {
+    const current = styleRef.current
+    if (!current) return
+    const { past } = history.current
+    history.current = { past: [...past.slice(-(UNDO_LIMIT - 1)), snapshotOf(current)], future: [] }
+    setHistoryVersion((v) => v + 1)
+  }
+  function stepHistory(from: 'past' | 'future') {
+    const current = styleRef.current
+    const { past, future } = history.current
+    const source = from === 'past' ? past : future
+    const target = source[source.length - 1]
+    if (!current || !target) return
+    history.current =
+      from === 'past' ? { past: past.slice(0, -1), future: [...future, snapshotOf(current)] } : { past: [...past, snapshotOf(current)], future: future.slice(0, -1) }
+    setHistoryVersion((v) => v + 1)
+    setStyle({ ...current, textAreas: target.textAreas, referencePlacement: target.referencePlacement })
+  }
+  const setAreaBox = (box: ThemeBox) => setStyle((s) => (s?.textAreas ? { ...s, textAreas: { ...s.textAreas, [area]: box } } : s))
+  function setReferencePlacement(referencePlacement: 'inside' | 'below') {
+    beginAreaChange()
+    update({ referencePlacement })
+  }
+  /** Cmd+Z undoes a text area change, Shift+Cmd+Z (or Ctrl+Y) redoes it, while the text area editor has focus. */
+  function handleAreaKeys(e: KeyboardEvent) {
+    const mod = e.metaKey || e.ctrlKey
+    if (!mod) return
+    const key = e.key.toLowerCase()
+    if (key === 'z' || key === 'y') {
+      e.preventDefault()
+      stepHistory(key === 'y' || e.shiftKey ? 'future' : 'past')
+    }
+  }
 
   // The form edits the main text box, and the Reference and Copyright boxes together as the caption line.
   const isCaption = (e: ThemeElement) => e.kind === 'reference' || e.kind === 'copyright'
@@ -323,13 +384,78 @@ export function ThemeEditor() {
 
         {style && selected && (
           <div className="theme-form">
-            <div className="theme-preview">
-              <ThemedSlide theme={style} text={SAMPLES[sample].text} caption={SAMPLES[sample].caption} />
-            </div>
+            {style.textAreas ? (
+              (() => {
+                const areas = style.textAreas
+                const reference = style.elements.find((e) => e.kind === 'reference')
+                const placement = style.referencePlacement ?? (reference && 'attached' in reference && reference.attached ? 'inside' : 'own')
+                const { past, future } = history.current
+                return (
+                  <div className="text-area-editor" role="group" aria-label="Text area" onKeyDown={handleAreaKeys}>
+                    <div className="text-area-toolbar">
+                      <SegmentedControl<TextAreaContent>
+                        aria-label="Text area for"
+                        value={area}
+                        options={[
+                          { value: 'scripture', label: 'Scripture' },
+                          { value: 'song', label: 'Songs' },
+                        ]}
+                        onChange={chooseArea}
+                      />
+                      <span className="hint">Where the words go for {area === 'scripture' ? 'scripture' : 'songs'}</span>
+                      <span className="text-area-history">
+                        <button type="button" className="button" disabled={past.length === 0} title="Undo (Cmd+Z)" onClick={() => stepHistory('past')}>
+                          Undo
+                        </button>
+                        <button type="button" className="button" disabled={future.length === 0} title="Redo (Shift+Cmd+Z)" onClick={() => stepHistory('future')}>
+                          Redo
+                        </button>
+                      </span>
+                    </div>
+                    <TextAreaStage area={areas[area]} content={area} lockAspect={lockAspect} onBegin={beginAreaChange} onChange={setAreaBox}>
+                      <ThemedSlide theme={themeForContent(style, area)} text={SAMPLES[sample].text} caption={SAMPLES[sample].caption} />
+                    </TextAreaStage>
+                    <TextAreaFields
+                      area={areas[area]}
+                      lockAspect={lockAspect}
+                      onLockAspect={setLockAspect}
+                      onBegin={beginAreaChange}
+                      onChange={setAreaBox}
+                      onReset={() => {
+                        if (!mainText) return
+                        beginAreaChange()
+                        setAreaBox(mainText.box)
+                      }}
+                    />
+                    {area === 'scripture' && reference && (
+                      <Row label="Reference">
+                        <SegmentedControl<'inside' | 'below' | 'own'>
+                          value={placement}
+                          options={[
+                            { value: 'inside', label: 'Inside the area' },
+                            { value: 'below', label: 'Below the area' },
+                          ]}
+                          onChange={(value) => value !== 'own' && setReferencePlacement(value)}
+                        />
+                        {placement === 'own' && <small className="hint">Now in its own box; choose one to tie it to the text area.</small>}
+                      </Row>
+                    )}
+                  </div>
+                )
+              })()
+            ) : (
+              <div className="theme-preview">
+                <ThemedSlide theme={style} text={SAMPLES[sample].text} caption={SAMPLES[sample].caption} />
+              </div>
+            )}
             <Segmented<keyof typeof SAMPLES>
               value={sample}
               options={Object.entries(SAMPLES).map(([value, s]) => ({ value: value as keyof typeof SAMPLES, label: s.label }))}
-              onChange={setSample}
+              onChange={(value) => {
+                setSample(value)
+                // The rectangle edits the area the sample shows.
+                setArea(value === 'scripture' ? 'scripture' : 'song')
+              }}
             />
 
             <div className="theme-actions">
@@ -416,7 +542,7 @@ export function ThemeEditor() {
 
             {mainText && (
               <fieldset>
-                <legend>Safe area</legend>
+                <legend>{style.textAreas ? 'Text box for announcements and quotes' : 'Safe area'}</legend>
                 <Row label="Margins">
                   {(['top', 'right', 'bottom', 'left'] as const).map((side) => (
                     <span key={side} className="margin-input">

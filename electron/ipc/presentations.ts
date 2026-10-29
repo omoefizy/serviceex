@@ -11,7 +11,7 @@ import type { NativeSlide, Presentation, PresentationEngineId, PresentationMode 
 import { findMediaByHash, insertMedia } from '../db/media'
 import { presentationStore, scheduleUsesHash, setLinkedPages, setLiveOptions } from '../db/presentations'
 import { getAppSettings } from '../db/settings'
-import { copyIntoMedia, presentationImageUrl, presentationsDir } from '../media'
+import { copyIntoMedia, presentationImageUrl, presentationsDir, setDeckWaiter } from '../media'
 import { createConverter } from '../presentations/convert'
 import { engineStatus } from '../presentations/engines'
 import { findFfmpeg } from '../presentations/ffmpeg'
@@ -89,6 +89,7 @@ export function toPresentation(record: PresentationRecord): Presentation {
       const native = record.native?.[index]
       return {
         image: presentationImageUrl(record.hash, slide.file),
+        ...(slide.thumb ? { thumb: presentationImageUrl(record.hash, slide.thumb) } : {}),
         title: slide.title,
         text: slide.text,
         notes: slide.notes,
@@ -136,8 +137,10 @@ export function registerPresentationIpc({ createRasterWindow, getOperatorWindow,
     script: (name) => path.join(resourcesDir, name),
   })
   // PowerPoint files may be converted by PowerPoint, which opens windows; never over a live slide show.
-  const convert: typeof converter = (source, outDir, report) =>
-    whileShowCovered && (source.kind === 'pptx' || source.kind === 'ppt') ? whileShowCovered(() => converter(source, outDir, report)) : converter(source, outDir, report)
+  const convert: typeof converter = (source, outDir, report, job) =>
+    whileShowCovered && (source.kind === 'pptx' || source.kind === 'ppt')
+      ? whileShowCovered(() => converter(source, outDir, report, job))
+      : converter(source, outDir, report, job)
   const send = (channel: string, value: unknown) => {
     const win = getOperatorWindow()
     if (win && !win.isDestroyed()) win.webContents.send(channel, value)
@@ -158,8 +161,10 @@ export function registerPresentationIpc({ createRasterWindow, getOperatorWindow,
       onSourceChanged?.(record.id)
     },
     hashInUse: scheduleUsesHash,
+    fileUrl: presentationImageUrl,
   })
   library.start()
+  setDeckWaiter((hash, file) => library.whenWritten(hash, file))
 
   ipcMain.handle('presentations:list', () => library.list().map(toPresentation))
 
@@ -185,6 +190,10 @@ export function registerPresentationIpc({ createRasterWindow, getOperatorWindow,
   ipcMain.handle('presentations:import', async (_event, paths: unknown, mode: unknown) =>
     (await library.import(assertPaths(paths), mode === undefined ? 'image' : assertMode(mode))).map(toPresentation),
   )
+
+  ipcMain.handle('presentations:cancel', (_event, key: unknown) => {
+    if (typeof key === 'string') library.cancel(key)
+  })
 
   ipcMain.handle('presentations:setMode', async (_event, id: unknown, mode: unknown) => toPresentation(await library.setMode(assertId(id), assertMode(mode))))
 

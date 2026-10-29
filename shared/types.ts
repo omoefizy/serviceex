@@ -524,7 +524,23 @@ export interface ThemeStyle {
    */
   keyTransparent: boolean
   elements: ThemeElement[]
+  /**
+   * Where the main text box goes for scripture and for songs, in percent of the slide, so the two can differ (a verse
+   * has its reference to make room for). Themes saved before this get the main text box's own place for both.
+   * Absent on a theme without a main text box; other content uses the box itself.
+   */
+  textAreas?: ThemeTextAreas
+  /**
+   * Where a scripture slide's reference goes: inside the text area under the verse, or just below the area. Absent
+   * leaves the Reference box as it is (under the text or in its own box).
+   */
+  referencePlacement?: 'inside' | 'below'
 }
+
+/** The content that has a text area of its own (see ThemeStyle.textAreas). */
+export type TextAreaContent = 'scripture' | 'song'
+
+export type ThemeTextAreas = Record<TextAreaContent, ThemeBox>
 
 export interface Theme {
   id: number
@@ -604,6 +620,8 @@ export type PresentationEngineId = 'powerpoint-windows' | 'powerpoint-mac' | 'li
 export interface PresentationSlide {
   /** wd-media:// URL of the 1920x1080 PNG. */
   image: string
+  /** A small JPEG of the slide for the slide grid; absent for presentations imported before thumbnails existed. */
+  thumb?: string
   title: string
   text: string
   notes: string
@@ -665,8 +683,17 @@ export interface PresentationProgress {
   done: number
   total: number
   finished: boolean
-  /** Set when the conversion failed. */
+  /** Set when the conversion failed, in words for the operator. */
   error?: string
+  /** Set when the operator cancelled the import. */
+  cancelled?: boolean
+  /** Can be cancelled with PresentationsApi.cancel(key): a new import still converting. */
+  cancellable?: boolean
+  /**
+   * A new import's slides so far, in order, so the grid can show them before the import finishes. The pictures fill
+   * in as they are drawn: `image` asks for the full picture, which is drawn next when it is not ready yet.
+   */
+  slides?: { thumb: string; image: string; text: string }[]
 }
 
 export interface PresentationEngineStatus {
@@ -701,6 +728,8 @@ export interface PresentationsApi {
   engineStatus(): Promise<PresentationEngineStatus>
   /** Converts a small generated presentation with the active engine. Resolves to what it used and how long it took. */
   testConversion(): Promise<{ engine: PresentationEngineId; slides: number; ms: number }>
+  /** Stops a new import that is still converting (by PresentationProgress.key); its import call skips it. */
+  cancel(key: string): Promise<void>
   onProgress(listener: (progress: PresentationProgress) => void): () => void
   /** A presentation was re-rendered after its original was saved. */
   onUpdated(listener: (presentation: Presentation) => void): () => void
@@ -783,9 +812,15 @@ export type RasterJob = { id: number; kind: 'pdf'; data: Uint8Array } | { id: nu
 
 export interface RasterizerApi {
   onJob(listener: (job: RasterJob) => void): () => void
+  /** The main process stopped a job (the import was cancelled). */
+  onCancel(listener: (jobId: number) => void): () => void
+  /** The main process wants this page's full picture next (it is on screen before the import finished). */
+  onWant(listener: (jobId: number, index: number) => void): () => void
   /** Called once the job listener is in place. */
   ready(): void
-  page(jobId: number, index: number, total: number, png: Uint8Array, text: string): void
+  /** A page's small JPEG and its text, sent for every page before any full picture. */
+  thumb(jobId: number, index: number, total: number, jpeg: Uint8Array, text: string): void
+  page(jobId: number, index: number, total: number, png: Uint8Array): void
   done(jobId: number): void
   fail(jobId: number, message: string): void
 }

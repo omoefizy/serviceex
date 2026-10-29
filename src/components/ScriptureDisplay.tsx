@@ -16,6 +16,7 @@ import { Color, Range, Row, Segmented } from './ThemeEditor'
 import { ThemedSlide } from './ThemedSlide'
 import { Button, ErrorNote, Toggle } from './ui'
 import { SCRIPTURE_TEXT_COLORS } from '../styles/contentColors'
+import { themeForContent } from '../../shared/textAreas'
 
 const SAMPLE = {
   text: 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.',
@@ -230,7 +231,7 @@ export function ScriptureDisplayForm() {
   useEffect(() => setDraft(null), [theme])
 
   const look = draft ?? saved
-  const style = useMemo(() => (theme && look ? applyScriptureLook(theme.style, look) : null), [theme, look])
+  const style = useMemo(() => (theme && look ? applyScriptureLook(themeForContent(theme.style, 'scripture'), look) : null), [theme, look])
   const preview = useMemo(() => (style && sample === 'two' ? dualTheme(style, { text: SAMPLE.second, layout: dualLayout }) : style), [style, sample, dualLayout])
   const warnings = useMemo(() => (style ? contrastWarnings(style, style.keyTransparent || lumaKey) : []), [style, lumaKey])
 

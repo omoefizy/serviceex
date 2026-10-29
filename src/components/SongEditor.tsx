@@ -12,6 +12,7 @@ import { useOperatorStore } from '../store'
 import { LyricsDiffModal } from './LyricsDiffModal'
 import { SlideFormatter } from './SlideFormatter'
 import { Button, EmptyState, ErrorNote, Skeleton } from './ui'
+import { themeForContent } from '../../shared/textAreas'
 
 /** The editor's fields as typed. */
 interface Form {
@@ -393,7 +394,7 @@ export function SongEditor({ songId }: { songId: number }) {
         : 'Unsaved changes'
   const missingLabels = form.arrangement.order.filter((label) => !findSection(sections, label))
   const formatSlide = formatIndex === null ? null : (slides[formatIndex] ?? null)
-  const theme = themes.find((t) => t.id === (form.themeId ?? songDefaultTheme?.id))?.style ?? DEFAULT_THEME_STYLE
+  const theme = themeForContent(themes.find((t) => t.id === (form.themeId ?? songDefaultTheme?.id))?.style ?? DEFAULT_THEME_STYLE, 'song')
 
   return (
     <section className="panel song-editor" onKeyDown={handleKeyDown}>

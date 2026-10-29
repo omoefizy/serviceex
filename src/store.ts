@@ -7,6 +7,7 @@ import { DEFAULT_LAYOUT_ID, PRESET_LAYOUTS } from '../shared/layouts'
 import { formatFor, matching, trimRich, type RichRange } from '../shared/richText'
 import { adjustTheme, isEmptyAdjust } from '../shared/scriptureLook'
 import { DEFAULT_FONT, DEFAULT_THEME_STYLE } from '../shared/themes'
+import { themeForContent } from '../shared/textAreas'
 import type {
   AlertDisplay,
   AlertMessage,
@@ -70,6 +71,8 @@ export interface DeckSlide {
   background?: ThemeBackground
   /** A presentation page: the image is the whole slide, so the theme's darkening is not applied. */
   page?: boolean
+  /** A presentation page's small picture, which the slide grid shows in place of the full one. */
+  thumb?: string
   /** A presentation page's text and speaker notes, from the original. */
   pageText?: string
   notes?: string
@@ -287,6 +290,8 @@ interface OperatorState {
   selectQuote(text: string, speaker: string): void
   /** Shows a library presentation's slides in the grid and preview. Never touches what is live. */
   selectPresentation(presentation: Presentation): void
+  /** Shows the slides of an import still running (by its progress key) as they arrive; the finished import replaces them. */
+  selectImport(key: string): void
   /** Copies the grid's item into the live snapshot with this slide on screen, and shows it. */
   goLive(index: number): void
   /** Sends the highlighted preview slide live (Enter, the Go Live button). */
@@ -647,6 +652,23 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     })
   },
 
+  selectImport(key) {
+    const job = get().presentationJobs.find((j) => j.key === key)
+    if (!job?.slides) return
+    loadToken++
+    const slides = importSlides(job)
+    set({
+      selectedSong: null,
+      deckType: 'presentation',
+      deckKey: importDeckKey(key),
+      deckThemeId: null,
+      deckTitle: job.title,
+      slides,
+      highlightIndex: slides.length > 0 ? 0 : null,
+      activeItemId: null,
+    })
+  },
+
   goLive(index) {
     const s = get()
     if (index < 0 || index >= s.slides.length) return
@@ -766,7 +788,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
       if (!song) throw new Error('The live song has been deleted, so it cannot be resent.')
       slides = songSlides(song)
       const themeId = song.themeId ?? s.themeDefaults?.song
-      theme = s.themes.find((t) => t.id === themeId)?.style ?? theme
+      const own = s.themes.find((t) => t.id === themeId)?.style
+      theme = own ? themeForContent(own, 'song') : theme
     } else if (live.itemType === 'presentation') {
       const presentation = linkedPresentation(s, live.deckKey)
       if (presentation) slides = presentationSlides(presentation)
@@ -984,7 +1007,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
       // The live copy took the service's look into its theme when it went live; it goes back to the theme itself.
       const live = get().live
       const base = s.themes.find((t) => t.id === (live.source?.deckThemeId ?? s.themeDefaults?.scripture))?.style
-      if (where === 'live' && live.itemType === 'scripture' && base) set({ live: { ...live, theme: base } })
+      if (where === 'live' && live.itemType === 'scripture' && base) set({ live: { ...live, theme: themeForContent(base, 'scripture') } })
     }
     putSlide(where, at.index, withoutAdjust(at.slide))
   },
@@ -1138,6 +1161,13 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   async importPresentations(paths, mode) {
     const imported = await window.api.presentations.import(paths, mode)
     await get().loadPresentations()
+    // The grid showed one of them while it imported: show the finished presentation there, at the same slide.
+    const shown = imported.find((p) => get().deckKey === importDeckKey(p.sourcePath))
+    if (shown) {
+      const highlight = get().highlightIndex
+      get().selectPresentation(shown)
+      if (highlight !== null && highlight < shown.slides.length) set({ highlightIndex: highlight })
+    }
     return imported
   },
 
@@ -1151,6 +1181,16 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
 
   presentationProgress(progress) {
     set({ presentationJobs: [...get().presentationJobs.filter((job) => job.key !== progress.key), progress] })
+    if (get().deckKey === importDeckKey(progress.key)) {
+      if (progress.slides) {
+        const slides = importSlides(progress)
+        set({ slides, highlightIndex: get().highlightIndex ?? (slides.length > 0 ? 0 : null) })
+      } else if (progress.error || progress.cancelled) {
+        // Nothing left to show: the import stopped.
+        loadToken++
+        set({ selectedSong: null, deckType: null, deckKey: null, deckThemeId: null, deckTitle: null, slides: [], highlightIndex: null, activeItemId: null })
+      }
+    }
     if (progress.finished && !progress.error) {
       setTimeout(() => {
         const jobs = get().presentationJobs
@@ -1704,6 +1744,21 @@ const mediaBackground = (item: MediaItem): ThemeBackground =>
  * One full-slide picture per page, with the original's text, notes and animation marks. In Native mode each slide
  * draws its own theme instead, unless Native mode cannot draw it or it was set to show its picture.
  */
+/** The deck key of an import still running, by its progress key. */
+export const importDeckKey = (key: string) => `import:${key}`
+
+/** The slides an import still running has drawn so far. */
+function importSlides(progress: PresentationProgress): DeckSlide[] {
+  return (progress.slides ?? []).map((slide) => ({
+    text: '',
+    caption: '',
+    background: { kind: 'image', src: slide.image, fit: 'contain' },
+    page: true,
+    thumb: slide.thumb,
+    pageText: slide.text,
+  }))
+}
+
 export function presentationSlides(presentation: Presentation): DeckSlide[] {
   return presentation.slides.map((slide) => {
     const native = presentation.mode === 'native' ? slide.native : undefined
@@ -1712,6 +1767,7 @@ export function presentationSlides(presentation: Presentation): DeckSlide[] {
       caption: '',
       background: { kind: 'image', src: slide.image, fit: 'contain' },
       page: true,
+      ...(slide.thumb ? { thumb: slide.thumb } : {}),
       pageText: slide.text,
       notes: slide.notes,
       animated: slide.animated,
@@ -1789,7 +1845,7 @@ export function selectBrowsingLive(s: OperatorState): boolean {
 /** The default theme for a content type, or Classic Black before the themes load. */
 export function selectDefaultTheme(s: OperatorState, type: ThemeContentType): ThemeStyle {
   const id = s.themeDefaults?.[type]
-  return s.themes.find((t) => t.id === id)?.style ?? DEFAULT_THEME_STYLE
+  return themeForContent(s.themes.find((t) => t.id === id)?.style ?? DEFAULT_THEME_STYLE, type)
 }
 
 /** What the output window renders. Read only from the live snapshot, so browsing never changes it. Logo shows the Logo theme. */
@@ -1952,7 +2008,8 @@ let serviceLookCache: { theme: ThemeStyle; look: ScriptureAdjust; result: ThemeS
 /** The style the grid and preview use for what is loaded; it goes live with the item. Scripture takes the service's own look. */
 export function selectDeckTheme(s: OperatorState): ThemeStyle {
   const id = s.deckThemeId ?? selectBaseThemeId(s)
-  const theme = s.themes.find((t) => t.id === id)?.style ?? s.themes[0]?.style ?? DEFAULT_THEME_STYLE
+  // Scripture and songs put their words in the theme's text area for them.
+  const theme = themeForContent(s.themes.find((t) => t.id === id)?.style ?? s.themes[0]?.style ?? DEFAULT_THEME_STYLE, s.deckType)
   const look = s.deckType === 'scripture' ? selectServiceLook(s) : undefined
   if (!look) return theme
   if (serviceLookCache?.theme !== theme || serviceLookCache.look !== look) serviceLookCache = { theme, look, result: adjustTheme(theme, look) }

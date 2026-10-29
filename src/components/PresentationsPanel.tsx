@@ -6,30 +6,52 @@ import { reportError, type ErrorLike } from '../lib/errors'
 import { droppedPaths, IMPORT_MODE_KEY, isFileDrag, isPresentationMode } from '../lib/presentations'
 import { openSendMenu, setShareDrag } from '../lib/sharing'
 import { usePersistentState } from '../lib/usePersistentState'
-import { useOperatorStore } from '../store'
+import { importDeckKey, useOperatorStore } from '../store'
 import { NativeSlideEditor } from './NativeSlideEditor'
 import { ErrorNote } from './ui'
 
-/** The progress chips of running conversions, and the error of a failed one until dismissed. */
+/**
+ * The progress chips of running conversions, with how far each has got and Cancel, and the error of a failed one
+ * until dismissed. A new import's slides can be opened in the grid while the rest are drawn.
+ */
 export function PresentationJobs() {
   const jobs = useOperatorStore((s) => s.presentationJobs)
   const dismiss = useOperatorStore((s) => s.dismissPresentationJob)
+  const selectImport = useOperatorStore((s) => s.selectImport)
+  const deckKey = useOperatorStore((s) => s.deckKey)
   if (jobs.length === 0) return null
   return (
     <div className="chips presentation-jobs" aria-live="polite">
-      {jobs.map((job) => (
-        <span key={job.key} className={`chip progress-chip${job.error ? ' failed' : ''}`} title={job.error ?? job.key}>
-          {job.error ? <AlertTriangle size={13} aria-hidden="true" /> : !job.finished && <Loader2 size={13} className="spin" aria-hidden="true" />}
-          <span className="progress-chip-text">
-            {job.title}: {job.error ?? job.message}
+      {jobs.map((job) => {
+        const running = !job.finished && !job.error
+        const shown = job.slides?.length ?? 0
+        return (
+          <span key={job.key} className={`chip progress-chip${job.error ? ' failed' : ''}`} title={job.error ?? job.key}>
+            {job.error ? <AlertTriangle size={13} aria-hidden="true" /> : running && <Loader2 size={13} className="spin" aria-hidden="true" />}
+            <span className="progress-chip-text">
+              {job.title}: {job.error ?? job.message}
+            </span>
+            {running && job.total > 0 && (
+              <progress className="progress-chip-bar" max={job.total} value={job.done} aria-label={`${job.title}: ${job.done} of ${job.total} slides`} />
+            )}
+            {running && shown > 0 && deckKey !== importDeckKey(job.key) && (
+              <button type="button" className="progress-chip-action" title="Show the slides imported so far" onClick={() => selectImport(job.key)}>
+                Show
+              </button>
+            )}
+            {running && job.cancellable && (
+              <button type="button" className="progress-chip-action" aria-label={`Cancel importing ${job.title}`} onClick={() => window.api.presentations.cancel(job.key)}>
+                Cancel
+              </button>
+            )}
+            {job.error && (
+              <button type="button" aria-label={`Dismiss ${job.title}`} onClick={() => dismiss(job.key)}>
+                <X size={12} aria-hidden="true" />
+              </button>
+            )}
           </span>
-          {job.error && (
-            <button type="button" aria-label={`Dismiss ${job.title}`} onClick={() => dismiss(job.key)}>
-              <X size={12} aria-hidden="true" />
-            </button>
-          )}
-        </span>
-      ))}
+        )
+      })}
     </div>
   )
 }
