@@ -13,6 +13,7 @@ import { selectAdjustTarget, selectDeckTheme, selectServiceLook, slideTheme, use
 import { FontPicker } from './FontPicker'
 import { Color, Range, Row, Segmented } from './ThemeEditor'
 import { ThemedSlide } from './ThemedSlide'
+import { Button, Toggle } from './ui'
 
 const SAMPLE = {
   text: 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.',
@@ -297,14 +298,12 @@ export function ScriptureDisplayForm() {
           <FontPicker value={look.fontFamily} emptyLabel="Default Font" onChange={(fontFamily) => set({ fontFamily })} />
         </Row>
         <Row label="Style">
-          <label className="inline-check">
-            <input type="checkbox" checked={look.bold} onChange={(e) => set({ bold: e.target.checked })} />
+          <Toggle checked={look.bold} onChange={(e) => set({ bold: e.target.checked })}>
             Bold
-          </label>
-          <label className="inline-check">
-            <input type="checkbox" checked={look.italic} onChange={(e) => set({ italic: e.target.checked })} />
+          </Toggle>
+          <Toggle checked={look.italic} onChange={(e) => set({ italic: e.target.checked })}>
             Italic
-          </label>
+          </Toggle>
         </Row>
         <Row label="Alignment">
           <Segmented value={look.align} options={ALIGNS} onChange={(align) => set({ align })} />
@@ -313,22 +312,12 @@ export function ScriptureDisplayForm() {
           <Range value={look.lineHeight} min={0.8} max={2.5} step={0.05} format={(v) => v.toFixed(2)} onChange={(lineHeight) => set({ lineHeight })} />
         </Row>
         <Row label="Shadow">
-          <input
-            type="checkbox"
-            aria-label="Text shadow"
-            checked={look.shadow.enabled}
-            onChange={(e) => set({ shadow: { ...look.shadow, enabled: e.target.checked } })}
-          />
+          <Toggle aria-label="Text shadow" checked={look.shadow.enabled} onChange={(e) => set({ shadow: { ...look.shadow, enabled: e.target.checked } })} />
           <Color value={look.shadow.color} onChange={(color) => set({ shadow: { ...look.shadow, color } })} />
           <Range value={look.shadow.blur} min={0} max={1} step={0.01} format={(v) => `blur ${v.toFixed(2)}`} onChange={(blur) => set({ shadow: { ...look.shadow, blur } })} />
         </Row>
         <Row label="Outline">
-          <input
-            type="checkbox"
-            aria-label="Text outline"
-            checked={look.outline.enabled}
-            onChange={(e) => set({ outline: { ...look.outline, enabled: e.target.checked } })}
-          />
+          <Toggle aria-label="Text outline" checked={look.outline.enabled} onChange={(e) => set({ outline: { ...look.outline, enabled: e.target.checked } })} />
           <Color value={look.outline.color} onChange={(color) => set({ outline: { ...look.outline, color } })} />
           <Range
             value={look.outline.width}
@@ -347,10 +336,9 @@ export function ScriptureDisplayForm() {
       <fieldset>
         <legend>Reference line</legend>
         <Row label="Show">
-          <label className="inline-check">
-            <input type="checkbox" checked={look.reference.show} onChange={(e) => setReference({ show: e.target.checked })} />
+          <Toggle checked={look.reference.show} onChange={(e) => setReference({ show: e.target.checked })}>
             Show the reference, such as “John 3:16 KJV”
-          </label>
+          </Toggle>
         </Row>
         {look.reference.show && (
           <>
@@ -381,12 +369,12 @@ export function ScriptureDisplayForm() {
       </fieldset>
 
       <div className="theme-actions">
-        <button type="button" className="button primary" disabled={busy || !dirty} onClick={save}>
+        <Button variant="primary" disabled={busy || !dirty} onClick={save}>
           Save
-        </button>
-        <button type="button" className="button" disabled={busy || !dirty} onClick={() => setDraft(null)}>
+        </Button>
+        <Button disabled={busy || !dirty} onClick={() => setDraft(null)}>
           Revert
-        </button>
+        </Button>
       </div>
       {status && <p className={status.error ? 'error' : 'hint'}>{status.text}</p>}
     </div>

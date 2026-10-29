@@ -5,6 +5,7 @@ import { layoutById } from '../../shared/layouts'
 import { switchLayout } from '../lib/layouts'
 import { MOD } from '../lib/shortcuts'
 import { useOperatorStore } from '../store'
+import { Button } from './ui'
 
 /** The toolbar's layout menu: which panels this computer shows. Any layout, any time. */
 export function LayoutMenu() {
@@ -29,18 +30,17 @@ export function LayoutMenu() {
   if (!hasFeature('sharing.layouts')) return null
   return (
     <div className="live-menu layout-menu" ref={ref}>
-      <button
-        type="button"
-        className="button layout-menu-button"
+      <Button
+        className="layout-menu-button"
         aria-haspopup="menu"
         aria-expanded={open}
         title={`Layout: which panels this computer shows (${MOD}⌥1 to 9, ${MOD}⇧L for the next)`}
+        icon={<LayoutPanelLeft size={15} aria-hidden="true" />}
+        iconEnd={<ChevronDown size={13} aria-hidden="true" />}
         onClick={() => setOpen(!open)}
       >
-        <LayoutPanelLeft size={15} aria-hidden="true" />
         <span>{active.name}</span>
-        <ChevronDown size={13} aria-hidden="true" />
-      </button>
+      </Button>
       {open && (
         <div className="live-menu-list" role="menu" aria-label="Layouts">
           {layouts.map((layout, index) => (

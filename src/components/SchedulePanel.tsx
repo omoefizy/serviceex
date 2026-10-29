@@ -1,7 +1,9 @@
 import {
   BookOpen,
+  CalendarPlus,
   ChevronLeft,
   ChevronRight,
+  ListPlus,
   Megaphone,
   Music,
   Package,
@@ -23,6 +25,7 @@ import { NewServiceModal } from './NewServiceModal'
 import { PresentationJobs } from './PresentationsPanel'
 import { SermonModal } from './SermonModal'
 import { SharedItemList, SharedServiceBar } from './SharedServicePanel'
+import { Button, EmptyState, IconButton, PanelHeader, Select } from './ui'
 
 const TYPE_LABELS: Record<ServiceItemType, string> = {
   song: 'Song',
@@ -216,35 +219,30 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
         importPresentations(droppedPaths(e))
       }}
     >
-      <header className="panel-header">
-        <h2>Schedule</h2>
-        {service && bibleVersions.length > 0 && (
-          <label className="schedule-translation" title="The translation references open in during this service">
-            <BookOpen size={13} aria-hidden="true" />
-            <select className="input" aria-label="Translation for this service" value={serviceVersion} onChange={(e) => setServiceVersion(e.target.value)}>
-              <option value="">Default ({defaultVersion})</option>
-              {bibleVersions.map((v) => (
-                <option key={v.code} value={v.code} title={v.name}>
-                  {v.code}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <button
-          className="icon-button"
-          aria-label="Hide schedule"
-          aria-expanded={true}
-          title="Hide schedule"
-          onClick={() => onCollapsedChange(true)}
-        >
-          <ChevronRight size={16} />
-        </button>
-      </header>
+      <PanelHeader
+        title="Schedule"
+        actions={
+          <>
+            {service && bibleVersions.length > 0 && (
+              <label className="schedule-translation" title="The translation references open in during this service">
+                <BookOpen size={13} aria-hidden="true" />
+                <Select aria-label="Translation for this service" value={serviceVersion} onChange={(e) => setServiceVersion(e.target.value)}>
+                  <option value="">Default ({defaultVersion})</option>
+                  {bibleVersions.map((v) => (
+                    <option key={v.code} value={v.code} title={v.name}>
+                      {v.code}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            )}
+            <IconButton label="Hide schedule" icon={<ChevronRight size={16} />} aria-expanded={true} onClick={() => onCollapsedChange(true)} />
+          </>
+        }
+      />
 
       <div className="schedule-picker">
-        <select
-          className="input"
+        <Select
           aria-label="Service"
           title="Right-click to send this service to another computer"
           onContextMenu={(e) => service && openSendMenu(e, [{ type: 'service', id: service.id }])}
@@ -258,16 +256,20 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
               {s.date ? `${s.name} · ${s.date}` : s.name}
             </option>
           ))}
-        </select>
-        <button className="button" onClick={() => setCreating(true)}>
-          <Plus size={15} aria-hidden="true" /> New service
-        </button>
-        <button className="icon-button" aria-label="Export package" title="Export package: this service as one .serviceex file, for a USB drive" disabled={!service} onClick={exportPackage}>
-          <Package size={16} />
-        </button>
-        <button className="icon-button" aria-label="Import package" title="Import package: open a .serviceex file" onClick={importPackage}>
-          <PackageOpen size={16} />
-        </button>
+        </Select>
+        <div className="schedule-picker-actions">
+          <Button icon={<Plus size={15} aria-hidden="true" />} onClick={() => setCreating(true)}>
+            New service
+          </Button>
+          <IconButton
+            label="Export package"
+            tooltip="Export package: this service as one .serviceex file, for a USB drive"
+            icon={<Package size={16} />}
+            disabled={!service}
+            onClick={exportPackage}
+          />
+          <IconButton label="Import package" tooltip="Import package: open a .serviceex file" icon={<PackageOpen size={16} />} onClick={importPackage} />
+        </div>
       </div>
 
       <SharedServiceBar />
@@ -329,38 +331,52 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
                 )}
                 <span className="schedule-item-title">{item.title}</span>
               </button>
-              <button
-                className="icon-button"
-                aria-label={`Remove ${item.title} from schedule`}
-                title="Remove from schedule"
+              <IconButton
+                label={`Remove ${item.title} from schedule`}
+                tooltip="Remove from schedule"
+                icon={<X size={14} />}
                 onClick={() => run(() => removeFromSchedule(item.id))}
-              >
-                <X size={14} />
-              </button>
+              />
             </li>
           ))}
           {service && items.length === 0 && (
-            <li className="empty">Add songs and scripture with their + buttons, or add an announcement below.</li>
+            <li>
+              <EmptyState
+                compact
+                icon={<ListPlus size={20} />}
+                title="Nothing in this service yet"
+                description="Add songs and scripture with their + buttons, or add an announcement below."
+              />
+            </li>
           )}
-          {!service && <li className="empty">Create a service to start a run list.</li>}
+          {!service && (
+            <li>
+              <EmptyState compact icon={<CalendarPlus size={20} />} title="No service open" description="Create a service to start a run list." />
+            </li>
+          )}
         </ol>
       )}
 
       <footer className="schedule-footer">
-        <button className="button" disabled={!service} onClick={() => setAnnouncing(true)}>
-          <Megaphone size={15} aria-hidden="true" /> Announcement
-        </button>
-        <button
-          className="button"
+        <Button icon={<Megaphone size={15} aria-hidden="true" />} disabled={!service} onClick={() => setAnnouncing(true)}>
+          Announcement
+        </Button>
+        <Button
+          icon={<Presentation size={15} aria-hidden="true" />}
           disabled={!service || importing}
           onClick={() => window.api.presentations.pick('files').then(importPresentations, console.error)}
           title="PowerPoint, PDF or images, one slide per page; or drop files and folders on the schedule"
         >
-          <Presentation size={15} aria-hidden="true" /> Presentation
-        </button>
-        <button className="button" disabled={!service} onClick={() => setSermonOpen(true)} title="Turn a sermon outline into points and scripture">
-          <ScrollText size={15} aria-hidden="true" /> Sermon
-        </button>
+          Presentation
+        </Button>
+        <Button
+          icon={<ScrollText size={15} aria-hidden="true" />}
+          disabled={!service}
+          onClick={() => setSermonOpen(true)}
+          title="Turn a sermon outline into points and scripture"
+        >
+          Sermon
+        </Button>
         <span className="hint">{MOD}↓ next item</span>
       </footer>
       <PresentationJobs />

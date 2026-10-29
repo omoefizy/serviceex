@@ -1,0 +1,178 @@
+/* The dev UI kit page (src/dev/UiKit.tsx). Tokens only, like the app. */
+
+/* The app locks the body for its fixed layout; the kit is a long page. */
+body:has(.kit) {
+  overflow: auto;
+}
+
+.kit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4) var(--space-10);
+}
+
+.kit-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.kit-header h1 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-xl);
+}
+
+.kit-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--text-md);
+}
+
+.kit-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-0);
+  font-size: var(--text-sm);
+}
+
+.kit-nav a {
+  color: var(--accent);
+}
+
+.kit-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  scroll-margin-top: var(--space-10);
+}
+
+.kit-section-title {
+  color: var(--text-1);
+  font-size: var(--text-lg);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.kit-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.kit-row-label {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  text-transform: capitalize;
+}
+
+.kit-row-items {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.kit-row-items > .ui-input,
+.kit-row-items > .ui-select {
+  width: 180px;
+}
+
+.kit-swatch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 120px;
+}
+
+.kit-swatch-color {
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.kit-swatch code,
+.kit-space code,
+.kit-box code,
+.kit-control code {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.kit-type {
+  color: var(--text-1);
+}
+
+.kit-space {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.kit-space > span {
+  height: 12px;
+  background: var(--accent);
+}
+
+.kit-box {
+  display: flex;
+  align-items: flex-end;
+  width: 120px;
+  height: 64px;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.kit-control {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.kit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-4);
+}
+
+.kit-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.kit-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.kit-panel {
+  max-width: 420px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+@media (max-width: 640px) {
+  .kit-row {
+    grid-template-columns: 1fr;
+  }
+}

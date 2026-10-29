@@ -1,14 +1,77 @@
 # ServiceEx UI audit
 
-29 October 2026. This report only records what we found; nothing has been redesigned yet.
+29 October 2026. The findings below (sections 1 to 3) record the app as it was first audited. The design tokens and shared components proposed in section 2 have since been applied to the toolbar, the Schedule, the Scripture panel and Settings; **[Tokens and shared components: before and after](#tokens-and-shared-components-before-and-after)** has the numbers.
 
-**How it was made.** `node scripts/ui-audit.ts` builds the main process and serves the renderer with Vite. It then runs the app with Playwright on a fresh temporary data folder, so the real library is never opened, and seeds invented sample data: 6 songs, 2 services, 6 generated gradient backgrounds, and a Psalm 23 item from the bundled KJV. For each state it saves a screenshot and measures every visible element (fonts, colors, spacing, radius, targets, contrast). It also scans `src/index.css` and the components directly. Its outputs are `metrics.json` and `static.json` next to the 83 PNGs in this folder. Re-run the script to regenerate everything; the folder is git-ignored except for this report.
+**How it was made.** `node scripts/ui-audit.ts` builds the main process and serves the renderer with Vite. It then runs the app with Playwright on a fresh temporary data folder, so the real library is never opened, and seeds invented sample data: 6 songs, 2 services, 6 generated gradient backgrounds, and a Psalm 23 item from the bundled KJV. For each state it saves a screenshot and measures every visible element (fonts, colors, spacing, radius, targets, contrast). It also scans the stylesheets (`src/styles/tokens.css`, `src/index.css`, `src/components/ui/ui.css`) and the components directly. Its outputs are `metrics.json` (with a `totals.headline` summary) and `static.json`, next to 84 PNGs in this folder: the 83 app states plus `50-ui-kit.png`, the dev UI kit. Re-run the script to regenerate everything; it keeps this report, and the folder is git-ignored except for the report.
 
 **Caveats.**
 - Plan gating is off (`ENFORCE_ENTITLEMENTS = false`), so every screen is reachable.
 - A dev build shows the "AI developer key" Settings section, which customers never see.
 - The signed-in account, device chips, transfers and Inbox are invented data injected into the renderer's stores. Sharing itself stayed off, so nothing was advertised on the network.
 - Counts below are element instances summed over every screen at both sizes. They are useful for proportions, not as absolute figures.
+
+## Tokens and shared components: before and after
+
+**What changed.**
+- `src/styles/tokens.css` holds every color, type size, space, radius, shadow and control height. `src/index.css` imports it. The old names (`--bg`, `--panel`, `--text-muted`, `--next`, …) remain as aliases, so the rest of the stylesheet kept working unchanged.
+- `src/components/ui/` has Button, IconButton, Input, Select, Toggle (with SegmentedControl), Tabs, Card, Chip, Modal, Toast, EmptyState and PanelHeader. Each has hover, focus-visible, active and disabled states, and their styles are in `ui.css`.
+- Migrated: the toolbar (with the Layout menu, Cues, Inbox and sharing chips), the Schedule (with the shared service bar), the Scripture panel (with its results table), and every Settings section (with Account, Default themes and Scripture display).
+- The dev-only UI kit is at `#/ui-kit` (`src/dev/UiKit.tsx`). It shows every component and state, with a dark and light switch. Production builds leave it out.
+
+**How the audit changed.**
+- A target now counts its invisible `::before` hit area and its `<label>`. Before, it counted only the drawn box. No control had a hit area before, so the two runs are comparable.
+- The static scan reads the token file separately from the stylesheets that use the tokens.
+
+| Measure | Before | After |
+|---|---|---|
+| Hex colors written outside the tokens (stylesheets) | 26 distinct, 84 uses | **0** |
+| rgba colors written outside the tokens | 30 distinct, 42 uses | **0** |
+| Ambers in the stylesheet | 6 hex + 2 rgba families | **1** (`--warning`, with `--warning-fill` for amber behind text) |
+| `--success`, `--warning`, `--error` tokens | none; errors used `--live` | all three; errors are rose, at least 13 ΔE from every live red |
+| Distinct colors rendered (text + background + border) | 49 (11 + 35 + 20) | 49 (10 + 36 + 22) |
+| Near-duplicate color groups rendered | 6 | 8, all intended (see below) |
+| Font families rendered | 3 (Arial leaked into 148 form controls) | **2** |
+| Button heights in the four migrated areas | 16, 22, 25, 26, 27, 34, 42, 44, plus `.button` at 25 to 38 | **28, 32, 40**. Two exceptions keep their drawn size inside a 32 px hit area: device chips (27) and transfer Cancel/Decline (16). |
+| Button heights, whole app | 14 values for button controls | shared components: 28, 32, 40; legacy `.button` elsewhere: 25, 27, 33, 34, 37, 38 |
+| Distinct button style combinations | 76 | 74 |
+| Input and select heights in the migrated areas | 23, 25, 27, 29, 37, 38, 40 | **32** (40 for `size="lg"`) |
+| Click targets under 32 px (unique) | 168 | **74**; none in the migrated areas |
+| Contrast failures, WCAG AA (unique) | 22 (15 on enabled controls) | **12 (3 on enabled controls)** |
+| `:focus-visible` rules / global focus ring | 19 / none | 26 / one (`:where(…):focus-visible`) |
+| `transition` declarations | 1 | 9 |
+
+The before figures come from the saved measurements of the first run. The 180 small targets quoted in section 1 counted a few more duplicates. Counts span every screen at both sizes, so the screens not yet migrated still carry most of what is left.
+
+**Contrast, the pairs that matter.** Each hue is kept; only lightness moves.
+
+| Where | Before | After | How |
+|---|---|---|---|
+| Primary button text (white on accent) | 3.22 | **4.56** | fill `--accent-strong` #3370e6; `--accent` #4f8cff stays for text, borders and icons |
+| LIVE label on its pill | 3.82 (light 4.14) | **4.88** (light 4.91) | `--live-text` #ec6a6e (light #c81e1e) |
+| Go Live and other live fills, white text | 3.91 | **4.65** | `--live-strong` #d6393e |
+| Show mode, active | 3.30 | **5.02** | `--mode-show` #15803d; Clear #027bba (4.62) |
+| Error text | 4.45 (live red) | **7.17** | `--error` #fb7fa0 |
+| Inbox and Cues badges | 3.22 | **4.56** | `--accent-strong` |
+| `kbd` hints | 2.8–3.6 (70% opacity) | **pass** | full-strength text; only the border is softened |
+
+**What is left.**
+- **Colors.** The 8 near-duplicate groups that remain are intended:
+  - the background levels;
+  - `--text-2` and `--text-3`;
+  - the live dot and its fill (#e5484d and #d6393e);
+  - the accent fill and its hover (#3370e6 and #2b64d4);
+  - the format toolbar's text color swatches (#ffd60a, #ff9f0a, #0057d9), which are slide content.
+  - Slide and stage content colors written in components (ScriptureDisplay's highlight palette, StreamView's chroma green) are content, not chrome, and stay as data.
+- **Contrast.** 3 failures on enabled controls remain, all outside the migrated areas:
+  - white on the teal and amber section labels of slide cards (2.49 and 2.15). These are section colors that users choose.
+  - the offline device name in light mode (3.8).
+  - The other 9 failures are disabled controls.
+- **Small targets.** The 74 left are in screens not migrated yet:
+  - the slide panel and Live/Preview (format toolbar, highlight swatches, transition picker, Go Back, Preview Output);
+  - the song list's hover actions, the song and theme editors, Stream, the command palette input;
+  - the splitters (7 px, drag handles).
+- **Legacy classes.** `.button`, `.icon-button` and `.input` still style those screens. Migrating them is the same mechanical change.
+- **Layout.** The 1280×720 horizontal overflow (Biggest problems, 1) is unchanged: 31 screens still scroll sideways. It is a layout fix, not a token one.
 
 ## Screens captured
 
@@ -180,7 +243,7 @@ There are 180 unique small targets.
 
 The finished-looking screens are the command palette (20–21), the Inbox (23), the media grid (09), the output (40–41) and the stage display (42).
 
-## 2. Proposed design tokens (not applied)
+## 2. Proposed design tokens (applied; see before and after above)
 
 These build on the existing names where they work, so the migration can be mostly find-and-replace.
 

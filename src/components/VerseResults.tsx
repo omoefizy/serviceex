@@ -5,6 +5,7 @@ import { canMakeRange, passageOf, previewPassage, resultSegments, type ResultIte
 import { canSendCues, openCueMenu, useSharingStore } from '../lib/sharing'
 import { verseCaption } from '../lib/slides'
 import { selectLiveSlide, selectPreviewSlide, useOperatorStore } from '../store'
+import { Button, IconButton, SegmentedControl } from './ui'
 
 export interface VerseResultsHandle {
   /** Ticks or unticks the row at `index` (Space in the search box). */
@@ -126,49 +127,39 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
       {chosen.length > 0 && (
         <div className="selection-bar" role="region" aria-label="Selected verses">
           <span>{chosen.length} selected</span>
-          <span className="segmented" role="radiogroup" aria-label="Send as">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={effectiveMode === 'range'}
-              className={effectiveMode === 'range' ? 'active' : ''}
-              disabled={!rangeOk}
-              title={rangeOk ? 'Every verse from the first selected to the last' : 'A range needs verses from one chapter of one version'}
-              onClick={() => setMode('range')}
-            >
-              Range
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={effectiveMode === 'sequence'}
-              className={effectiveMode === 'sequence' ? 'active' : ''}
-              title="Just the selected verses, one after another"
-              onClick={() => setMode('sequence')}
-            >
-              Sequence
-            </button>
-          </span>
-          <button type="button" className="button" onClick={() => use(chosen, effectiveMode, 'preview')}>
+          <SegmentedControl<'range' | 'sequence'>
+            aria-label="Send as"
+            value={effectiveMode}
+            options={[
+              {
+                value: 'range',
+                label: 'Range',
+                disabled: !rangeOk,
+                title: rangeOk ? 'Every verse from the first selected to the last' : 'A range needs verses from one chapter of one version',
+              },
+              { value: 'sequence', label: 'Sequence', title: 'Just the selected verses, one after another' },
+            ]}
+            onChange={setMode}
+          />
+          <Button size="sm" onClick={() => use(chosen, effectiveMode, 'preview')}>
             <Eye size={15} aria-hidden="true" /> Preview
-          </button>
-          <button
-            type="button"
-            className="button"
+          </Button>
+          <Button
+            size="sm"
             disabled={!service}
             title={service ? `Add to ${service.name}` : 'Create a service first'}
             onClick={() => use(chosen, effectiveMode, 'schedule')}
           >
             <ListPlus size={15} aria-hidden="true" /> Schedule
-          </button>
+          </Button>
           {sendable && (
-            <button type="button" className="button" title="Send to device: a cue in another computer's tray" onClick={(e) => use(chosen, effectiveMode, 'send', e)}>
+            <Button size="sm" title="Send to device: a cue in another computer's tray" onClick={(e) => use(chosen, effectiveMode, 'send', e)}>
               <Send size={15} aria-hidden="true" /> Send
-            </button>
+            </Button>
           )}
-          <button type="button" className="button" onClick={() => setSelected(new Set())}>
+          <Button size="sm" onClick={() => setSelected(new Set())}>
             Clear
-          </button>
+          </Button>
         </div>
       )}
       {error && <p className="error">{error}</p>}
@@ -217,7 +208,9 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
                   onDoubleClick={() => onOpen(item, true)}
                 >
                   <td className="verse-table-tick" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" aria-label={`Select ${reference} ${item.version}`} checked={selected.has(item.key)} onChange={() => toggle(item.key)} />
+                    <label className="input-hit">
+                      <input type="checkbox" aria-label={`Select ${reference} ${item.version}`} checked={selected.has(item.key)} onChange={() => toggle(item.key)} />
+                    </label>
                   </td>
                   <td className="verse-table-version">{item.version}</td>
                   <td className="verse-table-ref">{reference}</td>
@@ -228,16 +221,15 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
                     </div>
                   </td>
                   <td onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      className="icon-button"
-                      aria-label={`Add ${reference} ${item.version} to schedule`}
-                      title={service ? `Add to ${service.name}` : 'Create a service first'}
+                    <IconButton
+                      size="sm"
+                      label={`Add ${reference} ${item.version} to schedule`}
+                      tooltip={service ? `Add to ${service.name}` : undefined}
+                      icon={<ListPlus size={15} />}
                       disabled={!service}
+                      disabledTooltip="Create a service first"
                       onClick={() => use([item], 'sequence', 'schedule')}
-                    >
-                      <ListPlus size={15} />
-                    </button>
+                    />
                   </td>
                 </tr>
               )
@@ -261,9 +253,9 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
 
       {hasMore && (
         <div ref={sentinel} className="verse-results-more">
-          <button type="button" className="button" disabled={loading} onClick={onLoadMore}>
+          <Button disabled={loading} onClick={onLoadMore}>
             {loading ? 'Loading…' : 'Load 30 more'}
-          </button>
+          </Button>
         </div>
       )}
     </div>

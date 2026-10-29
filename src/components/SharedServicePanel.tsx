@@ -15,6 +15,7 @@ import {
   useSharingStore,
 } from '../lib/sharing'
 import { useOperatorStore } from '../store'
+import { Button, IconButton, Select } from './ui'
 
 const ICONS: Record<SharedItemType, LucideIcon> = { song: Music, scripture: BookOpen, announcement: Megaphone, presentation: Presentation, note: StickyNote }
 
@@ -48,25 +49,21 @@ export function SharedServiceBar() {
     const hosts = peers.filter((p) => p.paired && p.online && p.hosting)
     return (
       <div className="shared-bar">
-        <button
-          type="button"
-          className="button"
+        <Button
           disabled={busy}
           title="Let paired computers join this service and edit it together. Changes sync within about a second."
           onClick={() => run(hostOpenService)}
         >
           <Users size={14} aria-hidden="true" /> Host {service ? `“${service.name}”` : 'a shared service'}
-        </button>
+        </Button>
         {hosts.map((peer) => (
-          <button
+          <Button
             key={peer.id}
-            type="button"
-            className="button"
             disabled={busy}
             onClick={() => run(async () => useSharingStore.setState({ shared: await window.api.sharing.joinService(peer.id) }))}
           >
             Join {peer.hosting!.name} on {peer.name}
-          </button>
+          </Button>
         ))}
       </div>
     )
@@ -85,7 +82,7 @@ export function SharedServiceBar() {
         {shared.connected ? <Users size={14} aria-hidden="true" /> : <CloudOff size={14} aria-hidden="true" />}
         <strong>{shared.name}</strong> · {status}
       </span>
-      <select className="input" aria-label="Show items" value={filterValue(filter)} onChange={(e) => useSharingStore.setState({ itemFilter: parseFilter(e.target.value) })}>
+      <Select aria-label="Show items" value={filterValue(filter)} onChange={(e) => useSharingStore.setState({ itemFilter: parseFilter(e.target.value) })}>
         <option value="all">All items</option>
         <option value="mine">My items</option>
         {owners.map((id) => (
@@ -93,16 +90,14 @@ export function SharedServiceBar() {
             {deviceLabel(id)}
           </option>
         ))}
-      </select>
-      <button
-        type="button"
-        className="button"
+      </Select>
+      <Button
         disabled={busy}
         title={shared.role === 'host' ? 'Stop sharing; joined computers keep their own copy' : 'Leave; the shared service goes on for the others'}
         onClick={() => run(async () => useSharingStore.setState({ shared: await window.api.sharing.leaveService() }))}
       >
         {shared.role === 'host' ? 'Stop sharing' : 'Leave'}
-      </button>
+      </Button>
     </div>
   )
 }
@@ -237,9 +232,12 @@ export function SharedItemList() {
                   </span>
                 </span>
               </button>
-              <button className="icon-button" aria-label={`Remove ${item.payload.title}`} title="Remove from shared service" onClick={() => updateShared(item.id, { deleted: true })}>
-                <X size={14} />
-              </button>
+              <IconButton
+                label={`Remove ${item.payload.title}`}
+                tooltip="Remove from shared service"
+                icon={<X size={14} />}
+                onClick={() => updateShared(item.id, { deleted: true })}
+              />
             </li>
           )
         })}

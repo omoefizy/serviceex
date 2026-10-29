@@ -8,6 +8,7 @@ import { clampBox } from '../lib/themeLayout'
 import { MissingFontChips } from './FontPicker'
 import { FormatToolbar, type FormatControl, type FormatPatch, type FormatState } from './FormatToolbar'
 import { MediaPickerModal } from './MediaGrid'
+import { SegmentedControl, Select } from './ui'
 import { ThemedSlide } from './ThemedSlide'
 
 const SAMPLES = {
@@ -102,23 +103,9 @@ export function Range(props: { value: number; min: number; max: number; step: nu
   )
 }
 
+/** The theme forms' choice of a few; its Row names the group. */
 export function Segmented<T extends string>(props: { value: T; options: { value: T; label: string }[]; onChange(value: T): void }) {
-  return (
-    <span className="segmented" role="radiogroup">
-      {props.options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          role="radio"
-          aria-checked={props.value === option.value}
-          className={props.value === option.value ? 'active' : ''}
-          onClick={() => props.onChange(option.value)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </span>
-  )
+  return <SegmentedControl value={props.value} options={props.options} onChange={props.onChange} />
 }
 
 export const Color = ({ value, onChange }: { value: string; onChange(value: string): void }) => (
@@ -157,13 +144,13 @@ export function ThemeDefaultsForm() {
       {THEME_CONTENT_TYPES.map((type) => (
         <label key={type} className="field">
           <span>Default for {CONTENT_LABELS[type].toLowerCase()}</span>
-          <select className="input" value={defaults?.[type] ?? ''} onChange={(e) => setDefault(type, Number(e.target.value))}>
+          <Select value={defaults?.[type] ?? ''} onChange={(e) => setDefault(type, Number(e.target.value))}>
             {themes.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       ))}
       {error && <p className="error">{error}</p>}

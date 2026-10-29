@@ -1,90 +1,26 @@
+@import './styles/tokens.css';
+@import './components/ui/ui.css';
+
+/* Colors, sizes and depths come from src/styles/tokens.css; this file never hard-codes a color. */
 :root {
-  /* Dark is the default; light mode redefines these colors below. */
-  --bg: #0f1115;
-  --panel: #171a21;
-  --panel-raised: #1f232c;
-  --border: #2a2f3a;
-  --text: #e6e8ec;
-  --text-muted: #8b92a0;
-  --accent: #4f8cff;
-  --accent-soft: rgba(79, 140, 255, 0.15);
-  --live: #e5484d;
-  --live-soft: rgba(229, 72, 77, 0.15);
-  --next: #3b82f6;
-  --shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-  --radius: 8px;
-
-  /* Output mode colors: Show green, Black neutral, Clear sky, Logo violet. */
-  --mode-show: #16a34a;
-  --mode-black: #4b5563;
-  --mode-clear: #0284c7;
-  --mode-logo: #7c3aed;
-
-  /* Spacing scale: every padding, margin and gap uses one of these. */
-  --space-0-5: 2px;
-  --space-1: 4px;
-  --space-1-5: 6px;
-  --space-2: 8px;
-  --space-2-5: 10px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-
-  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
-  font-size: 14px;
-  line-height: 1.45;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: var(--leading);
   color-scheme: dark;
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
 }
 
-/* Light mode: chosen in Settings, or following the system when Settings says "System". */
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme='dark']) {
-    --bg: #eef0f4;
-    --panel: #ffffff;
-    --panel-raised: #f2f4f7;
-    --border: #d5d9e1;
-    --text: #161a21;
-    --text-muted: #5d6676;
-    --accent: #2563eb;
-    --accent-soft: rgba(37, 99, 235, 0.12);
-    --live: #dc2626;
-    --live-soft: rgba(220, 38, 38, 0.1);
-    --next: #2563eb;
-    --shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
-    color-scheme: light;
-  }
-}
-
-:root[data-theme='light'] {
-  --bg: #eef0f4;
-  --panel: #ffffff;
-  --panel-raised: #f2f4f7;
-  --border: #d5d9e1;
-  --text: #161a21;
-  --text-muted: #5d6676;
-  --accent: #2563eb;
-  --accent-soft: rgba(37, 99, 235, 0.12);
-  --live: #dc2626;
-  --live-soft: rgba(220, 38, 38, 0.1);
-  --next: #2563eb;
-  --shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
-  color-scheme: light;
-}
-
+/* Full-strength text so the hint reads at 4.5:1; the softer border keeps it quieter than the label beside it. */
 kbd {
   display: inline-block;
   min-width: 18px;
   padding: 0 var(--space-1);
-  border: 1px solid currentColor;
-  border-radius: 4px;
-  font: 600 10px/16px ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+  border-radius: var(--radius-sm);
+  font: 600 var(--text-xs) / 16px var(--font-mono);
   text-align: center;
-  opacity: 0.7;
 }
 
 body.resizing {
@@ -119,9 +55,18 @@ h2 {
   color: var(--text-muted);
 }
 
-button {
+button,
+input,
+select,
+textarea {
   font: inherit;
   color: inherit;
+}
+
+/* Every focusable control shows the same ring from the keyboard; rules with their own ring still win. */
+:where(button, a[href], input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
 }
 
 /* ---------- Layout ---------- */
@@ -233,7 +178,7 @@ button {
 }
 
 .live-indicator.live .live-label {
-  color: var(--live);
+  color: var(--live-text);
 }
 
 .live-indicator.black .live-dot {
@@ -263,12 +208,6 @@ button {
 /* The Live menu in the toolbar: Go Back, Logo, Black, Clear Text and Show Live Output. */
 .live-menu {
   position: relative;
-}
-
-.live-menu-button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
 }
 
 .live-menu-list {
@@ -332,19 +271,16 @@ button {
   gap: var(--space-2);
 }
 
-.mode-button {
+/* Large Buttons (src/components/ui) with each mode's color as the border, filled while that mode is on. */
+.ui-button.mode-button {
   --mode: var(--mode-show);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
+  justify-content: flex-start;
   min-width: 104px;
-  padding: var(--space-2-5) var(--space-3);
+  padding: 0 var(--space-3);
   border: 2px solid var(--mode);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: transparent;
-  color: var(--text);
-  font-weight: 700;
-  cursor: pointer;
+  font-weight: var(--weight-bold);
 }
 
 .mode-button kbd {
@@ -364,7 +300,7 @@ button {
 }
 
 .mode-button.mode-alert {
-  --mode: #d97706;
+  --mode: var(--mode-alert);
 }
 
 /* ---------- Alerts ---------- */
@@ -381,15 +317,15 @@ button {
   gap: var(--space-1-5);
   padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2-5);
   border-radius: 999px;
-  background: var(--live);
-  color: #fff;
+  background: var(--live-strong);
+  color: var(--text-on-fill);
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .alert-chip .live-dot {
-  background: #fff;
+  background: var(--text-on-fill);
 }
 
 .alert-chip-stop {
@@ -399,15 +335,15 @@ button {
   padding: var(--space-0-5) var(--space-2);
   border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  color: #b91c1c;
+  background: color-mix(in srgb, var(--text-on-fill) 92%, transparent);
+  color: var(--live-ink);
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
 }
 
 .alert-chip-stop:focus-visible {
-  outline: 2px solid #fff;
+  outline: 2px solid var(--text-on-fill);
   outline-offset: 1px;
 }
 
@@ -442,7 +378,7 @@ button {
 }
 
 .alerts-status.on {
-  background: rgba(217, 119, 6, 0.18);
+  background: var(--warning-soft);
   color: var(--text);
 }
 
@@ -480,8 +416,8 @@ button {
   flex-shrink: 0;
   padding: 0 var(--space-1-5);
   border-radius: 999px;
-  background: var(--live);
-  color: #fff;
+  background: var(--live-strong);
+  color: var(--text-on-fill);
   font-size: 11px;
 }
 
@@ -517,8 +453,8 @@ button {
 
 .alerts-priority.active {
   border-color: var(--live);
-  background: var(--live);
-  color: #fff;
+  background: var(--live-strong);
+  color: var(--text-on-fill);
 }
 
 .alerts-settings {
@@ -621,18 +557,25 @@ button {
   padding-right: var(--gap);
 }
 
-.mode-button:hover {
+.ui-button.mode-button:not(.active):hover:not(:disabled) {
+  border-color: var(--mode);
   background: color-mix(in srgb, var(--mode) 18%, transparent);
 }
 
-.mode-button.active {
+.ui-button.mode-button.active {
+  border-color: var(--mode);
   background: var(--mode);
-  color: #fff;
+  color: var(--text-on-fill);
 }
 
-.mode-button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+/* Amber is too light for white text. */
+.ui-button.mode-button.mode-alert.active {
+  color: var(--text-on-warning);
+}
+
+.ui-button.mode-button:disabled {
+  border-color: var(--border);
+  background: transparent;
 }
 
 /* May shrink below its contents: the screens list then scrolls and Settings, after it, stays in view. */
@@ -663,36 +606,18 @@ button {
   flex-shrink: 0;
 }
 
-.toolbar-search {
-  display: inline-flex;
-  align-items: center;
+/* A Button drawn like a search field; it opens the command palette. */
+.ui-button.toolbar-search {
+  justify-content: flex-start;
   gap: var(--space-2);
   min-width: 160px;
-  padding: var(--space-1-5) var(--space-2-5);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  padding: 0 var(--space-2-5);
   background: var(--bg);
   color: var(--text-muted);
-  cursor: pointer;
 }
 
 .toolbar-search kbd {
   margin-left: auto;
-}
-
-.toolbar-search:hover {
-  border-color: var(--text-muted);
-}
-
-.toolbar-search:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.icon-button.toolbar-icon {
-  position: relative;
-  width: 34px;
-  height: 34px;
 }
 
 /* On the Stream button while the Stream output window is open. */
@@ -898,7 +823,7 @@ button {
 
 .error {
   margin: 0;
-  color: var(--live);
+  color: var(--error);
   font-size: 12px;
 }
 
@@ -922,19 +847,20 @@ button {
 }
 
 .button.primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+  color: var(--text-on-fill);
 }
 
 .button.primary:hover:not(:disabled) {
-  filter: brightness(1.1);
+  border-color: var(--accent-strong-hover);
+  background: var(--accent-strong-hover);
 }
 
 .button.danger {
-  border-color: var(--live);
-  background: var(--live);
-  color: #fff;
+  border-color: var(--error-strong);
+  background: var(--error-strong);
+  color: var(--text-on-fill);
 }
 
 .button:disabled {
@@ -1212,7 +1138,7 @@ button {
 }
 
 .slide-row-line.reference {
-  color: #d9a400;
+  color: var(--warning);
   font-weight: 600;
 }
 
@@ -1322,8 +1248,8 @@ button {
 
 /* Red like everything else that means live; more specific than .button.primary. */
 .button.primary.go-live-button {
-  border-color: var(--live);
-  background: var(--live);
+  border-color: var(--live-strong);
+  background: var(--live-strong);
 }
 
 .slide-number {
@@ -1381,8 +1307,8 @@ button {
   padding: 1px var(--space-1-5);
   border: 0;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.7);
-  color: #e6e8ec;
+  background: var(--screen-scrim);
+  color: var(--screen-fg-soft);
   font-size: 10px;
   cursor: pointer;
 }
@@ -1394,7 +1320,7 @@ button {
 /* Grid thumbnails draw the slide with its theme; the number and section sit on top as badges. */
 .slide-card.themed {
   padding: 0;
-  background: #000;
+  background: var(--screen-bg);
 }
 
 .slide-card.themed .slide-number,
@@ -1403,8 +1329,8 @@ button {
   top: 4px;
   padding: 1px var(--space-1-5);
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.65);
-  color: #e6e8ec;
+  background: var(--screen-scrim);
+  color: var(--screen-fg-soft);
   font-size: 10px;
 }
 
@@ -1417,8 +1343,8 @@ button {
 }
 
 .slide-card.themed.live .slide-number {
-  background: var(--live);
-  color: #fff;
+  background: var(--live-strong);
+  color: var(--screen-fg);
 }
 
 .theme-picker {
@@ -1433,8 +1359,8 @@ button {
 
 /* The section name in its color, with a matching stripe along the bottom of the card. */
 .slide-card.themed .section-label {
-  background: var(--section-color, rgba(0, 0, 0, 0.65));
-  color: #fff;
+  background: var(--section-color, var(--screen-scrim));
+  color: var(--screen-fg);
 }
 
 .slide-card.themed::after {
@@ -1468,7 +1394,7 @@ button {
   aspect-ratio: 16 / 9;
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: #000;
+  background: var(--screen-bg);
   overflow: hidden;
 }
 
@@ -1482,7 +1408,7 @@ button {
 
 .preview-screen .empty {
   padding: var(--space-3);
-  color: #9ca3af;
+  color: var(--screen-fg-muted);
 }
 
 /* Highlight mode: words on the screen are clicked, not selected. */
@@ -1511,7 +1437,7 @@ button {
   padding: 0;
   border: 2px solid transparent;
   border-radius: 50%;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-inset-hairline);
   cursor: pointer;
 }
 
@@ -1541,8 +1467,8 @@ button {
   z-index: 1;
   padding: 1px var(--space-1-5);
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.7);
-  color: #fff;
+  background: var(--screen-scrim);
+  color: var(--screen-fg);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
@@ -1572,16 +1498,16 @@ button {
   align-self: flex-start;
   gap: var(--space-1-5);
   padding: var(--space-1) var(--space-2-5);
-  border: 1px solid #f59e0b;
+  border: 1px solid var(--warning);
   border-radius: 999px;
-  background: rgba(245, 158, 11, 0.14);
+  background: var(--warning-soft);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
 }
 
 .stale-chip:hover {
-  background: rgba(245, 158, 11, 0.24);
+  background: color-mix(in srgb, var(--warning) 24%, transparent);
 }
 
 /* Live PowerPoint: the slide and build step PowerPoint is on, and why it fell back to the still slide. */
@@ -1602,9 +1528,9 @@ button {
   gap: var(--space-1-5);
   margin: 0;
   padding: var(--space-1) var(--space-2);
-  border: 1px solid #f59e0b;
+  border: 1px solid var(--warning);
   border-radius: 6px;
-  background: rgba(245, 158, 11, 0.14);
+  background: var(--warning-soft);
   font-size: 12px;
 }
 
@@ -1633,7 +1559,7 @@ button {
 }
 
 .powerpoint-test-steps .failed {
-  color: var(--live);
+  color: var(--error);
 }
 
 .preview-subheading {
@@ -1712,8 +1638,8 @@ button {
 
 .listener-status.reconnecting,
 .listener-status.busy {
-  border-color: #f59e0b;
-  color: #f59e0b;
+  border-color: var(--warning);
+  color: var(--warning);
 }
 
 /* "Cloud" or "Offline" beside Listening. */
@@ -1767,16 +1693,16 @@ button {
 .listener-warning {
   margin: 0;
   padding: var(--space-2) var(--space-2-5);
-  border: 1px solid #f59e0b;
+  border: 1px solid var(--warning);
   border-radius: 4px;
-  background: rgba(245, 158, 11, 0.12);
+  background: var(--warning-soft);
   font-size: 12px;
   line-height: 1.4;
 }
 
 .listener-status.error {
-  border-color: var(--live);
-  color: var(--live);
+  border-color: var(--error);
+  color: var(--error);
 }
 
 @keyframes listener-pulse {
@@ -1798,8 +1724,8 @@ button {
   padding: var(--space-3);
   overflow-y: auto;
   border-radius: 4px;
-  background: #0b0d10;
-  color: #ffffff;
+  background: var(--screen-bg);
+  color: var(--screen-fg);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -1820,7 +1746,7 @@ button {
   font-size: 12px;
   white-space: nowrap;
   transform: translateX(-50%);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-1);
 }
 
 /* The quote editor's sample of the slide, in the Quote theme's colours. */
@@ -1835,8 +1761,8 @@ button {
   gap: var(--space-1);
   padding: var(--space-3) var(--space-4);
   border-radius: 4px;
-  background: linear-gradient(160deg, #1e1b2e, #0b0a12);
-  color: #fdfaf3;
+  background: linear-gradient(160deg, var(--quote-bg-from), var(--quote-bg-to));
+  color: var(--quote-ink);
   text-align: center;
 }
 
@@ -1848,22 +1774,22 @@ button {
 }
 
 .quote-sample small {
-  color: #d6b98c;
+  color: var(--quote-gold);
   font-weight: 600;
 }
 
 /* The transcript is always dark, so a selection needs a highlight that shows on it. */
 .transcript ::selection {
-  background: rgba(59, 130, 246, 0.6);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
+  color: var(--screen-fg);
 }
 
 .transcript-partial {
-  color: #8b92a0;
+  color: var(--screen-fg-muted);
 }
 
 .transcript-empty {
-  color: #8b92a0;
+  color: var(--screen-fg-muted);
   font-size: 13px;
 }
 
@@ -1875,7 +1801,7 @@ button {
   height: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--mode-show) 0 70%, #f59e0b 70% 90%, var(--live) 90%);
+  background: linear-gradient(90deg, var(--mode-show) 0 70%, var(--warning-fill) 70% 90%, var(--live) 90%);
 }
 
 /* Covers the unlit part, from the right, so the colors stay put along the meter. */
@@ -1935,8 +1861,8 @@ button {
 
 .clip-light.on {
   border-color: var(--live);
-  background: var(--live);
-  color: #fff;
+  background: var(--live-strong);
+  color: var(--text-on-fill);
   opacity: 1;
 }
 
@@ -1966,11 +1892,11 @@ button {
 }
 
 .mic-advice li.error {
-  border-left-color: var(--live);
+  border-left-color: var(--error);
 }
 
 .mic-advice li.warning {
-  border-left-color: #f59e0b;
+  border-left-color: var(--warning);
 }
 
 .mic-advice li.info {
@@ -2018,13 +1944,13 @@ button {
 }
 
 .input-health.warning {
-  border-color: #f59e0b;
-  color: #f59e0b;
+  border-color: var(--warning);
+  color: var(--warning);
 }
 
 .input-health.error {
-  border-color: var(--live);
-  color: var(--live);
+  border-color: var(--error);
+  color: var(--error);
 }
 
 /* Scripture detection debug: the segment read, each stage and its time, and the last card's latency. */
@@ -2058,7 +1984,7 @@ button {
 }
 
 .mic-dropouts.some {
-  color: #f59e0b;
+  color: var(--warning);
 }
 
 /* Which engine the listener uses, beside its heading. */
@@ -2077,13 +2003,13 @@ button {
 }
 
 .speed-chip.ok {
-  background: rgba(22, 163, 74, 0.14);
+  background: var(--success-soft);
   color: var(--mode-show);
 }
 
 .speed-chip.behind {
-  background: rgba(245, 158, 11, 0.16);
-  color: #f59e0b;
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 /* ---------- Whisper model manager (Settings) ---------- */
@@ -2141,7 +2067,7 @@ button {
   padding: 1px var(--space-2);
   border-radius: 999px;
   background: var(--mode-show);
-  color: #ffffff;
+  color: var(--text-on-fill);
   font-size: 11px;
   font-weight: 700;
 }
@@ -2252,8 +2178,8 @@ button {
 .suggestion-tag {
   padding: 0 var(--space-1-5);
   border-radius: 999px;
-  background: rgba(245, 158, 11, 0.16);
-  color: #f59e0b;
+  background: var(--warning-soft);
+  color: var(--warning);
   font-size: 11px;
   font-weight: 600;
 }
@@ -2281,8 +2207,8 @@ button {
 }
 
 .suggestion-tag.ai {
-  background: rgba(139, 92, 246, 0.18);
-  color: #a78bfa;
+  background: var(--ai-soft);
+  color: var(--ai);
 }
 
 .suggestion.ai {
@@ -2290,7 +2216,7 @@ button {
 }
 
 .suggestion-text mark {
-  background: rgba(214, 185, 140, 0.28);
+  background: color-mix(in srgb, var(--quote-gold) 28%, transparent);
   color: var(--text);
   border-radius: 2px;
 }
@@ -2325,7 +2251,7 @@ button {
 /* A statement from the sermon: its text, and Preview / Edit / Add to Schedule under it. */
 .suggestion.statement {
   flex-basis: 320px;
-  border-left: 3px solid #d6b98c;
+  border-left: 3px solid var(--quote-gold);
 }
 
 .suggestion.statement .suggestion-main {
@@ -2402,7 +2328,7 @@ button {
   flex-direction: column;
   align-items: center;
   gap: 2cqw;
-  color: #fff;
+  color: var(--screen-fg);
   font-size: 4cqw;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -2420,7 +2346,7 @@ button {
 .output {
   position: relative;
   height: 100%;
-  background: #000;
+  background: var(--screen-bg);
   overflow: hidden;
   cursor: none;
 }
@@ -2468,7 +2394,7 @@ button {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: #000;
+  background: var(--screen-bg);
 }
 
 .themed-slide.transparent {
@@ -2679,8 +2605,8 @@ button {
 }
 
 .chip.missing {
-  border-color: var(--live);
-  background: var(--live-soft);
+  border-color: var(--error);
+  background: var(--error-soft);
   text-decoration: line-through;
 }
 
@@ -2707,7 +2633,7 @@ button {
   height: 100%;
   min-height: 360px;
   resize: none;
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
 }
 
@@ -2899,8 +2825,8 @@ button {
 }
 
 .color-input {
-  width: 34px;
-  height: 26px;
+  width: 40px;
+  height: var(--control-md);
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -2978,7 +2904,7 @@ button {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-2);
 }
 
 .font-picker-menu ul {
@@ -3057,7 +2983,7 @@ button {
 }
 
 .font-picker-menu li button.font-picker-star.on {
-  color: #f5a524;
+  color: var(--warning);
   opacity: 1;
 }
 
@@ -3109,10 +3035,10 @@ button {
   align-items: center;
   gap: var(--space-1-5);
   padding: 2px 2px 2px var(--space-2);
-  border: 1px solid rgba(245, 165, 36, 0.5);
+  border: 1px solid color-mix(in srgb, var(--warning) 50%, transparent);
   border-radius: 999px;
-  background: rgba(245, 165, 36, 0.12);
-  color: #f5a524;
+  background: var(--warning-soft);
+  color: var(--warning);
   font-size: 12px;
 }
 
@@ -3176,7 +3102,7 @@ button {
   justify-content: center;
   aspect-ratio: 16 / 9;
   border-radius: 4px;
-  background: #000;
+  background: var(--screen-bg);
   overflow: hidden;
 }
 
@@ -3197,8 +3123,8 @@ button {
   bottom: 3px;
   padding: 0 var(--space-1);
   border-radius: 3px;
-  background: rgba(0, 0, 0, 0.7);
-  color: #e6e8ec;
+  background: var(--screen-scrim);
+  color: var(--screen-fg-soft);
   font-size: 9px;
   font-weight: 600;
   text-transform: uppercase;
@@ -3282,6 +3208,17 @@ button {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+/* New service, then Export and Import package beside it rather than on rows of their own. */
+.schedule-picker-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.schedule-picker-actions > .ui-button {
+  flex: 1;
 }
 
 .schedule-items {
@@ -3521,7 +3458,7 @@ button {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-2);
 }
 
 .menu-items .button {
@@ -3607,34 +3544,24 @@ button {
   width: 64px;
 }
 
-.version-item {
+/* Small Buttons, 4px apart, so their 32px hit areas meet without overlapping. */
+.ui-button.version-item {
   overflow: hidden;
-  padding: var(--space-1) var(--space-1-5);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--panel-raised);
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
+  padding: 0 var(--space-1-5);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
 }
 
-.version-item.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.version-import {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
+.ui-button.version-import {
   gap: var(--space-0-5);
   border-style: dashed;
   color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 500;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+}
+
+.version-list > .ui-tooltip-wrap > .ui-button {
+  width: 100%;
 }
 
 .scripture-results {
@@ -3654,30 +3581,23 @@ button {
   container-type: inline-size;
 }
 
+/* Two rows of small Buttons show; the 2px padding keeps the edge rows' hit areas inside the scroller. */
 .chapter-buttons {
   display: flex;
   flex-shrink: 0;
   flex-wrap: wrap;
   gap: var(--space-1);
-  max-height: 64px;
+  max-height: calc(2 * var(--control-sm) + var(--space-1) + 2 * var(--space-0-5));
+  padding: var(--space-0-5);
   overflow-y: auto;
 }
 
-.chapter-button {
-  min-width: 28px;
-  padding: var(--space-0-5) var(--space-1);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--panel-raised);
-  color: var(--text);
-  font-size: 11px;
+.ui-button.chapter-button {
+  min-width: var(--control-sm);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
-  cursor: pointer;
-}
-
-.chapter-button.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
 }
 
 /* The results table: Translation, Reference and Scripture, with the keyboard row, the typed verses and the live verse marked. */
@@ -3777,7 +3697,7 @@ button {
 .verse-table-text mark,
 .verse-strip mark {
   border-radius: 2px;
-  background: rgba(250, 204, 21, 0.35);
+  background: color-mix(in srgb, var(--highlight) 35%, transparent);
   color: inherit;
 }
 
@@ -3900,9 +3820,9 @@ button {
 .notice {
   margin: 0;
   padding: var(--space-2) var(--space-2-5);
-  border: 1px solid #b58900;
+  border: 1px solid var(--warning);
   border-radius: 6px;
-  background: rgba(255, 212, 0, 0.1);
+  background: var(--warning-soft);
   font-size: 13px;
 }
 
@@ -3947,16 +3867,19 @@ button {
   gap: var(--space-1-5);
 }
 
-.scripture-filters .input {
-  min-width: 0;
-  padding: var(--space-1) var(--space-1-5);
-  font-size: 12px;
+.scripture-filters .ui-select {
+  font-size: var(--text-sm);
 }
 
 .recent-searches {
   display: flex;
   align-items: flex-start;
   gap: var(--space-1-5);
+}
+
+/* Level with the first row of 24px chips. */
+.recent-searches > .ui-icon-button {
+  margin-top: calc((24px - var(--control-md)) / 2);
 }
 
 .recent-searches .hint {
@@ -3969,6 +3892,7 @@ button {
 
 .recent-searches .chips {
   flex: 1;
+  row-gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -3997,11 +3921,6 @@ button {
   border: 1px solid var(--accent);
   border-radius: 6px;
   background: var(--panel);
-  font-size: 12px;
-}
-
-.selection-bar .button {
-  padding: var(--space-1) var(--space-2);
   font-size: 12px;
 }
 
@@ -4308,7 +4227,7 @@ button {
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
@@ -4343,12 +4262,12 @@ button {
 /* Removed on the left in red, added on the right in green. */
 .diff-row.removed span:first-child,
 .diff-row.changed span:first-child {
-  background: rgba(229, 72, 77, 0.16);
+  background: var(--error-soft);
 }
 
 .diff-row.added span:last-child,
 .diff-row.changed span:last-child {
-  background: rgba(34, 197, 94, 0.16);
+  background: var(--success-soft);
 }
 
 .diff-empty {
@@ -4474,6 +4393,28 @@ button {
   font-size: 14px;
 }
 
+/* Sliders and disclosures in Settings are as easy to hit as its buttons. */
+.settings-panel input[type='range'] {
+  height: var(--control-md);
+}
+
+.settings-panel summary {
+  padding: var(--space-1-5) 0;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+/* A checkbox or radio with no visible label, inside a 32px square that is its label. */
+.input-hit {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-md);
+  height: var(--control-md);
+  cursor: pointer;
+}
+
 .settings-row {
   display: flex;
   flex-wrap: wrap;
@@ -4486,7 +4427,7 @@ button {
   min-width: 0;
   overflow: hidden;
   color: var(--text-muted);
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4512,7 +4453,7 @@ button {
   aspect-ratio: 16 / 9;
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: #000;
+  background: var(--screen-bg);
 }
 
 .settings-logo-preview img {
@@ -4553,7 +4494,7 @@ button {
 
 .stream-window {
   height: 100%;
-  background: #000;
+  background: var(--screen-bg);
   cursor: none;
 }
 
@@ -4566,7 +4507,7 @@ button {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #000;
+  background: var(--screen-bg);
 }
 
 .stream-screen {
@@ -4589,12 +4530,12 @@ button {
 
 .stream-guide {
   position: absolute;
-  border: 1px dashed rgba(255, 255, 255, 0.85);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  border: 1px dashed var(--screen-guide);
+  box-shadow: 0 0 0 1px var(--screen-outline);
 }
 
 .stream-guide.title {
-  border-color: rgba(250, 204, 21, 0.9);
+  border-color: var(--highlight);
 }
 
 .stream-guide span {
@@ -4603,8 +4544,8 @@ button {
   left: 4px;
   padding: 0 3px;
   border-radius: 2px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
+  background: var(--screen-scrim);
+  color: var(--screen-fg);
   font-size: 10px;
 }
 
@@ -4656,7 +4597,7 @@ button {
   width: 64px;
   height: 36px;
   border-radius: 3px;
-  background: repeating-conic-gradient(#8885 0% 25%, transparent 0% 50%) 0 0 / 10px 10px;
+  background: repeating-conic-gradient(var(--checker) 0% 25%, transparent 0% 50%) 0 0 / 10px 10px;
   object-fit: contain;
 }
 
@@ -4832,8 +4773,8 @@ button {
 }
 
 .lower-third-status.live {
-  background: var(--live);
-  color: #fff;
+  background: var(--live-strong);
+  color: var(--text-on-fill);
 }
 
 .lower-third-template {
@@ -4954,23 +4895,23 @@ button {
 
 .lt-handle {
   position: absolute;
-  outline: 1px dashed rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  outline: 1px dashed var(--screen-guide);
+  box-shadow: 0 0 0 1px var(--screen-outline);
   cursor: move;
   touch-action: none;
 }
 
 .lt-handle.headline,
 .lt-handle.body {
-  outline-color: rgba(250, 204, 21, 0.95);
+  outline-color: var(--highlight);
 }
 
 .lt-handle.logo {
-  outline-color: rgba(96, 165, 250, 0.95);
+  outline-color: var(--accent);
 }
 
 .lt-handle:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--screen-fg) 8%, transparent);
 }
 
 .lt-handle-label {
@@ -4979,8 +4920,8 @@ button {
   left: 0;
   padding: 0 3px;
   border-radius: 2px;
-  background: rgba(0, 0, 0, 0.65);
-  color: #fff;
+  background: var(--screen-scrim);
+  color: var(--screen-fg);
   font-size: 10px;
   pointer-events: none;
 }
@@ -4999,8 +4940,8 @@ button {
   bottom: -5px;
   width: 10px;
   height: 10px;
-  border: 1px solid #000;
-  background: #fff;
+  border: 1px solid var(--screen-bg);
+  background: var(--screen-fg);
   cursor: nwse-resize;
 }
 
@@ -5056,8 +4997,8 @@ button {
   gap: var(--space-3);
   height: 100%;
   padding: var(--space-4);
-  background: #000;
-  color: #fff;
+  background: var(--screen-bg);
+  color: var(--screen-fg);
 }
 
 .stage-top {
@@ -5070,7 +5011,7 @@ button {
 .stage-title {
   flex: 1;
   overflow: hidden;
-  color: #9ca3af;
+  color: var(--screen-fg-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -5078,7 +5019,7 @@ button {
 .stage-warning {
   padding: var(--space-1) var(--space-3);
   border-radius: 6px;
-  background: #dc2626;
+  background: var(--error-strong);
   font-weight: 700;
 }
 
@@ -5091,7 +5032,7 @@ button {
 .stage-next-slide {
   position: relative;
   min-height: 0;
-  border: 1px solid #262626;
+  border: 1px solid var(--screen-border);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -5104,7 +5045,7 @@ button {
 }
 
 .stage-next-label {
-  color: #facc15;
+  color: var(--highlight);
   font-size: clamp(12px, 1.6vw, 20px);
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -5121,7 +5062,7 @@ button {
   justify-content: center;
   height: 100%;
   margin: 0;
-  color: #6b7280;
+  color: var(--screen-fg-muted);
   font-size: clamp(16px, 3vw, 40px);
 }
 
@@ -5135,7 +5076,7 @@ button {
   align-items: center;
   justify-content: center;
   padding: var(--space-6);
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--scrim);
 }
 
 .modal {
@@ -5259,7 +5200,7 @@ button {
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border-radius: 4px;
-  background: #000;
+  background: var(--screen-bg);
 }
 
 .presentation-thumb img {
@@ -5300,8 +5241,8 @@ button {
 }
 
 .progress-chip.failed {
-  border-color: var(--live);
-  background: var(--live-soft);
+  border-color: var(--error);
+  background: var(--error-soft);
 }
 
 .spin {
@@ -5319,7 +5260,7 @@ button {
   width: 28px;
   aspect-ratio: 16 / 9;
   border-radius: 2px;
-  background: #000;
+  background: var(--screen-bg);
   object-fit: contain;
 }
 
@@ -5332,8 +5273,8 @@ button {
   display: inline-flex;
   padding: 2px;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.7);
-  color: #e6e8ec;
+  background: var(--screen-scrim);
+  color: var(--screen-fg-soft);
 }
 
 /* A Native mode slide with something it could not draw (it may show its picture instead). */
@@ -5345,8 +5286,8 @@ button {
   display: inline-flex;
   padding: 2px;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.7);
-  color: #f5a524;
+  background: var(--screen-scrim);
+  color: var(--warning-fill);
 }
 
 .slide-row .slide-warning {
@@ -5405,9 +5346,9 @@ button {
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid #f5a52466;
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
   border-radius: var(--radius);
-  background: #f5a52414;
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
   font-size: 13px;
 }
 
@@ -5442,7 +5383,7 @@ button {
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border-radius: 4px;
-  background: #000;
+  background: var(--screen-bg);
 }
 
 .native-compare-screen img {
@@ -5467,7 +5408,7 @@ button {
   margin: 0;
   padding: 0;
   list-style: none;
-  color: #f5a524;
+  color: var(--warning);
   font-size: 12px;
 }
 
@@ -5482,8 +5423,8 @@ button {
   padding: 0 var(--space-2);
   border: 0;
   border-radius: 999px;
-  background: #f59e0b;
-  color: #1a1306;
+  background: var(--warning-fill);
+  color: var(--text-on-warning);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -5700,7 +5641,7 @@ button {
   aspect-ratio: 16 / 9;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: #000;
+  background: var(--screen-bg);
   overflow: hidden;
 }
 
@@ -5899,9 +5840,9 @@ button {
 
 .translation-note.error {
   padding: var(--space-1) var(--space-2);
-  border: 1px solid #f59e0b;
+  border: 1px solid var(--warning);
   border-radius: 6px;
-  background: rgba(245, 158, 11, 0.14);
+  background: var(--warning-soft);
   color: var(--text);
 }
 
@@ -5918,10 +5859,9 @@ button {
   color: var(--text-muted);
 }
 
-.schedule-translation .input {
+.schedule-translation .ui-select {
   width: auto;
-  padding: var(--space-0-5) var(--space-1-5);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* The Aa button for quick verse adjustments, at the end of the highlight toolbar, and its popover. */
@@ -6005,9 +5945,9 @@ button {
   gap: var(--space-1-5);
   margin: 0;
   padding: var(--space-1) var(--space-2);
-  border: 1px solid #f59e0b;
+  border: 1px solid var(--warning);
   border-radius: 6px;
-  background: rgba(245, 158, 11, 0.14);
+  background: var(--warning-soft);
   color: var(--text);
   font-size: 12px;
 }
@@ -6015,7 +5955,7 @@ button {
 .contrast-warning > svg {
   flex-shrink: 0;
   margin-top: 2px;
-  color: #f59e0b;
+  color: var(--warning);
 }
 
 /* ---------- Sharing ---------- */
@@ -6106,7 +6046,7 @@ button {
 }
 
 .transfer-chip.failed {
-  background: var(--live-soft);
+  background: var(--error-soft);
 }
 
 .transfer-name {
@@ -6148,7 +6088,7 @@ button {
 }
 
 .sharing-message.error {
-  color: var(--live);
+  color: var(--error);
 }
 
 .transfer-chip.incoming {
@@ -6158,7 +6098,7 @@ button {
 
 .transfer-chip.declined,
 .transfer-chip.incoming.failed {
-  background: var(--live-soft);
+  background: var(--error-soft);
 }
 
 .transfer-chip.cancelled {
@@ -6218,8 +6158,8 @@ button {
 }
 
 .inbox-badge.new {
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-strong);
+  color: var(--text-on-fill);
 }
 
 .inbox-header {
@@ -6302,7 +6242,7 @@ button {
   max-width: 100%;
   max-height: 220px;
   border-radius: 6px;
-  background: #000;
+  background: var(--screen-bg);
   object-fit: contain;
 }
 
@@ -6573,13 +6513,7 @@ button {
   font-size: 12px;
 }
 
-.shared-bar .button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.shared-bar.active .input {
+.shared-bar.active .ui-select {
   width: auto;
 }
 
@@ -6592,7 +6526,7 @@ button {
 }
 
 .shared-bar.offline .shared-status {
-  color: var(--live);
+  color: var(--error);
 }
 
 .shared-item-meta {
@@ -6681,5 +6615,11 @@ button {
 }
 
 .sync-files li.failed .hint {
-  color: var(--live);
+  color: var(--error);
+}
+
+/* The tick's 32px label overlaps the cell padding rather than making every row taller. */
+.verse-table-tick .input-hit {
+  margin: calc((1em + 2px - var(--control-md)) / 2);
+  vertical-align: middle;
 }

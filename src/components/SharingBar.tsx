@@ -28,6 +28,7 @@ import {
 import { useOperatorStore } from '../store'
 import { CueTray } from './CueTray'
 import { InboxPanel } from './InboxPanel'
+import { IconButton } from './ui'
 
 /**
  * A device on the network: drop files or items on it to send them, or a shared service item to make it that
@@ -46,7 +47,7 @@ function DeviceChip({ peer }: { peer: SharePeer }) {
   return (
     <button
       type="button"
-      className={`device-chip${peer.paired ? ' paired' : ''}${peer.online ? '' : ' offline'}${over ? ' drag-over' : ''}`}
+      className={`device-chip ui-hit${peer.paired ? ' paired' : ''}${peer.online ? '' : ' offline'}${over ? ' drag-over' : ''}`}
       title={`${peer.name}: ${status}.${live} Drop files or items here to send them, or a shared service item to give it to this device.`}
       onClick={() => {
         if (!peer.paired && peer.online) beginPairing(peer).catch(console.error)
@@ -120,7 +121,7 @@ function TransferChip({ transfer }: { transfer: TransferProgress }) {
       {isActiveTransfer(transfer) && (
         <button
           type="button"
-          className="transfer-action"
+          className="transfer-action ui-hit"
           title={transfer.state === 'preparing' ? 'Take it out of the queue' : `Stop sending; ${transfer.peerName} deletes what arrived`}
           onClick={() => cancelTransfer(transfer.id)}
         >
@@ -130,7 +131,7 @@ function TransferChip({ transfer }: { transfer: TransferProgress }) {
       {transfer.state === 'failed' && (
         <button
           type="button"
-          className="transfer-action"
+          className="transfer-action ui-hit"
           title="Send again, carrying on from what already arrived"
           onClick={() => window.api.sharing.retry(transfer.id).catch((error) => showMessage(errorText(error), true))}
         >
@@ -138,7 +139,7 @@ function TransferChip({ transfer }: { transfer: TransferProgress }) {
         </button>
       )}
       {!isActiveTransfer(transfer) && (
-        <button type="button" className="transfer-action" aria-label="Dismiss" onClick={() => dismissTransfer(transfer.id)}>
+        <button type="button" className="transfer-action ui-hit" aria-label="Dismiss" onClick={() => dismissTransfer(transfer.id)}>
           <X size={11} aria-hidden="true" />
         </button>
       )}
@@ -174,11 +175,11 @@ export function IncomingChip({ transfer }: { transfer: IncomingTransfer }) {
       </span>
       <span className="transfer-state">{label}</span>
       {active ? (
-        <button type="button" className="transfer-action" title={`Refuse it: ${transfer.senderName} stops, and what arrived is deleted`} onClick={() => declineIncoming(transfer.id)}>
+        <button type="button" className="transfer-action ui-hit" title={`Refuse it: ${transfer.senderName} stops, and what arrived is deleted`} onClick={() => declineIncoming(transfer.id)}>
           <CircleSlash size={11} aria-hidden="true" /> Decline
         </button>
       ) : (
-        <button type="button" className="transfer-action" aria-label="Dismiss" onClick={() => dismissIncoming(transfer.id)}>
+        <button type="button" className="transfer-action ui-hit" aria-label="Dismiss" onClick={() => dismissIncoming(transfer.id)}>
           <X size={11} aria-hidden="true" />
         </button>
       )}
@@ -203,7 +204,7 @@ export function NetworkHint({ noDevices, publicNetworks, onDismiss }: { noDevice
       <button type="button" className="link-button" onClick={openTroubleshooting}>
         {publicNetworks.length > 0 ? 'How to fix' : 'Troubleshooting'}
       </button>
-      <button type="button" className="transfer-action" aria-label="Hide this hint" onClick={onDismiss}>
+      <button type="button" className="transfer-action ui-hit" aria-label="Hide this hint" onClick={onDismiss}>
         <X size={11} aria-hidden="true" />
       </button>
     </span>
@@ -478,7 +479,7 @@ export function SharingBar() {
         <TransferChip key={t.id} transfer={t} />
       ))}
       {active > 1 && (
-        <button type="button" className="transfer-action" title="Stop every transfer not yet sent, and empty the queue" onClick={cancelAllTransfers}>
+        <button type="button" className="transfer-action ui-hit" title="Stop every transfer not yet sent, and empty the queue" onClick={cancelAllTransfers}>
           <X size={11} aria-hidden="true" /> Cancel all
         </button>
       )}
@@ -489,18 +490,18 @@ export function SharingBar() {
       )}
       {(enabled || inboxCount > 0) && (
         <div className="alerts-control" ref={ref}>
-          <button
-            type="button"
-            className={`icon-button toolbar-icon${inboxOpen ? ' active' : ''}`}
+          <IconButton
+            className="toolbar-icon"
+            label={`Inbox, ${inboxCount} item${inboxCount === 1 ? '' : 's'}`}
+            tooltip="Inbox: items received from other computers"
+            icon={<InboxIcon size={18} />}
+            pressed={inboxOpen}
             aria-haspopup="dialog"
             aria-expanded={inboxOpen}
-            aria-label={`Inbox, ${inboxCount} item${inboxCount === 1 ? '' : 's'}`}
-            title="Inbox: items received from other computers"
             onClick={() => useSharingStore.setState({ inboxOpen: !inboxOpen, unseen: 0 })}
           >
-            <InboxIcon size={18} />
             {inboxCount > 0 && <span className={`inbox-badge${unseen > 0 ? ' new' : ''}`}>{inboxCount}</span>}
-          </button>
+          </IconButton>
           {inboxOpen && <InboxPanel />}
         </div>
       )}

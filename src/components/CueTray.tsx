@@ -4,6 +4,7 @@ import { CUE_KINDS } from '../../shared/cues'
 import { hasFeature } from '../../shared/features'
 import type { Cue, CueKind } from '../../shared/types'
 import { addCueToSchedule, errorText, openCueMenu, previewCue, showMessage, useSharingStore } from '../lib/sharing'
+import { IconButton } from './ui'
 
 const kindLabel = (kind: CueKind) => CUE_KINDS.find((k) => k.id === kind)?.label ?? 'Cue'
 
@@ -102,18 +103,18 @@ export function CueTray() {
   if (!hasFeature('sharing.send') || (!enabled && cues.length === 0)) return null
   return (
     <div className="alerts-control" ref={ref}>
-      <button
-        type="button"
-        className={`icon-button toolbar-icon${open ? ' active' : ''}${flashing ? ' cue-flash' : ''}`}
+      <IconButton
+        className={`toolbar-icon${flashing ? ' cue-flash' : ''}`}
+        label={`Cues, ${cues.length}`}
+        tooltip="Cues: verses, songs, points and notes other computers sent here. They never go live by themselves."
+        icon={<BellRing size={18} />}
+        pressed={open}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`Cues, ${cues.length}`}
-        title="Cues: verses, songs, points and notes other computers sent here. They never go live by themselves."
         onClick={() => useSharingStore.setState({ cueTrayOpen: !open, unseenCues: 0 })}
       >
-        <BellRing size={18} />
         {cues.length > 0 && <span className={`inbox-badge${unseen > 0 ? ' new' : ''}`}>{cues.length}</span>}
-      </button>
+      </IconButton>
       {open && (
         <div className="alerts-panel cue-tray" role="dialog" aria-label="Cues">
           <h3>Cues</h3>

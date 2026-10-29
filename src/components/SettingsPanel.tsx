@@ -85,6 +85,7 @@ import { ThemeDefaultsForm } from './ThemeEditor'
 import { UpgradeNote } from './UpgradeNote'
 import { AccountSection, BalanceLines } from './AccountSection'
 import { useAccount } from '../lib/account'
+import { Button, Card, IconButton, Input, PanelHeader, Select, SegmentedControl, Toggle } from './ui'
 
 /** The church's name and the footer line for exports, saved when the field is left. */
 function ChurchProfileFields() {
@@ -99,8 +100,7 @@ function ChurchProfileFields() {
     <>
       <label className="field">
         <span>Church name</span>
-        <input
-          className="input"
+        <Input
           value={name}
           maxLength={200}
           onChange={(e) => setName(e.target.value)}
@@ -111,8 +111,7 @@ function ChurchProfileFields() {
         <span>
           Footer line <small>optional, such as an address or website, at the foot of each exported page</small>
         </span>
-        <input
-          className="input"
+        <Input
           value={footer}
           maxLength={200}
           onChange={(e) => setFooter(e.target.value)}
@@ -126,13 +125,9 @@ function ChurchProfileFields() {
 
 function Section({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
-    <section className="settings-section">
-      <h3>
-        {icon}
-        {title}
-      </h3>
+    <Card className="settings-section" icon={icon} title={title}>
       {children}
-    </section>
+    </Card>
   )
 }
 
@@ -159,13 +154,13 @@ function KeyProviderField({ value, onChange }: { value: KeyProvider; onChange(va
   return (
     <label className="field">
       <span>Key</span>
-      <select className="input" value={value} onChange={(e) => onChange(e.target.value as KeyProvider)}>
+      <Select value={value} onChange={(e) => onChange(e.target.value as KeyProvider)}>
         {KEY_PROVIDERS.map((p) => (
           <option key={p.value} value={p.value}>
             {p.label}
           </option>
         ))}
-      </select>
+      </Select>
     </label>
   )
 }
@@ -205,22 +200,12 @@ function AiListeningSection() {
     <Section icon={<Sparkles size={16} aria-hidden="true" />} title="AI and listening">
       <div className="field">
         <span>Listening mode</span>
-        <div className="segmented" role="radiogroup" aria-label="Listening mode">
-          {LISTENING_MODES.map((m) => (
-            <button
-              key={m.value}
-              type="button"
-              role="radio"
-              aria-checked={mode === m.value}
-              className={mode === m.value ? 'active' : ''}
-              disabled={!m.features.some(can)}
-              onClick={() => updateSettings({ speechEngine: m.value })}
-            >
-              {m.icon}
-              {m.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          aria-label="Listening mode"
+          value={mode}
+          options={LISTENING_MODES.map((m) => ({ value: m.value, label: m.label, icon: m.icon, disabled: !m.features.some(can) }))}
+          onChange={(value) => updateSettings({ speechEngine: value })}
+        />
         <span className="hint">{LISTENING_MODES.find((m) => m.value === mode)?.hint}</span>
         {mode === 'auto' && status?.cloudNotice && (
           <span className="hint" role="status">
@@ -232,10 +217,9 @@ function AiListeningSection() {
       </div>
       {account?.signedIn ? <BalanceLines account={account} /> : <p className="hint">Cloud listening hours: sign in to ServiceEx in Account above.</p>}
 
-      <label className="inline-check">
-        <input type="checkbox" checked={settings.aiEnabled} onChange={(e) => updateSettings({ aiEnabled: e.target.checked })} />
+      <Toggle checked={settings.aiEnabled} onChange={(e) => updateSettings({ aiEnabled: e.target.checked })}>
         Use AI features
-      </label>
+      </Toggle>
       <p className="hint">When this is off, ServiceEx sends nothing to Anthropic.</p>
     </Section>
   )
@@ -304,9 +288,9 @@ function AiDeveloperSection() {
       <form className="field" onSubmit={handleSave}>
         <label htmlFor="ai-key">Anthropic API key</label>
         <div className="settings-row">
-          <input
+          <Input
             id="ai-key"
-            className="input settings-key"
+            className="settings-key"
             type="password"
             autoComplete="off"
             spellCheck={false}
@@ -314,13 +298,13 @@ function AiDeveloperSection() {
             value={key}
             onChange={(e) => setKey(e.target.value)}
           />
-          <button type="submit" className="button" disabled={!key.trim() || busy || status?.encryptionAvailable === false}>
+          <Button type="submit" disabled={!key.trim() || busy || status?.encryptionAvailable === false}>
             <KeyRound size={15} aria-hidden="true" /> Save key
-          </button>
+          </Button>
           {status?.hasKey && (
-            <button type="button" className="button" onClick={handleRemove}>
+            <Button onClick={handleRemove}>
               <Trash2 size={15} aria-hidden="true" /> Remove
-            </button>
+            </Button>
           )}
         </div>
         <span className="hint">Encrypted by your operating system and stored on this computer only. It is never shown again.</span>
@@ -328,19 +312,19 @@ function AiDeveloperSection() {
 
       <label className="field">
         <span>Model</span>
-        <select className="input" value={settings.aiModel} onChange={(e) => updateSettings({ aiModel: e.target.value as AiModel })}>
+        <Select value={settings.aiModel} onChange={(e) => updateSettings({ aiModel: e.target.value as AiModel })}>
           {AI_MODELS.map((m) => (
             <option key={m.value} value={m.value}>
               {m.label}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
 
       <div className="settings-row">
-        <button className="button" onClick={handleTest} disabled={busy || !status?.hasKey || !settings.aiEnabled}>
+        <Button onClick={handleTest} disabled={busy || !status?.hasKey || !settings.aiEnabled}>
           <PlugZap size={15} aria-hidden="true" /> Test connection
-        </button>
+        </Button>
         {result && (
           <span className={result.ok ? 'hint' : 'error'} role="status">
             {result.text}
@@ -478,21 +462,21 @@ function WhisperModels() {
                 <div className="settings-row">
                   <progress className="download-progress" max={1} value={fraction} aria-label={`Downloading ${model.label}`} />
                   <span className="hint">{Math.floor(fraction * 100)}%</span>
-                  <button type="button" className="button" onClick={() => window.api.speech.whisper.cancelDownload(model.id)}>
+                  <Button onClick={() => window.api.speech.whisper.cancelDownload(model.id)}>
                     <X size={15} aria-hidden="true" /> Cancel
-                  </button>
+                  </Button>
                 </div>
               )}
               {!downloading && (
                 <div className="settings-row">
                   {model.downloaded ? (
-                    <button type="button" className="button" onClick={() => remove(model.id)}>
+                    <Button onClick={() => remove(model.id)}>
                       <Trash2 size={15} aria-hidden="true" /> Delete
-                    </button>
+                    </Button>
                   ) : (
-                    <button type="button" className="button" onClick={() => download(model.id).catch(console.error)}>
+                    <Button onClick={() => download(model.id).catch(console.error)}>
                       <Download size={15} aria-hidden="true" /> Download
-                    </button>
+                    </Button>
                   )}
                 </div>
               )}
@@ -725,8 +709,7 @@ function ListenerSection() {
     <Section icon={<Mic size={16} aria-hidden="true" />} title="Sermon listener">
       <label className="field">
         <span>Audio input</span>
-        <select
-          className="input"
+        <Select
           value={selected?.deviceId ?? settings.micDeviceId ?? ''}
           onChange={(e) => {
             const id = e.target.value || null
@@ -741,7 +724,7 @@ function ListenerSection() {
             </option>
           ))}
           {chosenMissing && <option value={settings.micDeviceId ?? ''}>{settings.micDeviceName ?? 'Chosen input'} (not connected)</option>}
-        </select>
+        </Select>
         <span className="hint">
           {chosenMissing
             ? 'Not connected. Listening waits for it, sending silence, and picks it up as soon as it is plugged back in.'
@@ -758,8 +741,7 @@ function ListenerSection() {
 
       <label className="field">
         <span>Channel</span>
-        <select
-          className="input"
+        <Select
           value={String(settings.micChannel)}
           onChange={(e) => {
             const value = e.target.value
@@ -774,7 +756,7 @@ function ListenerSection() {
               Channel {n}
             </option>
           ))}
-        </select>
+        </Select>
         <span className="hint">
           {settings.micProcessing
             ? 'Processing for room microphones mixes the input to mono, so the channel choice has no effect.'
@@ -794,14 +776,12 @@ function ListenerSection() {
           onDoubleClick={() => updateSettings({ micGainDb: 0 })}
         />
       </label>
-      <label className="inline-check">
-        <input type="checkbox" checked={settings.micHighPass} onChange={(e) => updateSettings({ micHighPass: e.target.checked })} />
+      <Toggle checked={settings.micHighPass} onChange={(e) => updateSettings({ micHighPass: e.target.checked })}>
         High-pass filter at 80 Hz (removes rumble)
-      </label>
-      <label className="inline-check">
-        <input type="checkbox" checked={settings.micNoiseGate} onChange={(e) => updateSettings({ micNoiseGate: e.target.checked })} />
+      </Toggle>
+      <Toggle checked={settings.micNoiseGate} onChange={(e) => updateSettings({ micNoiseGate: e.target.checked })}>
         Noise gate
-      </label>
+      </Toggle>
       <label className="field">
         <span>Gate threshold: {settings.micGateThresholdDb} dBFS</span>
         <input
@@ -817,10 +797,10 @@ function ListenerSection() {
       </label>
 
       <div className="settings-row">
-        <button type="button" className="button" onClick={() => setTesting(!testing)}>
+        <Button onClick={() => setTesting(!testing)}>
           {testing ? <MicOff size={15} aria-hidden="true" /> : <Mic size={15} aria-hidden="true" />}
           {testing ? 'Stop meter' : 'Test input level'}
-        </button>
+        </Button>
         <LevelMeter reading={reading} />
       </div>
       <p className="hint">
@@ -840,21 +820,21 @@ function ListenerSection() {
 
       <div className="settings-row">
         {recordedChunks === null ? (
-          <button type="button" className="button" onClick={startRecording} disabled={transcribing}>
+          <Button onClick={startRecording} disabled={transcribing}>
             <Mic size={15} aria-hidden="true" /> Record {TEST_SECONDS} s test
-          </button>
+          </Button>
         ) : (
-          <button type="button" className="button" onClick={stopRecording}>
+          <Button onClick={stopRecording}>
             <Square size={14} aria-hidden="true" /> Recording… {Math.ceil(TEST_SECONDS - recordedChunks / 10)} s
-          </button>
+          </Button>
         )}
-        <button type="button" className="button" disabled={!recording} onClick={playing ? stopPlaying : play}>
+        <Button disabled={!recording} onClick={playing ? stopPlaying : play}>
           {playing ? <Square size={14} aria-hidden="true" /> : <Play size={15} aria-hidden="true" />}
           {playing ? 'Stop' : 'Play back'}
-        </button>
-        <button type="button" className="button" disabled={!recording || transcribing} onClick={() => transcribe().catch(console.error)}>
+        </Button>
+        <Button disabled={!recording || transcribing} onClick={() => transcribe().catch(console.error)}>
           <Quote size={15} aria-hidden="true" /> {transcribing ? 'Transcribing…' : 'Transcribe test'}
-        </button>
+        </Button>
       </div>
       <p className="hint">Records what the speech engine hears (after the channel, gain and cleanup), then plays it back or sends it to the engine.</p>
       {heard && (
@@ -863,10 +843,9 @@ function ListenerSection() {
         </p>
       )}
 
-      <label className="inline-check">
-        <input type="checkbox" checked={settings.micProcessing} onChange={(e) => updateSettings({ micProcessing: e.target.checked })} />
+      <Toggle checked={settings.micProcessing} onChange={(e) => updateSettings({ micProcessing: e.target.checked })}>
         Processing for room microphones
-      </label>
+      </Toggle>
       <p className="hint">
         Echo cancellation, noise suppression and automatic gain. Off (the default) sends the raw signal, which suits a line feed from
         the sound desk or a lectern microphone; turn it on for a laptop or room microphone. Applies the next time the input opens.
@@ -875,22 +854,12 @@ function ListenerSection() {
       {status?.developerMode && (
         <div className="field">
           <span>Speech engine</span>
-          <div className="segmented" role="radiogroup" aria-label="Speech engine">
-            {SPEECH_ENGINES.map((engine) => (
-              <button
-                key={engine.value}
-                type="button"
-                role="radio"
-                aria-checked={settings.speechEngine === engine.value}
-                className={settings.speechEngine === engine.value ? 'active' : ''}
-                disabled={!engine.features.some(can)}
-                onClick={() => updateSettings({ speechEngine: engine.value })}
-              >
-                {engine.icon}
-                {engine.label}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            aria-label="Speech engine"
+            value={settings.speechEngine}
+            options={SPEECH_ENGINES.map((engine) => ({ value: engine.value, label: engine.label, icon: engine.icon, disabled: !engine.features.some(can) }))}
+            onChange={(value) => updateSettings({ speechEngine: value })}
+          />
           <span className="hint">
             {SPEECH_ENGINES.find((e) => e.value === settings.speechEngine)?.hint}
           </span>
@@ -908,9 +877,9 @@ function ListenerSection() {
           <form className="field" onSubmit={handleSave}>
             <label htmlFor="deepgram-key">Deepgram API key</label>
             <div className="settings-row">
-              <input
+              <Input
                 id="deepgram-key"
-                className="input settings-key"
+                className="settings-key"
                 type="password"
                 autoComplete="off"
                 spellCheck={false}
@@ -918,21 +887,21 @@ function ListenerSection() {
                 value={key}
                 onChange={(e) => setKey(e.target.value)}
               />
-              <button type="submit" className="button" disabled={!key.trim() || busy || status?.encryptionAvailable === false}>
+              <Button type="submit" disabled={!key.trim() || busy || status?.encryptionAvailable === false}>
                 <KeyRound size={15} aria-hidden="true" /> Save key
-              </button>
+              </Button>
               {status?.hasKey && (
-                <button type="button" className="button" onClick={handleRemove}>
+                <Button onClick={handleRemove}>
                   <Trash2 size={15} aria-hidden="true" /> Remove
-                </button>
+                </Button>
               )}
             </div>
             <span className="hint">Encrypted by your operating system and stored on this computer only. It is never shown again.</span>
           </form>
           <div className="settings-row">
-            <button type="button" className="button" onClick={handleTest} disabled={busy || !status?.hasKey}>
+            <Button onClick={handleTest} disabled={busy || !status?.hasKey}>
               <PlugZap size={15} aria-hidden="true" /> Test connection
-            </button>
+            </Button>
             {result && (
               <span className={result.ok ? 'hint' : 'error'} role="status">
                 {result.text}
@@ -942,10 +911,9 @@ function ListenerSection() {
         </>
       )}
 
-      <label className="inline-check">
-        <input type="checkbox" checked={settings.saveTranscripts} onChange={(e) => updateSettings({ saveTranscripts: e.target.checked })} />
+      <Toggle checked={settings.saveTranscripts} onChange={(e) => updateSettings({ saveTranscripts: e.target.checked })}>
         Save transcripts
-      </label>
+      </Toggle>
       <p className="hint">
         Off: the transcript is kept in memory only and is gone when the app closes. On: each listening session is also written to a
         text file{status ? ` in ${status.transcriptsFolder}` : ''}.
@@ -974,43 +942,33 @@ function ScriptureSection() {
         <span>
           Default translation <small>For a typed reference, listener suggestions, search set to All, and the command palette.</small>
         </span>
-        <select className="input" value={settings.scriptureDefaultVersion} onChange={(e) => updateSettings({ scriptureDefaultVersion: e.target.value })}>
+        <Select value={settings.scriptureDefaultVersion} onChange={(e) => updateSettings({ scriptureDefaultVersion: e.target.value })}>
           {listed.map((v) => (
             <option key={v.code} value={v.code}>
               {v.name ? `${v.code} · ${v.name}` : v.code}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
       <p className="hint">A service can use its own translation: pick it in the schedule header.</p>
-      <label className="inline-check">
-        <input
-          type="checkbox"
+      <Toggle
           checked={settings.scriptureSwitchLiveImmediately}
           onChange={(e) => updateSettings({ scriptureSwitchLiveImmediately: e.target.checked })}
-        />
+      >
         Switch live immediately
-      </label>
+      </Toggle>
       <p className="hint">
         On: a version chip on the Live box (or {MOD}1 to 9, Alt+Shift+↑ and Alt+Shift+↓) crossfades the live verse into that translation. Off: the new
         translation waits in the preview, and you resend it.
       </p>
       <div className="field">
         <span>Two translations on a slide</span>
-        <div className="segmented" role="radiogroup" aria-label="Second translation layout">
-          {DUAL_LAYOUTS.map((l) => (
-            <button
-              key={l.value}
-              type="button"
-              role="radio"
-              aria-checked={dual.layout === l.value}
-              className={dual.layout === l.value ? 'active' : ''}
-              onClick={() => updateSettings({ scriptureDual: { ...dual, layout: l.value } })}
-            >
-              {l.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          aria-label="Second translation layout"
+          value={dual.layout}
+          options={DUAL_LAYOUTS.map((l) => ({ value: l.value, label: l.label }))}
+          onChange={(value) => updateSettings({ scriptureDual: { ...dual, layout: value } })}
+        />
         <span className="hint">
           Turn it on and pick the versions from the Dual menu on the Preview or Live box. A theme with two text boxes uses its own layout.
         </span>
@@ -1030,40 +988,28 @@ function HighlightSection() {
         Mark words on the Live or Preview box: {MOD}H turns highlight mode on, then click a word, drag across a phrase or double click a
         sentence. 1 to 5 pick a color, Esc clears the live slide.
       </p>
-      <label className="inline-check">
-        <input
-          type="checkbox"
+      <Toggle
           checked={settings.highlightClearOnSlideChange}
           onChange={(e) => updateSettings({ highlightClearOnSlideChange: e.target.checked })}
-        />
+      >
         Clear highlights when the slide changes
-      </label>
-      <label className="inline-check">
-        <input type="checkbox" checked={settings.highlightKeepWithItem} onChange={(e) => updateSettings({ highlightKeepWithItem: e.target.checked })} />
+      </Toggle>
+      <Toggle checked={settings.highlightKeepWithItem} onChange={(e) => updateSettings({ highlightKeepWithItem: e.target.checked })}>
         Keep highlights with the schedule item
-      </label>
+      </Toggle>
       <p className="hint">On: a schedule item's highlights come back when it is loaded again, until the app closes.</p>
       <div className="field">
         <span>Default style</span>
-        <div className="segmented" role="radiogroup" aria-label="Default highlight style">
-          {HIGHLIGHT_KINDS.map((k) => (
-            <button
-              key={k.id}
-              type="button"
-              role="radio"
-              aria-checked={brush.kind === k.id}
-              className={brush.kind === k.id ? 'active' : ''}
-              onClick={() => updateSettings({ highlightDefault: { ...brush, kind: k.id } })}
-            >
-              {k.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          aria-label="Default highlight style"
+          value={brush.kind}
+          options={HIGHLIGHT_KINDS.map((k) => ({ value: k.id, label: k.label }))}
+          onChange={(value) => updateSettings({ highlightDefault: { ...brush, kind: value } })}
+        />
       </div>
       <label className="field">
         <span>Default color</span>
-        <select
-          className="input"
+        <Select
           value={brush.color}
           onChange={(e) => updateSettings({ highlightDefault: { ...brush, color: e.target.value as HighlightColor } })}
         >
@@ -1072,7 +1018,7 @@ function HighlightSection() {
               {c.label}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
     </Section>
   )
@@ -1089,10 +1035,9 @@ function DetectionSection() {
   const percent = Math.round(settings.detectionMinConfidence * 100)
   return (
     <Section icon={<BookOpen size={16} aria-hidden="true" />} title="Scripture detection">
-      <label className="inline-check">
-        <input type="checkbox" checked={settings.scriptureDetection} onChange={(e) => updateSettings({ scriptureDetection: e.target.checked })} />
+      <Toggle checked={settings.scriptureDetection} onChange={(e) => updateSettings({ scriptureDetection: e.target.checked })}>
         Suggest verses heard in the sermon
-      </label>
+      </Toggle>
       <p className="hint">
         References spoken aloud, such as "John chapter three verse sixteen", and verses quoted without a reference appear above the
         slides. Clicking one puts it in the preview; it only goes live when you send it.
@@ -1114,31 +1059,20 @@ function DetectionSection() {
       </label>
       <div className="field">
         <span>On a new suggestion</span>
-        <div className="segmented" role="radiogroup" aria-label="On a new suggestion">
-          {DETECTION_ALERTS.map((a) => (
-            <button
-              key={a.value}
-              type="button"
-              role="radio"
-              aria-checked={settings.detectionAlert === a.value}
-              className={settings.detectionAlert === a.value ? 'active' : ''}
-              disabled={!settings.scriptureDetection}
-              onClick={() => updateSettings({ detectionAlert: a.value })}
-            >
-              {a.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          aria-label="On a new suggestion"
+          value={settings.detectionAlert}
+          options={DETECTION_ALERTS.map((a) => ({ value: a.value, label: a.label, disabled: !settings.scriptureDetection }))}
+          onChange={(value) => updateSettings({ detectionAlert: value })}
+        />
       </div>
-      <label className="inline-check" title={settings.aiEnabled ? undefined : 'AI features are turned off above'}>
-        <input
-          type="checkbox"
+      <Toggle title={settings.aiEnabled ? undefined : 'AI features are turned off above'}
           checked={settings.aiEnabled && settings.aiScriptureFallback}
           disabled={!settings.aiEnabled || !settings.scriptureDetection}
           onChange={(e) => updateSettings({ aiScriptureFallback: e.target.checked })}
-        />
+      >
         Ask AI when nothing is found
-      </label>
+      </Toggle>
       <p className="hint">
         {settings.aiEnabled
           ? 'When the talk sounds like scripture ("the Bible says", "in the book of") but nothing is found for 8 seconds, the last 25 seconds of transcript go to Claude Haiku, at most once every 10 seconds. It names passages only, each checked against the Bible here; they are marked "AI suggested".'
@@ -1191,27 +1125,19 @@ function PresentationsSection() {
     <Section icon={<Presentation size={16} aria-hidden="true" />} title="Presentations">
       <div className="field">
         <span>PowerPoint engine</span>
-        <div className="segmented" role="radiogroup" aria-label="PowerPoint engine">
-          {PRESENTATION_ENGINES.map((engine) => (
-            <button
-              key={engine.value}
-              type="button"
-              role="radio"
-              aria-checked={settings.presentationEngine === engine.value}
-              className={settings.presentationEngine === engine.value ? 'active' : ''}
-              onClick={() => updateSettings({ presentationEngine: engine.value })}
-            >
-              {engine.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          aria-label="PowerPoint engine"
+          value={settings.presentationEngine}
+          options={PRESENTATION_ENGINES.map((engine) => ({ value: engine.value, label: engine.label }))}
+          onChange={(value) => updateSettings({ presentationEngine: value })}
+        />
         <span className="hint">Auto uses desktop PowerPoint when it is installed, otherwise LibreOffice. PDFs and images need neither.</span>
       </div>
       {status && (status.active ? <p className="hint">Active: {ENGINE_LABELS[status.active]}</p> : <p className="error">{status.message}</p>)}
       <div className="settings-row">
-        <button type="button" className="button" disabled={testing || !status?.active} onClick={test}>
+        <Button disabled={testing || !status?.active} onClick={test}>
           <RefreshCw size={15} aria-hidden="true" /> {testing ? 'Converting…' : 'Test conversion'}
-        </button>
+        </Button>
         {result && <span className="hint">{result}</span>}
       </div>
       {error && <p className="error">{error}</p>}
@@ -1221,26 +1147,22 @@ function PresentationsSection() {
           Security, Automation.
         </p>
       )}
-      <label className="inline-check">
-        <input
-          type="checkbox"
+      <Toggle
           checked={settings.presentationAutoRefreshLive}
           onChange={(e) => updateSettings({ presentationAutoRefreshLive: e.target.checked })}
-        />
+      >
         Auto refresh live
-      </label>
+      </Toggle>
       <p className="hint">
         When a presentation is saved again in PowerPoint, its slides here update. Off: if it is live, the output keeps the older slides
         until you press Resend. On: the output changes straight away.
       </p>
-      <label className="inline-check">
-        <input
-          type="checkbox"
+      <Toggle
           checked={settings.presentationLivePowerPoint}
           onChange={(e) => updateSettings({ presentationLivePowerPoint: e.target.checked })}
-        />
+      >
         Play animations with PowerPoint
-      </label>
+      </Toggle>
       <p className="hint">
         Slides with animations or transitions go live through PowerPoint itself, over the output display; every other slide stays a still
         image. Right arrow plays the next animation step, Left goes back. Sending anything else brings the output back at once, with the
@@ -1292,10 +1214,9 @@ function SharingSection() {
           computers. Nothing goes over the internet. While on, computers on this network can see this computer's name; only paired ones can send to it.
         </span>
       </p>
-      <label className="inline-check">
-        <input type="checkbox" checked={settings.sharingEnabled} onChange={(e) => run(() => updateSettings({ sharingEnabled: e.target.checked }))} />
+      <Toggle checked={settings.sharingEnabled} onChange={(e) => run(() => updateSettings({ sharingEnabled: e.target.checked }))}>
         Share with other ServiceEx computers on this network
-      </label>
+      </Toggle>
       {status?.error && <p className="error">{status.error}</p>}
       {settings.sharingEnabled && status?.port && (
         <p className="hint">
@@ -1305,8 +1226,7 @@ function SharingSection() {
       )}
       <label className="field">
         <span>Device name</span>
-        <input
-          className="input"
+        <Input
           value={name}
           maxLength={40}
           placeholder={status?.deviceName ?? 'This computer'}
@@ -1318,22 +1238,21 @@ function SharingSection() {
       </label>
       <label className="field">
         <span>Largest file to receive</span>
-        <select className="input" value={settings.sharingMaxSizeMb} onChange={(e) => run(() => updateSettings({ sharingMaxSizeMb: Number(e.target.value) }))}>
+        <Select value={settings.sharingMaxSizeMb} onChange={(e) => run(() => updateSettings({ sharingMaxSizeMb: Number(e.target.value) }))}>
           {limitOptions.map((l) => (
             <option key={l.value} value={l.value}>
               {l.label}
             </option>
           ))}
-        </select>
+        </Select>
         <span className="hint">
           Allowed types: .serviceex packages, PowerPoint (.pptx, .ppt), PDF, images, MP4, WebM, MP3, WAV, .txt and OpenLyrics .xml. Anything else is refused,
           and nothing received is ever opened or run.
         </span>
       </label>
-      <label className="inline-check">
-        <input type="checkbox" checked={settings.sharingAutoAccept} onChange={(e) => run(() => updateSettings({ sharingAutoAccept: e.target.checked }))} />
+      <Toggle checked={settings.sharingAutoAccept} onChange={(e) => run(() => updateSettings({ sharingAutoAccept: e.target.checked }))}>
         Auto accept from trusted devices
-      </label>
+      </Toggle>
       <p className="hint">
         Items from devices marked Trusted below go straight into the library, kept beside anything with the same name. They never change the output or go
         live.
@@ -1385,15 +1304,17 @@ function LayoutsSection() {
           {layouts.map((layout) => (
             <li key={layout.id} className={layout.id === activeId ? 'active' : ''}>
               <div className="settings-row">
-                <input
-                  type="radio"
-                  name="active-layout"
-                  aria-label={`Use ${layout.name}`}
-                  checked={layout.id === activeId}
-                  onChange={() => switchLayout(layout.id).catch((err) => setError(errorText(err)))}
-                />
-                <input
-                  className="input layout-name"
+                <label className="input-hit" title={`Use ${layout.name}`}>
+                  <input
+                    type="radio"
+                    name="active-layout"
+                    aria-label={`Use ${layout.name}`}
+                    checked={layout.id === activeId}
+                    onChange={() => switchLayout(layout.id).catch((err) => setError(errorText(err)))}
+                  />
+                </label>
+                <Input
+                  className="layout-name"
                   aria-label="Layout name"
                   maxLength={40}
                   value={names[layout.id] ?? layout.name}
@@ -1409,31 +1330,29 @@ function LayoutsSection() {
                   }}
                   onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
                 />
-                <button type="button" className="button" aria-expanded={openId === layout.id} onClick={() => setOpenId(openId === layout.id ? null : layout.id)}>
+                <Button aria-expanded={openId === layout.id} onClick={() => setOpenId(openId === layout.id ? null : layout.id)}>
                   Panels and defaults
-                </button>
-                <button type="button" className="icon-button" aria-label={`Duplicate ${layout.name}`} title="Duplicate" onClick={() => save(() => duplicateLayout(layouts, layout.id).layouts)}>
-                  <Copy size={15} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={`Delete ${layout.name}`}
-                  title="Delete"
+                </Button>
+                <IconButton
+                  label={`Duplicate ${layout.name}`}
+                  tooltip="Duplicate"
+                  icon={<Copy size={15} />}
+                  onClick={() => save(() => duplicateLayout(layouts, layout.id).layouts)}
+                />
+                <IconButton
+                  label={`Delete ${layout.name}`}
+                  tooltip="Delete"
+                  icon={<Trash2 size={15} />}
                   disabled={layouts.length <= 1}
                   onClick={() => save(() => deleteLayout(layouts, layout.id))}
-                >
-                  <Trash2 size={15} />
-                </button>
+                />
               </div>
               {openId === layout.id && (
                 <div className="layout-detail">
                   <fieldset className="layout-panels">
                     <legend>Panels</legend>
                     {LAYOUT_PANELS.map((panel) => (
-                      <label key={panel.id} className="inline-check">
-                        <input
-                          type="checkbox"
+                      <Toggle key={panel.id}
                           checked={layout.panels.includes(panel.id)}
                           onChange={(e) =>
                             save(() =>
@@ -1442,41 +1361,38 @@ function LayoutsSection() {
                               }),
                             )
                           }
-                        />
+                      >
                         {panel.label}
-                      </label>
+                      </Toggle>
                     ))}
                   </fieldset>
                   <label className="field">
                     <span>Shared service list starts on</span>
-                    <select
-                      className="input"
+                    <Select
                       value={layout.itemFilter}
                       onChange={(e) => save(() => updateLayout(layouts, layout.id, { itemFilter: e.target.value === 'mine' ? 'mine' : 'all' }))}
                     >
                       <option value="all">All items</option>
                       <option value="mine">This computer's items</option>
-                    </select>
+                    </Select>
                   </label>
                   <label className="field">
                     <span>Output background when nothing is live</span>
-                    <select
-                      className="input"
+                    <Select
                       value={layout.outputBackground ?? ''}
                       onChange={(e) => save(() => updateLayout(layouts, layout.id, { outputBackground: e.target.value === 'black' || e.target.value === 'logo' ? e.target.value : null }))}
                     >
                       <option value="">Leave as it is</option>
                       <option value="black">Black</option>
                       <option value="logo">Logo</option>
-                    </select>
+                    </Select>
                   </label>
                   <fieldset className="layout-themes">
                     <legend>Default themes set by this layout</legend>
                     {THEME_TYPES.map(({ type, label }) => (
                       <label key={type} className="field">
                         <span>{label}</span>
-                        <select
-                          className="input"
+                        <Select
                           value={layout.themeDefaults[type] ?? ''}
                           onChange={(e) =>
                             save(() => {
@@ -1493,7 +1409,7 @@ function LayoutsSection() {
                               {theme.name}
                             </option>
                           ))}
-                        </select>
+                        </Select>
                       </label>
                     ))}
                   </fieldset>
@@ -1502,9 +1418,7 @@ function LayoutsSection() {
             </li>
           ))}
         </ul>
-        <button
-          type="button"
-          className="button"
+        <Button
           onClick={() =>
             save(() => {
               const { layouts: next, layout } = createLayout(layouts, 'New layout')
@@ -1514,7 +1428,7 @@ function LayoutsSection() {
           }
         >
           <Plus size={15} aria-hidden="true" /> New layout
-        </button>
+        </Button>
         {error && <p className="error">{error}</p>}
       </Section>
     </div>
@@ -1572,20 +1486,19 @@ function DevicesSection() {
   return (
     <Section icon={<Plug size={16} aria-hidden="true" />} title="Devices">
       {hasFeature('sharing.presence') && (
-        <label className="inline-check">
-          <input type="checkbox" checked={settings.sharingDeviceChips} onChange={(e) => run(() => updateSettings({ sharingDeviceChips: e.target.checked }))} />
+        <Toggle checked={settings.sharingDeviceChips} onChange={(e) => run(() => updateSettings({ sharingDeviceChips: e.target.checked }))}>
           Device chips in the toolbar, with the title of what each computer has live
-        </label>
+        </Toggle>
       )}
       <p className="hint">Only the title is shared, never the slide. Turned off, this computer also stops telling the others what it has live.</p>
       {hasFeature('sharing.send') && (
         <label className="field">
           <span>When a cue arrives</span>
-          <select className="input" value={settings.sharingCueAlert} onChange={(e) => run(() => updateSettings({ sharingCueAlert: e.target.value as AppSettings['sharingCueAlert'] }))}>
+          <Select value={settings.sharingCueAlert} onChange={(e) => run(() => updateSettings({ sharingCueAlert: e.target.value as AppSettings['sharingCueAlert'] }))}>
             <option value="off">Just show it in the tray (default)</option>
             <option value="sound">Play a short tone</option>
             <option value="flash">Flash the tray button</option>
-          </select>
+          </Select>
           <span className="hint">Cues wait in the tray with Preview, Add to schedule and Dismiss. A cue never changes what is on the output.</span>
         </label>
       )}
@@ -1607,8 +1520,8 @@ function DevicesSection() {
       <form className="field" onSubmit={pairByAddress}>
         <span>Add by IP address</span>
         <div className="settings-row">
-          <input
-            className="input pair-address-input"
+          <Input
+            className="pair-address-input"
             aria-label="IP address or .local name of the other computer"
             placeholder="192.168.1.20"
             autoComplete="off"
@@ -1620,8 +1533,8 @@ function DevicesSection() {
               setAddressError(null)
             }}
           />
-          <input
-            className="input pair-port-input"
+          <Input
+            className="pair-port-input"
             aria-label="Port"
             inputMode="numeric"
             maxLength={5}
@@ -1631,9 +1544,9 @@ function DevicesSection() {
               setAddressError(null)
             }}
           />
-          <button type="submit" className="button" disabled={!settings.sharingEnabled || !host.trim()}>
+          <Button type="submit" disabled={!settings.sharingEnabled || !host.trim()}>
             <Link2 size={15} aria-hidden="true" /> Pair
-          </button>
+          </Button>
         </div>
         {addressError && <p className="error">{addressError}</p>}
         <span className="hint">
@@ -1665,8 +1578,7 @@ function DevicesSection() {
                     </span>
                   </div>
                   <div className="settings-row">
-                    <input
-                      className="input"
+                    <Input
                       aria-label={`Name for ${device.name} on this computer`}
                       placeholder={device.name}
                       maxLength={40}
@@ -1678,35 +1590,29 @@ function DevicesSection() {
                       }}
                       onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
                     />
-                    <label className="inline-check" title="Auto accept applies to trusted devices only">
-                      <input
-                        type="checkbox"
+                    <Toggle title="Auto accept applies to trusted devices only"
                         checked={device.trusted}
                         onChange={(e) => run(async () => setPaired(await window.api.sharing.setTrusted(device.id, e.target.checked)))}
-                      />
+                    >
                       Trusted
-                    </label>
+                    </Toggle>
                   </div>
                   <div className="settings-row">
-                    <button
-                      type="button"
-                      className="button"
+                    <Button
                       title={device.disconnected ? 'Exchange cues, the shared service and library sync with it again' : 'Stop exchanging anything with it, without forgetting the pairing'}
                       onClick={() => run(async () => setPaired(await window.api.sharing.setDisconnected(device.id, !device.disconnected)))}
                     >
                       {device.disconnected ? <Plug size={15} aria-hidden="true" /> : <Unplug size={15} aria-hidden="true" />} {device.disconnected ? 'Connect' : 'Disconnect'}
-                    </button>
-                    <button type="button" className="button" disabled={!settings.sharingEnabled || result?.busy} onClick={() => test(device.id, 'connection')}>
+                    </Button>
+                    <Button disabled={!settings.sharingEnabled || result?.busy} onClick={() => test(device.id, 'connection')}>
                       <PlugZap size={15} aria-hidden="true" /> Test connection
-                    </button>
-                    <button type="button" className="button" disabled={!settings.sharingEnabled || device.disconnected || result?.busy} onClick={() => test(device.id, 'sync')}>
+                    </Button>
+                    <Button disabled={!settings.sharingEnabled || device.disconnected || result?.busy} onClick={() => test(device.id, 'sync')}>
                       <RefreshCw size={15} aria-hidden="true" /> Test sync
-                    </button>
+                    </Button>
                     {forgetting === device.id ? (
                       <>
-                        <button
-                          type="button"
-                          className="button danger"
+                        <Button variant="danger"
                           onClick={() =>
                             run(async () => {
                               setPaired(await window.api.sharing.forget(device.id))
@@ -1715,15 +1621,15 @@ function DevicesSection() {
                           }
                         >
                           Forget {shown}
-                        </button>
-                        <button type="button" className="button" onClick={() => setForgetting(null)}>
+                        </Button>
+                        <Button onClick={() => setForgetting(null)}>
                           Keep
-                        </button>
+                        </Button>
                       </>
                     ) : (
-                      <button type="button" className="button" onClick={() => setForgetting(device.id)}>
+                      <Button onClick={() => setForgetting(device.id)}>
                         <Trash2 size={15} aria-hidden="true" /> Forget
-                      </button>
+                      </Button>
                     )}
                   </div>
                   {result && !result.busy && <p className={result.ok ? 'hint' : 'error'}>{result.text}</p>}
@@ -1752,9 +1658,9 @@ function DevicesSection() {
                 {' '}
                 An administrator can also add it from a Command Prompt opened with Run as administrator:
                 <code className="settings-path firewall-command">{status.firewallCommand}</code>
-                <button type="button" className="button" onClick={() => navigator.clipboard.writeText(status.firewallCommand ?? '').catch(console.error)}>
+                <Button onClick={() => navigator.clipboard.writeText(status.firewallCommand ?? '').catch(console.error)}>
                   <Copy size={15} aria-hidden="true" /> Copy command
-                </button>
+                </Button>
               </>
             )}
           </li>
@@ -1803,33 +1709,30 @@ function LibrarySyncSection() {
   const files = library?.files ?? []
   return (
     <Section icon={<Library size={16} aria-hidden="true" />} title="Library sync">
-      <label className="inline-check">
-        <input type="checkbox" checked={settings.sharingLibrarySync} onChange={(e) => run(() => updateSettings({ sharingLibrarySync: e.target.checked }))} />
+      <Toggle checked={settings.sharingLibrarySync} onChange={(e) => run(() => updateSettings({ sharingLibrarySync: e.target.checked }))}>
         Keep songs, themes, fonts, media and presentations in step with paired computers
-      </label>
+      </Toggle>
       <p className="hint">
         Fetches what the other computers have and this one does not, in the background. The same content is never copied twice, whatever it is called.
         Nothing here is replaced or deleted, and nothing goes live. Large files wait while a slide is live.
       </p>
       <label className="field">
         <span>Bandwidth limit</span>
-        <select className="input" value={settings.sharingBandwidthKbps} onChange={(e) => run(() => updateSettings({ sharingBandwidthKbps: Number(e.target.value) }))}>
+        <Select value={settings.sharingBandwidthKbps} onChange={(e) => run(() => updateSettings({ sharingBandwidthKbps: Number(e.target.value) }))}>
           {options.map((b) => (
             <option key={b.value} value={b.value}>
               {b.label}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
       <div className="settings-row">
-        <button
-          type="button"
-          className="button"
+        <Button
           disabled={!settings.sharingEnabled || !settings.sharingLibrarySync || library?.running}
           onClick={() => run(async () => useSharingStore.setState({ library: await window.api.sharing.syncLibraryNow() }))}
         >
           <RefreshCw size={15} aria-hidden="true" /> {library?.running ? 'Syncing…' : 'Sync now'}
-        </button>
+        </Button>
         <span className="hint">
           {library?.paused ?? (library?.lastRunAt ? `Last synced ${new Date(library.lastRunAt).toLocaleString()}` : 'Not synced yet')}
         </span>
@@ -1887,9 +1790,9 @@ function LivePowerPointSection() {
         The output shows the slide show for about ten seconds.{enabled ? '' : ' Play animations with PowerPoint is off; the test runs all the same.'}
       </p>
       <div className="settings-row">
-        <button type="button" className="button" disabled={testing} onClick={test}>
+        <Button disabled={testing} onClick={test}>
           <Play size={15} aria-hidden="true" /> {testing ? 'Testing…' : 'Test Live PowerPoint'}
-        </button>
+        </Button>
         {result && (
           <span className={result.ok ? 'hint' : 'error'}>
             {result.ok ? 'Passed' : 'Failed'} in {(result.totalMs / 1000).toFixed(1)} s
@@ -1929,8 +1832,7 @@ function QuotesSection() {
         <span>
           Default speaker name <small>Shown under quote slides; empty for none. Each quote can change it.</small>
         </span>
-        <input
-          className="input"
+        <Input
           value={speaker}
           maxLength={100}
           placeholder="Pastor's name"
@@ -1939,15 +1841,13 @@ function QuotesSection() {
         />
       </label>
       <p className="hint">Select words in the live transcript and press Send as Slide to show them as a quote in the preview.</p>
-      <label className="inline-check" title={settings.aiEnabled ? undefined : 'AI features are turned off above'}>
-        <input
-          type="checkbox"
+      <Toggle title={settings.aiEnabled ? undefined : 'AI features are turned off above'}
           checked={settings.aiEnabled && settings.statementPicking}
           disabled={!settings.aiEnabled}
           onChange={(e) => updateSettings({ statementPicking: e.target.checked })}
-        />
+      >
         Suggest quotable statements with AI
-      </label>
+      </Toggle>
       <p className="hint">
         {settings.aiEnabled
           ? 'Every 30 seconds while listening, the new transcript text is sent to Claude Haiku, which picks up to two short lines that stand on their own. Only lines found word for word in the transcript appear, as cards above the slides. Nothing is saved unless you add it to the schedule.'
@@ -1986,12 +1886,7 @@ export function SettingsPanel() {
 
   return (
     <section className="panel settings-panel">
-      <header className="panel-header">
-        <h2>Settings</h2>
-        <button className="icon-button" aria-label="Close settings" title="Close" onClick={() => openSettings(false)}>
-          <X size={18} />
-        </button>
-      </header>
+      <PanelHeader title="Settings" actions={<IconButton label="Close settings" tooltip="Close" icon={<X size={18} />} onClick={() => openSettings(false)} />} />
 
       {error && <p className="error">{error}</p>}
       {message && <p className="hint">{message}</p>}
@@ -1999,26 +1894,18 @@ export function SettingsPanel() {
       <AccountSection />
 
       <Section icon={<SunMoon size={16} aria-hidden="true" />} title="Appearance">
-        <div className="segmented" role="radiogroup" aria-label="Appearance">
-          {APPEARANCES.map((a) => (
-            <button
-              key={a.value}
-              role="radio"
-              aria-checked={settings.appearance === a.value}
-              className={settings.appearance === a.value ? 'active' : ''}
-              onClick={() => run(() => updateSettings({ appearance: a.value }))}
-            >
-              {a.icon}
-              {a.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          aria-label="Appearance"
+          value={settings.appearance}
+          options={APPEARANCES.map((a) => ({ value: a.value, label: a.label, icon: a.icon }))}
+          onChange={(value) => run(() => updateSettings({ appearance: value }))}
+        />
       </Section>
 
       <Section icon={<Monitor size={16} aria-hidden="true" />} title="Output">
         <label className="field">
           <span>Output display</span>
-          <select className="input" value={String(settings.outputDisplay)} onChange={(e) => setOutputDisplay(e.target.value)}>
+          <Select value={String(settings.outputDisplay)} onChange={(e) => setOutputDisplay(e.target.value)}>
             <option value="auto">Automatic (first display that is not the main one)</option>
             <option value="window">In a window</option>
             {displays.map((d) => (
@@ -2027,17 +1914,15 @@ export function SettingsPanel() {
                 {d.primary ? ' (main display)' : ''}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         <p className="hint">Changing this reopens the output window on the chosen display, fullscreen.</p>
-        <label className="inline-check">
-          <input
-            type="checkbox"
+        <Toggle
             checked={settings.autoGoLiveOnNext}
             onChange={(e) => run(() => updateSettings({ autoGoLiveOnNext: e.target.checked }))}
-          />
+        >
           Auto go live on schedule next
-        </label>
+        </Toggle>
         <p className="hint">
           Off: {MOD}↓ puts the next schedule item in the preview, and Enter or Go Live sends it. On: it goes live straight away.
         </p>
@@ -2063,19 +1948,18 @@ export function SettingsPanel() {
             {settings.logoUrl ? <img src={settings.logoUrl} alt="Current logo" /> : <span className="hint">Placeholder logo</span>}
           </div>
           <div className="settings-row">
-            <button
-              className="button"
+            <Button
               onClick={() => run(async () => {
                 const saved = await window.api.settings.pickLogo()
                 if (saved) await loadSettings()
               })}
             >
               <Image size={15} aria-hidden="true" /> Choose image…
-            </button>
+            </Button>
             {settings.logoUrl && (
-              <button className="button" onClick={() => run(() => updateSettings({ logoUrl: null }))}>
+              <Button onClick={() => run(() => updateSettings({ logoUrl: null }))}>
                 <Trash2 size={15} aria-hidden="true" /> Use placeholder
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -2111,34 +1995,30 @@ export function SettingsPanel() {
       <LayoutsSection />
 
       <Section icon={<Save size={16} aria-hidden="true" />} title="Autosave and backups">
-        <label className="inline-check">
-          <input
-            type="checkbox"
+        <Toggle
             checked={settings.autosaveDrafts}
             onChange={(e) => run(() => updateSettings({ autosaveDrafts: e.target.checked }))}
-          />
+        >
           Autosave song editor drafts
-        </label>
+        </Toggle>
         <div className="field">
           <span>Backup folder</span>
           <div className="settings-row">
             <span className="settings-path" title={settings.backupFolder ?? undefined}>
               {settings.backupFolder ?? 'Not set'}
             </span>
-            <button
-              className="button"
+            <Button
               onClick={() => run(async () => {
                 if (await window.api.settings.pickBackupFolder()) await loadSettings()
               })}
             >
               <FolderOpen size={15} aria-hidden="true" /> Choose…
-            </button>
+            </Button>
           </div>
         </div>
         <label className="field">
           <span>Automatic backups</span>
-          <select
-            className="input"
+          <Select
             value={settings.backupIntervalMinutes}
             disabled={!settings.backupFolder}
             onChange={(e) => run(() => updateSettings({ backupIntervalMinutes: Number(e.target.value) as AppSettings['backupIntervalMinutes'] }))}
@@ -2148,11 +2028,10 @@ export function SettingsPanel() {
                 {i.label}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         <div className="settings-row">
-          <button
-            className="button"
+          <Button
             disabled={!settings.backupFolder}
             onClick={() => run(async () => {
               const file = await window.api.settings.backupNow()
@@ -2161,7 +2040,7 @@ export function SettingsPanel() {
             })}
           >
             <HardDriveDownload size={15} aria-hidden="true" /> Back up now
-          </button>
+          </Button>
           <span className="hint">
             {settings.lastBackupAt ? `Last backup ${new Date(settings.lastBackupAt).toLocaleString()}` : 'No backups yet'} · the
             newest 20 are kept

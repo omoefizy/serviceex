@@ -1,6 +1,7 @@
 import { Sparkles } from 'lucide-react'
 import { can, upgradeNote, type FeatureKey } from '../../shared/features'
 import { useOperatorStore } from '../store'
+import { Button } from './ui'
 
 interface Props {
   /** The plan feature this action belongs to; when the plan leaves it out, the button says so. */
@@ -22,9 +23,9 @@ export function AiButton({ feature, label, busyLabel, busy, disabledReason, tool
   const reason = !can(feature) ? upgradeNote(feature) : aiEnabled ? disabledReason : 'AI features are turned off in Settings'
   return (
     <span title={reason ?? tooltip}>
-      <button type={type} className="button" disabled={reason !== null || busy} onClick={onClick}>
-        <Sparkles size={15} aria-hidden="true" /> {busy ? busyLabel : label}
-      </button>
+      <Button type={type} icon={<Sparkles size={15} aria-hidden="true" />} disabled={reason !== null || busy} onClick={onClick}>
+        {busy ? busyLabel : label}
+      </Button>
     </span>
   )
 }

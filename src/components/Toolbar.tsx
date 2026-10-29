@@ -27,6 +27,7 @@ import { selectStreamState, useOperatorStore } from '../store'
 import { AlertsPanel } from './AlertsPanel'
 import { LayoutMenu } from './LayoutMenu'
 import { SharingBar } from './SharingBar'
+import { Button, IconButton } from './ui'
 
 const MODE_ICONS: Record<OutputMode, LucideIcon> = { show: Monitor, black: Square, clear: Eraser, logo: Image }
 
@@ -64,18 +65,18 @@ function AlertsButton() {
   return (
     // Disabled buttons show no tooltip, so the plan's note sits on the wrapper.
     <div className="alerts-control" ref={ref} title={inPlan ? undefined : upgradeNote('alerts')}>
-      <button
-        type="button"
+      <Button
+        size="lg"
         className={`mode-button mode-alert${showing ? ' active' : ''}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         disabled={!inPlan}
         title={!inPlan ? undefined : showing ? 'Alerts (the ticker is running)' : 'Alerts'}
+        icon={<Megaphone size={18} aria-hidden="true" />}
         onClick={() => setOpen(!open)}
       >
-        <Megaphone size={18} aria-hidden="true" />
         <span>Alerts</span>
-      </button>
+      </Button>
       {open && <AlertsPanel />}
     </div>
   )
@@ -91,7 +92,7 @@ function AlertRunningChip() {
     <span className="alert-chip" role="status">
       <span className="live-dot" aria-hidden="true" />
       Alert running{hidden ? ' (hidden)' : ''}
-      <button type="button" className="alert-chip-stop" onClick={stopAlerts} title="Stop the alert ticker">
+      <button type="button" className="alert-chip-stop ui-hit" onClick={stopAlerts} title="Stop the alert ticker">
         <Square size={11} aria-hidden="true" /> Stop
       </button>
     </span>
@@ -113,7 +114,7 @@ function LowerThirdChip() {
     <span className="alert-chip" role="status">
       <span className="live-dot" aria-hidden="true" />
       Lower third live{held ? ` (${held})` : ''}
-      <button type="button" className="alert-chip-stop" onClick={hide} title="Hide the lower third">
+      <button type="button" className="alert-chip-stop ui-hit" onClick={hide} title="Hide the lower third">
         <EyeOff size={11} aria-hidden="true" /> Hide
       </button>
     </span>
@@ -146,9 +147,9 @@ function LiveMenu() {
 
   return (
     <div className="live-menu" ref={ref}>
-      <button type="button" className="button live-menu-button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
-        Live <ChevronDown size={14} aria-hidden="true" />
-      </button>
+      <Button aria-haspopup="menu" aria-expanded={open} iconEnd={<ChevronDown size={14} aria-hidden="true" />} onClick={() => setOpen(!open)}>
+        Live
+      </Button>
       {open && (
         <div className="live-menu-list" role="menu" aria-label="Live">
           <button type="button" role="menuitem" disabled={!canGoBack} onClick={choose(goBack)}>
@@ -262,17 +263,18 @@ export function Toolbar() {
         {MODE_KEYS.map(({ mode: m, key, label }) => {
           const Icon = MODE_ICONS[m]
           return (
-            <button
+            <Button
               key={m}
+              size="lg"
               className={`mode-button mode-${m}${mode === m ? ' active' : ''}`}
-              aria-pressed={mode === m}
+              pressed={mode === m}
               title={`${label} (${key})`}
+              icon={<Icon size={18} aria-hidden="true" />}
               onClick={() => setOutputMode(m)}
             >
-              <Icon size={18} aria-hidden="true" />
               <span>{label}</span>
               <kbd>{key}</kbd>
-            </button>
+            </Button>
           )
         })}
         <AlertsButton />
@@ -282,71 +284,66 @@ export function Toolbar() {
 
       <div className="toolbar-actions">
         <LayoutMenu />
-        <button className="toolbar-search" onClick={() => setPaletteOpen(true)} title={`Search songs, verses and actions (${MOD}K)`}>
-          <Search size={15} aria-hidden="true" />
+        <Button
+          className="toolbar-search"
+          title={`Search songs, verses and actions (${MOD}K)`}
+          icon={<Search size={15} aria-hidden="true" />}
+          onClick={() => setPaletteOpen(true)}
+        >
           <span>Search</span>
           <kbd>{MOD}K</kbd>
-        </button>
+        </Button>
         {/* The screens scroll sideways when the window is narrow; Settings stays after them, always in view. */}
         <nav className="toolbar-nav" aria-label="Screens">
-          {/* Disabled buttons show no tooltip, so the plan's note sits on a wrapper. */}
-          <span title={can('stageDisplay') ? undefined : upgradeNote('stageDisplay')}>
-            <button
-              className={`icon-button toolbar-icon${stageOpen ? ' active' : ''}`}
-              aria-pressed={stageOpen}
-              aria-label="Stage display"
-              disabled={!stageOpen && !can('stageDisplay')}
-              title={!can('stageDisplay') ? undefined : stageOpen ? 'Close the stage display' : 'Open the stage display for the worship leader'}
-              onClick={() => toggleStage().catch(console.error)}
-            >
-              <MonitorPlay size={18} />
-            </button>
-          </span>
-          <span title={can('multiOutput') ? undefined : upgradeNote('multiOutput')}>
-            <button
-              className={`icon-button toolbar-icon${streamPanelOpen ? ' active' : ''}`}
-              aria-pressed={streamPanelOpen}
-              aria-label="Stream"
-              disabled={!streamPanelOpen && !can('multiOutput')}
-              title={!can('multiOutput') ? undefined : streamOpen ? 'Stream output, logos and key (the Stream output is open)' : 'Stream output, logos and key'}
-              onClick={() => openStreamPanel(!streamPanelOpen)}
-            >
-              <Cast size={18} />
-              {streamOpen && <span className="toolbar-icon-dot" aria-hidden="true" />}
-            </button>
-          </span>
-          <button
-            className={`icon-button toolbar-icon${sermonsOpen ? ' active' : ''}`}
-            aria-pressed={sermonsOpen}
-            aria-label="Sermons"
-            title="Sermons: saved listening sessions, their transcripts and exports"
-            onClick={() => openSermons(!sermonsOpen)}
+          <IconButton
+            className="toolbar-icon"
+            label="Stage display"
+            tooltip={stageOpen ? 'Close the stage display' : 'Open the stage display for the worship leader'}
+            icon={<MonitorPlay size={18} />}
+            pressed={stageOpen}
+            disabled={!stageOpen && !can('stageDisplay')}
+            disabledTooltip={upgradeNote('stageDisplay')}
+            onClick={() => toggleStage().catch(console.error)}
+          />
+          <IconButton
+            className="toolbar-icon"
+            label="Stream"
+            tooltip={streamOpen ? 'Stream output, logos and key (the Stream output is open)' : 'Stream output, logos and key'}
+            icon={<Cast size={18} />}
+            pressed={streamPanelOpen}
+            disabled={!streamPanelOpen && !can('multiOutput')}
+            disabledTooltip={upgradeNote('multiOutput')}
+            onClick={() => openStreamPanel(!streamPanelOpen)}
           >
-            <BookOpenText size={18} />
-          </button>
-          <span title={can('themes.editor') ? undefined : upgradeNote('themes.editor')}>
-            <button
-              className={`icon-button toolbar-icon${themeEditorOpen ? ' active' : ''}`}
-              aria-pressed={themeEditorOpen}
-              aria-label="Themes"
-              disabled={!can('themes.editor')}
-              title={can('themes.editor') ? 'Themes' : undefined}
-              onClick={() => openThemeEditor(!themeEditorOpen)}
-            >
-              <Palette size={18} />
-            </button>
-          </span>
+            {streamOpen && <span className="toolbar-icon-dot" aria-hidden="true" />}
+          </IconButton>
+          <IconButton
+            className="toolbar-icon"
+            label="Sermons"
+            tooltip="Sermons: saved listening sessions, their transcripts and exports"
+            icon={<BookOpenText size={18} />}
+            pressed={sermonsOpen}
+            onClick={() => openSermons(!sermonsOpen)}
+          />
+          <IconButton
+            className="toolbar-icon"
+            label="Themes"
+            icon={<Palette size={18} />}
+            pressed={themeEditorOpen}
+            disabled={!can('themes.editor')}
+            disabledTooltip={upgradeNote('themes.editor')}
+            onClick={() => openThemeEditor(!themeEditorOpen)}
+          />
         </nav>
-        <button
-          className={`icon-button toolbar-icon toolbar-settings${settingsOpen ? ' active' : ''}`}
-          aria-pressed={settingsOpen}
-          aria-label="Settings"
+        <IconButton
+          className="toolbar-icon toolbar-settings"
+          label="Settings"
+          tooltip={`Settings (${MOD},)`}
+          icon={<Settings size={18} />}
+          pressed={settingsOpen}
           aria-keyshortcuts={IS_MAC ? 'Meta+,' : 'Control+,'}
-          title={`Settings (${MOD},)`}
           onClick={() => openSettings(!settingsOpen)}
-        >
-          <Settings size={18} />
-        </button>
+        />
       </div>
     </header>
   )

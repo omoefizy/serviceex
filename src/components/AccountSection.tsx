@@ -5,6 +5,7 @@ import { ENFORCE_ENTITLEMENTS, FEATURE_KEYS, FEATURES, includes } from '../../sh
 import type { LicenseStatus } from '../../shared/license'
 import { shortDate } from '../../shared/serviceErrors'
 import { openPlans, setAccountState, useAccount } from '../lib/account'
+import { Button, Card, Input } from './ui'
 
 const LICENSE_STATES: Record<LicenseStatus['state'], string> = {
   none: 'No licence on this computer',
@@ -54,18 +55,17 @@ function SignInForm({ encryptionAvailable }: { encryptionAvailable: boolean }) {
         <form className="field" onSubmit={sendCode}>
           <label htmlFor="account-email">Email</label>
           <div className="settings-row">
-            <input
+            <Input
               id="account-email"
-              className="input"
               type="email"
               autoComplete="email"
               placeholder="you@church.org"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
-            <button type="submit" className="button primary" disabled={busy || !email.trim()}>
+            <Button variant="primary" type="submit" disabled={busy || !email.trim()}>
               <Mail size={15} aria-hidden="true" /> Send code
-            </button>
+            </Button>
           </div>
           <span className="hint">A 6 digit code is emailed to you. No password is needed.</span>
         </form>
@@ -73,9 +73,9 @@ function SignInForm({ encryptionAvailable }: { encryptionAvailable: boolean }) {
         <form className="field" onSubmit={verify}>
           <label htmlFor="account-code">Code sent to {sentTo}</label>
           <div className="settings-row">
-            <input
+            <Input
               id="account-code"
-              className="input account-code"
+              className="account-code"
               inputMode="numeric"
               autoComplete="one-time-code"
               maxLength={6}
@@ -84,12 +84,12 @@ function SignInForm({ encryptionAvailable }: { encryptionAvailable: boolean }) {
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
               autoFocus
             />
-            <button type="submit" className="button primary" disabled={busy || code.length !== 6}>
+            <Button variant="primary" type="submit" disabled={busy || code.length !== 6}>
               <LogIn size={15} aria-hidden="true" /> Sign in
-            </button>
-            <button type="button" className="button" disabled={busy} onClick={() => (setSentTo(null), setCode(''), setError(null))}>
+            </Button>
+            <Button disabled={busy} onClick={() => (setSentTo(null), setCode(''), setError(null))}>
               Use another email
-            </button>
+            </Button>
           </div>
           <span className="hint">Signing in also activates this computer on your licence, if you have one.</span>
         </form>
@@ -161,17 +161,17 @@ function LicenseDetails({ account }: { account: AccountState }) {
                 Deactivate this computer? Its seat is freed for another computer, and it counts as one of the licence&apos;s moves (3 every 12
                 months).
               </span>
-              <button type="button" className="button danger" disabled={busy} onClick={() => void deactivate()}>
+              <Button variant="danger" disabled={busy} onClick={() => void deactivate()}>
                 <MonitorX size={15} aria-hidden="true" /> Deactivate
-              </button>
-              <button type="button" className="button" disabled={busy} onClick={() => setConfirming(false)}>
+              </Button>
+              <Button disabled={busy} onClick={() => setConfirming(false)}>
                 Cancel
-              </button>
+              </Button>
             </>
           ) : (
-            <button type="button" className="button" onClick={() => setConfirming(true)}>
+            <Button onClick={() => setConfirming(true)}>
               <MonitorX size={15} aria-hidden="true" /> Deactivate this computer
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -263,11 +263,7 @@ export function AccountSection() {
   }
 
   return (
-    <section className="settings-section">
-      <h3>
-        <UserRound size={16} aria-hidden="true" />
-        Account
-      </h3>
+    <Card className="settings-section" icon={<UserRound size={16} aria-hidden="true" />} title="Account">
       {!account ? null : !account.configured ? (
         <p className="hint">This build of ServiceEx is not set up to connect to ServiceEx. Everything offline works as usual.</p>
       ) : account.signedIn ? (
@@ -275,12 +271,12 @@ export function AccountSection() {
           <span>
             Signed in as <strong>{account.email}</strong>
           </span>
-          <button type="button" className="button" disabled={busy} onClick={() => void refresh()} title="Check the licence, hours and allowance again">
+          <Button disabled={busy} onClick={() => void refresh()} title="Check the licence, hours and allowance again">
             <RefreshCw size={15} aria-hidden="true" /> Refresh
-          </button>
-          <button type="button" className="button" disabled={busy} onClick={() => void signOut()}>
+          </Button>
+          <Button disabled={busy} onClick={() => void signOut()}>
             <LogOut size={15} aria-hidden="true" /> Sign out
-          </button>
+          </Button>
         </div>
       ) : (
         <SignInForm encryptionAvailable={account.encryptionAvailable} />
@@ -296,9 +292,9 @@ export function AccountSection() {
           {account.signedIn && <BalanceLines account={account} />}
           {account.signedIn && (
             <div className="settings-row">
-              <button type="button" className="button" onClick={() => openPlans(true)}>
+              <Button onClick={() => openPlans(true)}>
                 <CreditCard size={15} aria-hidden="true" /> Plans and Credits
-              </button>
+              </Button>
             </div>
           )}
         </>
@@ -316,6 +312,6 @@ export function AccountSection() {
         {ENFORCE_ENTITLEMENTS ? '' : 'Plan limits are not enforced yet: every feature works. '}A change to the plan takes effect the next time
         ServiceEx starts, never during a service.
       </p>
-    </section>
+    </Card>
   )
 }

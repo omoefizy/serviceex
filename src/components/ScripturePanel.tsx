@@ -1,4 +1,4 @@
-import { BookPlus, History, X } from 'lucide-react'
+import { BookPlus, BookX, History, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { can, upgradeNote } from '../../shared/features'
 import { BOOK_NAMES, formatReference, NEW_TESTAMENT_BOOKS, OLD_TESTAMENT_BOOKS, parseReference } from '../../shared/parseReference'
@@ -20,6 +20,7 @@ import { useVerseSearch } from '../lib/useVerseSearch'
 import { selectDefaultTranslation, selectLiveSlide, useOperatorStore } from '../store'
 import { AiButton } from './AiButton'
 import { BibleImportModal } from './BibleImportModal'
+import { Button, Chip, EmptyState, IconButton, Input, PanelHeader, Select } from './ui'
 import { VerseResults, VerseText, type VerseResultsHandle } from './VerseResults'
 
 const DEBOUNCE_MS = 60
@@ -419,15 +420,13 @@ export function ScripturePanel() {
 
   return (
     <section className="panel scripture-panel">
-      <header className="panel-header">
-        <h2>Scripture</h2>
-      </header>
+      <PanelHeader title="Scripture" />
 
       <form className="scripture-search" onSubmit={(e: FormEvent) => e.preventDefault()}>
         <div className="scripture-search-row">
-          <input
+          <Input
             ref={inputRef}
-            className="input scripture-input"
+            className="scripture-input"
             type="search"
             aria-label="Search scripture"
             aria-controls="scripture-list"
@@ -448,23 +447,25 @@ export function ScripturePanel() {
         </div>
 
         <div className="scripture-filters">
-          <select className="input" aria-label="Testament" value={testament} onChange={(e) => handleTestamentChange(e.target.value as Testament)}>
+          <Select aria-label="Testament" value={testament} onChange={(e) => handleTestamentChange(e.target.value as Testament)}>
             <option value="all">Whole Bible</option>
             <option value="old">Old Testament</option>
             <option value="new">New Testament</option>
-          </select>
-          <select className="input" aria-label="Book" value={bookFilter ?? ''} onChange={(e) => setBookFilter(e.target.value || null)}>
+          </Select>
+          <Select aria-label="Book" value={bookFilter ?? ''} onChange={(e) => setBookFilter(e.target.value || null)}>
             <option value="">All books</option>
             {bookChoices.map((book) => (
               <option key={book} value={book}>
                 {book}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
       </form>
 
-      {hasBible === false && <p className="hint">No Bible text yet. Run "npm run import:bible", then try again.</p>}
+      {hasBible === false && (
+        <EmptyState compact icon={<BookX size={20} />} title="No Bible text yet" description='Run "npm run import:bible", then try again.' />
+      )}
 
       {!input.trim() && recent.length > 0 && (
         <div className="recent-searches">
@@ -474,49 +475,39 @@ export function ScripturePanel() {
           <ul className="chips">
             {recent.map((text) => (
               <li key={text}>
-                <button
-                  type="button"
-                  className="chip add"
+                <Chip
                   onClick={() => {
                     showText(text)
                     inputRef.current?.focus()
                   }}
                 >
                   {text}
-                </button>
+                </Chip>
               </li>
             ))}
           </ul>
-          <button type="button" className="icon-button" aria-label="Clear recent searches" title="Clear recent searches" onClick={() => setRecent([])}>
-            <X size={14} />
-          </button>
+          <IconButton label="Clear recent searches" icon={<X size={14} />} onClick={() => setRecent([])} />
         </div>
       )}
 
       <div className="scripture-body">
         <nav className="version-list" aria-label="Bible versions">
           {[{ code: 'both', name: 'Search every installed version' }, ...installed].map((v) => (
-            <button
-              key={v.code}
-              type="button"
-              className={`version-item${version === v.code ? ' active' : ''}`}
-              aria-pressed={version === v.code}
-              title={v.name}
-              onClick={() => setVersion(v.code)}
-            >
+            <Button key={v.code} size="sm" className="version-item" pressed={version === v.code} title={v.name} onClick={() => setVersion(v.code)}>
               {v.code === 'both' ? 'All' : v.code}
-            </button>
+            </Button>
           ))}
-          <button
-            type="button"
+          <Button
+            size="sm"
             className="version-item version-import"
-            title={can('bible.extraVersions') ? 'Import a Bible version your church owns' : upgradeNote('bible.extraVersions')}
+            title="Import a Bible version your church owns"
             disabled={!can('bible.extraVersions')}
+            disabledTooltip={upgradeNote('bible.extraVersions')}
+            icon={<BookPlus size={14} aria-hidden="true" />}
             onClick={() => setImportOpen(true)}
           >
-            <BookPlus size={14} aria-hidden="true" />
-            <span>Import</span>
-          </button>
+            Import
+          </Button>
         </nav>
 
         <div className="scripture-results">
@@ -530,11 +521,11 @@ export function ScripturePanel() {
           {chapter && chapterCount > 1 && (
             <div className="chapter-buttons" role="group" aria-label={`${chapter.book} chapters`}>
               {Array.from({ length: chapterCount }, (_, i) => i + 1).map((n) => (
-                <button
+                <Button
                   key={n}
-                  type="button"
-                  className={`chapter-button${n === chapter.chapter ? ' active' : ''}`}
-                  aria-pressed={n === chapter.chapter}
+                  size="sm"
+                  className="chapter-button"
+                  pressed={n === chapter.chapter}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
                     showText(`${chapter.book} ${n}`)
@@ -542,7 +533,7 @@ export function ScripturePanel() {
                   }}
                 >
                   {n}
-                </button>
+                </Button>
               ))}
             </div>
           )}

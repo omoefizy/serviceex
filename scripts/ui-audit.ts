@@ -12,7 +12,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { crc32, deflateSync } from 'node:zlib'
-import { _electron, type ElectronApplication, type Page } from 'playwright'
+import { _electron, chromium, type ElectronApplication, type Page } from 'playwright'
 import { build, createServer } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -180,7 +180,8 @@ interface Metrics {
   inputStyles: Counts
   inlineStyleProps: Counts
   inlineStyled: number
-  smallTargets: { label: string; className: string; width: number; height: number }[]
+  /** Drawn size, and the hit area when that is larger. */
+  smallTargets: { label: string; className: string; width: number; height: number; hit?: string }[]
   lowContrast: { text: string; className: string; color: string; background: string; ratio: number; fontSize: string; disabled: boolean }[]
   clippedText: { text: string; className: string; ellipsis: boolean }[]
   offscreen: { text: string; className: string; right: number; bottom: number }[]
@@ -240,6 +241,23 @@ function collectMetrics(): Metrics {
       }
     }
     return layers.reverse().reduce<Rgba>((base, layer) => over(layer, base), { r: 255, g: 255, b: 255, a: 1 })
+  }
+  /** What can be clicked: the box, grown by an invisible ::before hit area and by the input's <label>s. */
+  const hitBox = (el: Element) => {
+    const r = el.getBoundingClientRect()
+    let width = r.width
+    let height = r.height
+    const before = getComputedStyle(el, '::before')
+    if (before.content !== 'none' && before.position === 'absolute') {
+      width = Math.max(width, parseFloat(before.width) || 0)
+      height = Math.max(height, parseFloat(before.height) || 0)
+    }
+    for (const labelEl of Array.from((el as HTMLInputElement).labels ?? [])) {
+      const box = labelEl.getBoundingClientRect()
+      width = Math.max(width, box.width)
+      height = Math.max(height, box.height)
+    }
+    return { width, height }
   }
   const opacityOf = (el: Element) => {
     let o = 1
@@ -320,8 +338,15 @@ function collectMetrics(): Metrics {
 
     if (el.matches(INTERACTIVE)) {
       const r = el.getBoundingClientRect()
-      if (r.width < 32 || r.height < 32) {
-        m.smallTargets.push({ label: label(el), className: `${el.tagName.toLowerCase()}${cls ? '.' + cls.split(' ').join('.') : ''}`, width: Math.round(r.width), height: Math.round(r.height) })
+      const hit = hitBox(el)
+      if (hit.width < 32 || hit.height < 32) {
+        m.smallTargets.push({
+          label: label(el),
+          className: `${el.tagName.toLowerCase()}${cls ? '.' + cls.split(' ').join('.') : ''}`,
+          width: Math.round(r.width),
+          height: Math.round(r.height),
+          ...(hit.width > r.width || hit.height > r.height ? { hit: `${Math.round(hit.width)}x${Math.round(hit.height)}` } : {}),
+        })
       }
     }
 
@@ -373,18 +398,22 @@ function collectMetrics(): Metrics {
 // ---------- Static scan of the stylesheet and components ----------
 
 function staticScan() {
-  const css = readFileSync(path.join(ROOT, 'src', 'index.css'), 'utf8')
+  // The tokens live in src/styles/tokens.css; everything else (the app's stylesheet and the shared components') is
+  // checked for colors written out instead of taken from a token.
+  const rootBlock = readFileSync(path.join(ROOT, 'src', 'styles', 'tokens.css'), 'utf8')
+  const body = ['src/index.css', 'src/components/ui/ui.css'].map((f) => readFileSync(path.join(ROOT, f), 'utf8')).join('\n')
+  const css = rootBlock + '\n' + body
   const componentDir = path.join(ROOT, 'src', 'components')
-  const components = readdirSync(componentDir)
-    .filter((f) => f.endsWith('.tsx'))
-    .map((f) => ({ file: f, text: readFileSync(path.join(componentDir, f), 'utf8') }))
+  const components = [componentDir, path.join(componentDir, 'ui')].flatMap((dir) =>
+    readdirSync(dir)
+      .filter((f) => f.endsWith('.tsx'))
+      .map((f) => ({ file: path.relative(componentDir, path.join(dir, f)), text: readFileSync(path.join(dir, f), 'utf8') })),
+  )
   const count = (text: string, re: RegExp) => {
     const counts: Counts = {}
     for (const match of text.matchAll(re)) counts[match[1] ?? match[0]] = (counts[match[1] ?? match[0]] ?? 0) + 1
     return Object.fromEntries(Object.entries(counts).sort((a, b) => b[1] - a[1]))
   }
-  const rootBlock = css.slice(0, css.indexOf('kbd {'))
-  const body = css.slice(rootBlock.length)
 
   // The class names on <button> elements, and whether the stylesheet gives each a hover, focus and disabled look.
   const buttonClasses = new Set<string>()
@@ -403,10 +432,10 @@ function staticScan() {
   }))
 
   return {
-    cssLines: css.split('\n').length,
+    cssLines: body.split('\n').length,
     rootTokens: count(rootBlock, /(--[a-z0-9-]+):/g),
-    hexColorsOutsideTokens: count(body, /(#[0-9a-fA-F]{3,8})\b/g),
-    rgbaOutsideTokens: count(body, /(rgba?\([^)]*\))/g),
+    hexColorsOutsideTokens: count(body.replace(/\/\*[\s\S]*?\*\//g, ''), /(#[0-9a-fA-F]{3,8})\b/g),
+    rgbaOutsideTokens: count(body.replace(/\/\*[\s\S]*?\*\//g, ''), /(rgba?\([^)]*\))/g),
     varUses: count(body, /var\((--[a-z0-9-]+)\)/g),
     fontSizeDeclarations: count(css, /font-size:\s*([^;]+);/g),
     fontShorthands: count(css, /\bfont:\s*([^;]+);/g),
@@ -511,9 +540,37 @@ async function setSize(app: ElectronApplication, page: Page, size: { width: numb
 
 const today = new Date().toISOString().slice(0, 10)
 
+/**
+ * The dev UI kit: a picture only. It shows disabled and forced states on purpose, so it stays out of the counts. It needs
+ * nothing from Electron, so a plain browser page shows it. It runs first, on its own dev server: once the main process is
+ * built, NODE_ENV is production and the kit route is left out.
+ */
+async function captureUiKit() {
+  const server = await createServer({ root: ROOT, configFile: false, plugins: [react()], logLevel: 'warn', server: { port: 5298 } })
+  await server.listen()
+  const browser = await chromium.launch()
+  try {
+    const kit = await browser.newPage({ viewport: SIZES[0], colorScheme: 'dark' })
+    kit.on('pageerror', (error) => console.warn('  UI kit:', error.message))
+    await kit.goto(`${server.resolvedUrls!.local[0]}#/ui-kit`)
+    await kit.waitForSelector('.kit')
+    await settle(kit, 800)
+    await kit.screenshot({ path: path.join(OUT, '50-ui-kit.png'), fullPage: true })
+    shots.push('50-ui-kit.png')
+    console.log('  50-ui-kit.png')
+  } catch (error) {
+    console.warn('  The UI kit could not be captured:', error instanceof Error ? error.message.split('\n')[0] : error)
+  } finally {
+    await browser.close()
+    await server.close()
+  }
+}
+
 async function main() {
-  rmSync(OUT, { recursive: true, force: true })
+  // Last run's pictures and measurements go; the report, which is committed, stays.
   mkdirSync(OUT, { recursive: true })
+  for (const file of readdirSync(OUT)) if (file !== 'REPORT.md') rmSync(path.join(OUT, file), { recursive: true, force: true })
+  await captureUiKit()
 
   // An empty server address means the build talks to no server; account screens show their offline states.
   delete process.env.SERVICEEX_API_URL
@@ -828,12 +885,31 @@ function totals(screens: Record<string, Metrics>) {
   const sorted = Object.fromEntries(keys.map((k) => [k, Object.fromEntries(Object.entries(sum[k]).sort((a, b) => b[1] - a[1]))]))
   const unique = <T,>(list: T[], key: (t: T) => string) => [...new Map(list.map((t) => [key(t), t])).values()]
   const all = Object.values(screens)
+  const smallTargets = unique(all.flatMap((m) => m.smallTargets), (t) => `${t.className}|${t.label}`)
+  const lowContrast = unique(all.flatMap((m) => m.lowContrast), (t) => `${t.className}|${t.color}|${t.background}`)
+  const heightsOf = (styles: Counts, match: (key: string) => boolean) =>
+    [...new Set(Object.keys(styles).filter(match).map((k) => Number(/\| h(\d+) \|/.exec(k)?.[1])))].sort((a, b) => a - b)
+  const headline = {
+    renderedColors: new Set([...Object.keys(sum.textColors), ...Object.keys(sum.backgroundColors), ...Object.keys(sum.borderColors)]).size,
+    textColors: Object.keys(sum.textColors).length,
+    backgroundColors: Object.keys(sum.backgroundColors).length,
+    borderColors: Object.keys(sum.borderColors).length,
+    buttonStyleCombos: Object.keys(sum.buttonStyles).length,
+    /** Heights of the controls that are buttons by design (not cards, slides or list rows that happen to be buttons). */
+    controlButtonHeights: heightsOf(sum.buttonStyles, (k) => /^(ui-(icon-)?button|button\.(button|icon-button|primary))\b/.test(k)),
+    legacyButtonHeights: heightsOf(sum.buttonStyles, (k) => /^button\.(button|icon-button)\b/.test(k)),
+    inputHeights: heightsOf(sum.inputStyles, (k) => !/^textarea/.test(k)),
+    smallTargets: smallTargets.length,
+    lowContrast: lowContrast.length,
+    lowContrastEnabled: lowContrast.filter((t) => !t.disabled).length,
+  }
   return {
+    headline,
     ...sorted,
     distinct: Object.fromEntries(keys.map((k) => [k, Object.keys(sum[k]).length])),
     nearDuplicateColors: nearDuplicates([...new Set([...Object.keys(sum.textColors), ...Object.keys(sum.backgroundColors), ...Object.keys(sum.borderColors)])]),
-    smallTargets: unique(all.flatMap((m) => m.smallTargets), (t) => `${t.className}|${t.label}`),
-    lowContrast: unique(all.flatMap((m) => m.lowContrast), (t) => `${t.className}|${t.color}|${t.background}`),
+    smallTargets,
+    lowContrast,
     clippedText: unique(all.flatMap((m) => m.clippedText), (t) => `${t.className}|${t.text}`),
     offscreen: Object.fromEntries(Object.entries(screens).filter(([, m]) => m.offscreen.length > 0).map(([name, m]) => [name, m.offscreen])),
     pageScrolls: Object.fromEntries(Object.entries(screens).filter(([, m]) => m.pageScrolls.horizontal || m.pageScrolls.vertical).map(([name, m]) => [name, m.pageScrolls])),

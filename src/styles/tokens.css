@@ -1,0 +1,238 @@
+/*
+ * Design tokens: every color, size and depth the operator UI uses. Components and src/index.css read these and never
+ * hard-code a color. Dark is the default; light mode redefines the color roles below.
+ *
+ * Contrast (WCAG AA, 4.5:1 for text) is checked by scripts/ui-audit.ts. The pairs that matter most:
+ *   --text-on-fill on --accent-strong 4.56, on --live-strong 4.65, on --mode-show 5.02
+ *   --live-text on its pill (--live-soft over --bg-1) 4.88; light mode 4.91
+ *   --text-2 on --bg-1 5.57, --text-3 on --bg-1 4.69, --error on --bg-1 7.17
+ * Errors are rose, at least 13 (CIE76 ΔE) from every live red in both modes, so an error never reads as on air.
+ */
+
+:root {
+  /* ---------- Color: dark (default) ---------- */
+
+  /* Background levels: app → panel → raised (inputs, cards, hover) → pressed. */
+  --bg-0: #0f1115;
+  --bg-1: #171a21;
+  --bg-2: #1f232c;
+  --bg-3: #262b34;
+  /* Panels, menus, popovers and modals sit on --surface. */
+  --surface: var(--bg-1);
+  --surface-raised: var(--bg-2);
+  --scrim: rgb(0 0 0 / 0.6);
+
+  --border-subtle: #22262e;
+  --border: #2a2f3a;
+  --border-strong: #3c4350;
+
+  --text-1: #e6e8ec;
+  --text-2: #8b92a0;
+  /* Placeholders and hints: the lowest level that still reads at 4.5:1 on --bg-1. */
+  --text-3: #7d8594;
+  /* Text and icons on any saturated fill (accent, live, modes, badges). */
+  --text-on-fill: #ffffff;
+  /* Text on an amber fill, where white does not read. */
+  --text-on-warning: #1a1306;
+
+  /* One blue. --accent for text, icons, borders and focus; --accent-strong for fills behind --text-on-fill. */
+  --accent: #4f8cff;
+  --accent-strong: #3370e6;
+  --accent-strong-hover: #2b64d4;
+  --accent-soft: rgb(79 140 255 / 0.15);
+
+  /* Live means on air, and nothing else: never errors. */
+  --live: #e5484d;
+  --live-strong: #d6393e;
+  --live-text: #ec6a6e;
+  --live-soft: rgb(229 72 77 / 0.15);
+  /* Red text on a white pill inside a live fill (the alert chip's Stop). */
+  --live-ink: #b91c1c;
+
+  --success: #22c55e;
+  --success-soft: rgb(34 197 94 / 0.15);
+  /* The one amber. */
+  --warning: #f59e0b;
+  --warning-soft: rgb(245 158 11 / 0.14);
+  /* Amber behind --text-on-warning, the same in both modes. */
+  --warning-fill: #f59e0b;
+  --error: #fb7fa0;
+  --error-strong: #c2185b;
+  --error-soft: rgb(251 127 160 / 0.15);
+  --info: var(--accent);
+
+  /* Output modes, each filled only while active. Show, Clear and Logo carry white text at 4.5:1 or more. */
+  --mode-show: #15803d;
+  --mode-black: #4b5563;
+  --mode-clear: #027bba;
+  --mode-logo: #7c3aed;
+  --mode-alert: var(--warning-fill);
+
+  /* AI suggestions and tags. */
+  --ai: #a78bfa;
+  --ai-soft: rgb(139 92 246 / 0.18);
+  /* Marks the words a search or highlight matched, and title guides on the Stream output. */
+  --highlight: #facc15;
+  /* Sermon quotes: the sample card and the quote marks beside statements. */
+  --quote-gold: #d6b98c;
+  --quote-ink: #fdfaf3;
+  --quote-bg-from: #1e1b2e;
+  --quote-bg-to: #0b0a12;
+
+  /* Screens: anything that stands for the projector (previews, thumbnails, the stage display). These stay dark in
+     light mode, because the projector does. */
+  --screen-bg: #000000;
+  --screen-fg: #ffffff;
+  --screen-fg-soft: #e6e8ec;
+  --screen-fg-muted: #8b92a0;
+  --screen-border: #262626;
+  --screen-scrim: rgb(0 0 0 / 0.7);
+  --screen-guide: rgb(255 255 255 / 0.9);
+  --screen-outline: rgb(0 0 0 / 0.4);
+  --checker: rgb(136 136 136 / 0.33);
+
+  /* ---------- Type ---------- */
+
+  --font-ui: Inter, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-lg: 15px;
+  --text-xl: 18px;
+  --leading-tight: 1.25;
+  --leading: 1.45;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ---------- Spacing: 4px base ---------- */
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  /* Half steps, kept while older rules still use them. */
+  --space-0-5: 2px;
+  --space-1-5: 6px;
+  --space-2-5: 10px;
+
+  /* ---------- Radius ---------- */
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-full: 999px;
+
+  /* ---------- Shadow ---------- */
+
+  --shadow-1: 0 4px 12px rgb(0 0 0 / 0.4);
+  --shadow-2: 0 8px 24px rgb(0 0 0 / 0.4);
+  --shadow-3: 0 12px 32px rgb(0 0 0 / 0.45);
+  --shadow-inset-hairline: inset 0 0 0 1px rgb(0 0 0 / 0.25);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 0 0 0 2px var(--bg-1), 0 0 0 4px var(--focus-ring-color);
+
+  /* ---------- Controls and motion ---------- */
+
+  /* Every button, input and select is one of these heights. Below 32px a control gets an invisible 32px hit area. */
+  --control-sm: 28px;
+  --control-md: 32px;
+  --control-lg: 40px;
+  --hit-min: 32px;
+  --duration-fast: 120ms;
+  --duration: 180ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* ---------- Older names, kept as aliases ---------- */
+
+  --bg: var(--bg-0);
+  --panel: var(--bg-1);
+  --panel-raised: var(--bg-2);
+  --text: var(--text-1);
+  --text-muted: var(--text-2);
+  --next: var(--accent);
+  --shadow: var(--shadow-3);
+  --radius: var(--radius-lg);
+}
+
+/* ---------- Color: light ---------- */
+
+/* Light mode: chosen in Settings, or following the system when Settings says "System". The two blocks must match. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --bg-0: #eef0f4;
+    --bg-1: #ffffff;
+    --bg-2: #f2f4f7;
+    --bg-3: #e6e9ef;
+    --scrim: rgb(15 23 42 / 0.45);
+    --border-subtle: #e3e6ec;
+    --border: #d5d9e1;
+    --border-strong: #b9bfcb;
+    --text-1: #161a21;
+    --text-2: #5d6676;
+    --text-3: #646c7a;
+    --accent: #2563eb;
+    --accent-strong: #2563eb;
+    --accent-strong-hover: #1d4fd0;
+    --accent-soft: rgb(37 99 235 / 0.12);
+    --live: #dc2626;
+    --live-strong: #dc2626;
+    --live-text: #c81e1e;
+    --live-soft: rgb(220 38 38 / 0.1);
+    --success: #15803d;
+    --success-soft: rgb(21 128 61 / 0.12);
+    --warning: #b45309;
+    --warning-soft: rgb(217 119 6 / 0.14);
+    --error: #be123c;
+    --error-strong: #be123c;
+    --error-soft: rgb(190 18 60 / 0.1);
+    --ai: #7c3aed;
+    --ai-soft: rgb(124 58 237 / 0.12);
+    --shadow-1: 0 4px 12px rgb(15 23 42 / 0.14);
+    --shadow-2: 0 8px 24px rgb(15 23 42 / 0.16);
+    --shadow-3: 0 12px 32px rgb(15 23 42 / 0.18);
+    color-scheme: light;
+  }
+}
+
+:root[data-theme='light'] {
+  --bg-0: #eef0f4;
+  --bg-1: #ffffff;
+  --bg-2: #f2f4f7;
+  --bg-3: #e6e9ef;
+  --scrim: rgb(15 23 42 / 0.45);
+  --border-subtle: #e3e6ec;
+  --border: #d5d9e1;
+  --border-strong: #b9bfcb;
+  --text-1: #161a21;
+  --text-2: #5d6676;
+  --text-3: #646c7a;
+  --accent: #2563eb;
+  --accent-strong: #2563eb;
+  --accent-strong-hover: #1d4fd0;
+  --accent-soft: rgb(37 99 235 / 0.12);
+  --live: #dc2626;
+  --live-strong: #dc2626;
+  --live-text: #c81e1e;
+  --live-soft: rgb(220 38 38 / 0.1);
+  --success: #15803d;
+  --success-soft: rgb(21 128 61 / 0.12);
+  --warning: #b45309;
+  --warning-soft: rgb(217 119 6 / 0.14);
+  --error: #be123c;
+  --error-strong: #be123c;
+  --error-soft: rgb(190 18 60 / 0.1);
+  --ai: #7c3aed;
+  --ai-soft: rgb(124 58 237 / 0.12);
+  --shadow-1: 0 4px 12px rgb(15 23 42 / 0.14);
+  --shadow-2: 0 8px 24px rgb(15 23 42 / 0.16);
+  --shadow-3: 0 12px 32px rgb(15 23 42 / 0.18);
+  color-scheme: light;
+}
