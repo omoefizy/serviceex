@@ -37,7 +37,7 @@ export interface InlineEdit {
 }
 
 /** A text element in its box: at its size, or with auto fit as large as fits up to its size. */
-function DesignText({ element, words, edit }: { element: Text; words: string; edit?: InlineEdit }) {
+function DesignText({ element, words, edit, extra }: { element: Text; words: string; edit?: InlineEdit; extra: string }) {
   const defaultFont = useContext(DefaultFontContext)
   const boxRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLParagraphElement>(null)
@@ -99,7 +99,7 @@ function DesignText({ element, words, edit }: { element: Text; words: string; ed
 
   const { shadow, outline } = element
   return (
-    <div ref={boxRef} className="dv-el dv-text" style={{ ...placement(element), justifyContent: JUSTIFY[element.verticalAlign], textAlign: element.align }}>
+    <div ref={boxRef} className={`dv-el dv-text${extra}`} style={{ ...placement(element), justifyContent: JUSTIFY[element.verticalAlign], textAlign: element.align }}>
       <p
         ref={textRef}
         className={editing ? 'editing' : undefined}
@@ -130,15 +130,22 @@ function DesignText({ element, words, edit }: { element: Text; words: string; ed
   )
 }
 
-function DesignElementView({ element, fields, edit, placeholders }: { element: DesignElement; fields?: Partial<Record<DesignTextField, string>>; edit?: InlineEdit; placeholders: boolean }) {
+function DesignElementView({ element, fields, edit, placeholders, extra }: {
+  element: DesignElement
+  fields?: Partial<Record<DesignTextField, string>>
+  edit?: InlineEdit
+  placeholders: boolean
+  /** More classes for the element: its loop, and whether it steps aside. */
+  extra: string
+}) {
   switch (element.kind) {
     case 'text':
-      return <DesignText element={element} words={shownText(element, fields)} edit={edit?.id === element.id ? edit : undefined} />
+      return <DesignText element={element} words={shownText(element, fields)} edit={edit?.id === element.id ? edit : undefined} extra={extra} />
     case 'rect': {
       const { fill, border, shadow } = element
       return (
         <div
-          className="dv-el"
+          className={`dv-el${extra}`}
           style={{
             ...placement(element),
             background: fill.kind === 'solid' ? fill.color : `linear-gradient(${fill.angle}deg, ${fill.from}, ${fill.to})`,
@@ -151,13 +158,13 @@ function DesignElementView({ element, fields, edit, placeholders }: { element: D
     }
     case 'line':
       return (
-        <div className="dv-el dv-line" style={placement(element)}>
+        <div className={`dv-el dv-line${extra}`} style={placement(element)}>
           <span style={{ borderTop: `${element.thickness}cqh ${element.dashed ? 'dashed' : 'solid'} ${element.color}` }} />
         </div>
       )
     case 'image':
-      if (!element.src) return placeholders ? <div className="dv-el dv-image-empty" style={placement(element)} /> : null
-      return <img className="dv-el" src={element.src} alt="" draggable={false} style={{ ...placement(element), objectFit: element.fit, borderRadius: `${element.radius}cqh` }} />
+      if (!element.src) return placeholders ? <div className={`dv-el dv-image-empty${extra}`} style={placement(element)} /> : null
+      return <img className={`dv-el${extra}`} src={element.src} alt="" draggable={false} style={{ ...placement(element), objectFit: element.fit, borderRadius: `${element.radius}cqh` }} />
   }
 }
 
@@ -166,21 +173,32 @@ function DesignElementView({ element, fields, edit, placeholders }: { element: D
  * cqh of this view. Bound text shows `fields` when given, else its sample words. `checker` shows a transparent
  * background as a checkerboard, as an editor does.
  */
-export function DesignView({ style, fields, edit, checker = false, placeholders = false, className = '' }: {
+export function DesignView({ style, fields, edit, checker = false, placeholders = false, onAir = false, lowerThirdLive = false, className = '' }: {
   style: DesignStyle
   fields?: Partial<Record<DesignTextField, string>>
   edit?: InlineEdit
   checker?: boolean
   /** Shows an image element with no picture yet as an empty frame. */
   placeholders?: boolean
+  /** On an output: fills the screen, and the elements' loops run. */
+  onAir?: boolean
+  /** On air with a lower third up: elements flagged to hide while one is live fade out. */
+  lowerThirdLive?: boolean
   className?: string
 }) {
   const { background } = style
+  const extra = (element: DesignElement) =>
+    onAir ? `${element.loop !== 'none' ? ` dv-loop-${element.loop}` : ''}${lowerThirdLive && element.hideWithLowerThird ? ' dv-aside' : ''}` : ''
   return (
-    <div className={`design-view${checker && background.kind === 'transparent' ? ' checker' : ''} ${className}`} style={backgroundCss(background)}>
+    <div
+      className={`design-view${checker && background.kind === 'transparent' ? ' checker' : ''}${onAir ? ' on-air' : ''} ${className}`}
+      style={backgroundCss(background)}
+    >
       {background.kind === 'image' && <img className="dv-background" src={background.src} alt="" draggable={false} style={{ objectFit: background.fit }} />}
       {style.elements.map((element) =>
-        element.hidden ? null : <DesignElementView key={element.id} element={element} fields={fields} edit={edit} placeholders={placeholders} />,
+        element.hidden ? null : (
+          <DesignElementView key={element.id} element={element} fields={fields} edit={edit} placeholders={placeholders} extra={extra(element)} />
+        ),
       )}
     </div>
   )

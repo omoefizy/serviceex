@@ -41,15 +41,17 @@ const DEFAULTS: AppSettings = {
   streamResolution: '1920x1080',
   streamKeyMode: 'chroma',
   streamKeyColor: '#00ff00',
+  streamKeyDisplay: 'window',
   streamSlideContent: 'full',
   logoItems: [],
   logoLayerVisible: true,
   overlaysOnChurchScreen: false,
+  idleDesignId: null,
+  lowerThirdDesignId: null,
   lowerThirdTemplateId: null,
   lowerThirdAnimation: 'slide',
   lowerThirdDurationMs: 500,
   lowerThirdHoldSeconds: 0,
-  lowerThirdOverFullSlide: false,
   lowerThirdSavedLines: [],
   lowerThirdPoints: [],
   logoUrl: null,
@@ -133,15 +135,17 @@ const KEYS: Record<keyof AppSettings, string> = {
   streamResolution: 'stream.resolution',
   streamKeyMode: 'stream.keyMode',
   streamKeyColor: 'stream.keyColor',
+  streamKeyDisplay: 'stream.keyDisplay',
   streamSlideContent: 'stream.slideContent',
   logoItems: 'overlays.logos',
   logoLayerVisible: 'overlays.logosVisible',
   overlaysOnChurchScreen: 'overlays.onChurchScreen',
+  idleDesignId: 'overlays.idleDesignId',
+  lowerThirdDesignId: 'lowerThird.designId',
   lowerThirdTemplateId: 'lowerThird.templateId',
   lowerThirdAnimation: 'lowerThird.animation',
   lowerThirdDurationMs: 'lowerThird.durationMs',
   lowerThirdHoldSeconds: 'lowerThird.holdSeconds',
-  lowerThirdOverFullSlide: 'lowerThird.overFullSlide',
   lowerThirdSavedLines: 'lowerThird.savedLines',
   lowerThirdPoints: 'lowerThird.points',
   logoUrl: 'output.logoUrl',
@@ -364,16 +368,19 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'defaultFont':
       return cleanDefaultFont(value) as never
     case 'streamDisplay':
+    case 'streamKeyDisplay':
       return value === 'window' || (Number.isInteger(value) && (value as number) >= 0) ? v : undefined
     case 'streamResolution':
       return STREAM_RESOLUTIONS.includes(value as StreamResolution) ? v : undefined
     case 'streamKeyMode':
-      return value === 'chroma' || value === 'luma' ? v : undefined
+      return value === 'chroma' || value === 'luma' || value === 'transparent' || value === 'keyFill' ? v : undefined
     case 'streamSlideContent':
       return value === 'full' || value === 'lowerThird' || value === 'hide' ? v : undefined
     case 'logoItems':
       return cleanLogoItems(value) as never
     case 'lowerThirdTemplateId':
+    case 'idleDesignId':
+    case 'lowerThirdDesignId':
       return value === null || (Number.isInteger(value) && (value as number) > 0) ? v : undefined
     case 'lowerThirdAnimation':
       return value === 'slide' || value === 'fade' || value === 'wipe' ? v : undefined
@@ -397,7 +404,6 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'alertKeepOnClear':
     case 'logoLayerVisible':
     case 'overlaysOnChurchScreen':
-    case 'lowerThirdOverFullSlide':
     case 'previewOutput':
     case 'autosaveDrafts':
     case 'aiEnabled':

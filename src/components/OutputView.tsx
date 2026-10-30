@@ -162,8 +162,9 @@ export function SlideLayers({ state, keyed = false }: { state: OutputState | nul
 const marginsStyle = (m: ScreenMargins): CSSProperties => ({ top: `${m.top}%`, right: `${m.right}%`, bottom: `${m.bottom}%`, left: `${m.left}%` })
 
 /**
- * The projector picture inside the screen margins: the live slide, the overlays if the setting allows them, the alert
- * ticker and the test pattern. The operator window's live screen draws the same.
+ * The projector picture inside the screen margins, bottom to top: the live slide, the logo layer (if the setting allows
+ * it), the idle design while the slide is cleared, the alert ticker, the lower third over everything, and the test
+ * pattern. The operator window's live screen draws the same.
  */
 export function OutputScreen({ state, width = 1920, height = 1080 }: { state: OutputState | null; width?: number; height?: number }) {
   return (
@@ -171,8 +172,9 @@ export function OutputScreen({ state, width = 1920, height = 1080 }: { state: Ou
       <div className="output-area" style={state ? marginsStyle(state.screenMargins) : undefined}>
         <SlideLayers state={state} />
         {/* Above the slide layers and outside their crossfades, so changing slides never touches them. */}
-        {state?.overlays && <Overlays overlays={state.overlays} />}
+        {state?.overlays && <Overlays overlays={state.overlays} lowerThird={false} />}
         <AlertBand alert={state?.alert ?? null} />
+        {state?.overlays && <Overlays overlays={state.overlays} logos={false} idle={false} />}
       </div>
       {state?.testPattern && <TestPattern width={width} height={height} fill={CONTENT_COLORS.black} label={`Output ${width}×${height}`} />}
     </DefaultFontContext.Provider>

@@ -24,7 +24,19 @@ import {
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { BRAND, KIND_NAMES, newDesignElement, normalizeDesign } from '../../shared/designs'
-import type { Design, DesignBackground, DesignCategory, DesignElement, DesignElementKind, DesignFill, DesignShadow, DesignStyle, DesignTextField, TextCase } from '../../shared/types'
+import type {
+  Design,
+  DesignBackground,
+  DesignCategory,
+  DesignElement,
+  DesignElementKind,
+  DesignFill,
+  DesignLoop,
+  DesignShadow,
+  DesignStyle,
+  DesignTextField,
+  TextCase,
+} from '../../shared/types'
 import {
   ASPECT,
   HANDLES,
@@ -281,6 +293,14 @@ function BackgroundFields({ background, onChange, pickImage }: { background: Des
   )
 }
 
+const LOOPS: { value: DesignLoop; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'pulse', label: 'Pulse' },
+  { value: 'float', label: 'Float' },
+  { value: 'glow', label: 'Glow' },
+  { value: 'spin', label: 'Spin' },
+]
+
 /** The fields for the one selected element: its place, then what its kind has. */
 function ElementFields({ element, onChange, pickImage }: { element: DesignElement; onChange(patch: Partial<DesignElement>, key: string): void; pickImage(): Promise<string | null> }) {
   // Each field is its own undo key, so a run of changes to one field undoes as one step.
@@ -300,6 +320,24 @@ function ElementFields({ element, onChange, pickImage }: { element: DesignElemen
           <NumberField label="Rotate" value={element.rotation} step={1} min={-180} max={180} onChange={set('rotation')} suffix="°" />
         </div>
         <Slider label="Opacity" min={0} max={1} step={0.01} value={element.opacity} onChange={set('opacity')} format={(v) => `${Math.round(v * 100)}%`} />
+      </Section>
+
+      <Section title="On air">
+        <label className="designer-number">
+          <span>Loop</span>
+          <select className="input" aria-label="Loop" value={element.loop} onChange={(e) => set('loop')(e.target.value as DesignLoop)}>
+            {LOOPS.map((l) => (
+              <option key={l.value} value={l.value}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="inline-check" title="As part of the idle design, this fades out while a lower third is up, and back when it clears">
+          <input type="checkbox" checked={element.hideWithLowerThird} onChange={(e) => set('hideWithLowerThird')(e.target.checked)} />
+          Hide while a lower third is live
+        </label>
+        <p className="hint">Loops run on the outputs. The hide option applies when this design is the idle design.</p>
       </Section>
 
       {element.kind === 'text' && (

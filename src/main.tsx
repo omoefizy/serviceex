@@ -4,7 +4,7 @@ import App from './App.tsx'
 import { OutputView } from './components/OutputView'
 import { RasterizeView } from './components/RasterizeView'
 import { StageView } from './components/StageView'
-import { StreamView } from './components/StreamView'
+import { StreamKeyView, StreamView } from './components/StreamView'
 import { installFonts } from './lib/fonts'
 import { setEntitlements } from '../shared/features'
 // The UI fonts are bundled, not linked, so the app looks the same offline.
@@ -24,7 +24,7 @@ const isUiKit = UiKit !== null && window.location.hash === '#/ui-kit'
 
 // The operator window learns what the plan allows before its first render. The output, stage and Stream windows never
 // ask: a licence problem must never touch what the audience sees. If the answer cannot be had, every feature stays on.
-if (!isUiKit && !['#/output', '#/stage', '#/stream', '#/rasterize'].includes(window.location.hash)) setEntitlements(window.api.license.entitlements())
+if (!isUiKit && !['#/output', '#/stage', '#/stream', '#/stream-key', '#/rasterize'].includes(window.location.hash)) setEntitlements(window.api.license.entitlements())
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -38,6 +38,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <StageView />
     ) : window.location.hash === '#/stream' ? (
       <StreamView />
+    ) : window.location.hash === '#/stream-key' ? (
+      <StreamKeyView />
     ) : window.location.hash === '#/rasterize' ? (
       <RasterizeView />
     ) : (

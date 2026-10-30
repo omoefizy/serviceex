@@ -210,6 +210,7 @@ function App() {
     st.loadThemes().catch(console.error)
     st.loadSettings().catch(console.error)
     st.loadLowerThirdTemplates().catch(console.error)
+    st.loadDesigns().catch(console.error)
     st.loadPresentations().catch(console.error)
     st.loadBibleVersions().catch(console.error)
     window.api.stage.isOpen().then(st.setStageOpen, console.error)
@@ -392,6 +393,12 @@ function App() {
         return
       }
       if (e.altKey || mod || isTyping(e.target)) return
+      // Shift+C clears only the lower third; C alone clears everything.
+      if (e.shiftKey && e.key.toLowerCase() === 'c') {
+        e.preventDefault()
+        st.hideLowerThird()
+        return
+      }
       const modeKey = MODE_KEYS.find((m) => m.key.toLowerCase() === e.key.toLowerCase())
       if (modeKey) {
         e.preventDefault()

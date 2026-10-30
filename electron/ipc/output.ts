@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron'
+import { normalizeDesign } from '../../shared/designs'
 import { normalizeLowerThirdStyle } from '../../shared/lowerThirds'
 import { sanitizeRichFor } from '../../shared/richText'
 import { DEFAULT_FONT, DEFAULT_THEME_STYLE, normalizeTheme } from '../../shared/themes'
@@ -83,6 +84,7 @@ function lowerThirdDisplayOf(value: unknown): LowerThirdDisplay | null {
     ...(headlineRich ? { headlineRich } : {}),
     ...(bodyRich ? { bodyRich } : {}),
     style: normalizeLowerThirdStyle(lowerThird.style),
+    ...(lowerThird.design ? { design: normalizeDesign(lowerThird.design) } : {}),
     animation: lowerThird.animation === 'fade' || lowerThird.animation === 'wipe' ? lowerThird.animation : 'slide',
     durationMs: clampNumber(lowerThird.durationMs, 200, 1000, 500),
   }
@@ -92,7 +94,11 @@ function lowerThirdDisplayOf(value: unknown): LowerThirdDisplay | null {
 export function overlayLayersOf(value: unknown): OverlayLayers | null {
   const overlays = value as Partial<OverlayLayers> | null
   if (typeof overlays !== 'object' || overlays === null) return null
-  return { logos: cleanLogoItems(overlays.logos) ?? [], lowerThird: lowerThirdDisplayOf(overlays.lowerThird) }
+  return {
+    logos: cleanLogoItems(overlays.logos) ?? [],
+    idle: typeof overlays.idle === 'object' && overlays.idle !== null ? normalizeDesign(overlays.idle) : null,
+    lowerThird: lowerThirdDisplayOf(overlays.lowerThird),
+  }
 }
 
 export function assertOutputState(value: unknown): OutputState {

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { matching } from '../../shared/richText'
 import type { LowerThirdBox, LowerThirdDisplay, LowerThirdStyle, LowerThirdTextStyle, RichText, TextCase } from '../../shared/types'
 import { cssFontFamily } from '../lib/fonts'
+import { DesignView } from './DesignView'
 import { RichInline } from './RichText'
 
 /** Must match .lt-text in index.css. */
@@ -134,6 +135,18 @@ export function LowerThirdLayer({ display }: { display: LowerThirdDisplay | null
 
   if (!shown) return null
   const { display: d, leaving } = shown
+  if (d.design) {
+    // A design fills the screen, so sliding it in starts a whole screen to the left.
+    return (
+      <div
+        key={d.runId}
+        className={`lt-design lt-${d.animation}-${leaving ? 'out' : 'in'}`}
+        style={{ animationDuration: `${d.durationMs}ms`, ['--lt-offset' as string]: '-100cqw' }}
+      >
+        <DesignView style={d.design} fields={{ headline: d.headline, body: d.body, number: '' }} onAir />
+      </div>
+    )
+  }
   const { frame } = d.style
   return (
     <LowerThirdGraphic

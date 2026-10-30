@@ -2,7 +2,7 @@ import { BrowserWindow, dialog, ipcMain } from 'electron'
 import path from 'node:path'
 import { requireFeature } from '../../shared/features'
 import { DEFAULT_FONT, DEFAULT_THEME_STYLE } from '../../shared/themes'
-import type { StreamState } from '../../shared/types'
+import type { StreamKeyMode, StreamState } from '../../shared/types'
 import { copyIntoMedia, mediaUrl } from '../media'
 import { assertOutputState, overlayLayersOf } from './output'
 
@@ -19,10 +19,11 @@ let lastState: StreamState = {
   keyColor: '#00ff00',
   width: 1920,
   height: 1080,
-  overlays: { logos: [], lowerThird: null },
-  lowerThirdOnTop: false,
+  overlays: { logos: [], idle: null, lowerThird: null },
   testPattern: false,
 }
+
+const KEY_MODES: StreamKeyMode[] = ['chroma', 'luma', 'transparent', 'keyFill']
 
 const dimension = (value: unknown, fallback: number) =>
   Number.isInteger(value) && (value as number) >= 320 && (value as number) <= 7680 ? (value as number) : fallback
@@ -41,18 +42,24 @@ function assertStreamState(value: unknown): StreamState {
     fadeMs,
     logoUrl,
     defaultFont,
-    keyMode: state.keyMode === 'luma' ? 'luma' : 'chroma',
+    keyMode: KEY_MODES.includes(state.keyMode as StreamKeyMode) ? (state.keyMode as StreamKeyMode) : 'chroma',
     keyColor: typeof state.keyColor === 'string' && /^#[0-9a-f]{6}$/i.test(state.keyColor) ? state.keyColor : '#00ff00',
     width: dimension(state.width, 1920),
     height: dimension(state.height, 1080),
-    overlays: overlayLayersOf(state.overlays) ?? { logos: [], lowerThird: null },
-    lowerThirdOnTop: state.lowerThirdOnTop === true,
+    overlays: overlayLayersOf(state.overlays) ?? { logos: [], idle: null, lowerThird: null },
     testPattern: state.testPattern === true,
   }
 }
 
-/** Forwards stream state from the operator window to the Stream output window, opens and closes it, and adds logos. */
-export function registerStreamIpc(getStreamWindow: () => BrowserWindow | null, setOpen: (open: boolean) => void): void {
+/**
+ * Forwards stream state from the operator window to the Stream output windows (the Stream output, and its key window
+ * for Key and Fill), opens and closes them, and adds logos. `getStreamWindow` answers whether the Stream output is open.
+ */
+export function registerStreamIpc(
+  getStreamWindow: () => BrowserWindow | null,
+  getStreamWindows: () => BrowserWindow[],
+  setOpen: (open: boolean) => void,
+): void {
   ipcMain.handle('stream:setOpen', (_event, open: unknown) => {
     // Closing always works; only opening needs the plan.
     if (open === true) requireFeature('multiOutput')
@@ -67,7 +74,7 @@ export function registerStreamIpc(getStreamWindow: () => BrowserWindow | null, s
       console.error(error)
       return
     }
-    getStreamWindow()?.webContents.send('stream:state', lastState)
+    for (const win of getStreamWindows()) win.webContents.send('stream:state', lastState)
   })
 
   // The copy lives in the app data folder, so the logo keeps working when the original moves.
@@ -84,7 +91,7 @@ export function registerStreamIpc(getStreamWindow: () => BrowserWindow | null, s
   })
 }
 
-/** Sends the latest state to a freshly loaded Stream window. */
+/** Sends the latest state to a freshly loaded Stream or key window. */
 export function sendLastStreamState(win: BrowserWindow): void {
   win.webContents.send('stream:state', lastState)
 }

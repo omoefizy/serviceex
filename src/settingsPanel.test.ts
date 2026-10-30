@@ -31,6 +31,7 @@ const SECTIONS = [
   'Account',
   'Appearance',
   'Output',
+  'Lower thirds',
   'Church profile',
   'Default themes',
   'AI and listening',

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { OutputState, StreamState } from '../../shared/types'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { OutputState, StreamKeyMode, StreamState, StreamTestBackground } from '../../shared/types'
 import { ACTION_SAFE, TITLE_SAFE } from '../lib/stream'
 import { Overlays } from './Overlays'
 import { SlideLayers } from './OutputView'
@@ -62,30 +62,85 @@ function SafeGuides() {
   )
 }
 
+/** The background behind the layers, as the vision mixer or capture sees it. */
+function keyBackground({ keyMode, keyColor }: StreamState): string {
+  if (keyMode === 'chroma') return keyColor
+  return keyMode === 'transparent' ? 'transparent' : CONTENT_COLORS.black
+}
+
+const KEY_LABELS: Record<StreamKeyMode, string> = { chroma: 'Chroma', luma: 'Luma key', transparent: 'Transparent', keyFill: 'Key and Fill' }
+
+/** The computer's camera, filling its parent; nothing while it is unavailable or refused. */
+function Webcam({ onError }: { onError?: (message: string) => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  useEffect(() => {
+    let stream: MediaStream | null = null
+    let stopped = false
+    navigator.mediaDevices
+      ?.getUserMedia({ video: true, audio: false })
+      .then((media) => {
+        if (stopped) return media.getTracks().forEach((track) => track.stop())
+        stream = media
+        if (videoRef.current) videoRef.current.srcObject = media
+      })
+      .catch((error: unknown) => onError?.(error instanceof Error ? error.message : String(error)))
+    return () => {
+      stopped = true
+      stream?.getTracks().forEach((track) => track.stop())
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the camera opens once
+  }, [])
+  return <video ref={videoRef} className="stream-key stream-webcam" autoPlay muted playsInline />
+}
+
 /**
- * The Stream output, at its own aspect ratio inside its parent. Bottom to top: the key color (black for a luma key),
- * the logo layer, the lower third, then the live slide, which covers them with its own background unless the
- * stream state empties it. Black is a black slide layer, so it covers everything. With the setting to keep the lower
- * third on top of a full screen slide, it draws over the slide instead.
+ * The Stream output, at its own aspect ratio inside its parent. Bottom to top: the background (the key color, black
+ * for a luma key or a fill, or nothing for Transparent), the logo layer, the live slide, which covers the logos with
+ * its own background unless the stream state empties it, then the idle design and the lower third on top of
+ * everything. Black is a black slide layer and takes the idle design and the lower third off.
+ *
+ * `matte` draws the key for Key and Fill: every layer as white shapes on black, their transparency as grey.
+ * `testBackground` (the operator preview only) puts a checkerboard or the webcam where the background would be keyed
+ * out, so the layering can be checked without a vision mixer.
  */
-export function StreamScreen({ state, guides = false }: { state: StreamState | null; guides?: boolean }) {
+export function StreamScreen({ state, guides = false, matte = false, testBackground = 'off', onWebcamError }: {
+  state: StreamState | null
+  guides?: boolean
+  matte?: boolean
+  testBackground?: StreamTestBackground
+  onWebcamError?: (message: string) => void
+}) {
   const slide = useMemo<OutputState | null>(() => state && { ...state, screenMargins: NO_MARGINS, alert: null, overlays: null }, [state])
   if (!state) return <div className="stream-fit" />
   const { width, height, keyMode, keyColor } = state
+  const transparent = !matte && testBackground === 'off' && keyMode === 'transparent'
+  const layers = (
+    <>
+      <Overlays overlays={state.overlays} idle={false} lowerThird={false} />
+      <SlideLayers state={slide} keyed />
+      <Overlays overlays={state.overlays} logos={false} />
+    </>
+  )
   return (
     <DefaultFontContext.Provider value={state.defaultFont}>
-      <div className="stream-fit">
+      <div className={`stream-fit${transparent ? ' transparent' : ''}`}>
         <div className="stream-screen" style={{ aspectRatio: `${width} / ${height}`, width: `min(100cqw, ${(100 * width) / height}cqh)` }}>
-          <div className="stream-key" style={{ background: keyMode === 'luma' ? CONTENT_COLORS.black : keyColor }} />
-          <Overlays overlays={state.overlays} lowerThird={!state.lowerThirdOnTop} />
-          <SlideLayers state={slide} keyed />
-          {state.lowerThirdOnTop && <Overlays overlays={state.overlays} logos={false} />}
-          {state.testPattern && (
+          {matte ? (
+            <div className="stream-key" style={{ background: CONTENT_COLORS.black }} />
+          ) : testBackground === 'checker' ? (
+            <div className="stream-key checker" />
+          ) : testBackground === 'webcam' ? (
+            <Webcam onError={onWebcamError} />
+          ) : (
+            <div className="stream-key" style={{ background: keyBackground(state) }} />
+          )}
+          {matte ? <div className="stream-matte">{layers}</div> : layers}
+          {state.testPattern && !matte && (
             <TestPattern
               width={width}
               height={height}
-              fill={keyMode === 'luma' ? CONTENT_COLORS.black : keyColor}
-              label={`${width}×${height} · ${keyMode === 'luma' ? 'Luma key' : `Chroma ${keyColor.toUpperCase()}`}`}
+              fill={keyMode === 'chroma' ? keyColor : CONTENT_COLORS.black}
+              label={`${width}×${height} · ${keyMode === 'chroma' ? `Chroma ${keyColor.toUpperCase()}` : KEY_LABELS[keyMode]}`}
             />
           )}
           {guides && <SafeGuides />}
@@ -95,13 +150,34 @@ export function StreamScreen({ state, guides = false }: { state: StreamState | n
   )
 }
 
-/** The Stream output window, for the capture card or vision mixer. */
+/** A transparent page for a Transparent background, so window capture, NDI or a virtual camera gets the alpha. */
+function useTransparentPage(transparent: boolean) {
+  useEffect(() => {
+    const targets = [document.documentElement, document.body]
+    for (const el of targets) el.style.background = transparent ? 'transparent' : ''
+  }, [transparent])
+}
+
+/** The Stream output window, for the capture card or vision mixer; with Key and Fill, the fill. */
 export function StreamView() {
+  const [state, setState] = useState<StreamState | null>(null)
+  useEffect(() => window.api.stream.onState(setState), [])
+  const transparent = state?.keyMode === 'transparent'
+  useTransparentPage(transparent)
+  return (
+    <div className={`stream-window${transparent ? ' transparent' : ''}`}>
+      <StreamScreen state={state} />
+    </div>
+  )
+}
+
+/** The key window for Key and Fill: the Stream output's shapes in white on black, for the vision mixer's key input. */
+export function StreamKeyView() {
   const [state, setState] = useState<StreamState | null>(null)
   useEffect(() => window.api.stream.onState(setState), [])
   return (
     <div className="stream-window">
-      <StreamScreen state={state} />
+      <StreamScreen state={state} matte />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, Cast, Eye, EyeOff, Plus, ScanLine, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { AppSettings, DisplayInfo, LogoAnchor, LogoItem, StreamResolution, StreamState } from '../../shared/types'
+import type { AppSettings, DisplayInfo, LogoAnchor, LogoItem, StreamKeyMode, StreamResolution, StreamState, StreamTestBackground } from '../../shared/types'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { usePersistentState } from '../lib/usePersistentState'
 import { selectStreamState, useOperatorStore } from '../store'
@@ -21,6 +21,19 @@ const ANCHORS: { value: LogoAnchor; label: string }[] = [
   { value: 'bottom-left', label: 'Bottom left' },
   { value: 'bottom-right', label: 'Bottom right' },
   { value: 'free', label: 'Free position' },
+]
+
+const BACKGROUNDS: { value: StreamKeyMode; label: string; hint: string }[] = [
+  { value: 'transparent', label: 'Transparent', hint: 'No background at all, for window capture, NDI or a virtual camera.' },
+  { value: 'chroma', label: 'Chroma green', hint: 'A solid key color for a chroma key on the ATEM or vision mixer.' },
+  { value: 'luma', label: 'Black (luma key)', hint: 'Black behind the graphics, for a luma key.' },
+  { value: 'keyFill', label: 'Key and Fill', hint: 'This output is the fill (graphics on black); a second output shows the key, white shapes on black.' },
+]
+
+const TEST_BACKGROUNDS: { value: StreamTestBackground; label: string }[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'checker', label: 'Checkerboard' },
+  { value: 'webcam', label: 'Webcam' },
 ]
 
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
@@ -125,6 +138,9 @@ export function StreamPanel() {
   const toggleStream = useOperatorStore((s) => s.toggleStream)
   const testPattern = useOperatorStore((s) => s.streamTestPattern)
   const setTestPattern = useOperatorStore((s) => s.setStreamTestPattern)
+  const testBackground = useOperatorStore((s) => s.streamTestBackground)
+  const setTestBackground = useOperatorStore((s) => s.setStreamTestBackground)
+  const [webcamError, setWebcamError] = useState<string | null>(null)
   // A string compares by value, so the preview redraws only when the stream changes.
   const streamJson = useOperatorStore((s) => JSON.stringify(selectStreamState(s)))
   const stream = useMemo(() => JSON.parse(streamJson) as StreamState, [streamJson])
@@ -190,7 +206,13 @@ export function StreamPanel() {
       <ErrorNote error={error} />
 
       <div className="stream-preview-frame">
-        <StreamScreen state={stream} guides={guides} />
+        <StreamScreen
+          state={stream}
+          guides={guides}
+          // A transparent output shows as a checkerboard here, so the preview never looks empty.
+          testBackground={testBackground !== 'off' ? testBackground : stream.keyMode === 'transparent' ? 'checker' : 'off'}
+          onWebcamError={setWebcamError}
+        />
       </div>
       <div className="settings-row">
         <button type="button" className={`button${streamOpen ? ' active' : ''}`} aria-pressed={streamOpen} onClick={() => toggleStream().catch(console.error)}>
@@ -211,6 +233,31 @@ export function StreamPanel() {
         </label>
       </div>
       <p className="hint">The guides show here only: action safe (outer, 5%) and title safe (inner, 10%).</p>
+      <div className="settings-row">
+        <span className="field-label">Test background</span>
+        <span className="segmented" role="radiogroup" aria-label="Test background">
+          {TEST_BACKGROUNDS.map((b) => (
+            <button
+              key={b.value}
+              type="button"
+              role="radio"
+              aria-checked={testBackground === b.value}
+              className={testBackground === b.value ? 'active' : ''}
+              onClick={() => {
+                setWebcamError(null)
+                setTestBackground(b.value)
+              }}
+            >
+              {b.label}
+            </button>
+          ))}
+        </span>
+      </div>
+      <p className="hint">
+        Preview only: shows a checkerboard or this computer's webcam where the background would be keyed out, to check the layering on a laptop. The
+        Stream output itself is unchanged.
+      </p>
+      {testBackground === 'webcam' && webcamError && <p className="hint">The webcam could not be opened: {webcamError}</p>}
 
       <Section title="Output">
         <label className="field">
@@ -248,15 +295,29 @@ export function StreamPanel() {
         <p className="hint">On a display the Stream output opens fullscreen; changing either setting reopens it.</p>
       </Section>
 
-      <Section title="Key">
+      <Section title="Output type">
+        <span className="segmented" role="radiogroup" aria-label="Output type">
+          {(
+            [
+              ['full', 'Full'],
+              ['hide', 'Overlay only'],
+            ] as const
+          ).map(([value, label]) => (
+            <button key={value} type="button" role="radio" aria-checked={settings.streamSlideContent === value} className={settings.streamSlideContent === value ? 'active' : ''} onClick={() => save({ streamSlideContent: value })}>
+              {label}
+            </button>
+          ))}
+        </span>
+        <p className="hint">
+          Full: every layer, the live slide with its own background. Overlay only: just the idle design, logos and lower thirds, never the slides.
+          Clear shows the idle design either way; Black blacks out the whole stream.
+        </p>
+      </Section>
+
+      <Section title="Background">
         <div className="settings-row">
-          <span className="segmented" role="radiogroup" aria-label="Key mode">
-            {(
-              [
-                ['chroma', 'Chroma'],
-                ['luma', 'Luma (black)'],
-              ] as const
-            ).map(([value, label]) => (
+          <span className="segmented" role="radiogroup" aria-label="Background">
+            {BACKGROUNDS.map(({ value, label }) => (
               <button key={value} type="button" role="radio" aria-checked={settings.streamKeyMode === value} className={settings.streamKeyMode === value ? 'active' : ''} onClick={() => save({ streamKeyMode: value })}>
                 {label}
               </button>
@@ -274,25 +335,29 @@ export function StreamPanel() {
             </>
           )}
         </div>
-      </Section>
-
-      <Section title="Slide content on Stream">
-        <span className="segmented" role="radiogroup" aria-label="Slide content on Stream">
-          {(
-            [
-              ['full', 'Full screen'],
-              ['hide', 'Hide'],
-            ] as const
-          ).map(([value, label]) => (
-            <button key={value} type="button" role="radio" aria-checked={settings.streamSlideContent === value} className={settings.streamSlideContent === value ? 'active' : ''} onClick={() => save({ streamSlideContent: value })}>
-              {label}
-            </button>
-          ))}
-        </span>
-        <p className="hint">
-          Full screen: the live slide covers the stream with its own background. Hide: the stream stays keyed and shows only logos and lower thirds.
-          Clear empties the slide either way; Black blacks out the whole stream.
-        </p>
+        <p className="hint">{BACKGROUNDS.find((b) => b.value === settings.streamKeyMode)?.hint}</p>
+        {settings.streamKeyMode === 'transparent' && <p className="hint">Changing to or from Transparent reopens the Stream output.</p>}
+        {settings.streamKeyMode === 'keyFill' && (
+          <label className="field">
+            <span>Key display</span>
+            <select
+              className="input"
+              value={String(settings.streamKeyDisplay)}
+              onChange={(e) => save({ streamKeyDisplay: e.target.value === 'window' ? 'window' : Number(e.target.value) })}
+            >
+              <option value="window">In a window</option>
+              {displays.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.label} · {Math.round(d.width * d.scaleFactor)}×{Math.round(d.height * d.scaleFactor)}
+                  {d.primary ? ' (main display)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {settings.streamKeyMode === 'keyFill' && settings.streamKeyDisplay !== 'window' && settings.streamKeyDisplay === settings.streamDisplay && (
+          <p className="hint">The key and the fill are on the same display. Pick a second display for the key.</p>
+        )}
       </Section>
 
       <Section title="Logo layer">
@@ -333,9 +398,9 @@ export function StreamPanel() {
       <Section title="Church screen">
         <label className="inline-check">
           <input type="checkbox" checked={settings.overlaysOnChurchScreen} onChange={(e) => save({ overlaysOnChurchScreen: e.target.checked })} />
-          Show overlays on the church screen
+          Show the logo layer on the church screen
         </label>
-        <p className="hint">Off: logos and lower thirds go to the Stream output only, and the projector is unchanged.</p>
+        <p className="hint">Off: the logos go to the Stream output only. Lower thirds and the idle design show on every output.</p>
       </Section>
     </section>
   )

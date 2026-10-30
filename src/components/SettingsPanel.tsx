@@ -10,6 +10,7 @@ import {
   HardDriveDownload,
   Image,
   KeyRound,
+  Layers,
   LayoutPanelLeft,
   Library,
   Link2,
@@ -1864,6 +1865,60 @@ function QuotesSection() {
   )
 }
 
+/**
+ * Lower thirds: the idle design every output shows while the main content is cleared, and the design quick lower
+ * thirds use in place of the template.
+ */
+function LowerThirdsSection() {
+  const settings = useOperatorStore((s) => s.settings)
+  const updateSettings = useOperatorStore((s) => s.updateSettings)
+  const designs = useOperatorStore((s) => s.designs)
+  const [error, setError] = useState<ErrorLike | null>(null)
+  const lowerThirds = designs.filter((d) => d.style.category === 'lowerThird')
+  // A deleted design reads as none.
+  const chosen = (id: number | null) => (id !== null && designs.some((d) => d.id === id) ? String(id) : '')
+  const save = (patch: Partial<AppSettings>) => {
+    setError(null)
+    updateSettings(patch).catch((err) => setError(reportError('Lower thirds', err)))
+  }
+
+  return (
+    <Section icon={<Layers size={16} aria-hidden="true" />} title="Lower thirds">
+      <ErrorNote error={error} />
+      <label className="field">
+        <span>
+          Idle design <small>Shown on every output whenever the main content is cleared, such as the church logo in a corner.</small>
+        </span>
+        <Select value={chosen(settings.idleDesignId)} onChange={(e) => save({ idleDesignId: e.target.value ? Number(e.target.value) : null })}>
+          <option value="">None</option>
+          {designs.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </Select>
+      </label>
+      <p className="hint">
+        Make it in Designs with a transparent background. An element marked "Hide while a lower third is live" steps aside whenever one is up.
+      </p>
+      <label className="field">
+        <span>
+          Default design <small>What quick lower thirds use. None uses the template chosen in the Lower third panel.</small>
+        </span>
+        <Select value={chosen(settings.lowerThirdDesignId)} onChange={(e) => save({ lowerThirdDesignId: e.target.value ? Number(e.target.value) : null })}>
+          <option value="">None: use the template</option>
+          {lowerThirds.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </Select>
+      </label>
+      <p className="hint">The design's text bound to Headline and Body takes the lower third's words.</p>
+    </Section>
+  )
+}
+
 /** The diagnostics report, for support: what went wrong since the window opened, with the technical details. */
 function DiagnosticsSection() {
   const [count, setCount] = useState(() => recentProblems().length)
@@ -1902,7 +1957,7 @@ const NAV_GROUPS: { label: string; titles: string[] }[] = [
       'Autosave and backups',
     ],
   },
-  { label: 'Devices', titles: ['Output', 'Sharing', 'Devices', 'Library sync', 'Live PowerPoint diagnostics'] },
+  { label: 'Devices', titles: ['Output', 'Lower thirds', 'Sharing', 'Devices', 'Library sync', 'Live PowerPoint diagnostics'] },
   { label: 'Support', titles: ['Diagnostics'] },
 ]
 
@@ -1929,6 +1984,7 @@ const DESCRIPTIONS: Record<string, string> = {
   Layouts: 'Which panels this computer shows, saved under a name.',
   'Autosave and backups': 'Song editor drafts and automatic backups of your library.',
   Output: 'Where the projector output opens, and how slides change.',
+  'Lower thirds': 'The idle design shown when the screen is cleared, and the design quick lower thirds use.',
   Sharing: 'Other computers on this network, and what they may send you.',
   Devices: 'Computers you have paired with, and what each may do.',
   'Library sync': 'Keeping songs and slides the same on paired computers.',
@@ -2107,6 +2163,8 @@ export function SettingsPanel() {
               <span className="fade-value">{(settings.fadeMs / 1000).toFixed(1)} s</span>
             </label>
           </Section>
+
+          <LowerThirdsSection />
 
           <Section icon={<Image size={16} aria-hidden="true" />} title="Church profile">
             <ChurchProfileFields />

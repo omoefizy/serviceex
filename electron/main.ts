@@ -20,6 +20,7 @@ import { registerSermonIpc } from './ipc/sermons'
 import { registerSpeechIpc, stopListening } from './ipc/speech'
 import { registerAccountIpc } from './ipc/account'
 import { startBackupSchedule } from './backup'
+import type { StreamDisplay } from '../shared/types'
 import { getAppSettings } from './db/settings'
 import { registerMediaProtocol, registerMediaScheme } from './media'
 import { registerOutputIpc, sendLastOutputState } from './ipc/output'
@@ -58,6 +59,8 @@ let win: BrowserWindow | null
 let outputWin: BrowserWindow | null = null
 let stageWin: BrowserWindow | null = null
 let streamWin: BrowserWindow | null = null
+/** The Stream output's key (white shapes on black) for Key and Fill; open while the Stream output is, in that mode. */
+let keyWin: BrowserWindow | null = null
 /** Draws presentation slides out of sight (see ipc/presentations); made when first needed. */
 let rasterWin: BrowserWindow | null = null
 let stopPresentations: (() => Promise<void>) | null = null
@@ -121,6 +124,7 @@ function createWindow() {
     outputWin?.close()
     stageWin?.close()
     streamWin?.close()
+    keyWin?.close()
     rasterWin?.destroy()
     livePowerPoint?.stop().catch(console.error)
   })
@@ -214,10 +218,52 @@ function setOutputOpen(open: boolean) {
   else createOutputWindow()
 }
 
-/** The display chosen for the Stream output, or null for a window (also when that display has been unplugged). */
-function streamDisplay(): Electron.Display | null {
-  const choice = getAppSettings().streamDisplay
+/** A display chosen in the settings, or null for a window (also when that display has been unplugged). */
+function chosenDisplay(choice: StreamDisplay): Electron.Display | null {
   return choice === 'window' ? null : (screen.getAllDisplays().find((display) => display.id === choice) ?? null)
+}
+
+/** The display chosen for the Stream output, or null for a window. */
+function streamDisplay(): Electron.Display | null {
+  return chosenDisplay(getAppSettings().streamDisplay)
+}
+
+/** A window at the stream resolution in pixels, scaled down to fit the main screen. */
+function streamWindowSize(): { width: number; height: number } {
+  const [width, height] = getAppSettings().streamResolution.split('x').map(Number)
+  const { workAreaSize, scaleFactor } = screen.getPrimaryDisplay()
+  const fit = Math.min(1 / scaleFactor, (workAreaSize.width * 0.9) / width, (workAreaSize.height * 0.9) / height)
+  return { width: Math.round(width * fit), height: Math.round(height * fit) }
+}
+
+/**
+ * Opens the key window for Key and Fill: the same layers as white shapes on black, fullscreen on its own display
+ * (the vision mixer's key input) or in a window.
+ */
+function createKeyWindow() {
+  const external = chosenDisplay(getAppSettings().streamKeyDisplay)
+  const key = new BrowserWindow({
+    title: 'ServiceEx Stream Key',
+    backgroundColor: '#000',
+    ...(external ? { ...external.bounds, fullscreen: true, frame: false } : { ...streamWindowSize(), useContentSize: true, resizable: true }),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.mjs'),
+      backgroundThrottling: false,
+    },
+  })
+  keyWin = key
+  key.webContents.on('did-finish-load', () => sendLastStreamState(key))
+  key.on('closed', () => {
+    if (keyWin === key) keyWin = null
+  })
+  loadRenderer(key, '/stream-key')
+}
+
+/** Opens or closes the key window to match the Stream output and its background. */
+function syncKeyWindow() {
+  const wanted = streamWin !== null && getAppSettings().streamKeyMode === 'keyFill'
+  if (wanted && !keyWin) createKeyWindow()
+  else if (!wanted) keyWin?.close()
 }
 
 /**
@@ -226,16 +272,13 @@ function streamDisplay(): Electron.Display | null {
  */
 function createStreamWindow() {
   const external = streamDisplay()
-  const [width, height] = getAppSettings().streamResolution.split('x').map(Number)
-  const { workAreaSize, scaleFactor } = screen.getPrimaryDisplay()
-  const fit = Math.min(1 / scaleFactor, (workAreaSize.width * 0.9) / width, (workAreaSize.height * 0.9) / height)
+  // A transparent background is only possible in a window made transparent; changing it rebuilds the window.
+  const transparent = getAppSettings().streamKeyMode === 'transparent'
 
   const stream = new BrowserWindow({
     title: 'ServiceEx Stream',
-    backgroundColor: '#000',
-    ...(external
-      ? { ...external.bounds, fullscreen: true, frame: false }
-      : { width: Math.round(width * fit), height: Math.round(height * fit), useContentSize: true, resizable: true }),
+    ...(transparent ? { transparent: true, backgroundColor: '#00000000' } : { backgroundColor: '#000' }),
+    ...(external ? { ...external.bounds, fullscreen: true, frame: false } : { ...streamWindowSize(), useContentSize: true, resizable: true }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       // The capture card keeps taking frames while the window is behind others.
@@ -249,9 +292,11 @@ function createStreamWindow() {
     // A replacement may already be open when the display setting changes.
     if (streamWin !== stream) return
     streamWin = null
+    syncKeyWindow()
     win?.webContents.send('stream:open-changed', false)
   })
   loadRenderer(stream, '/stream')
+  syncKeyWindow()
   win?.webContents.send('stream:open-changed', true)
 }
 
@@ -359,11 +404,16 @@ app.whenReady().then(async () => {
       const { left, top, width, height } = after.outputBounds
       outputWin?.setBounds({ x: left, y: top, width, height })
     }
-    // The same for the Stream output; a new resolution resizes its window.
-    if (streamWin && (before.streamDisplay !== after.streamDisplay || before.streamResolution !== after.streamResolution)) {
+    // The same for the Stream output; a new resolution resizes its window, and a transparent background needs a
+    // window made transparent.
+    const transparencyChanged = (before.streamKeyMode === 'transparent') !== (after.streamKeyMode === 'transparent')
+    if (streamWin && (before.streamDisplay !== after.streamDisplay || before.streamResolution !== after.streamResolution || transparencyChanged)) {
       streamWin.destroy()
       createStreamWindow()
     }
+    // The key window follows Key and Fill, and moves with its display.
+    if (keyWin && (before.streamKeyDisplay !== after.streamKeyDisplay || before.streamResolution !== after.streamResolution)) keyWin.destroy()
+    syncKeyWindow()
   })
   registerStageIpc({ open: openStageWindow, close: () => stageWin?.close(), getWindow: () => stageWin })
   startBackupSchedule()
@@ -371,7 +421,11 @@ app.whenReady().then(async () => {
   registerSpeechIpc()
   registerSermonIpc()
   registerOutputIpc(() => outputWin, setOutputOpen)
-  registerStreamIpc(() => streamWin, setStreamOpen)
+  registerStreamIpc(
+    () => streamWin,
+    () => [streamWin, keyWin].filter((w): w is BrowserWindow => w !== null),
+    setStreamOpen,
+  )
   // The PowerShell and AppleScript the PowerPoint engines and Live PowerPoint run.
   const resourcesDir = app.isPackaged ? path.join(process.resourcesPath, 'presentations') : path.join(process.env.APP_ROOT, 'resources')
   livePowerPoint = registerLivePowerPointIpc({

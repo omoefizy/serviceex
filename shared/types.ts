@@ -274,7 +274,10 @@ export interface OutputState extends SlideContent {
   testPattern: boolean
   /** The alert band over the slide, independent of it. */
   alert: AlertDisplay | null
-  /** The overlay layers over the slide, or null: they show on the projector only with `overlaysOnChurchScreen`. */
+  /**
+   * The layers over the slide, or null in Black: the idle design and the lower third always, the logo layer only with
+   * `overlaysOnChurchScreen`.
+   */
   overlays: OverlayLayers | null
 }
 
@@ -304,10 +307,15 @@ export interface LogoItem {
   enabled: boolean
 }
 
-/** What the overlay layers draw, bottom to top: logos, then the lower third. */
+/** What the overlay layers draw, bottom to top: logos, the idle design, then the lower third on top of everything. */
 export interface OverlayLayers {
   /** The logos that are on, or none while the logo layer is hidden. */
   logos: LogoItem[]
+  /**
+   * The idle design (Settings, Lower thirds) while the main content is cleared, or null. Its elements flagged
+   * `hideWithLowerThird` step aside while `lowerThird` is up.
+   */
+  idle: DesignStyle | null
   /** The lower third on screen, or null. */
   lowerThird: LowerThirdDisplay | null
 }
@@ -376,7 +384,7 @@ export interface SavedLowerThirdLine {
   pinned: boolean
 }
 
-/** The lower third as the Stream output (and the projector, when allowed) draws it. */
+/** The lower third as every output draws it, on top of everything else. */
 export interface LowerThirdDisplay {
   /** Changes each time a line is shown; an update keeps it, so the text changes in place. */
   runId: number
@@ -386,6 +394,8 @@ export interface LowerThirdDisplay {
   headlineRich?: RichText
   bodyRich?: RichText
   style: LowerThirdStyle
+  /** A design from the designer drawn in place of the template `style`, its bound text filled with the words. */
+  design?: DesignStyle
   animation: LowerThirdAnimation
   /** How long the animation in and out takes, 200 to 1000 ms. */
   durationMs: number
@@ -429,6 +439,9 @@ export interface DesignShadow {
  */
 export type DesignTextField = 'headline' | 'body' | 'number'
 
+/** A movement an element repeats while it is on screen, such as a church logo that gently pulses. */
+export type DesignLoop = 'none' | 'pulse' | 'float' | 'glow' | 'spin'
+
 interface DesignElementBase {
   id: string
   /** Shown in the layers list. */
@@ -443,6 +456,9 @@ interface DesignElementBase {
   locked: boolean
   /** Hidden elements are not drawn, on the canvas or on air. */
   hidden: boolean
+  /** In an idle design: fades out while a lower third is live, so a corner tag steps aside for it. */
+  hideWithLowerThird: boolean
+  loop: DesignLoop
 }
 
 export interface DesignTextProps {
@@ -511,8 +527,15 @@ export interface DesignsApi {
   delete(id: number): Promise<boolean>
 }
 
-/** chroma: the background is `streamKeyColor` for a chroma key. luma: the background is black for a luma key. */
-export type StreamKeyMode = 'chroma' | 'luma'
+/**
+ * The Stream output's background. chroma: `streamKeyColor` for a chroma key. luma: black for a luma key. transparent:
+ * no background, for window capture, NDI or a virtual camera. keyFill: the fill on black here, and the key (white
+ * shapes on black) in a second window on `streamKeyDisplay`.
+ */
+export type StreamKeyMode = 'chroma' | 'luma' | 'transparent' | 'keyFill'
+
+/** What the operator preview of the Stream output shows behind the overlays, to check the layering without a mixer. */
+export type StreamTestBackground = 'off' | 'checker' | 'webcam'
 
 export type StreamResolution = '1280x720' | '1920x1080' | '2560x1440' | '3840x2160'
 
@@ -520,8 +543,9 @@ export type StreamResolution = '1280x720' | '1920x1080' | '2560x1440' | '3840x21
 export type StreamDisplay = 'window' | number
 
 /**
- * What the operator sends to the Stream output, drawn bottom to top: the key color, the logo layer, the lower third
- * slot and the live slide. `mode` is already worked out for the stream: 'clear' means the slide layer is empty.
+ * What the operator sends to the Stream output, drawn bottom to top: the background, the logo layer, the live slide,
+ * the idle design and the lower third. `mode` is already worked out for the stream: 'clear' means the slide layer is
+ * empty (always so for an Overlay only output).
  */
 export interface StreamState extends Omit<OutputState, 'alert' | 'overlays' | 'screenMargins'> {
   keyMode: StreamKeyMode
@@ -530,8 +554,6 @@ export interface StreamState extends Omit<OutputState, 'alert' | 'overlays' | 's
   width: number
   height: number
   overlays: OverlayLayers
-  /** Draws the lower third over the live slide instead of in its layer under it. */
-  lowerThirdOnTop: boolean
   /** Fills the output with the key color, a border and corner markers, over everything else. */
   testPattern: boolean
 }
@@ -1024,17 +1046,23 @@ export interface AppSettings {
   streamKeyMode: StreamKeyMode
   /** The chroma key color, #00ff00 by default. */
   streamKeyColor: string
+  /** For Key and Fill: where the key window opens, a window or fullscreen on one display. */
+  streamKeyDisplay: StreamDisplay
   /**
-   * full: the live slide fills the stream with its own background. lowerThird: the live slide in the default Lower
-   * Third theme. hide: the stream shows only the key and overlays.
+   * The Stream output's type. full: every layer, the live slide with its own background. lowerThird: the live slide in
+   * the default Lower Third theme. hide (Overlay only): just the idle design, logos and lower third.
    */
   streamSlideContent: 'full' | 'lowerThird' | 'hide'
   /** The logo layer's logos, bottom to top. */
   logoItems: LogoItem[]
   /** The logo layer's Show and Hide toggle. */
   logoLayerVisible: boolean
-  /** Also draws the overlays (logo layer, lower third) on the projector, over the slide. */
+  /** Also draws the Stream's logo layer on the projector, over the slide. The lower third always shows there. */
   overlaysOnChurchScreen: boolean
+  /** The design shown on every output whenever the main content is cleared; null for none. */
+  idleDesignId: number | null
+  /** The design quick lower thirds use in place of the template; null (or a deleted one) uses the template. */
+  lowerThirdDesignId: number | null
   /** The lower third template in use; null (or a deleted one) uses the first built-in template. */
   lowerThirdTemplateId: number | null
   lowerThirdAnimation: LowerThirdAnimation
@@ -1042,8 +1070,6 @@ export interface AppSettings {
   lowerThirdDurationMs: number
   /** Hides the lower third this many seconds after it is shown; 0 (the default) keeps it up until hidden. */
   lowerThirdHoldSeconds: number
-  /** Whether the lower third stays on top of a full screen slide; false (the default) hides it while one is live. */
-  lowerThirdOverFullSlide: boolean
   lowerThirdSavedLines: SavedLowerThirdLine[]
   /** The sermon's points, one per line, for Next Point. */
   lowerThirdPoints: string[]

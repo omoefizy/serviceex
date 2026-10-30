@@ -1,5 +1,5 @@
 // The Stream output: Black blacks it out, Clear or Hide empties the slide layer, the logo layer has its own toggle,
-// and overlays reach the projector only with the church screen setting.
+// and its logos reach the projector only with the church screen setting.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LogoItem } from '../shared/types'
 
@@ -75,8 +75,8 @@ describe('Stream output', () => {
     expect(stream().testPattern).toBe(true)
   })
 
-  it('keeps overlays off the projector unless the church screen setting is on, and never in Black', () => {
-    expect(selectOutputState(st()).overlays).toBeNull()
+  it('keeps the logos off the projector unless the church screen setting is on, and every overlay off in Black', () => {
+    expect(selectOutputState(st()).overlays?.logos).toEqual([])
     useOperatorStore.setState((s) => ({ settings: { ...s.settings, overlaysOnChurchScreen: true } }))
     expect(selectOutputState(st()).overlays?.logos.map((l) => l.id)).toEqual(['a'])
     st().setOutputMode('black')

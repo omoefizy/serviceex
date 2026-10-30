@@ -1,7 +1,11 @@
-import type { CSSProperties } from 'react'
-import type { LogoItem, OverlayLayers } from '../../shared/types'
+import { useEffect, useState, type CSSProperties } from 'react'
+import type { DesignStyle, LogoItem, OverlayLayers } from '../../shared/types'
 import { ACTION_SAFE } from '../lib/stream'
+import { DesignView } from './DesignView'
 import { LowerThirdLayer } from './LowerThird'
+
+/** How long the idle design takes to fade in when the main content clears, and out when something goes up. */
+export const IDLE_FADE_MS = 500
 
 /** Places a logo: in from a corner of the action safe area by its margin, or centred on its free position. */
 function logoStyle(logo: LogoItem): CSSProperties {
@@ -13,11 +17,37 @@ function logoStyle(logo: LogoItem): CSSProperties {
 }
 
 /**
- * The overlay layers, bottom to top: the logo layer, then the lower third. They fill their positioned parent and size
- * themselves from its height, so the Stream output, the projector and the previews place them alike. `logos` and
- * `lowerThird` draw just one of the two, for the Stream output's lower third on top of the slide.
+ * The idle layer: the idle design while the main content is cleared, fading in and out. The last one shown stays until
+ * it has faded. Its elements flagged to hide while a lower third is live fade out meanwhile.
  */
-export function Overlays({ overlays, logos = true, lowerThird = true }: { overlays: OverlayLayers; logos?: boolean; lowerThird?: boolean }) {
+function IdleLayer({ design, lowerThirdLive }: { design: DesignStyle | null; lowerThirdLive: boolean }) {
+  const [shown, setShown] = useState<{ design: DesignStyle; leaving: boolean } | null>(design && { design, leaving: false })
+
+  useEffect(() => {
+    if (design) setShown({ design, leaving: false })
+    else setShown((current) => current && (current.leaving ? current : { ...current, leaving: true }))
+  }, [design])
+
+  useEffect(() => {
+    if (!shown?.leaving) return
+    const timer = setTimeout(() => setShown(null), IDLE_FADE_MS)
+    return () => clearTimeout(timer)
+  }, [shown])
+
+  if (!shown) return null
+  return (
+    <div className={`idle-layer lt-fade-${shown.leaving ? 'out' : 'in'}`} style={{ animationDuration: `${IDLE_FADE_MS}ms` }}>
+      <DesignView style={shown.design} onAir lowerThirdLive={lowerThirdLive} />
+    </div>
+  )
+}
+
+/**
+ * The overlay layers, bottom to top: the logo layer, the idle design, then the lower third. They fill their
+ * positioned parent and size themselves from its height, so the Stream output, the projector and the previews place
+ * them alike. `logos`, `idle` and `lowerThird` pick which to draw, so an output can put other layers between them.
+ */
+export function Overlays({ overlays, logos = true, idle = true, lowerThird = true }: { overlays: OverlayLayers; logos?: boolean; idle?: boolean; lowerThird?: boolean }) {
   return (
     <div className="overlay-layers">
       {logos && (
@@ -27,6 +57,7 @@ export function Overlays({ overlays, logos = true, lowerThird = true }: { overla
           ))}
         </div>
       )}
+      {idle && <IdleLayer design={overlays.idle} lowerThirdLive={overlays.lowerThird !== null} />}
       {lowerThird && (
         <div className="lower-third-layer">
           <LowerThirdLayer display={overlays.lowerThird} />

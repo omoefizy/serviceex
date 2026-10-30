@@ -57,6 +57,8 @@
     // macOS shows this when asking for the microphone; without it the request fails silently.
     "extendInfo": {
       "NSMicrophoneUsageDescription": "ServiceEx listens to the sermon to show a live transcript.",
+      // The Stream settings' test background can show the webcam behind the overlays, to check them without a mixer.
+      "NSCameraUsageDescription": "ServiceEx can show your camera behind lower thirds in the Stream preview, to check how they layer.",
       // Shown when the PowerPoint import first asks to control Microsoft PowerPoint through AppleScript.
       "NSAppleEventsUsageDescription": "ServiceEx uses PowerPoint to render your slides.",
       // Local network sharing (off until turned on in Settings): macOS asks before the app may use the local

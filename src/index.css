@@ -4255,10 +4255,13 @@ textarea {
 
 /* ---------- Overlays and the Stream output ---------- */
 
-/* The logo layer and the lower third slot over a screen. Sizes come from the screen's height (cqh). On the projector
-   they sit over the slide; on the Stream output, under it. */
+/* The logo layer, the idle design and the lower third slot over a screen. Sizes come from the screen's height (cqh).
+   The idle design and the lower third sit over everything; the logos sit over the slide on the projector and under it
+   on the Stream output. */
 .overlay-layers,
 .logo-layer,
+.idle-layer,
+.lt-design,
 .lower-third-layer {
   position: absolute;
   inset: 0;
@@ -4281,6 +4284,29 @@ textarea {
   height: 100%;
   background: var(--screen-bg);
   cursor: none;
+}
+
+/* A Transparent background: nothing behind the layers, for window capture, NDI or a virtual camera. */
+.stream-window.transparent,
+.stream-fit.transparent {
+  background: transparent;
+}
+
+/* Key and Fill's key: every layer as white shapes on black; partly transparent pixels come out grey. */
+.stream-matte {
+  position: absolute;
+  inset: 0;
+  filter: brightness(0) invert(1);
+}
+
+/* The preview's test backgrounds, where the key would show the picture behind. */
+.stream-key.checker {
+  background: repeating-conic-gradient(#8a8f9c 0% 25%, #c9ccd3 0% 50%) 0 0 / 4cqh 4cqh;
+}
+
+.stream-webcam {
+  object-fit: cover;
+  background: var(--screen-bg);
 }
 
 /* Letterboxes the stream at its own aspect ratio. */
@@ -4910,6 +4936,62 @@ textarea {
   aspect-ratio: 16 / 9;
   overflow: hidden;
   pointer-events: none;
+}
+
+/* On an output a design fills the screen, and its elements' loops run. */
+.design-view.on-air {
+  height: 100%;
+  aspect-ratio: auto;
+}
+
+.design-view.on-air .dv-el {
+  transition: opacity 400ms ease;
+}
+
+/* An idle design's element flagged to step aside while a lower third is live. */
+.design-view.on-air .dv-el.dv-aside {
+  opacity: 0 !important;
+}
+
+/* Loops use the separate scale, translate and rotate properties, so they add to an element's own rotation. */
+.dv-loop-pulse {
+  animation: dv-pulse 2.4s ease-in-out infinite;
+}
+
+.dv-loop-float {
+  animation: dv-float 3.2s ease-in-out infinite;
+}
+
+.dv-loop-glow {
+  animation: dv-glow 2.8s ease-in-out infinite;
+}
+
+.dv-loop-spin {
+  animation: dv-spin 10s linear infinite;
+}
+
+@keyframes dv-pulse {
+  50% {
+    scale: 1.06;
+  }
+}
+
+@keyframes dv-float {
+  50% {
+    translate: 0 -1.2cqh;
+  }
+}
+
+@keyframes dv-glow {
+  50% {
+    filter: drop-shadow(0 0 1.2cqh rgb(255 255 255 / 0.6)) brightness(1.12);
+  }
+}
+
+@keyframes dv-spin {
+  to {
+    rotate: 360deg;
+  }
 }
 
 .design-view.checker {

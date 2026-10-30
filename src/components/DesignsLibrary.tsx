@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { EMPTY_DESIGN } from '../../shared/designs'
 import type { Design, DesignCategory } from '../../shared/types'
 import { reportError, type ErrorLike } from '../lib/errors'
+import { useOperatorStore } from '../store'
 import { Designer, type DesignerDocument } from './Designer'
 import { DesignView } from './DesignView'
 import { ErrorNote } from './ui'
@@ -36,7 +37,16 @@ export function DesignsLibrary({ onClose, open = null }: { onClose(): void; open
     }
   }, [])
 
-  const load = useCallback(() => run(async () => setDesigns(await window.api.designs.list())), [run])
+  // The store's copy feeds the idle design and lower third pickers, so it follows every change made here.
+  const load = useCallback(
+    () =>
+      run(async () => {
+        const list = await window.api.designs.list()
+        setDesigns(list)
+        useOperatorStore.setState({ designs: list })
+      }),
+    [run],
+  )
 
   useEffect(() => {
     void load()

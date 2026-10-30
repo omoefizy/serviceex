@@ -1,5 +1,5 @@
-// The lower third: it lives on the output apart from the slides, updates in place, keeps a history for this service,
-// steps aside for a full screen slide unless told to stay on top, and the hold timer hides it.
+// The lower third: it lives on the outputs apart from the slides, on top of everything, updates in place, keeps a
+// history for this service, Clear takes it off with the slide, and the hold timer hides it.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.stubGlobal('window', { api: { media: { getSlideBackgrounds: async () => ({}) } } })
@@ -17,7 +17,6 @@ beforeEach(() => {
     settings: {
       ...s.settings,
       streamSlideContent: 'full',
-      lowerThirdOverFullSlide: false,
       lowerThirdHoldSeconds: 0,
       lowerThirdPoints: [],
       overlaysOnChurchScreen: false,
@@ -45,7 +44,7 @@ describe('lower third', () => {
     st().goLive(0)
     st().nextSlide()
     st().goBack()
-    st().setOutputMode('clear')
+    st().setOutputMode('logo')
     expect(st().live.lowerThird).toEqual(shown)
     expect(onStream()).toMatchObject({ headline: 'Pastor Sam', body: 'Lead Pastor' })
   })
@@ -78,28 +77,61 @@ describe('lower third', () => {
     expect(history.slice(0, 3).map((l) => l.headline)).toEqual(['Line 33', 'Line 34', 'Line 32'])
   })
 
-  it('steps aside for a full screen slide unless set to stay on top, and Black takes it off the stream', () => {
+  it('stays up over a full screen slide on every output, and Black takes it off until it lifts', () => {
     type('Welcome')
     st().showLowerThird()
     st().goLive(0)
-    expect(onStream()).toBeNull()
-    expect(selectStreamState(st()).lowerThirdOnTop).toBe(false)
-    useOperatorStore.setState((s) => ({ settings: { ...s.settings, lowerThirdOverFullSlide: true } }))
     expect(onStream()?.headline).toBe('Welcome')
-    expect(selectStreamState(st()).lowerThirdOnTop).toBe(true)
-    useOperatorStore.setState((s) => ({ settings: { ...s.settings, lowerThirdOverFullSlide: false, streamSlideContent: 'hide' } }))
+    expect(selectOutputState(st()).overlays?.lowerThird?.headline).toBe('Welcome')
+    useOperatorStore.setState((s) => ({ settings: { ...s.settings, streamSlideContent: 'hide' } }))
     expect(onStream()?.headline).toBe('Welcome')
     st().setOutputMode('black')
     expect(onStream()).toBeNull()
+    expect(selectOutputState(st()).overlays).toBeNull()
     expect(st().live.lowerThird?.headline).toBe('Welcome')
+    st().setOutputMode('show')
+    expect(selectOutputState(st()).overlays?.lowerThird?.headline).toBe('Welcome')
   })
 
-  it('reaches the projector only with the church screen setting', () => {
+  it('reaches the projector whatever the church screen setting, which governs only the logos', () => {
+    const logo = { id: 'l', name: 'Logo', url: 'wd-media://logo.png', anchor: 'top-right', x: 50, y: 50, size: 10, margin: 0, opacity: 1, enabled: true } as const
+    useOperatorStore.setState((s) => ({ settings: { ...s.settings, logoItems: [logo] } }))
     type('Welcome')
     st().showLowerThird()
-    expect(selectOutputState(st()).overlays).toBeNull()
-    useOperatorStore.setState((s) => ({ settings: { ...s.settings, overlaysOnChurchScreen: true } }))
     expect(selectOutputState(st()).overlays?.lowerThird?.headline).toBe('Welcome')
+    expect(selectOutputState(st()).overlays?.logos).toEqual([])
+    useOperatorStore.setState((s) => ({ settings: { ...s.settings, overlaysOnChurchScreen: true } }))
+    expect(selectOutputState(st()).overlays?.logos).toEqual([logo])
+  })
+
+  it('Clear takes off the slide and the lower third; Clear lower third only the lower third', () => {
+    type('Welcome')
+    st().showLowerThird()
+    st().goLive(0)
+    st().hideLowerThird()
+    expect(st().live.mode).toBe('show')
+    expect(st().live.lowerThird).toBeNull()
+    st().showLowerThird()
+    st().setOutputMode('clear')
+    expect(st().live.lowerThird).toBeNull()
+    expect(st().live.mode).toBe('clear')
+  })
+
+  it('shows the idle design only while the main content is cleared, never in Black', () => {
+    const idle = { id: 7, name: 'Idle', type: 'custom' as const, style: { category: 'lowerThird' as const, background: { kind: 'transparent' as const }, elements: [] } }
+    useOperatorStore.setState((s) => ({ designs: [idle], settings: { ...s.settings, idleDesignId: 7 } }))
+    st().setOutputMode('clear')
+    expect(selectOutputState(st()).overlays?.idle).toEqual(idle.style)
+    expect(selectStreamState(st()).overlays.idle).toEqual(idle.style)
+    st().goLive(0)
+    expect(selectOutputState(st()).overlays?.idle).toBeNull()
+    st().setOutputMode('black')
+    expect(selectOutputState(st()).overlays).toBeNull()
+    expect(selectStreamState(st()).overlays.idle).toBeNull()
+    // A deleted design shows nothing.
+    useOperatorStore.setState({ designs: [] })
+    st().setOutputMode('clear')
+    expect(selectOutputState(st()).overlays?.idle).toBeNull()
   })
 
   it('hides itself after the hold time, counted from the latest show or update', () => {

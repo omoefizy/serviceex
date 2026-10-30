@@ -37,4 +37,13 @@ describe('output state formatting', () => {
     expect(overlays?.lowerThird?.headlineRich).toEqual(RICH)
     expect(overlays?.lowerThird?.bodyRich).toBeUndefined()
   })
+
+  it('keeps the idle design and a lower third’s design, checked as designs', () => {
+    const design = { category: 'lowerThird', background: { kind: 'transparent' }, elements: [{ kind: 'text', id: 'tag', text: 'Welcome', hideWithLowerThird: true, loop: 'pulse' }] }
+    const overlays = overlayLayersOf({ logos: [], idle: design, lowerThird: { runId: 1, headline: 'Pastor', body: '', design: { ...design, elements: [{ kind: 'nonsense' }] } } })
+    expect(overlays?.idle?.elements[0]).toMatchObject({ text: 'Welcome', hideWithLowerThird: true, loop: 'pulse' })
+    expect(overlays?.lowerThird?.design?.elements).toEqual([])
+    expect(overlayLayersOf({ logos: [], idle: 'not a design' })?.idle).toBeNull()
+    expect(overlayLayersOf({ logos: [], idle: { ...design, elements: [{ kind: 'text', loop: 'wobble' }] } })?.idle?.elements[0].loop).toBe('none')
+  })
 })

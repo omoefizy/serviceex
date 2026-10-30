@@ -5,7 +5,8 @@ import type { AppSettings, LowerThirdAnimation, RichText, SavedLowerThirdLine } 
 import { reportError, type ErrorLike } from '../lib/errors'
 import { canSendCues, openCueMenu } from '../lib/sharing'
 import { LOWER_THIRD_HEADLINE_ID, MOD } from '../lib/shortcuts'
-import { selectLowerThirdStyle, useOperatorStore, type LowerThirdLine } from '../store'
+import { selectLowerThirdDesign, selectLowerThirdStyle, useOperatorStore, type LowerThirdLine } from '../store'
+import { DesignView } from './DesignView'
 import { LowerThirdGraphic } from './LowerThird'
 import { LowerThirdEditor } from './LowerThirdEditor'
 import type { DesignerDocument } from './Designer'
@@ -173,7 +174,7 @@ export function LowerThirdCard() {
             className={`button lower-third-toggle${live ? ' on' : ' primary'}`}
             aria-pressed={live !== null}
             disabled={!live && empty}
-            title={live ? 'On air. Take it off (Esc)' : 'Show it on the Stream output (Enter)'}
+            title={live ? 'On air. Take it off (Esc)' : 'Show it on every output (Enter)'}
             onClick={live ? hide : show}
           >
             {live ? (
@@ -193,7 +194,7 @@ export function LowerThirdCard() {
 }
 
 /**
- * Types a lower third and puts it on the Stream output. Enter shows it, Esc hides it, Up and Down step through the
+ * Types a lower third and puts it on every output, on top of everything. Enter shows it, Esc hides it, Up and Down step through the
  * lines used this service, and Cmd+L (Ctrl+L) jumps to the headline from anywhere. Below: saved lines and a sermon's
  * points. Without `headline` it leaves the headline to the Lower third card, which shows it.
  */
@@ -203,6 +204,8 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
   const live = useOperatorStore((s) => s.live.lowerThird)
   const templates = useOperatorStore((s) => s.lowerThirdTemplates)
   const templateStyle = useOperatorStore(selectLowerThirdStyle)
+  const design = useOperatorStore(selectLowerThirdDesign)
+  const designs = useOperatorStore((s) => s.designs).filter((d) => d.style.category === 'lowerThird')
   const pointIndex = useOperatorStore((s) => s.lowerThirdPointIndex)
   const show = useOperatorStore((s) => s.showLowerThird)
   const hide = useOperatorStore((s) => s.hideLowerThird)
@@ -213,7 +216,7 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
   const { draft, history, type, typeField, onKeyDown } = typing
   const [editorOpen, setEditorOpen] = useState(false)
   /** The Designs library while it is open, and the document it opens straight into, if any. */
-  const [designs, setDesigns] = useState<{ open: DesignerDocument | null } | null>(null)
+  const [library, setLibrary] = useState<{ open: DesignerDocument | null } | null>(null)
   const [pasted, setPasted] = useState('')
   const [error, setError] = useState<ErrorLike | null>(null)
 
@@ -222,6 +225,8 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
   const points = settings.lowerThirdPoints
   const saved = [...settings.lowerThirdSavedLines].sort((a, b) => Number(b.pinned) - Number(a.pinned))
   const templateId = templates.some((t) => t.id === settings.lowerThirdTemplateId) ? settings.lowerThirdTemplateId : (templates[0]?.id ?? null)
+  // A design chosen here wins over the template; the picker holds both, as "design:<id>" and "template:<id>".
+  const picked = design && settings.lowerThirdDesignId !== null ? `design:${settings.lowerThirdDesignId}` : `template:${templateId ?? ''}`
 
   const save = (patch: Partial<AppSettings>) => {
     setError(null)
@@ -251,20 +256,34 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
         <span className={`lower-third-status${live ? ' live' : ''}`}>{live ? 'Live' : 'Off'}</span>
         <select
           className="input lower-third-template"
-          aria-label="Template"
-          value={templateId ?? ''}
-          onChange={(e) => save({ lowerThirdTemplateId: Number(e.target.value) })}
+          aria-label="Template or design"
+          value={picked}
+          onChange={(e) => {
+            const [kind, id] = e.target.value.split(':')
+            save(kind === 'design' ? { lowerThirdDesignId: Number(id) } : { lowerThirdTemplateId: Number(id), lowerThirdDesignId: null })
+          }}
         >
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
+          <optgroup label="Templates">
+            {templates.map((t) => (
+              <option key={t.id} value={`template:${t.id}`}>
+                {t.name}
+              </option>
+            ))}
+          </optgroup>
+          {designs.length > 0 && (
+            <optgroup label="Designs">
+              {designs.map((d) => (
+                <option key={d.id} value={`design:${d.id}`}>
+                  {d.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
         <button type="button" className="icon-button" aria-label="Edit templates" title="Edit templates" onClick={() => setEditorOpen(true)}>
           <SlidersHorizontal size={15} />
         </button>
-        <button type="button" className="icon-button" aria-label="Designs" title="Designs: the designer and its templates" onClick={() => setDesigns({ open: null })}>
+        <button type="button" className="icon-button" aria-label="Designs" title="Designs: the designer and its templates" onClick={() => setLibrary({ open: null })}>
           <LayoutTemplate size={15} />
         </button>
       </header>
@@ -284,13 +303,17 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
       />
       {!empty && (
         <div className="lower-third-preview" aria-label="Live preview">
-          <LowerThirdGraphic
-            style={templateStyle}
-            headline={draft.headline.trim()}
-            body={draft.body.trim()}
-            headlineRich={shownRich(draft.headlineRich, draft.headline) ?? undefined}
-            bodyRich={shownRich(draft.bodyRich, draft.body) ?? undefined}
-          />
+          {design ? (
+            <DesignView style={design} fields={{ headline: draft.headline.trim(), body: draft.body.trim(), number: '' }} onAir />
+          ) : (
+            <LowerThirdGraphic
+              style={templateStyle}
+              headline={draft.headline.trim()}
+              body={draft.body.trim()}
+              headlineRich={shownRich(draft.headlineRich, draft.headline) ?? undefined}
+              bodyRich={shownRich(draft.bodyRich, draft.body) ?? undefined}
+            />
+          )}
         </div>
       )}
       <div className="lower-third-actions">
@@ -299,11 +322,11 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
             <RefreshCw size={14} aria-hidden="true" /> Update
           </button>
         ) : (
-          <button type="button" className="button primary" disabled={empty || live !== null} onClick={show} title="Show it on the Stream output (Enter)">
+          <button type="button" className="button primary" disabled={empty || live !== null} onClick={show} title="Show it on every output (Enter)">
             <Play size={14} aria-hidden="true" /> {live ? 'Showing' : 'Show'}
           </button>
         )}
-        <button type="button" className="button" disabled={!live} onClick={hide} title="Take it off (Esc)">
+        <button type="button" className="button" disabled={!live} onClick={hide} title="Take it off, leaving the slide and the idle design (Esc in a field, Shift+C anywhere)">
           <EyeOff size={14} aria-hidden="true" /> Hide
         </button>
         <button type="button" className="button" disabled={empty} onClick={saveLine} title="Keep this line in Saved lines">
@@ -457,11 +480,7 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
             </label>
           )}
         </div>
-        <label className="inline-check">
-          <input type="checkbox" checked={settings.lowerThirdOverFullSlide} onChange={(e) => save({ lowerThirdOverFullSlide: e.target.checked })} />
-          Keep on top of a full screen slide
-        </label>
-        <p className="hint">Off: the lower third steps aside while a full screen slide is live, and comes back when it clears.</p>
+        <p className="hint">The lower third shows on every output, on top of the slide and the idle design. Clear takes it off with the slide.</p>
       </details>
 
       {editorOpen && (
@@ -469,11 +488,11 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
           onClose={() => setEditorOpen(false)}
           onOpenInDesigner={(doc) => {
             setEditorOpen(false)
-            setDesigns({ open: doc })
+            setLibrary({ open: doc })
           }}
         />
       )}
-      {designs && <DesignsLibrary open={designs.open} onClose={() => setDesigns(null)} />}
+      {library && <DesignsLibrary open={library.open} onClose={() => setLibrary(null)} />}
     </section>
   )
 }

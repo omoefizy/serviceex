@@ -32,9 +32,9 @@ import { switchLayout } from '../lib/layouts'
 import { useListener } from '../lib/listener'
 import { chipOf } from '../lib/listenerStatus'
 import { openSettingsAt, showServicePicker, toggleTranscriptDrawer } from '../lib/shell'
-import { IS_MAC, MOD } from '../lib/shortcuts'
+import { CLEAR_LOWER_THIRD_KEY, IS_MAC, MOD } from '../lib/shortcuts'
 import { useDismiss } from '../lib/useDismiss'
-import { selectStreamState, useOperatorStore } from '../store'
+import { useOperatorStore } from '../store'
 import { AlertsPanel } from './AlertsPanel'
 import { IconButton, StatusDot, type StatusTone } from './ui'
 
@@ -92,23 +92,19 @@ function AlertRunningChip() {
   )
 }
 
-/** Shown while a lower third is up on the Stream output, with a one-click Hide. */
+/** Shown while a lower third is up on the outputs, with a one-click Clear. */
 function LowerThirdChip() {
   const live = useOperatorStore((s) => s.live.lowerThird !== null)
-  // Up, but held back while the stream is black or a full screen slide covers it.
-  const held = useOperatorStore((s) => {
-    if (s.live.lowerThird === null) return null
-    const stream = selectStreamState(s)
-    return stream.overlays.lowerThird !== null ? null : stream.mode === 'black' ? 'stream is black' : 'behind slide'
-  })
+  // Up, but held back while Black blacks out the outputs.
+  const held = useOperatorStore((s) => s.live.lowerThird !== null && s.live.mode === 'black')
   const hide = useOperatorStore((s) => s.hideLowerThird)
   if (!live) return null
   return (
     <span className="alert-chip" role="status">
       <span className="live-dot" aria-hidden="true" />
-      Lower third live{held ? ` (${held})` : ''}
-      <button type="button" className="alert-chip-stop ui-hit" onClick={hide} title="Hide the lower third">
-        <EyeOff size={11} aria-hidden="true" /> Hide
+      Lower third live{held ? ' (outputs are black)' : ''}
+      <button type="button" className="alert-chip-stop ui-hit" onClick={hide} title={`Clear the lower third (${CLEAR_LOWER_THIRD_KEY})`}>
+        <EyeOff size={11} aria-hidden="true" /> Clear
       </button>
     </span>
   )
@@ -396,6 +392,8 @@ export function Toolbar() {
   const onAir = useOperatorStore((s) => s.live.mode === 'show' && s.live.slideIndex !== null)
   const liveTitle = useOperatorStore((s) => s.live.title)
   const setOutputMode = useOperatorStore((s) => s.setOutputMode)
+  const lowerThirdLive = useOperatorStore((s) => s.live.lowerThird !== null)
+  const hideLowerThird = useOperatorStore((s) => s.hideLowerThird)
   const settingsOpen = useOperatorStore((s) => s.settingsOpen)
   const openSettings = useOperatorStore((s) => s.openSettings)
   const saved = useSavedText(service)
@@ -427,7 +425,13 @@ export function Toolbar() {
               type="button"
               className={`mode-button mode-${m}${mode === m ? ' active' : ''}${m === 'show' && onAir ? ' on-air' : ''}`}
               aria-pressed={mode === m}
-              title={m === 'show' ? `On air: show the live slide (${key})${liveTitle && onAir ? `, now ${liveTitle}` : ''}` : `${label}: the output goes ${label.toLowerCase()} (${key})`}
+              title={
+                m === 'show'
+                  ? `On air: show the live slide (${key})${liveTitle && onAir ? `, now ${liveTitle}` : ''}`
+                  : m === 'clear'
+                    ? `Clear: takes off the slide and the lower third, showing the idle design (${key})`
+                    : `${label}: every output goes black (${key})`
+              }
               aria-keyshortcuts={key}
               onClick={() => setOutputMode(m)}
             >
@@ -435,6 +439,17 @@ export function Toolbar() {
               {label.toUpperCase()}
             </button>
           ))}
+          <button
+            type="button"
+            className="mode-button mode-clear-lower-third"
+            aria-label="Clear lower third"
+            title={`Clear lower third: animates only the lower third out (${CLEAR_LOWER_THIRD_KEY})`}
+            aria-keyshortcuts="Shift+C"
+            disabled={!lowerThirdLive}
+            onClick={hideLowerThird}
+          >
+            CLEAR L3
+          </button>
         </div>
         <div className="toolbar-icons">
           <AlertsButton />

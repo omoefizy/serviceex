@@ -10,6 +10,7 @@ import type {
   DesignElement,
   DesignElementKind,
   DesignFill,
+  DesignLoop,
   DesignShadow,
   DesignStyle,
   DesignTextField,
@@ -32,6 +33,7 @@ const FONT = 'Montserrat'
 
 export const DESIGN_CATEGORIES: DesignCategory[] = ['lowerThird', 'slide']
 export const DESIGN_FIELDS: DesignTextField[] = ['headline', 'body', 'number']
+export const DESIGN_LOOPS: DesignLoop[] = ['none', 'pulse', 'float', 'glow', 'spin']
 
 export const NO_SHADOW: DesignShadow = { enabled: false, color: '#000000', opacity: 0.35, blur: 1.2, x: 0, y: 0.3 }
 const SOFT_SHADOW: DesignShadow = { ...NO_SHADOW, enabled: true }
@@ -43,7 +45,17 @@ type Rect = Extract<DesignElement, { kind: 'rect' }>
 type Line = Extract<DesignElement, { kind: 'line' }>
 type Picture = Extract<DesignElement, { kind: 'image' }>
 
-const base = (id: string, name: string, box: ThemeBox) => ({ id, name, box, rotation: 0, opacity: 1, locked: false, hidden: false })
+const base = (id: string, name: string, box: ThemeBox) => ({
+  id,
+  name,
+  box,
+  rotation: 0,
+  opacity: 1,
+  locked: false,
+  hidden: false,
+  hideWithLowerThird: false,
+  loop: 'none' as DesignLoop,
+})
 
 export const textElement = (id: string, name: string, box: ThemeBox, overrides: Partial<Text> = {}): Text => ({
   ...base(id, name, box),
@@ -357,6 +369,8 @@ function normalizeElement(value: unknown): DesignElement | null {
     opacity: number(v.opacity, 1, 0, 1),
     locked: flag(v.locked, false),
     hidden: flag(v.hidden, false),
+    hideWithLowerThird: flag(v.hideWithLowerThird, false),
+    loop: oneOf(v.loop, DESIGN_LOOPS, 'none'),
   }
   switch (d.kind) {
     case 'text': {

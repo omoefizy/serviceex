@@ -16,6 +16,8 @@ import type {
   AppSettings,
   BibleVersion,
   BibleVersionCode,
+  Design,
+  DesignStyle,
   DualTranslation,
   HighlightStyle,
   LivePowerPointStatus,
@@ -42,6 +44,7 @@ import type {
   Song,
   StageState,
   StreamState,
+  StreamTestBackground,
   Theme,
   ThemeBackground,
   ThemeContentType,
@@ -256,6 +259,8 @@ interface OperatorState {
   streamOpen: boolean
   /** The test pattern on the Stream output, for lining up the key. Not saved. */
   streamTestPattern: boolean
+  /** What the Stream preview shows behind the overlays in place of the key, to check the layering. Not saved. */
+  streamTestBackground: StreamTestBackground
   /** The test pattern on the projector output, for lining it up (or a vision mixer fed from it). Not saved. */
   outputTestPattern: boolean
   /** The Stream panel (preview, logos and stream settings) in the centre column. */
@@ -263,6 +268,8 @@ interface OperatorState {
   /** The Sermons screen (saved listening sessions) in the centre column. */
   sermonsOpen: boolean
   lowerThirdTemplates: LowerThirdTemplate[]
+  /** The designs from the designer, for the idle layer and lower thirds. */
+  designs: Design[]
   /** What is typed in the Lower Third panel; Enter shows it. */
   lowerThirdDraft: LowerThirdLine
   /** Lines shown during this service, newest first, at most 30, for Up and Down in the panel. */
@@ -370,11 +377,14 @@ interface OperatorState {
   setStreamOpen(open: boolean): void
   toggleStream(): Promise<void>
   setStreamTestPattern(on: boolean): void
+  setStreamTestBackground(background: StreamTestBackground): void
   setOutputTestPattern(on: boolean): void
   loadLowerThirdTemplates(): Promise<void>
+  loadDesigns(): Promise<void>
   setLowerThirdDraft(patch: Partial<LowerThirdLine>): void
-  /** Shows the draft on the Stream output, or changes the text in place if a lower third is already up. */
+  /** Shows the draft on every output, or changes the text in place if a lower third is already up. */
   showLowerThird(): void
+  /** Clear lower third: animates just the lower third out, leaving the main content and the idle design. */
   hideLowerThird(): void
   /** Puts a sermon point in the draft and shows it; Next Point is the one after the last shown. */
   showLowerThirdPoint(index: number): void
@@ -494,15 +504,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
   streamResolution: '1920x1080',
   streamKeyMode: 'chroma',
   streamKeyColor: CONTENT_COLORS.chromaGreen,
+  streamKeyDisplay: 'window',
   streamSlideContent: 'full',
   logoItems: [],
   logoLayerVisible: true,
   overlaysOnChurchScreen: false,
+  idleDesignId: null,
+  lowerThirdDesignId: null,
   lowerThirdTemplateId: null,
   lowerThirdAnimation: 'slide',
   lowerThirdDurationMs: 500,
   lowerThirdHoldSeconds: 0,
-  lowerThirdOverFullSlide: false,
   lowerThirdSavedLines: [],
   lowerThirdPoints: [],
   logoUrl: null,
@@ -583,10 +595,12 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   outputOpen: true,
   streamOpen: false,
   streamTestPattern: false,
+  streamTestBackground: 'off',
   outputTestPattern: false,
   streamPanelOpen: false,
   sermonsOpen: false,
   lowerThirdTemplates: [],
+  designs: [],
   lowerThirdDraft: { headline: '', body: '' },
   lowerThirdHistory: [],
   lowerThirdPointIndex: -1,
@@ -719,6 +733,8 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
 
   setOutputMode(mode) {
     set({ live: { ...get().live, mode } })
+    // Clear clears everything to the idle design: the main content and the lower third.
+    if (mode === 'clear') get().hideLowerThird()
   },
 
   nextSlide() {
@@ -1103,12 +1119,20 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     await window.api.stream.setOpen(!get().streamOpen)
   },
 
+  setStreamTestBackground(background) {
+    set({ streamTestBackground: background })
+  },
+
   setStreamTestPattern(on) {
     set({ streamTestPattern: on })
   },
 
   setOutputTestPattern(on) {
     set({ outputTestPattern: on })
+  },
+
+  async loadDesigns() {
+    set({ designs: await window.api.designs.list() })
   },
 
   async loadLowerThirdTemplates() {
@@ -1927,9 +1951,9 @@ export function selectOutputState(s: OperatorState): OutputState {
     screenMargins: s.settings.screenMargins,
     testPattern: s.outputTestPattern,
     alert: selectAlertDisplay(s),
-    // Black turns everything off; otherwise the overlays reach the projector only when the setting says so.
-    overlays:
-      s.settings.overlaysOnChurchScreen && s.live.mode !== 'black' ? selectOverlayLayers(s, s.live.mode === 'show' || s.live.mode === 'logo') : null,
+    // Black turns everything off. Otherwise the idle design and the lower third always show; the Stream's logo
+    // layer reaches the projector only when the setting says so.
+    overlays: s.live.mode === 'black' ? null : { ...selectOverlayLayers(s), ...(s.settings.overlaysOnChurchScreen ? {} : { logos: [] }) },
   }
 }
 
@@ -1939,13 +1963,26 @@ export function selectLowerThirdStyle(s: OperatorState): LowerThirdStyle {
   return (templates.find((t) => t.id === settings.lowerThirdTemplateId) ?? templates[0])?.style ?? DEFAULT_LOWER_THIRD_STYLE
 }
 
-/**
- * The lower third as the screens draw it, or null. Over a full screen slide (`overFullSlide`) it hides unless the
- * setting keeps it on top.
- */
-export function selectLowerThirdDisplay(s: OperatorState, overFullSlide: boolean): LowerThirdDisplay | null {
+/** A saved design by id, or null for none or one that has been deleted. */
+function designById(s: OperatorState, id: number | null): DesignStyle | null {
+  return id === null ? null : (s.designs.find((d) => d.id === id)?.style ?? null)
+}
+
+/** The design quick lower thirds use (Settings, Lower thirds), or null for the template. */
+export function selectLowerThirdDesign(s: OperatorState): DesignStyle | null {
+  return designById(s, s.settings.lowerThirdDesignId)
+}
+
+/** The idle design, shown whenever the main content is cleared; null for none. */
+export function selectIdleDesign(s: OperatorState): DesignStyle | null {
+  return designById(s, s.settings.idleDesignId)
+}
+
+/** The lower third as the screens draw it, on top of everything, or null. */
+export function selectLowerThirdDisplay(s: OperatorState): LowerThirdDisplay | null {
   const lowerThird = s.live.lowerThird
-  if (!lowerThird || (overFullSlide && !s.settings.lowerThirdOverFullSlide)) return null
+  if (!lowerThird) return null
+  const design = selectLowerThirdDesign(s)
   return {
     runId: lowerThird.runId,
     headline: lowerThird.headline,
@@ -1953,23 +1990,28 @@ export function selectLowerThirdDisplay(s: OperatorState, overFullSlide: boolean
     ...(lowerThird.headlineRich ? { headlineRich: lowerThird.headlineRich } : {}),
     ...(lowerThird.bodyRich ? { bodyRich: lowerThird.bodyRich } : {}),
     style: selectLowerThirdStyle(s),
+    ...(design ? { design } : {}),
     animation: s.settings.lowerThirdAnimation,
     durationMs: s.settings.lowerThirdDurationMs,
   }
 }
 
-/** The overlay layers: the logos that are on (unless the logo layer is hidden), then the lower third. */
-export function selectOverlayLayers(s: OperatorState, overFullSlide: boolean): OverlayLayers {
+/**
+ * The overlay layers: the logos that are on (unless the logo layer is hidden), the idle design while the main content
+ * is cleared, then the lower third.
+ */
+export function selectOverlayLayers(s: OperatorState): OverlayLayers {
   return {
     logos: s.settings.logoLayerVisible ? s.settings.logoItems.filter((logo) => logo.enabled) : [],
-    lowerThird: selectLowerThirdDisplay(s, overFullSlide),
+    idle: s.live.mode === 'clear' ? selectIdleDesign(s) : null,
+    lowerThird: selectLowerThirdDisplay(s),
   }
 }
 
 /**
- * What the Stream output renders, from the live snapshot. Black blacks out the whole stream. Clear, or slide content
- * set to Hide, empties the slide layer so only the key color and the overlays show; otherwise the live slide covers
- * them with its own background.
+ * What the Stream output renders, from the live snapshot. Black blacks out the whole stream. Clear, or an Overlay only
+ * output, empties the slide layer so only the background and the overlays show; otherwise the live slide covers the
+ * logos with its own background. The idle design and the lower third draw on top either way.
  */
 export function selectStreamState(s: OperatorState): StreamState {
   const { mode, text, caption, copyright, rich, theme: slideLook, fadeMs, logoUrl, defaultFont } = selectOutputState(s)
@@ -1979,7 +2021,7 @@ export function selectStreamState(s: OperatorState): StreamState {
   // Slides (not the Logo theme) can go to the stream in the default Lower Third theme instead of their own.
   const lowerThird = streamSlideContent === 'lowerThird' && mode !== 'logo' && !selectLiveSlide(s)?.page
   const theme = lowerThird ? selectDefaultTheme(s, 'lowerThird') : slideLook
-  const overlays = selectOverlayLayers(s, streamMode === 'show' || streamMode === 'logo')
+  const overlays = selectOverlayLayers(s)
   return {
     mode: streamMode,
     text,
@@ -1994,9 +2036,8 @@ export function selectStreamState(s: OperatorState): StreamState {
     keyColor: streamKeyColor,
     width,
     height,
-    // Black blacks out the whole stream, the lower third included.
-    overlays: streamMode === 'black' ? { ...overlays, lowerThird: null } : overlays,
-    lowerThirdOnTop: s.settings.lowerThirdOverFullSlide,
+    // Black blacks out the whole stream, the idle design and the lower third included.
+    overlays: streamMode === 'black' ? { ...overlays, idle: null, lowerThird: null } : overlays,
     testPattern: s.streamTestPattern,
   }
 }

@@ -8,6 +8,9 @@ export const MODE_KEYS: { mode: OutputMode; key: string; label: string }[] = [
   { mode: 'logo', key: 'L', label: 'Logo' },
 ]
 
+/** Clear lower third: Shift with Clear's key, so it never clears the slide. */
+export const CLEAR_LOWER_THIRD_KEY = 'Shift+C'
+
 export const IS_MAC = navigator.platform.toLowerCase().includes('mac')
 
 /** The modifier shown in shortcut hints: ⌘ on macOS, Ctrl elsewhere. */
