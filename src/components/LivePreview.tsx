@@ -11,6 +11,7 @@ import {
   ListOrdered,
   Pencil,
   MousePointerClick,
+  Play,
   Presentation,
   RefreshCw,
   SlidersHorizontal,
@@ -22,7 +23,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { HIGHLIGHT_COLORS, HIGHLIGHT_KINDS, isMarked, sentenceAt, slideRich, wordAt, wordsBetween } from '../../shared/highlights'
 import { comparePos, type RichPos } from '../../shared/richText'
-import type { DualTranslation, HighlightKind, LivePowerPointStatus, OutputState } from '../../shared/types'
+import type { DualTranslation, HighlightKind, LivePowerPointStatus, LowerThirdDisplay, OutputState } from '../../shared/types'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { pickHighlightColor } from '../lib/highlights'
 import { editScriptureText } from '../lib/scriptureGroup'
@@ -35,6 +36,7 @@ import {
   selectLiveSlide,
   selectMarkTarget,
   selectOutputState,
+  selectPreviewLowerThirdDisplay,
   selectPreviewSlide,
   slideTheme,
   useOperatorStore,
@@ -43,6 +45,7 @@ import {
 } from '../store'
 import { CombineTray } from './CombineModal'
 import { OutputScreen } from './OutputView'
+import { Overlays } from './Overlays'
 import { ScriptureQuickAdjust } from './ScriptureDisplay'
 import { ThemedSlide } from './ThemedSlide'
 import { Button, Chip, ErrorNote, IconButton, Panel, Select } from './ui'
@@ -422,6 +425,13 @@ export function PreviewMonitor() {
   const scripture = useOperatorStore((s) => s.deckType === 'scripture')
   const [toolsOpen, setToolsOpen] = useState(false)
   const [queueOpen, setQueueOpen] = useState(false)
+  // The lower third staged here, drawn by the overlay layers as it would go on air; compared as a string, so the
+  // screen redraws only when it changes.
+  const lowerThirdJson = useOperatorStore((s) => JSON.stringify(selectPreviewLowerThirdDisplay(s)))
+  const lowerThird = useMemo(() => JSON.parse(lowerThirdJson) as LowerThirdDisplay | null, [lowerThirdJson])
+  const takeLowerThirdLive = useOperatorStore((s) => s.takeLowerThirdPreviewLive)
+  const clearLowerThirdPreview = useOperatorStore((s) => s.clearLowerThirdPreview)
+  const overlays = useMemo(() => (lowerThird ? { logos: [], idle: null, lowerThird } : null), [lowerThird])
 
   return (
     <Panel
@@ -478,10 +488,22 @@ export function PreviewMonitor() {
         {previewSlide ? (
           <ThemedSlide theme={previewTheme} text={previewSlide.text} caption={previewSlide.caption} copyright={previewSlide.copyright} rich={previewSlide.rich} logoUrl={logoUrl} />
         ) : (
-          <p className="screen-off">Select a slide to preview it here.</p>
+          !overlays && <p className="screen-off">Select a slide to preview it here.</p>
         )}
+        {overlays && <Overlays overlays={overlays} logos={false} idle={false} />}
         <SlideBadge index={previewSlide ? highlightIndex : null} count={slideCount} />
       </MonitorStage>
+      {lowerThird && (
+        <div className="preview-lower-third" role="group" aria-label="Lower third on Preview">
+          <span className="preview-lower-third-text" title={lowerThird.headline}>
+            Lower third: {lowerThird.headline || lowerThird.body}
+          </span>
+          <Button size="sm" variant="primary" icon={<Play size={13} aria-hidden="true" />} title="Put this lower third on air" onClick={takeLowerThirdLive}>
+            Show live
+          </Button>
+          <IconButton size="sm" label="Take the lower third off Preview" icon={<X size={14} />} onClick={clearLowerThirdPreview} />
+        </div>
+      )}
       <Button variant="primary" className="monitor-action" disabled={slideCount === 0 || highlightIndex === null} title="Send the preview live (Enter)" onClick={goLiveHighlighted}>
         Send to live
       </Button>

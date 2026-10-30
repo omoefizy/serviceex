@@ -1,4 +1,4 @@
-import { Layers, MoreHorizontal, Sparkles } from 'lucide-react'
+import { Layers, MoreHorizontal, PanelBottom, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { pinStatement, useListener } from '../lib/listener'
@@ -7,10 +7,11 @@ import { groupPassageOf } from '../lib/scripture'
 import { useSuggestions, type ScriptureSuggestion, type StatementSuggestion, type Suggestion } from '../lib/scriptureDetection'
 import { useCombine } from '../lib/scriptureGroup'
 import { canSendCues, openCueMenu, useSharingStore } from '../lib/sharing'
-import { focusLowerThirdHeadline } from '../lib/shortcuts'
 import { quotePayload } from '../lib/slides'
 import { useDismiss } from '../lib/useDismiss'
 import { useOperatorStore } from '../store'
+import { can } from '../../shared/features'
+import { QuickLowerThird } from './QuickLowerThird'
 import { QuoteModal } from './QuoteModal'
 import { Button, EmptyState, ErrorNote, IconButton } from './ui'
 
@@ -74,7 +75,6 @@ export function SuggestionTray({ fullList }: { fullList: boolean }) {
   const service = useOperatorStore((s) => s.service)
   const speaker = useOperatorStore((s) => s.settings.quoteSpeakerName)
   const addToSchedule = useOperatorStore((s) => s.addToSchedule)
-  const setLowerThirdDraft = useOperatorStore((s) => s.setLowerThirdDraft)
   const liveDeckKey = useOperatorStore((s) => (s.live.slideIndex !== null ? s.live.deckKey : null))
   const [flashing, setFlashing] = useState(false)
   const [allOpen, setAllOpen] = useState(false)
@@ -82,6 +82,9 @@ export function SuggestionTray({ fullList }: { fullList: boolean }) {
   const closeAll = useCallback(() => setAllOpen(false), [])
   useDismiss(allOpen, allRef, closeAll)
   const [editing, setEditing] = useState<StatementSuggestion | null>(null)
+  /** The statement open in the Send as lower third box: in its row of the full list, or under the strip's cards. */
+  const [quick, setQuick] = useState<{ id: number; text: string; where: 'row' | 'strip' } | null>(null)
+  const canLowerThird = can('lowerThirds')
   /** Statements saved to the schedule this session, so the menu says so. */
   const [scheduled, setScheduled] = useState<Set<number>>(new Set())
   /** Verses added to the order of service this session, so the menu says so. */
@@ -246,17 +249,11 @@ export function SuggestionTray({ fullList }: { fullList: boolean }) {
               <MenuItem close={close} title="Fix spelling or trim words first" onClick={() => setEditing(s)}>
                 Edit
               </MenuItem>
-              <MenuItem
-                close={close}
-                title="Put it in the Lower Third fields; press Enter there to show it"
-                onClick={() => {
-                  // Fills the fields only: it goes live when the operator presses Enter.
-                  setLowerThirdDraft({ headline: s.text, body: speaker })
-                  focusLowerThirdHeadline()
-                }}
-              >
-                Send to Lower Third
-              </MenuItem>
+              {canLowerThird && (
+                <MenuItem close={close} title="Edit the words, then show them as a lower third in the default design" onClick={() => setQuick({ id: s.id, text: s.text, where: 'row' })}>
+                  Send as lower third
+                </MenuItem>
+              )}
               <MenuItem close={close} title={service ? `Save it to ${service.name} as a quote, to use again` : 'Create or pick a service first'} disabled={!service || scheduled.has(s.id)} onClick={() => schedule(s)}>
                 {scheduled.has(s.id) ? 'Added to Schedule' : 'Add to Schedule'}
               </MenuItem>
@@ -284,6 +281,7 @@ export function SuggestionTray({ fullList }: { fullList: boolean }) {
             </>
           )}
         </RowMenu>
+        {quick?.id === s.id && quick.where === 'row' && <QuickLowerThird className="heard-lower-third" text={quick.text} onClose={() => setQuick(null)} />}
       </li>
     )
   }
@@ -299,6 +297,16 @@ export function SuggestionTray({ fullList }: { fullList: boolean }) {
             {scripture ? s.label : 'Statement'}
           </strong>
           {actions(s, previewed)}
+          {!scripture && canLowerThird && (
+            <IconButton
+              size="sm"
+              label="Send as lower third"
+              tooltip="Send as lower third: edit the words, then show them in the default design"
+              icon={<PanelBottom size={14} />}
+              pressed={quick?.id === s.id && quick.where === 'strip'}
+              onClick={() => setQuick(quick?.id === s.id && quick.where === 'strip' ? null : { id: s.id, text: s.text, where: 'strip' })}
+            />
+          )}
           {scripture && !isLive(s) && (
             <IconButton
               size="sm"
@@ -374,6 +382,7 @@ export function SuggestionTray({ fullList }: { fullList: boolean }) {
             {listening ? 'Nothing heard yet. Verses the speaker names or quotes show here.' : 'Start listening and the verses the speaker names or quotes show here.'}
           </p>
         )}
+        {quick?.where === 'strip' && <QuickLowerThird key={quick.id} className="heard-lower-third" text={quick.text} onClose={() => setQuick(null)} />}
       </section>
       {fullList && (
         <section className="heard-card operator-main" aria-label="Everything heard in the sermon">

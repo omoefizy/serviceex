@@ -33,6 +33,7 @@ import type {
   PresentationMode,
   PresentationProgress,
   RichText,
+  SermonPoint,
   ScriptureAdjust,
   ScripturePayload,
   ScriptureSlide,
@@ -152,6 +153,10 @@ export interface LowerThirdLine {
   /** The headline and body with their formatting; used only while their plain text matches. */
   headlineRich?: RichText
   bodyRich?: RichText
+  /** The design it shows in; left out, the default (Settings, Lower thirds). */
+  designId?: number
+  /** What the design's text bound to Number shows, such as a sermon point's number. */
+  number?: string
 }
 
 /** The lower third on the Stream output. */
@@ -274,8 +279,14 @@ interface OperatorState {
   lowerThirdDraft: LowerThirdLine
   /** Lines shown during this service, newest first, at most 30, for Up and Down in the panel. */
   lowerThirdHistory: LowerThirdLine[]
-  /** The sermon point last shown from the Points list, or -1 before the first. */
+  /** The sermon point last shown or previewed from the Points list, or -1 before the first. */
   lowerThirdPointIndex: number
+  /** The lower third staged on the Preview monitor; Show live (or Enter in the workspace) puts it on air. */
+  lowerThirdPreview: LiveLowerThird | null
+  /** The Lower thirds workspace in place of the order of service and the middle column. */
+  lowerThirdsOpen: boolean
+  /** The design selected in the workspace: what typed lines and points without their own design show in. */
+  lowerThirdWorkspaceDesignId: number | null
   /** The service open in the schedule panel. */
   service: ServiceWithItems | null
   /** The song open in the editor, which takes the slide grid's place. */
@@ -384,13 +395,25 @@ interface OperatorState {
   setLowerThirdDraft(patch: Partial<LowerThirdLine>): void
   /** Shows the draft on every output, or changes the text in place if a lower third is already up. */
   showLowerThird(): void
+  /** Shows `line` on every output; with one up in the same design the text changes in place. */
+  showLowerThirdLine(line: LowerThirdLine): void
   /** Clear lower third: animates just the lower third out, leaving the main content and the idle design. */
   hideLowerThird(): void
-  /** Puts a sermon point in the draft and shows it; Next Point is the one after the last shown. */
-  showLowerThirdPoint(index: number): void
-  nextLowerThirdPoint(): void
-  /** Replaces the sermon's points (one per line); Next Point then starts from the first. */
-  queueLowerThirdPoints(points: string[]): Promise<void>
+  /** Stages `line` on the Preview monitor, over the preview slide. Nothing goes on air. */
+  previewLowerThirdLine(line: LowerThirdLine): void
+  /** Puts the lower third staged on Preview on air. */
+  takeLowerThirdPreviewLive(): void
+  clearLowerThirdPreview(): void
+  /** Send as lower third: a quote in the default design, to the Preview or live (by default, as Settings says). */
+  sendQuoteAsLowerThird(text: string, where?: 'preview' | 'live'): void
+  /** A sermon point of the open service, in its own design or the workspace's: to the Preview, or live. */
+  triggerPoint(index: number, where: 'preview' | 'live'): void
+  /** Next point: the one after the last shown or previewed, live. */
+  nextPoint(): void
+  /** Replaces the open service's sermon points (saved with it); the next point then starts from the first. */
+  setSermonPoints(points: SermonPoint[]): Promise<void>
+  openLowerThirds(open: boolean): void
+  setWorkspaceDesign(id: number | null): void
   openStreamPanel(open: boolean): void
   openSermons(open: boolean): void
   /** Closes the song editor, theme editor and settings so the slide grid shows. */
@@ -516,7 +539,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lowerThirdDurationMs: 500,
   lowerThirdHoldSeconds: 0,
   lowerThirdSavedLines: [],
-  lowerThirdPoints: [],
+  lowerThirdServicePoints: {},
+  lowerThirdQuickTarget: 'preview',
   logoUrl: null,
   churchName: '',
   churchFooter: '',
@@ -604,6 +628,9 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   lowerThirdDraft: { headline: '', body: '' },
   lowerThirdHistory: [],
   lowerThirdPointIndex: -1,
+  lowerThirdPreview: null,
+  lowerThirdsOpen: false,
+  lowerThirdWorkspaceDesignId: null,
   service: null,
   editingSongId: null,
   songsVersion: 0,
@@ -835,7 +862,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   async openService(id) {
     const service = id === null ? null : ((await window.api.services.get(id)) ?? null)
     // The lower third history is per service.
-    const history = service?.id === get().service?.id ? {} : { lowerThirdHistory: [] }
+    const history = service?.id === get().service?.id ? {} : { lowerThirdHistory: [], lowerThirdPointIndex: -1 }
     set({ service, activeItemId: null, ...history })
     prepareLivePowerPoint()
   },
@@ -1144,11 +1171,16 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   showLowerThird() {
+    get().showLowerThirdLine(get().lowerThirdDraft)
+  },
+
+  showLowerThirdLine(next) {
     if (!can('lowerThirds')) return
-    const { live, lowerThirdDraft, lowerThirdHistory, settings } = get()
-    const line = trimLowerThirdLine(lowerThirdDraft)
+    const { live, lowerThirdHistory, settings } = get()
+    const line = trimLowerThirdLine(next)
     if (!line.headline && !line.body) return
-    const runId = live.lowerThird?.runId ?? ++lowerThirdRuns
+    // An update in the same design changes the words in place; another design comes on afresh.
+    const runId = live.lowerThird && live.lowerThird.designId === line.designId ? live.lowerThird.runId : ++lowerThirdRuns
     const history = [line, ...lowerThirdHistory.filter((l) => l.headline !== line.headline || l.body !== line.body)].slice(0, LOWER_THIRD_HISTORY)
     set({ live: { ...live, lowerThird: { runId, ...line } }, lowerThirdHistory: history })
     // The hold timer counts from the latest show or update.
@@ -1166,20 +1198,61 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     if (live.lowerThird) set({ live: { ...live, lowerThird: null } })
   },
 
-  showLowerThirdPoint(index) {
-    const point = get().settings.lowerThirdPoints[index]
-    if (point === undefined) return
-    set({ lowerThirdPointIndex: index, lowerThirdDraft: { headline: point, body: '' } })
-    get().showLowerThird()
+  previewLowerThirdLine(next) {
+    const line = trimLowerThirdLine(next)
+    if (!line.headline && !line.body) return
+    // Each staging animates in afresh.
+    set({ lowerThirdPreview: { runId: ++lowerThirdRuns, ...line } })
   },
 
-  nextLowerThirdPoint() {
-    get().showLowerThirdPoint(get().lowerThirdPointIndex + 1)
+  takeLowerThirdPreviewLive() {
+    const preview = get().lowerThirdPreview
+    if (preview) get().showLowerThirdLine(preview)
   },
 
-  async queueLowerThirdPoints(points) {
-    set({ lowerThirdPointIndex: -1 })
-    await get().updateSettings({ lowerThirdPoints: points.map((p) => p.trim()).filter(Boolean) })
+  clearLowerThirdPreview() {
+    if (get().lowerThirdPreview) set({ lowerThirdPreview: null })
+  },
+
+  sendQuoteAsLowerThird(text, where) {
+    const line = { headline: text, body: '' }
+    if ((where ?? get().settings.lowerThirdQuickTarget) === 'live') get().showLowerThirdLine(line)
+    else get().previewLowerThirdLine(line)
+  },
+
+  triggerPoint(index, where) {
+    const s = get()
+    const point = selectSermonPoints(s)[index]
+    if (!point) return
+    const designId = point.designId ?? s.lowerThirdWorkspaceDesignId ?? undefined
+    const line: LowerThirdLine = { headline: point.text, body: '', number: String(index + 1), ...(designId !== undefined ? { designId } : {}) }
+    set({ lowerThirdPointIndex: index })
+    if (where === 'live') get().showLowerThirdLine(line)
+    else get().previewLowerThirdLine(line)
+  },
+
+  nextPoint() {
+    const { lowerThirdPointIndex: index } = get()
+    if (index + 1 < selectSermonPoints(get()).length) get().triggerPoint(index + 1, 'live')
+  },
+
+  async setSermonPoints(points) {
+    const s = get()
+    const key = pointsKey(s)
+    const kept = points.map((p) => ({ ...p, text: p.text.trim() })).filter((p) => p.text)
+    if (s.lowerThirdPointIndex >= kept.length) set({ lowerThirdPointIndex: kept.length - 1 })
+    const all = { ...s.settings.lowerThirdServicePoints }
+    if (kept.length > 0) all[key] = kept
+    else delete all[key]
+    await get().updateSettings({ lowerThirdServicePoints: all })
+  },
+
+  openLowerThirds(open) {
+    set(open ? { lowerThirdsOpen: true, settingsOpen: false } : { lowerThirdsOpen: false })
+  },
+
+  setWorkspaceDesign(id) {
+    set({ lowerThirdWorkspaceDesignId: id })
   },
 
   showGrid() {
@@ -1678,7 +1751,14 @@ function trimLowerThirdLine(line: LowerThirdLine): LowerThirdLine {
   const body = line.body.trim()
   const headlineRich = matching(line.headlineRich && trimRich(line.headlineRich), headline)
   const bodyRich = matching(line.bodyRich && trimRich(line.bodyRich), body)
-  return { headline, body, ...(headlineRich ? { headlineRich } : {}), ...(bodyRich ? { bodyRich } : {}) }
+  return {
+    headline,
+    body,
+    ...(headlineRich ? { headlineRich } : {}),
+    ...(bodyRich ? { bodyRich } : {}),
+    ...(line.designId !== undefined ? { designId: line.designId } : {}),
+    ...(line.number ? { number: line.number } : {}),
+  }
 }
 
 function setTicker(alert: LiveTicker | null): void {
@@ -1978,22 +2058,45 @@ export function selectIdleDesign(s: OperatorState): DesignStyle | null {
   return designById(s, s.settings.idleDesignId)
 }
 
-/** The lower third as the screens draw it, on top of everything, or null. */
-export function selectLowerThirdDisplay(s: OperatorState): LowerThirdDisplay | null {
-  const lowerThird = s.live.lowerThird
-  if (!lowerThird) return null
-  const design = selectLowerThirdDesign(s)
+/** Where the open service's sermon points are kept in Settings: its id, or "0" with no service open. */
+const pointsKey = (s: OperatorState) => String(s.service?.id ?? 0)
+
+const NO_POINTS: SermonPoint[] = []
+
+/** The open service's sermon points, in order. */
+export function selectSermonPoints(s: OperatorState): SermonPoint[] {
+  return s.settings.lowerThirdServicePoints[pointsKey(s)] ?? NO_POINTS
+}
+
+/** The design a line shows in: its own (unless deleted since), else the default. */
+const lineDesign = (s: OperatorState, line: LowerThirdLine) => (line.designId !== undefined ? designById(s, line.designId) : null) ?? selectLowerThirdDesign(s)
+
+/** A lower third line as the screens draw it. */
+function displayOf(s: OperatorState, lowerThird: LowerThirdLine, runId: number): LowerThirdDisplay {
+  const design = lineDesign(s, lowerThird)
   return {
-    runId: lowerThird.runId,
+    runId,
     headline: lowerThird.headline,
     body: lowerThird.body,
     ...(lowerThird.headlineRich ? { headlineRich: lowerThird.headlineRich } : {}),
     ...(lowerThird.bodyRich ? { bodyRich: lowerThird.bodyRich } : {}),
     style: selectLowerThirdStyle(s),
     ...(design ? { design } : {}),
+    ...(lowerThird.number ? { number: lowerThird.number } : {}),
     animation: s.settings.lowerThirdAnimation,
     durationMs: s.settings.lowerThirdDurationMs,
   }
+}
+
+/** The lower third as the screens draw it, on top of everything, or null. */
+export function selectLowerThirdDisplay(s: OperatorState): LowerThirdDisplay | null {
+  const lowerThird = s.live.lowerThird
+  return lowerThird ? displayOf(s, lowerThird, lowerThird.runId) : null
+}
+
+/** The lower third staged on the Preview monitor, drawn as it would go on air, or null. */
+export function selectPreviewLowerThirdDisplay(s: OperatorState): LowerThirdDisplay | null {
+  return s.lowerThirdPreview ? displayOf(s, s.lowerThirdPreview, s.lowerThirdPreview.runId) : null
 }
 
 /**

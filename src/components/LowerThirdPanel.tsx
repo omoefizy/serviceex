@@ -5,7 +5,7 @@ import type { AppSettings, LowerThirdAnimation, RichText, SavedLowerThirdLine } 
 import { reportError, type ErrorLike } from '../lib/errors'
 import { canSendCues, openCueMenu } from '../lib/sharing'
 import { LOWER_THIRD_HEADLINE_ID, MOD } from '../lib/shortcuts'
-import { selectLowerThirdDesign, selectLowerThirdStyle, useOperatorStore, type LowerThirdLine } from '../store'
+import { selectLowerThirdDesign, selectLowerThirdStyle, selectSermonPoints, useOperatorStore, type LowerThirdLine } from '../store'
 import { DesignView } from './DesignView'
 import { LowerThirdGraphic } from './LowerThird'
 import { LowerThirdEditor } from './LowerThirdEditor'
@@ -209,20 +209,19 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
   const pointIndex = useOperatorStore((s) => s.lowerThirdPointIndex)
   const show = useOperatorStore((s) => s.showLowerThird)
   const hide = useOperatorStore((s) => s.hideLowerThird)
-  const showPoint = useOperatorStore((s) => s.showLowerThirdPoint)
-  const nextPoint = useOperatorStore((s) => s.nextLowerThirdPoint)
-  const queuePoints = useOperatorStore((s) => s.queueLowerThirdPoints)
+  const points = useOperatorStore(selectSermonPoints)
+  const triggerPoint = useOperatorStore((s) => s.triggerPoint)
+  const nextPoint = useOperatorStore((s) => s.nextPoint)
+  const openWorkspace = useOperatorStore((s) => s.openLowerThirds)
   const typing = useLowerThirdTyping()
   const { draft, history, type, typeField, onKeyDown } = typing
   const [editorOpen, setEditorOpen] = useState(false)
   /** The Designs library while it is open, and the document it opens straight into, if any. */
   const [library, setLibrary] = useState<{ open: DesignerDocument | null } | null>(null)
-  const [pasted, setPasted] = useState('')
   const [error, setError] = useState<ErrorLike | null>(null)
 
   const empty = !draft.headline.trim() && !draft.body.trim()
   const edited = live !== null && !empty && !sameLine(draft, live)
-  const points = settings.lowerThirdPoints
   const saved = [...settings.lowerThirdSavedLines].sort((a, b) => Number(b.pinned) - Number(a.pinned))
   const templateId = templates.some((t) => t.id === settings.lowerThirdTemplateId) ? settings.lowerThirdTemplateId : (templates[0]?.id ?? null)
   // A design chosen here wins over the template; the picker holds both, as "design:<id>" and "template:<id>".
@@ -387,50 +386,28 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
           <>
             <button type="button" className="button primary" disabled={pointIndex >= points.length - 1} onClick={nextPoint}>
               <SkipForward size={14} aria-hidden="true" /> Next Point
-              {pointIndex < points.length - 1 && <span className="lower-third-next">{points[pointIndex + 1]}</span>}
+              {pointIndex < points.length - 1 && <span className="lower-third-next">{points[pointIndex + 1].text}</span>}
             </button>
             <ol className="lower-third-list points">
               {points.map((point, index) => (
-                <li key={index} className={index === pointIndex ? 'current' : ''}>
+                <li key={point.id} className={index === pointIndex ? 'current' : ''}>
                   <button
                     type="button"
                     className="lower-third-line"
                     title={canSendCues() ? 'Show this point; right-click to send it to another computer' : 'Show this point'}
-                    onClick={() => showPoint(index)}
-                    onContextMenu={(e) => canSendCues() && openCueMenu(e, { kind: 'point', title: 'Point', text: point })}
+                    onClick={() => triggerPoint(index, 'live')}
+                    onContextMenu={(e) => canSendCues() && openCueMenu(e, { kind: 'point', title: 'Point', text: point.text })}
                   >
-                    <strong>{point}</strong>
+                    <strong>{point.text}</strong>
                   </button>
                 </li>
               ))}
             </ol>
           </>
         )}
-        <textarea
-          className="input"
-          rows={3}
-          placeholder="Paste the sermon's points, one per line"
-          aria-label="Points to queue"
-          value={pasted}
-          onChange={(e) => setPasted(e.target.value)}
-        />
-        <div className="lower-third-actions">
-          <button
-            type="button"
-            className="button"
-            disabled={!pasted.trim()}
-            onClick={() => {
-              queuePoints(pasted.split(/\r?\n/)).then(() => setPasted(''), (err) => setError(reportError('Lower third', err)))
-            }}
-          >
-            <ListPlus size={14} aria-hidden="true" /> Queue points
-          </button>
-          {points.length > 0 && (
-            <button type="button" className="button" onClick={() => queuePoints([]).catch(console.error)}>
-              Clear points
-            </button>
-          )}
-        </div>
+        <button type="button" className="button" onClick={() => openWorkspace(true)} title="Add, edit and run the sermon's points, saved with the service">
+          <ListPlus size={14} aria-hidden="true" /> {points.length > 0 ? 'Edit points' : 'Add points'} in Lower thirds
+        </button>
       </details>
 
       <details className="lower-third-section">

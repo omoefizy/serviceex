@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.stubGlobal('window', { api: { media: { getSlideBackgrounds: async () => ({}) } } })
 
-const { selectOutputState, selectStreamState, useOperatorStore } = await import('./store')
+const { selectOutputState, selectPreviewLowerThirdDisplay, selectSermonPoints, selectStreamState, useOperatorStore } = await import('./store')
+const { normalizeDesign } = await import('../shared/designs')
 
 const st = () => useOperatorStore.getState()
 const onStream = () => selectStreamState(st()).overlays.lowerThird
@@ -18,11 +19,14 @@ beforeEach(() => {
       ...s.settings,
       streamSlideContent: 'full',
       lowerThirdHoldSeconds: 0,
-      lowerThirdPoints: [],
+      lowerThirdServicePoints: {},
       overlaysOnChurchScreen: false,
     },
     lowerThirdHistory: [],
     lowerThirdPointIndex: -1,
+    lowerThirdPreview: null,
+    lowerThirdWorkspaceDesignId: null,
+    service: null,
     live: { ...s.live, mode: 'clear' },
   }))
   st().selectScripture('John 3:16 KJV', [
@@ -148,13 +152,85 @@ describe('lower third', () => {
   })
 
   it('Next Point shows the queued points in turn', () => {
-    useOperatorStore.setState((s) => ({ settings: { ...s.settings, lowerThirdPoints: ['Grace is free', 'Grace is costly'] } }))
-    st().nextLowerThirdPoint()
+    const points = ['Grace is free', 'Grace is costly'].map((text, i) => ({ id: `p${i}`, text, designId: null }))
+    useOperatorStore.setState((s) => ({ settings: { ...s.settings, lowerThirdServicePoints: { '0': points } } }))
+    st().nextPoint()
     expect(st().live.lowerThird?.headline).toBe('Grace is free')
-    st().nextLowerThirdPoint()
+    st().nextPoint()
     expect(st().live.lowerThird?.headline).toBe('Grace is costly')
-    st().nextLowerThirdPoint()
+    st().nextPoint()
     expect(st().live.lowerThird?.headline).toBe('Grace is costly')
     expect(st().lowerThirdPointIndex).toBe(1)
+  })
+
+  describe('sermon points and the Preview', () => {
+    const design = (id: number, name: string) => ({ id, name, type: 'custom' as const, style: normalizeDesign({ category: 'lowerThird', elements: [{ kind: 'text', id: name, field: 'headline' }] }) })
+    const points = [
+      { id: 'a', text: 'Grace is free', designId: null },
+      { id: 'b', text: 'Grace is costly', designId: 2 },
+      { id: 'c', text: 'Grace changes us', designId: null },
+    ]
+    beforeEach(() => {
+      useOperatorStore.setState((s) => ({
+        designs: [design(1, 'Points'), design(2, 'Quote')],
+        lowerThirdWorkspaceDesignId: 1,
+        settings: { ...s.settings, lowerThirdDesignId: null, lowerThirdQuickTarget: 'preview', lowerThirdServicePoints: { '0': points, '7': [points[0]] } },
+      }))
+    })
+
+    it('keeps each service its own points', () => {
+      expect(selectSermonPoints(st()).map((p) => p.text)).toEqual(['Grace is free', 'Grace is costly', 'Grace changes us'])
+      useOperatorStore.setState({ service: { id: 7, name: 'Easter', date: null, items: [] } })
+      expect(selectSermonPoints(st()).map((p) => p.text)).toEqual(['Grace is free'])
+    })
+
+    it('stages a point on Preview without touching the air, then Show live takes it', () => {
+      st().triggerPoint(0, 'preview')
+      expect(st().live.lowerThird).toBeNull()
+      expect(selectPreviewLowerThirdDisplay(st())).toMatchObject({ headline: 'Grace is free', number: '1', design: design(1, 'Points').style })
+      st().takeLowerThirdPreviewLive()
+      expect(onStream()).toMatchObject({ headline: 'Grace is free', number: '1' })
+      expect(st().lowerThirdPointIndex).toBe(0)
+    })
+
+    it('shows a point live in its own design, else the workspace design, and Next goes on from the last one', () => {
+      st().triggerPoint(1, 'live')
+      expect(onStream()).toMatchObject({ headline: 'Grace is costly', number: '2', design: design(2, 'Quote').style })
+      st().nextPoint()
+      expect(onStream()).toMatchObject({ headline: 'Grace changes us', number: '3', design: design(1, 'Points').style })
+      // Past the last point Next does nothing.
+      st().nextPoint()
+      expect(st().live.lowerThird?.headline).toBe('Grace changes us')
+      expect(st().lowerThirdPointIndex).toBe(2)
+    })
+
+    it('changes the words in place within one design, and comes on afresh in another', () => {
+      st().triggerPoint(0, 'live')
+      const first = st().live.lowerThird?.runId
+      st().triggerPoint(2, 'live')
+      expect(st().live.lowerThird?.runId).toBe(first)
+      st().triggerPoint(1, 'live')
+      expect(st().live.lowerThird?.runId).not.toBe(first)
+    })
+
+    it('ignores points that do not exist, and Clear lower third takes it off', () => {
+      st().triggerPoint(5, 'live')
+      expect(st().live.lowerThird).toBeNull()
+      st().triggerPoint(0, 'live')
+      st().hideLowerThird()
+      expect(onStream()).toBeNull()
+    })
+
+    it('sends a quote where Settings says, in the default design, unless told otherwise', () => {
+      useOperatorStore.setState((s) => ({ settings: { ...s.settings, lowerThirdDesignId: 2 } }))
+      st().sendQuoteAsLowerThird('  Faith takes the first step  ')
+      expect(st().live.lowerThird).toBeNull()
+      expect(selectPreviewLowerThirdDisplay(st())).toMatchObject({ headline: 'Faith takes the first step', design: design(2, 'Quote').style })
+      st().sendQuoteAsLowerThird('Straight on air', 'live')
+      expect(onStream()).toMatchObject({ headline: 'Straight on air' })
+      useOperatorStore.setState((s) => ({ settings: { ...s.settings, lowerThirdQuickTarget: 'live' } }))
+      st().sendQuoteAsLowerThird('By the setting')
+      expect(onStream()).toMatchObject({ headline: 'By the setting' })
+    })
   })
 })

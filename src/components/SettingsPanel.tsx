@@ -1915,6 +1915,15 @@ function LowerThirdsSection() {
         </Select>
       </label>
       <p className="hint">The design's text bound to Headline and Body takes the lower third's words.</p>
+      <label className="field">
+        <span>
+          Send as lower third goes straight to <small>Where Enter in the Send as lower third box sends a quote from the transcript, the heard cards or the workspace.</small>
+        </span>
+        <Select value={settings.lowerThirdQuickTarget} onChange={(e) => save({ lowerThirdQuickTarget: e.target.value === 'live' ? 'live' : 'preview' })}>
+          <option value="preview">Preview</option>
+          <option value="live">Live</option>
+        </Select>
+      </label>
     </Section>
   )
 }

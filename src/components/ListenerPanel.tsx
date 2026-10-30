@@ -1,5 +1,5 @@
 import { describeError } from '../lib/errors'
-import { BookOpenText, Eraser, Mic, Quote, Square, X } from 'lucide-react'
+import { BookOpenText, Copy, Eraser, Mic, PanelBottom, Quote, Square, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { formatHours, isLowBalance } from '../../shared/account'
 import { can } from '../../shared/features'
@@ -13,6 +13,7 @@ import type { MicDevice, MicState, SignalAdvice } from '../lib/mic'
 import { useDetectionDebug } from '../lib/scriptureDetection'
 import { useOperatorStore } from '../store'
 import { LevelMeter } from './LevelMeter'
+import { QuickLowerThird } from './QuickLowerThird'
 import { QuoteModal } from './QuoteModal'
 import { StartSermonModal } from './StartSermonModal'
 import { ErrorNote } from './ui'
@@ -152,6 +153,9 @@ export function ListenerPanel() {
   const [selection, setSelection] = useState<{ text: string; top: number; left: number } | null>(null)
   /** The words open in the quote editor. */
   const [quoting, setQuoting] = useState<string | null>(null)
+  /** The words open in the Send as lower third box, and where it sits in the transcript. */
+  const [lowerThird, setLowerThird] = useState<{ text: string; top: number; left: number } | null>(null)
+  const canLowerThird = can('lowerThirds')
   /** Shows what scripture detection is doing; off by default. */
   const [debugging, setDebugging] = useState(false)
   /** The Start Sermon dialog, asked before listening when sermons can be saved. */
@@ -335,21 +339,54 @@ export function ListenerPanel() {
             {partial && <span className="transcript-partial">{partial}</span>}
           </p>
         )}
-        {selection && (
-          <button
-            type="button"
-            className="button primary send-as-slide"
-            style={{ top: selection.top, left: selection.left }}
-            title="Edit the selected words, then show them as a quote slide in the preview"
-            // Keep the selection while the button is pressed.
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              setQuoting(selection.text)
-              window.getSelection()?.removeAllRanges()
-            }}
-          >
-            <Quote size={13} aria-hidden="true" /> Send as Slide
-          </button>
+        {selection && !lowerThird && (
+          // Keep the selection while a button is pressed.
+          <div className="send-as-slide" role="toolbar" aria-label="Selected words" style={{ top: selection.top, left: selection.left }} onMouseDown={(e) => e.preventDefault()}>
+            <button
+              type="button"
+              className="button primary"
+              title="Edit the selected words, then show them as a quote slide in the preview"
+              onClick={() => {
+                setQuoting(selection.text)
+                window.getSelection()?.removeAllRanges()
+              }}
+            >
+              <Quote size={13} aria-hidden="true" /> Send as quote
+            </button>
+            {canLowerThird && (
+              <button
+                type="button"
+                className="button"
+                title="Edit the selected words, then show them as a lower third in the default design"
+                onClick={() => {
+                  setLowerThird(selection)
+                  window.getSelection()?.removeAllRanges()
+                }}
+              >
+                <PanelBottom size={13} aria-hidden="true" /> Send as lower third
+              </button>
+            )}
+            <button
+              type="button"
+              className="button"
+              title="Copy the selected words"
+              onClick={() => {
+                navigator.clipboard.writeText(selection.text).catch(console.error)
+                window.getSelection()?.removeAllRanges()
+              }}
+            >
+              <Copy size={13} aria-hidden="true" /> Copy
+            </button>
+          </div>
+        )}
+        {lowerThird && (
+          <QuickLowerThird
+            className="transcript-lower-third"
+            text={lowerThird.text}
+            onClose={() => setLowerThird(null)}
+            // Where the selection was, kept inside the transcript.
+            style={{ top: lowerThird.top, left: lowerThird.left }}
+          />
         )}
       </div>
       {quoting !== null && <QuoteModal text={quoting} onCancel={() => setQuoting(null)} onDone={() => setQuoting(null)} />}

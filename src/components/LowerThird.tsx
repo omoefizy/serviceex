@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { animatesItself, designTimeline } from '../../shared/designAnimation'
 import { matching } from '../../shared/richText'
 import type { LowerThirdBox, LowerThirdDisplay, LowerThirdStyle, LowerThirdTextStyle, RichText, TextCase } from '../../shared/types'
 import { cssFontFamily } from '../lib/fonts'
@@ -110,6 +111,12 @@ export function LowerThirdGraphic({ style, headline, body, headlineRich, bodyRic
   )
 }
 
+/** How long a lower third takes to go: its design's way out when its elements animate, else the layer's animation. */
+function leavingMs(display: LowerThirdDisplay): number {
+  if (display.design && animatesItself(display.design)) return designTimeline(display.design.elements, 'out').totalMs
+  return display.durationMs
+}
+
 interface Shown {
   display: LowerThirdDisplay
   leaving: boolean
@@ -129,21 +136,29 @@ export function LowerThirdLayer({ display }: { display: LowerThirdDisplay | null
 
   useEffect(() => {
     if (!shown?.leaving) return
-    const timer = setTimeout(() => setShown(null), shown.display.durationMs)
+    const timer = setTimeout(() => setShown(null), leavingMs(shown.display))
     return () => clearTimeout(timer)
   }, [shown])
 
   if (!shown) return null
   const { display: d, leaving } = shown
   if (d.design) {
-    // A design fills the screen, so sliding it in starts a whole screen to the left.
+    const fields = { headline: d.headline, body: d.body, number: d.number ?? '' }
+    // A design whose elements animate plays them; otherwise the whole design moves, from a whole screen to the left.
+    if (animatesItself(d.design)) {
+      return (
+        <div key={`${d.runId}-${leaving}`} className="lt-design">
+          <DesignView style={d.design} fields={fields} onAir phase={leaving ? 'out' : 'in'} />
+        </div>
+      )
+    }
     return (
       <div
         key={d.runId}
         className={`lt-design lt-${d.animation}-${leaving ? 'out' : 'in'}`}
         style={{ animationDuration: `${d.durationMs}ms`, ['--lt-offset' as string]: '-100cqw' }}
       >
-        <DesignView style={d.design} fields={{ headline: d.headline, body: d.body, number: '' }} onAir />
+        <DesignView style={d.design} fields={fields} onAir />
       </div>
     )
   }

@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react'
+import { animatesItself, designTimeline } from '../../shared/designAnimation'
 import type { DesignStyle, LogoItem, OverlayLayers } from '../../shared/types'
 import { ACTION_SAFE } from '../lib/stream'
 import { DesignView } from './DesignView'
@@ -28,13 +29,23 @@ function IdleLayer({ design, lowerThirdLive }: { design: DesignStyle | null; low
     else setShown((current) => current && (current.leaving ? current : { ...current, leaving: true }))
   }, [design])
 
+  const animated = shown !== null && animatesItself(shown.design)
+
   useEffect(() => {
     if (!shown?.leaving) return
-    const timer = setTimeout(() => setShown(null), IDLE_FADE_MS)
+    const timer = setTimeout(() => setShown(null), animated ? designTimeline(shown.design.elements, 'out').totalMs : IDLE_FADE_MS)
     return () => clearTimeout(timer)
-  }, [shown])
+  }, [shown, animated])
 
   if (!shown) return null
+  // A design whose elements animate plays them, such as a logo that spins in; otherwise the whole design fades.
+  if (animated) {
+    return (
+      <div key={String(shown.leaving)} className="idle-layer">
+        <DesignView style={shown.design} onAir lowerThirdLive={lowerThirdLive} phase={shown.leaving ? 'out' : 'in'} />
+      </div>
+    )
+  }
   return (
     <div className={`idle-layer lt-fade-${shown.leaving ? 'out' : 'in'}`} style={{ animationDuration: `${IDLE_FADE_MS}ms` }}>
       <DesignView style={shown.design} onAir lowerThirdLive={lowerThirdLive} />

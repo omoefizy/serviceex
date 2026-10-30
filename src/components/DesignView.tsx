@@ -1,4 +1,5 @@
 import { useContext, useLayoutEffect, useRef, type CSSProperties, type KeyboardEvent } from 'react'
+import { designTimeline, LOOP_CSS, motionCss, slideOffsets, type AnimationPhase, type TimelineEntry } from '../../shared/designAnimation'
 import { shownText } from '../../shared/designs'
 import type { DesignBackground, DesignElement, DesignShadow, DesignStyle, DesignTextField, TextCase } from '../../shared/types'
 import { cssFontFamily } from '../lib/fonts'
@@ -20,14 +21,32 @@ function backgroundCss(background: DesignBackground): CSSProperties {
   return {}
 }
 
-const placement = (e: DesignElement): CSSProperties => ({
+/** An element's place, and its animation while one plays (its movement, then its loop once that is done). */
+const placement = (e: DesignElement, motion?: CSSProperties): CSSProperties => ({
   left: `${e.box.x}%`,
   top: `${e.box.y}%`,
   width: `${e.box.width}%`,
   height: `${e.box.height}%`,
   opacity: e.opacity,
   transform: e.rotation ? `rotate(${e.rotation}deg)` : undefined,
+  ...motion,
 })
+
+/**
+ * The inline animation for an element in `phase`: its movement from the timeline, with its loop after it (on the way
+ * in, the loop starts once the element has arrived). Undefined leaves the loop to its class.
+ */
+function motionStyle(element: DesignElement, entry: TimelineEntry | undefined, phase: AnimationPhase): CSSProperties | undefined {
+  const movement = motionCss(entry, phase)
+  if (!movement) return undefined
+  const loop = element.loop !== 'none' ? LOOP_CSS[element.loop] : null
+  const after = phase === 'in' && entry ? entry.startMs + entry.durationMs : 0
+  const loopCss = loop ? `${loop.replace(/ infinite$/, '')} ${after}ms infinite` : null
+  // Later animations win a property they share, so the way out (listed last) overrides the loop.
+  const animation = phase === 'in' ? [movement, loopCss] : [loopCss, movement]
+  const { dx, dy } = slideOffsets(element)
+  return { animation: animation.filter(Boolean).join(', '), ['--dv-dx' as string]: dx, ['--dv-dy' as string]: dy }
+}
 
 /** What editing a text element in place needs: the words go back on commit (blur, or Cmd+Enter); Escape cancels. */
 export interface InlineEdit {
@@ -37,7 +56,7 @@ export interface InlineEdit {
 }
 
 /** A text element in its box: at its size, or with auto fit as large as fits up to its size. */
-function DesignText({ element, words, edit, extra }: { element: Text; words: string; edit?: InlineEdit; extra: string }) {
+function DesignText({ element, words, edit, extra, motion }: { element: Text; words: string; edit?: InlineEdit; extra: string; motion?: CSSProperties }) {
   const defaultFont = useContext(DefaultFontContext)
   const boxRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLParagraphElement>(null)
@@ -99,7 +118,7 @@ function DesignText({ element, words, edit, extra }: { element: Text; words: str
 
   const { shadow, outline } = element
   return (
-    <div ref={boxRef} className={`dv-el dv-text${extra}`} style={{ ...placement(element), justifyContent: JUSTIFY[element.verticalAlign], textAlign: element.align }}>
+    <div ref={boxRef} className={`dv-el dv-text${extra}`} style={{ ...placement(element, motion), justifyContent: JUSTIFY[element.verticalAlign], textAlign: element.align }}>
       <p
         ref={textRef}
         className={editing ? 'editing' : undefined}
@@ -130,24 +149,26 @@ function DesignText({ element, words, edit, extra }: { element: Text; words: str
   )
 }
 
-function DesignElementView({ element, fields, edit, placeholders, extra }: {
+function DesignElementView({ element, fields, edit, placeholders, extra, motion }: {
   element: DesignElement
   fields?: Partial<Record<DesignTextField, string>>
   edit?: InlineEdit
   placeholders: boolean
   /** More classes for the element: its loop, and whether it steps aside. */
   extra: string
+  /** Its animation while one plays. */
+  motion?: CSSProperties
 }) {
   switch (element.kind) {
     case 'text':
-      return <DesignText element={element} words={shownText(element, fields)} edit={edit?.id === element.id ? edit : undefined} extra={extra} />
+      return <DesignText element={element} words={shownText(element, fields)} edit={edit?.id === element.id ? edit : undefined} extra={extra} motion={motion} />
     case 'rect': {
       const { fill, border, shadow } = element
       return (
         <div
           className={`dv-el${extra}`}
           style={{
-            ...placement(element),
+            ...placement(element, motion),
             background: fill.kind === 'solid' ? fill.color : `linear-gradient(${fill.angle}deg, ${fill.from}, ${fill.to})`,
             borderRadius: `${element.radius}cqh`,
             border: border.width > 0 ? `${border.width}cqh solid ${border.color}` : undefined,
@@ -158,13 +179,13 @@ function DesignElementView({ element, fields, edit, placeholders, extra }: {
     }
     case 'line':
       return (
-        <div className={`dv-el dv-line${extra}`} style={placement(element)}>
+        <div className={`dv-el dv-line${extra}`} style={placement(element, motion)}>
           <span style={{ borderTop: `${element.thickness}cqh ${element.dashed ? 'dashed' : 'solid'} ${element.color}` }} />
         </div>
       )
     case 'image':
-      if (!element.src) return placeholders ? <div className={`dv-el dv-image-empty${extra}`} style={placement(element)} /> : null
-      return <img className={`dv-el${extra}`} src={element.src} alt="" draggable={false} style={{ ...placement(element), objectFit: element.fit, borderRadius: `${element.radius}cqh` }} />
+      if (!element.src) return placeholders ? <div className={`dv-el dv-image-empty${extra}`} style={placement(element, motion)} /> : null
+      return <img className={`dv-el${extra}`} src={element.src} alt="" draggable={false} style={{ ...placement(element, motion), objectFit: element.fit, borderRadius: `${element.radius}cqh` }} />
   }
 }
 
@@ -173,7 +194,7 @@ function DesignElementView({ element, fields, edit, placeholders, extra }: {
  * cqh of this view. Bound text shows `fields` when given, else its sample words. `checker` shows a transparent
  * background as a checkerboard, as an editor does.
  */
-export function DesignView({ style, fields, edit, checker = false, placeholders = false, onAir = false, lowerThirdLive = false, className = '' }: {
+export function DesignView({ style, fields, edit, checker = false, placeholders = false, onAir = false, lowerThirdLive = false, phase = null, className = '' }: {
   style: DesignStyle
   fields?: Partial<Record<DesignTextField, string>>
   edit?: InlineEdit
@@ -184,9 +205,12 @@ export function DesignView({ style, fields, edit, checker = false, placeholders 
   onAir?: boolean
   /** On air with a lower third up: elements flagged to hide while one is live fade out. */
   lowerThirdLive?: boolean
+  /** Plays the elements' way in or out (see designTimeline); remount the view (a new key) to play it again. */
+  phase?: AnimationPhase | null
   className?: string
 }) {
   const { background } = style
+  const timeline = phase ? new Map(designTimeline(style.elements, phase).entries.map((entry) => [entry.id, entry])) : null
   const extra = (element: DesignElement) =>
     onAir ? `${element.loop !== 'none' ? ` dv-loop-${element.loop}` : ''}${lowerThirdLive && element.hideWithLowerThird ? ' dv-aside' : ''}` : ''
   return (
@@ -197,7 +221,15 @@ export function DesignView({ style, fields, edit, checker = false, placeholders 
       {background.kind === 'image' && <img className="dv-background" src={background.src} alt="" draggable={false} style={{ objectFit: background.fit }} />}
       {style.elements.map((element) =>
         element.hidden ? null : (
-          <DesignElementView key={element.id} element={element} fields={fields} edit={edit} placeholders={placeholders} extra={extra(element)} />
+          <DesignElementView
+            key={element.id}
+            element={element}
+            fields={fields}
+            edit={edit}
+            placeholders={placeholders}
+            extra={extra(element)}
+            motion={phase && timeline ? motionStyle(element, timeline.get(element.id), phase) : undefined}
+          />
         ),
       )}
     </div>

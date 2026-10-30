@@ -4994,6 +4994,125 @@ textarea {
   }
 }
 
+.dv-loop-shimmer {
+  animation: dv-shimmer 2.6s ease-in-out infinite;
+}
+
+/* A soft band of light sweeping across the element. */
+@keyframes dv-shimmer {
+  from {
+    mask-image: linear-gradient(110deg, #000 35%, rgb(0 0 0 / 0.55) 50%, #000 65%);
+    mask-size: 300% 100%;
+    mask-position: 100% 0;
+  }
+  to {
+    mask-image: linear-gradient(110deg, #000 35%, rgb(0 0 0 / 0.55) 50%, #000 65%);
+    mask-size: 300% 100%;
+    mask-position: 0 0;
+  }
+}
+
+/* An element's way in and out (shared/designAnimation.ts). They use opacity, translate, scale and clip-path, so an
+   element keeps its own rotation. --dv-dx and --dv-dy are how far off screen its edge is, in cqw and cqh. */
+@keyframes dv-in-pop {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes dv-in-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes dv-out-fade {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes dv-in-slideLeft {
+  from {
+    translate: calc(var(--dv-dx) * -1cqw) 0;
+  }
+}
+
+@keyframes dv-out-slideLeft {
+  to {
+    translate: calc(var(--dv-dx) * -1cqw) 0;
+  }
+}
+
+@keyframes dv-in-slideRight {
+  from {
+    translate: calc(var(--dv-dx) * 1cqw) 0;
+  }
+}
+
+@keyframes dv-out-slideRight {
+  to {
+    translate: calc(var(--dv-dx) * 1cqw) 0;
+  }
+}
+
+@keyframes dv-in-slideTop {
+  from {
+    translate: 0 calc(var(--dv-dy) * -1cqh);
+  }
+}
+
+@keyframes dv-out-slideTop {
+  to {
+    translate: 0 calc(var(--dv-dy) * -1cqh);
+  }
+}
+
+@keyframes dv-in-slideBottom {
+  from {
+    translate: 0 calc(var(--dv-dy) * 1cqh);
+  }
+}
+
+@keyframes dv-out-slideBottom {
+  to {
+    translate: 0 calc(var(--dv-dy) * 1cqh);
+  }
+}
+
+/* The margins beyond the box keep text outlines and shadows whole once the wipe is done. */
+@keyframes dv-in-wipe {
+  from {
+    clip-path: inset(-20% 120% -20% -20%);
+  }
+  to {
+    clip-path: inset(-20% -20% -20% -20%);
+  }
+}
+
+@keyframes dv-out-wipe {
+  from {
+    clip-path: inset(-20% -20% -20% -20%);
+  }
+  to {
+    clip-path: inset(-20% 120% -20% -20%);
+  }
+}
+
+@keyframes dv-in-scale {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+
+@keyframes dv-out-scale {
+  to {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+
 .design-view.checker {
   background: repeating-conic-gradient(#2a3147 0% 25%, #1c2236 0% 50%) 0 0 / 20px 20px;
 }
@@ -10105,4 +10224,434 @@ svg.lucide {
   :root {
     --finder-height: var(--finder-height-short);
   }
+}
+
+/* ---------- Lower thirds workspace ---------- */
+
+.operator-middle[hidden] {
+  display: none;
+}
+
+/* The top bar's Lower thirds button: pressed while the workspace is open. */
+.toolbar-workspace {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-md);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.toolbar-workspace:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text-1);
+}
+
+.toolbar-workspace.active {
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.toolbar-workspace:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (max-width: 1440px) {
+  .toolbar-workspace-label {
+    display: none;
+  }
+}
+
+/* The workspace takes the order of service and the middle column; Live and Preview stay on the right. */
+.ltw {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 480px;
+  min-height: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.ltw.ltw-designing {
+  padding: 0;
+  overflow: hidden;
+}
+
+.ltw-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ltw-head h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.ltw-head .hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ltw-body {
+  display: grid;
+  grid-template-columns: clamp(160px, 18vw, 240px) minmax(0, 1fr);
+  flex: 1;
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+.ltw-library,
+.ltw-centre {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* The columns scroll; what is in them keeps its height. */
+.ltw-library > *,
+.ltw-centre > * {
+  flex: none;
+}
+
+.ltw-library-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.ltw-designs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ltw-design {
+  padding: var(--space-1);
+  border-radius: 10px;
+}
+
+.ltw-design.selected {
+  background: var(--accent-soft);
+  box-shadow: var(--selected-ring);
+}
+
+.ltw-design-thumb {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: none;
+  cursor: pointer;
+}
+
+.ltw-design-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-top: var(--space-1);
+}
+
+.ltw-design-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ltw-star.on {
+  color: var(--warning);
+}
+
+.ltw-stage-area {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* The selected design large, with a frame over each bound text to double-click and type into. */
+.ltw-stage {
+  position: relative;
+  width: 100%;
+  max-width: min(960px, calc((100vh - 460px) * 16 / 9));
+  min-width: 280px;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--screen-bg, #000);
+}
+
+.ltw-stage .screen-off {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+}
+
+.ltw-frames {
+  position: absolute;
+  inset: 0;
+}
+
+.ltw-frame {
+  position: absolute;
+  padding: 0;
+  border: 1px dashed transparent;
+  border-radius: 3px;
+  background: none;
+  cursor: text;
+}
+
+.ltw-frame:hover,
+.ltw-frame:focus-visible {
+  border-color: var(--accent-bright);
+}
+
+.ltw-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.ltw-field {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.ltw-field-number {
+  flex: 0 1 90px;
+}
+
+.ltw-field-actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.ltw-points {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.ltw-points-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ltw-points-head h3 {
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+.ltw-points-head .hint {
+  flex: 1;
+}
+
+.ltw-point-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ltw-point {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1-5);
+  border-radius: 8px;
+}
+
+.ltw-point:hover {
+  background: var(--hover-row);
+}
+
+.ltw-point.current {
+  background: var(--accent-soft);
+  box-shadow: var(--selected-ring);
+}
+
+.ltw-point-key {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  line-height: 20px;
+  text-align: center;
+}
+
+.ltw-point-text {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-1) 0;
+  border: 0;
+  background: none;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ltw-point-edit {
+  flex: 1;
+}
+
+.ltw-point-design {
+  flex: 0 1 170px;
+}
+
+.ltw-points-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ltw-next {
+  max-width: 260px;
+  overflow: hidden;
+  opacity: 0.75;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ltw-next::before {
+  content: '·';
+  margin-right: var(--space-1-5);
+}
+
+/* The designer as a page of the workspace, not a dialog over the screen. */
+.designer.designer-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: var(--space-3) var(--space-4);
+  outline: none;
+}
+
+/* ---------- Send as lower third ---------- */
+
+.quick-lower-third {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  padding: var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--raised);
+}
+
+.quick-lower-third-head,
+.quick-lower-third-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+.quick-lower-third-head strong {
+  font-size: 12px;
+}
+
+.quick-lower-third-head .hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-lower-third textarea {
+  resize: vertical;
+}
+
+.quick-lower-third-gap {
+  flex: 1;
+}
+
+/* In the transcript: over the words it came from. */
+.transcript-lower-third {
+  position: absolute;
+  z-index: 3;
+  width: min(360px, calc(100% - 16px));
+  transform: translateX(-50%);
+  box-shadow: var(--shadow-1);
+}
+
+.heard-lower-third {
+  margin-top: var(--space-1-5);
+}
+
+/* The transcript's floating action: Send as quote, Send as lower third, Copy. */
+.send-as-slide {
+  display: flex;
+  gap: var(--space-1);
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.send-as-slide .button {
+  padding: var(--space-1) var(--space-2-5);
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: var(--shadow-1);
+}
+
+/* A lower third staged on Preview, with Show live. */
+.preview-lower-third {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: 12px;
+}
+
+.preview-lower-third-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

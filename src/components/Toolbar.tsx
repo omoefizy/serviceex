@@ -11,6 +11,7 @@ import {
   LayoutPanelLeft,
   Megaphone,
   MonitorPlay,
+  PanelBottom,
   Palette,
   Plug,
   ScanLine,
@@ -105,6 +106,28 @@ function LowerThirdChip() {
       Lower third live{held ? ' (outputs are black)' : ''}
       <button type="button" className="alert-chip-stop ui-hit" onClick={hide} title={`Clear the lower third (${CLEAR_LOWER_THIRD_KEY})`}>
         <EyeOff size={11} aria-hidden="true" /> Clear
+      </button>
+    </span>
+  )
+}
+
+/** Lower thirds: switches the operator screen to the Lower thirds workspace and back. */
+function LowerThirdsButton() {
+  const open = useOperatorStore((s) => s.lowerThirdsOpen)
+  const openLowerThirds = useOperatorStore((s) => s.openLowerThirds)
+  const allowed = can('lowerThirds')
+  return (
+    <span title={allowed ? undefined : upgradeNote('lowerThirds')}>
+      <button
+        type="button"
+        className={`toolbar-workspace${open ? ' active' : ''}`}
+        aria-pressed={open}
+        disabled={!allowed}
+        title={open ? 'Back to the order of service and slides' : 'Lower thirds: designs, live text and sermon points'}
+        onClick={() => openLowerThirds(!open)}
+      >
+        <PanelBottom size={16} aria-hidden="true" />
+        <span className="toolbar-workspace-label">Lower thirds</span>
       </button>
     </span>
   )
@@ -417,6 +440,7 @@ export function Toolbar() {
       <LowerThirdChip />
 
       <div className="toolbar-actions">
+        <LowerThirdsButton />
         <ListeningChip />
         <div className="mode-buttons" role="group" aria-label="Output">
           {OUTPUT_MODES.map(({ mode: m, key, label }) => (

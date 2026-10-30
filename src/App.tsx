@@ -7,6 +7,7 @@ import { CommandPalette } from './components/CommandPalette'
 import { ListenerPanel } from './components/ListenerPanel'
 import { LiveMonitor, PreviewMonitor } from './components/LivePreview'
 import { LowerThirdCard } from './components/LowerThirdPanel'
+import { LowerThirdsWorkspace } from './components/LowerThirdsWorkspace'
 import { PlansModal } from './components/PlansModal'
 import { MediaPanel } from './components/MediaPanel'
 import { PanelBoundary } from './components/PanelBoundary'
@@ -158,6 +159,8 @@ function App() {
   const settingsOpen = useOperatorStore((s) => s.settingsOpen)
   const streamPanelOpen = useOperatorStore((s) => s.streamPanelOpen)
   const sermonsOpen = useOperatorStore((s) => s.sermonsOpen)
+  // The Lower thirds workspace takes the order of service and the middle column; Live and Preview stay on the right.
+  const lowerThirdsOpen = useOperatorStore((s) => s.lowerThirdsOpen && can('lowerThirds'))
   const paletteOpen = useOperatorStore((s) => s.paletteOpen)
   const plansOpen = usePlansOpen()
   const appearance = useOperatorStore((s) => s.settings.appearance)
@@ -170,7 +173,7 @@ function App() {
   const show = {
     library: libraryTabs.length > 0,
     centre: showsPanel(layout, 'slides') || centreOpen,
-    live: showsPanel(layout, 'live'),
+    live: showsPanel(layout, 'live') || lowerThirdsOpen,
     points: showsPanel(layout, 'points') && can('lowerThirds'),
     listener: showsPanel(layout, 'listener'),
     schedule: showsPanel(layout, 'schedule'),
@@ -447,7 +450,12 @@ function App() {
       )}
       {/* Hidden, not unmounted, while Settings is open: every panel keeps its search text and state. */}
       <main className="operator" hidden={settingsOpen} style={sizeVars}>
-        <Slot show={show.schedule}>
+        {lowerThirdsOpen && (
+          <PanelBoundary key="lowerThirds" name="Lower thirds">
+            <LowerThirdsWorkspace />
+          </PanelBoundary>
+        )}
+        <Slot show={show.schedule && !lowerThirdsOpen}>
           <div className={`operator-order${orderRail ? ' rail' : ''}`}>
             <PanelBoundary name="Schedule">
               <SchedulePanel collapsed={orderRail} onCollapsedChange={setOrderRail} />
@@ -455,7 +463,7 @@ function App() {
           </div>
           {!orderRail && splitter('order', 'Resize the order of service', 'vertical', 1, '.operator-order')}
         </Slot>
-        <div className="operator-middle">
+        <div className="operator-middle" hidden={lowerThirdsOpen}>
           {centreOpen &&
             (editingSongId !== null ? (
               <PanelBoundary key="songEditor" name="Song editor">
@@ -544,7 +552,7 @@ function App() {
                 </PanelBoundary>
               </>
             )}
-            {show.points && (
+            {show.points && !lowerThirdsOpen && (
               <PanelBoundary name="Lower third">
                 <LowerThirdCard />
               </PanelBoundary>

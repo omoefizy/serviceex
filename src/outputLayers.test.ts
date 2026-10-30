@@ -189,6 +189,56 @@ describe('the live output window', () => {
     expect(textOf(design.node!)).not.toContain('Sample name')
   })
 
+  it('plays a sermon point in a design whose elements animate, one after another, and waits for the way out', () => {
+    vi.useFakeTimers()
+    const built: Design = {
+      ...DESIGNED,
+      id: 903,
+      style: {
+        ...DESIGNED.style,
+        elements: [
+          rectElement('bar', 'Bar', { x: 5, y: 75, width: 50, height: 14 }, {
+            loop: 'shimmer',
+            animation: { in: { motion: 'slideLeft', durationMs: 400, delayMs: 0, easing: 'easeOut' }, out: { motion: 'fade', durationMs: 300, delayMs: 0, easing: 'easeIn' }, order: 0 },
+          }),
+          textElement('number', 'Number', { x: 6, y: 76, width: 5, height: 12 }, { text: '0', field: 'number' }),
+          textElement('point', 'Point', { x: 12, y: 76, width: 40, height: 12 }, {
+            text: 'Sample',
+            field: 'headline',
+            animation: { in: { motion: 'fade', durationMs: 500, delayMs: 100, easing: 'ease' }, out: { motion: 'wipe', durationMs: 200, delayMs: 0, easing: 'easeIn' }, order: 1 },
+          }),
+        ],
+      },
+    }
+    useOperatorStore.setState((s) => ({
+      designs: [IDLE, DESIGNED, built],
+      lowerThirdWorkspaceDesignId: built.id,
+      settings: { ...s.settings, lowerThirdServicePoints: { '0': [{ id: 'p', text: 'Grace is free', designId: null }] } },
+    }))
+    const output = render(createElement(OutputView))
+    act(() => st().triggerPoint(0, 'live'))
+    sendToOutputs()
+    const style = (id: string) => find(output, 'dv-el', id).node?.props.style
+    expect(textOf(find(output, 'lt-design', 'Grace is free').node!)).toContain('1')
+    // The bar slides in, then shimmers; the point fades in once the bar is in.
+    expect(style('Grace is free')?.animation).toBe('dv-in-fade 500ms ease 500ms backwards')
+    expect(find(output, 'dv-loop-shimmer').node?.props.style.animation).toBe('dv-in-slideLeft 400ms ease-out 0ms backwards, dv-shimmer 2.6s ease-in-out 400ms infinite')
+
+    // On the way out the point wipes first, then the bar fades; the layer stays until both are done.
+    act(() => st().hideLowerThird())
+    sendToOutputs()
+    expect(style('Grace is free')?.animation).toBe('dv-out-wipe 200ms ease-in 0ms forwards')
+    act(() => {
+      vi.advanceTimersByTime(450)
+    })
+    expect(find(output, 'lt-design', 'Grace is free').node).not.toBeNull()
+    act(() => {
+      vi.advanceTimersByTime(100)
+    })
+    expect(find(output, 'lt-design').node).toBeNull()
+    vi.useRealTimers()
+  })
+
   it('Clear lower third animates only the lower third out; the slide stays', () => {
     const output = render(createElement(OutputView))
     act(() => st().showLowerThird())

@@ -10,6 +10,7 @@ import type {
   LogoAnchor,
   LogoItem,
   SavedLowerThirdLine,
+  SermonPoint,
   ScreenMargins,
   ScriptureAdjust,
   StreamResolution,
@@ -53,7 +54,8 @@ const DEFAULTS: AppSettings = {
   lowerThirdDurationMs: 500,
   lowerThirdHoldSeconds: 0,
   lowerThirdSavedLines: [],
-  lowerThirdPoints: [],
+  lowerThirdServicePoints: {},
+  lowerThirdQuickTarget: 'preview',
   logoUrl: null,
   churchName: '',
   churchFooter: '',
@@ -147,7 +149,8 @@ const KEYS: Record<keyof AppSettings, string> = {
   lowerThirdDurationMs: 'lowerThird.durationMs',
   lowerThirdHoldSeconds: 'lowerThird.holdSeconds',
   lowerThirdSavedLines: 'lowerThird.savedLines',
-  lowerThirdPoints: 'lowerThird.points',
+  lowerThirdServicePoints: 'lowerThird.servicePoints',
+  lowerThirdQuickTarget: 'lowerThird.quickTarget',
   logoUrl: 'output.logoUrl',
   churchName: 'church.name',
   churchFooter: 'church.footer',
@@ -285,6 +288,25 @@ export const SHARING_BANDWIDTH_KBPS = [0, 1_000_000] as const
 
 export const LOWER_THIRD_LIMITS = { lines: 200, points: 100, text: 300, durationMs: [200, 1000], holdSeconds: [0, 600] } as const
 
+/** Sermon points by service id; points without words, and lists left empty, are dropped. */
+function cleanServicePoints(value: unknown): Record<string, SermonPoint[]> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const result: Record<string, SermonPoint[]> = {}
+  for (const [id, list] of Object.entries(value).slice(0, 500)) {
+    if (!/^\d+$/.test(id) || !Array.isArray(list)) continue
+    const points: SermonPoint[] = []
+    for (const item of list.slice(0, LOWER_THIRD_LIMITS.points)) {
+      const p = item as Partial<SermonPoint> | null
+      if (typeof p !== 'object' || p === null || typeof p.id !== 'string' || !p.id || p.id.length > 64) continue
+      const text = typeof p.text === 'string' ? p.text.trim().slice(0, LOWER_THIRD_LIMITS.text) : ''
+      if (!text) continue
+      points.push({ id: p.id, text, designId: Number.isInteger(p.designId) && (p.designId as number) > 0 ? (p.designId as number) : null })
+    }
+    if (points.length > 0) result[id] = points
+  }
+  return result
+}
+
 /** Saved lines with a usable shape; anything else in the list is dropped. */
 function cleanSavedLines(value: unknown): SavedLowerThirdLine[] | undefined {
   if (!Array.isArray(value)) return undefined
@@ -390,13 +412,10 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
       return ranged(value, LOWER_THIRD_LIMITS.holdSeconds, 1) as never
     case 'lowerThirdSavedLines':
       return cleanSavedLines(value) as never
-    case 'lowerThirdPoints':
-      return Array.isArray(value)
-        ? (value
-            .filter((point): point is string => typeof point === 'string' && point.trim() !== '')
-            .slice(0, LOWER_THIRD_LIMITS.points)
-            .map((point) => point.trim().slice(0, LOWER_THIRD_LIMITS.text)) as never)
-        : undefined
+    case 'lowerThirdServicePoints':
+      return cleanServicePoints(value) as never
+    case 'lowerThirdQuickTarget':
+      return value === 'preview' || value === 'live' ? v : undefined
     case 'logoUrl':
       return value === null || (typeof value === 'string' && value.startsWith('wd-media://')) ? v : undefined
     case 'appearance':

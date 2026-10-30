@@ -11,7 +11,9 @@ import {
   FilePlus,
   Image as ImageIcon,
   Lock,
+  ListOrdered,
   Minus,
+  Play,
   Redo2,
   Save,
   Square,
@@ -23,15 +25,20 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { DESIGN_EASINGS, DESIGN_MOTIONS, designTimeline, MOTION_LIMITS, type AnimationPhase } from '../../shared/designAnimation'
 import { BRAND, KIND_NAMES, newDesignElement, normalizeDesign } from '../../shared/designs'
 import type {
   Design,
   DesignBackground,
   DesignCategory,
+  DesignEasing,
   DesignElement,
+  DesignElementAnimation,
   DesignElementKind,
   DesignFill,
   DesignLoop,
+  DesignMotion,
+  DesignMotionStep,
   DesignShadow,
   DesignStyle,
   DesignTextField,
@@ -69,6 +76,8 @@ const NUDGE = 0.1
 const PASTE_OFFSET = 2
 /** Two presses on text this close together edit it. */
 const DOUBLE_CLICK_MS = 400
+/** How long Play holds the design on screen between its way in and its way out. */
+const PLAY_HOLD_MS = 1500
 
 const WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900]
 const CASES: { value: TextCase; label: string }[] = [
@@ -295,16 +304,68 @@ function BackgroundFields({ background, onChange, pickImage }: { background: Des
 
 const LOOPS: { value: DesignLoop; label: string }[] = [
   { value: 'none', label: 'None' },
+  { value: 'spin', label: 'Spin' },
   { value: 'pulse', label: 'Pulse' },
   { value: 'float', label: 'Float' },
+  { value: 'shimmer', label: 'Shimmer' },
   { value: 'glow', label: 'Glow' },
-  { value: 'spin', label: 'Spin' },
 ]
+
+const MOTION_LABELS: Record<DesignMotion, string> = {
+  none: 'None',
+  fade: 'Fade',
+  slideLeft: 'Slide from left',
+  slideRight: 'Slide from right',
+  slideBottom: 'Slide from bottom',
+  slideTop: 'Slide from top',
+  wipe: 'Wipe',
+  scale: 'Scale',
+}
+/** On the way out a slide goes toward its edge. */
+const OUT_LABELS: Partial<Record<DesignMotion, string>> = { slideLeft: 'Slide to left', slideRight: 'Slide to right', slideBottom: 'Slide to bottom', slideTop: 'Slide to top' }
+const EASING_LABELS: Record<DesignEasing, string> = { linear: 'Linear', ease: 'Ease', easeIn: 'Ease in', easeOut: 'Ease out', easeInOut: 'Ease in and out', back: 'Overshoot' }
+
+/** One way in or out: the movement, then its timing once it has one. */
+function MotionFields({ phase, step, onChange }: { phase: AnimationPhase; step: DesignMotionStep; onChange(step: DesignMotionStep, key: string): void }) {
+  const set = <K extends keyof DesignMotionStep>(key: K) => (value: DesignMotionStep[K]) => onChange({ ...step, [key]: value }, key)
+  return (
+    <>
+      <label className="designer-number">
+        <span>{phase === 'in' ? 'In' : 'Out'}</span>
+        <select className="input" aria-label={phase === 'in' ? 'In animation' : 'Out animation'} value={step.motion} onChange={(e) => set('motion')(e.target.value as DesignMotion)}>
+          {DESIGN_MOTIONS.map((m) => (
+            <option key={m} value={m}>
+              {(phase === 'out' && OUT_LABELS[m]) || MOTION_LABELS[m]}
+            </option>
+          ))}
+        </select>
+      </label>
+      {step.motion !== 'none' && (
+        <div className="designer-fields">
+          <NumberField label="Time" value={step.durationMs} step={50} min={MOTION_LIMITS.durationMs[0]} max={MOTION_LIMITS.durationMs[1]} onChange={(v) => set('durationMs')(Math.round(v))} suffix="ms" />
+          <NumberField label="Delay" value={step.delayMs} step={50} min={0} max={MOTION_LIMITS.delayMs[1]} onChange={(v) => set('delayMs')(Math.round(v))} suffix="ms" />
+          <label className="designer-number">
+            <span>Easing</span>
+            <select className="input" aria-label={`${phase === 'in' ? 'In' : 'Out'} easing`} value={step.easing} onChange={(e) => set('easing')(e.target.value as DesignEasing)}>
+              {DESIGN_EASINGS.map((easing) => (
+                <option key={easing} value={easing}>
+                  {EASING_LABELS[easing]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+    </>
+  )
+}
 
 /** The fields for the one selected element: its place, then what its kind has. */
 function ElementFields({ element, onChange, pickImage }: { element: DesignElement; onChange(patch: Partial<DesignElement>, key: string): void; pickImage(): Promise<string | null> }) {
   // Each field is its own undo key, so a run of changes to one field undoes as one step.
   const set = <K extends string>(key: K) => (value: unknown) => onChange({ [key]: value } as Partial<DesignElement>, `${element.id}.${key}`)
+  const setAnimation = (patch: Partial<DesignElementAnimation>, key: string) =>
+    onChange({ animation: { ...element.animation, ...patch } }, `${element.id}.animation.${key}`)
   const setBox = (key: 'x' | 'y' | 'width' | 'height') => (value: number) =>
     onChange({ box: roundBox({ ...element.box, [key]: key === 'width' || key === 'height' ? Math.max(0.5, value) : value }) }, `${element.id}.box.${key}`)
 
@@ -322,6 +383,20 @@ function ElementFields({ element, onChange, pickImage }: { element: DesignElemen
         <Slider label="Opacity" min={0} max={1} step={0.01} value={element.opacity} onChange={set('opacity')} format={(v) => `${Math.round(v * 100)}%`} />
       </Section>
 
+      <Section title="Animation">
+        <MotionFields phase="in" step={element.animation.in} onChange={(step, key) => setAnimation({ in: step }, `in.${key}`)} />
+        <MotionFields phase="out" step={element.animation.out} onChange={(step, key) => setAnimation({ out: step }, `out.${key}`)} />
+        <NumberField
+          label="Order"
+          value={element.animation.order}
+          step={1}
+          min={0}
+          max={MOTION_LIMITS.order[1]}
+          onChange={(order) => setAnimation({ order: Math.round(order) }, 'order')}
+        />
+        <p className="hint">Lower orders build first; the next order starts when they are done. On the way out the last in goes first.</p>
+      </Section>
+
       <Section title="On air">
         <label className="designer-number">
           <span>Loop</span>
@@ -337,7 +412,7 @@ function ElementFields({ element, onChange, pickImage }: { element: DesignElemen
           <input type="checkbox" checked={element.hideWithLowerThird} onChange={(e) => set('hideWithLowerThird')(e.target.checked)} />
           Hide while a lower third is live
         </label>
-        <p className="hint">Loops run on the outputs. The hide option applies when this design is the idle design.</p>
+        <p className="hint">Loops run on the outputs once the element is in; Spin on an idle logo turns forever. The hide option applies when this design is the idle design.</p>
       </Section>
 
       {element.kind === 'text' && (
@@ -495,7 +570,13 @@ function ElementFields({ element, onChange, pickImage }: { element: DesignElemen
  * text to edit it in place. Arrow keys nudge, and the usual keys copy, paste, duplicate, delete, undo and redo.
  * Built-in designs are read only: Save as new keeps the changes as a new design.
  */
-export function Designer({ document: doc, onClose, onSaved }: { document: DesignerDocument; onClose(): void; onSaved?(design: Design): void }) {
+export function Designer({ document: doc, onClose, onSaved, page = false }: {
+  document: DesignerDocument
+  onClose(): void
+  onSaved?(design: Design): void
+  /** Drawn in place as a page of the operator screen (the Lower thirds workspace), not over it as a dialog. */
+  page?: boolean
+}) {
   const [history, setHistory] = useState<History<DesignStyle>>(() => startHistory(doc.style))
   const [name, setName] = useState(doc.name)
   const [saved, setSaved] = useState({ id: doc.id, type: doc.type, snapshot: doc.id === null ? '' : JSON.stringify([doc.name, doc.style]) })
@@ -504,6 +585,8 @@ export function Designer({ document: doc, onClose, onSaved }: { document: Design
   const [guides, setGuides] = useState<Guide[]>([])
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [error, setError] = useState<ErrorLike | null>(null)
+  /** Play: the way in, a hold, then the way out; `run` remounts the canvas so each play starts afresh. */
+  const [playing, setPlaying] = useState<{ phase: AnimationPhase; run: number } | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<Drag | null>(null)
@@ -520,6 +603,34 @@ export function Designer({ document: doc, onClose, onSaved }: { document: Design
   const dirty = JSON.stringify([name, style]) !== saved.snapshot
 
   useEffect(() => rootRef.current?.focus(), [])
+
+  // Play steps from the way in to the way out after a hold, then back to editing.
+  useEffect(() => {
+    if (!playing) return
+    const total = designTimeline(style.elements, playing.phase).totalMs
+    const timer = setTimeout(
+      () => setPlaying((p) => (p === playing ? (p.phase === 'in' ? { phase: 'out', run: p.run + 1 } : null) : p)),
+      playing.phase === 'in' ? total + PLAY_HOLD_MS : total + 200,
+    )
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- timed from when each phase starts
+  }, [playing])
+
+  function play() {
+    setEditingId(null)
+    setPlaying((p) => (p ? null : { phase: 'in', run: Date.now() }))
+  }
+
+  /** Builds the elements one after another, bottom layer first, each fading in. */
+  function buildInOrder() {
+    setElements(
+      elements.map((e, order) => ({
+        ...e,
+        animation: { ...e.animation, order, in: e.animation.in.motion === 'none' ? { ...e.animation.in, motion: 'fade' } : e.animation.in },
+      })),
+      'build',
+    )
+  }
 
   // Selection only holds elements that still exist (after undo, say).
   useEffect(() => {
@@ -840,9 +951,15 @@ export function Designer({ document: doc, onClose, onSaved }: { document: Design
           },
         }
 
-  return createPortal(
-    <div className="modal-backdrop designer-backdrop">
-      <div ref={rootRef} className="modal designer" role="dialog" aria-label="Designer" tabIndex={-1} onKeyDown={onKeyDown}>
+  const designer = (
+      <div
+        ref={rootRef}
+        className={page ? 'designer designer-page' : 'modal designer'}
+        role={page ? 'region' : 'dialog'}
+        aria-label="Designer"
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+      >
         <header className="designer-header">
           <input className="input designer-name" aria-label="Design name" value={name} onChange={(e) => setName(e.target.value)} />
           <select className="input" aria-label="Kind of design" value={style.category} onChange={(e) => setCategory(e.target.value as DesignCategory)}>
@@ -861,6 +978,13 @@ export function Designer({ document: doc, onClose, onSaved }: { document: Design
             </button>
             <button type="button" className="button" onClick={() => void addImage()} title="Add an image">
               <ImageIcon size={14} aria-hidden="true" /> Image
+            </button>
+            <span className="designer-tools-gap" />
+            <button type="button" className={`button${playing ? ' primary' : ''}`} onClick={play} title="Play the elements' animation in, then out" aria-pressed={playing !== null}>
+              <Play size={14} aria-hidden="true" /> {playing ? `Playing ${playing.phase}` : 'Play'}
+            </button>
+            <button type="button" className="button" onClick={buildInOrder} disabled={elements.length < 2} title="Build the elements one after another, bottom layer first, each fading in unless it has its own way in">
+              <ListOrdered size={14} aria-hidden="true" /> Build in order
             </button>
             <span className="designer-tools-gap" />
             <button type="button" className="icon-button" aria-label="Undo" title={`Undo (${MOD}Z)`} disabled={history.past.length === 0} onClick={() => setHistory(undo)}>
@@ -976,8 +1100,12 @@ export function Designer({ document: doc, onClose, onSaved }: { document: Design
               onPointerUp={endDrag}
               onPointerCancel={endDrag}
             >
-              <DesignView style={style} edit={edit} checker placeholders />
-              <div className="designer-frames">
+              {playing ? (
+                <DesignView key={playing.run} style={style} checker phase={playing.phase} />
+              ) : (
+                <DesignView style={style} edit={edit} checker placeholders />
+              )}
+              <div className="designer-frames" hidden={playing !== null}>
                 {elements.map((element) => {
                   if (element.hidden || element.locked || element.id === editingId) return null
                   const isSelected = selectedSet.has(element.id)
@@ -1051,7 +1179,7 @@ export function Designer({ document: doc, onClose, onSaved }: { document: Design
           </button>
         </footer>
       </div>
-    </div>,
-    document.body,
   )
+  if (page) return designer
+  return createPortal(<div className="modal-backdrop designer-backdrop">{designer}</div>, document.body)
 }

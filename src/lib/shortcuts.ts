@@ -16,13 +16,13 @@ export const IS_MAC = navigator.platform.toLowerCase().includes('mac')
 /** The modifier shown in shortcut hints: ⌘ on macOS, Ctrl elsewhere. */
 export const MOD = IS_MAC ? '⌘' : 'Ctrl+'
 
-/** True when a key press is meant for a text field or a dialog, not for running the show. */
+/** True when a key press is meant for a text field, a dialog or the designer, not for running the show. */
 export function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   return (
     target.isContentEditable ||
     ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) ||
-    !!target.closest('.modal, .palette')
+    !!target.closest('.modal, .palette, .designer')
   )
 }
 

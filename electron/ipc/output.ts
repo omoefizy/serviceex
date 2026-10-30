@@ -85,6 +85,7 @@ function lowerThirdDisplayOf(value: unknown): LowerThirdDisplay | null {
     ...(bodyRich ? { bodyRich } : {}),
     style: normalizeLowerThirdStyle(lowerThird.style),
     ...(lowerThird.design ? { design: normalizeDesign(lowerThird.design) } : {}),
+    ...(typeof lowerThird.number === 'string' && lowerThird.number ? { number: lowerThird.number.slice(0, 20) } : {}),
     animation: lowerThird.animation === 'fade' || lowerThird.animation === 'wipe' ? lowerThird.animation : 'slide',
     durationMs: clampNumber(lowerThird.durationMs, 200, 1000, 500),
   }

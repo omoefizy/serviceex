@@ -2,15 +2,18 @@
 // defaults, the built-in templates, validation and turning a lower third template into a design. Shared by the main
 // process (database) and the renderer (the designer and the design renderer), like shared/lowerThirds.ts.
 
+import { DESIGN_EASINGS, DESIGN_MOTIONS, MOTION_LIMITS, NO_ANIMATION } from './designAnimation'
 import { migrateFontName } from './fonts'
 import { fieldsOf, flag, hex, number, oneOf, text, TEXT_CASES } from './themes'
 import type {
   DesignBackground,
   DesignCategory,
   DesignElement,
+  DesignElementAnimation,
   DesignElementKind,
   DesignFill,
   DesignLoop,
+  DesignMotionStep,
   DesignShadow,
   DesignStyle,
   DesignTextField,
@@ -33,7 +36,7 @@ const FONT = 'Montserrat'
 
 export const DESIGN_CATEGORIES: DesignCategory[] = ['lowerThird', 'slide']
 export const DESIGN_FIELDS: DesignTextField[] = ['headline', 'body', 'number']
-export const DESIGN_LOOPS: DesignLoop[] = ['none', 'pulse', 'float', 'glow', 'spin']
+export const DESIGN_LOOPS: DesignLoop[] = ['none', 'pulse', 'float', 'glow', 'spin', 'shimmer']
 
 export const NO_SHADOW: DesignShadow = { enabled: false, color: '#000000', opacity: 0.35, blur: 1.2, x: 0, y: 0.3 }
 const SOFT_SHADOW: DesignShadow = { ...NO_SHADOW, enabled: true }
@@ -55,6 +58,7 @@ const base = (id: string, name: string, box: ThemeBox) => ({
   hidden: false,
   hideWithLowerThird: false,
   loop: 'none' as DesignLoop,
+  animation: NO_ANIMATION,
 })
 
 export const textElement = (id: string, name: string, box: ThemeBox, overrides: Partial<Text> = {}): Text => ({
@@ -356,6 +360,25 @@ function normalizeBackground(value: unknown, category: DesignCategory): DesignBa
   return EMPTY_DESIGN[category].background
 }
 
+function normalizeStep(value: unknown, fallback: DesignMotionStep): DesignMotionStep {
+  const v = fieldsOf(value)
+  return {
+    motion: oneOf(v.motion, DESIGN_MOTIONS, fallback.motion),
+    durationMs: Math.round(number(v.durationMs, fallback.durationMs, ...MOTION_LIMITS.durationMs)),
+    delayMs: Math.round(number(v.delayMs, fallback.delayMs, ...MOTION_LIMITS.delayMs)),
+    easing: oneOf(v.easing, DESIGN_EASINGS, fallback.easing),
+  }
+}
+
+function normalizeAnimation(value: unknown): DesignElementAnimation {
+  const v = fieldsOf(value)
+  return {
+    in: normalizeStep(v.in, NO_ANIMATION.in),
+    out: normalizeStep(v.out, NO_ANIMATION.out),
+    order: Math.round(number(v.order, 0, ...MOTION_LIMITS.order)),
+  }
+}
+
 function normalizeElement(value: unknown): DesignElement | null {
   const v = fieldsOf(value)
   const kind = oneOf<DesignElementKind | ''>(v.kind, ['text', 'rect', 'line', 'image'], '')
@@ -371,6 +394,7 @@ function normalizeElement(value: unknown): DesignElement | null {
     hidden: flag(v.hidden, false),
     hideWithLowerThird: flag(v.hideWithLowerThird, false),
     loop: oneOf(v.loop, DESIGN_LOOPS, 'none'),
+    animation: normalizeAnimation(v.animation),
   }
   switch (d.kind) {
     case 'text': {

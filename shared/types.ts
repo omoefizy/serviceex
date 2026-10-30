@@ -384,6 +384,13 @@ export interface SavedLowerThirdLine {
   pinned: boolean
 }
 
+/** A sermon point in the Lower thirds workspace: its words, and the design it shows in (null: the default). */
+export interface SermonPoint {
+  id: string
+  text: string
+  designId: number | null
+}
+
 /** The lower third as every output draws it, on top of everything else. */
 export interface LowerThirdDisplay {
   /** Changes each time a line is shown; an update keeps it, so the text changes in place. */
@@ -396,6 +403,8 @@ export interface LowerThirdDisplay {
   style: LowerThirdStyle
   /** A design from the designer drawn in place of the template `style`, its bound text filled with the words. */
   design?: DesignStyle
+  /** What a design's text bound to Number shows, such as a sermon point's number. */
+  number?: string
   animation: LowerThirdAnimation
   /** How long the animation in and out takes, 200 to 1000 ms. */
   durationMs: number
@@ -440,7 +449,30 @@ export interface DesignShadow {
 export type DesignTextField = 'headline' | 'body' | 'number'
 
 /** A movement an element repeats while it is on screen, such as a church logo that gently pulses. */
-export type DesignLoop = 'none' | 'pulse' | 'float' | 'glow' | 'spin'
+export type DesignLoop = 'none' | 'pulse' | 'float' | 'glow' | 'spin' | 'shimmer'
+
+/** How an element comes on (in) or goes off (out). The slides come from, or go to, that edge of the screen. */
+export type DesignMotion = 'none' | 'fade' | 'slideLeft' | 'slideRight' | 'slideBottom' | 'slideTop' | 'wipe' | 'scale'
+
+export type DesignEasing = 'linear' | 'ease' | 'easeIn' | 'easeOut' | 'easeInOut' | 'back'
+
+/** One way in or out: the movement, how long it takes, how long it waits first and its easing. */
+export interface DesignMotionStep {
+  motion: DesignMotion
+  durationMs: number
+  delayMs: number
+  easing: DesignEasing
+}
+
+/**
+ * An element's animation on air. Elements build by `order`: everything with the lowest order first, the next order
+ * once those are done, and so on; on the way out the last to build goes first.
+ */
+export interface DesignElementAnimation {
+  in: DesignMotionStep
+  out: DesignMotionStep
+  order: number
+}
 
 interface DesignElementBase {
   id: string
@@ -459,6 +491,7 @@ interface DesignElementBase {
   /** In an idle design: fades out while a lower third is live, so a corner tag steps aside for it. */
   hideWithLowerThird: boolean
   loop: DesignLoop
+  animation: DesignElementAnimation
 }
 
 export interface DesignTextProps {
@@ -1071,8 +1104,10 @@ export interface AppSettings {
   /** Hides the lower third this many seconds after it is shown; 0 (the default) keeps it up until hidden. */
   lowerThirdHoldSeconds: number
   lowerThirdSavedLines: SavedLowerThirdLine[]
-  /** The sermon's points, one per line, for Next Point. */
-  lowerThirdPoints: string[]
+  /** The sermon points of each service, by service id ("0" while no service is open), for the Lower thirds workspace. */
+  lowerThirdServicePoints: Record<string, SermonPoint[]>
+  /** Where Send as lower third (the transcript, the heard cards, the workspace) puts a quote: the Preview, or live. */
+  lowerThirdQuickTarget: 'preview' | 'live'
   /** wd-media:// URL of the church logo, shown by Logo theme images without a picture of their own; null for the placeholder. */
   logoUrl: string | null
   /** The church's name, as typed in Settings, Church profile; used in sermon exports. Empty for none. */
