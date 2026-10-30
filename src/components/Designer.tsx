@@ -4,6 +4,7 @@ import {
   ArrowUp,
   ChevronsDown,
   ChevronsUp,
+  CircleHelp,
   ClipboardPaste,
   Copy,
   CopyPlus,
@@ -16,6 +17,10 @@ import {
   Lock,
   ListOrdered,
   Minus,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   Play,
   Redo2,
   Save,
@@ -27,7 +32,7 @@ import {
   WandSparkles,
   X,
 } from 'lucide-react'
-import { useContext, useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { paddingBetween, type DesignLayout } from '../../shared/autoLayout'
 import { linkAll, makeStretch, suggestLinks, textBehind } from '../../shared/designLinks'
@@ -81,9 +86,11 @@ import {
   type Handle,
   type History,
 } from '../lib/designLayout'
+import { canvasSize, clampPan, clampZoom, panToKeep, readZoomMode, scaleOf, ZOOM_MAX, ZOOM_MIN, zoomKey, type Point, type ZoomMode } from '../lib/designerZoom'
 import { canImport, IMPORT_ACCEPT, importDesignFile, importFromTransfer, type DesignImport } from '../lib/designImport'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { MOD } from '../lib/shortcuts'
+import { usePersistentState } from '../lib/usePersistentState'
 import { measureWith, useDesignLayout } from '../lib/textMeasure'
 import { DesignView, type InlineEdit } from './DesignView'
 import { FontPicker, MissingFontChips } from './FontPicker'
@@ -96,6 +103,25 @@ const NUDGE = 0.1
 const PASTE_OFFSET = 2
 /** Two presses on text this close together edit it. */
 const DOUBLE_CLICK_MS = 400
+/** The space around the canvas when it fits, in px. */
+const CANVAS_PADDING = 16
+/** How far one notch of the scroll wheel zooms. */
+const WHEEL_ZOOM = 0.0015
+
+type Backdrop = 'checker' | 'camera'
+const isBackdrop = (v: unknown): v is Backdrop => v === 'checker' || v === 'camera'
+type Panels = { layers: boolean; inspector: boolean }
+const isPanels = (v: unknown): v is Panels => typeof v === 'object' && v !== null && typeof (v as Panels).layers === 'boolean' && typeof (v as Panels).inspector === 'boolean'
+
+/** A design's remembered zoom mode; storage can be unavailable. */
+function loadZoom(id: number | null): ZoomMode {
+  try {
+    return readZoomMode(JSON.parse(localStorage.getItem(zoomKey(id)) ?? 'null'))
+  } catch {
+    return { mode: 'fit' }
+  }
+}
+
 /** How long Play holds the design on screen between its way in and its way out. */
 const PLAY_HOLD_MS = 1500
 
@@ -997,6 +1023,20 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
   const layerDragRef = useRef<string | null>(null)
   const pasteCount = useRef(0)
   const lastPress = useRef<{ id: string; at: number } | null>(null)
+  /** The canvas area, its size less the padding, and the zoom: Fit, or a set zoom with the canvas panned. */
+  const viewportRef = useRef<HTMLElement>(null)
+  const [area, setArea] = useState({ width: 0, height: 0 })
+  const [zoomMode, setZoomMode] = useState<ZoomMode>(() => loadZoom(doc.id))
+  const [pan, setPan] = useState<Point>({ x: 0, y: 0 })
+  const [backdrop, setBackdrop] = usePersistentState<Backdrop>('designer.backdrop', 'checker', isBackdrop)
+  const [panels, setPanels] = usePersistentState<Panels>('designer.panels', { layers: true, inspector: true }, isPanels)
+  /** Space held, so dragging pans; `panned` is whether it did, as a space alone on a selected text starts typing. */
+  const space = useRef({ held: false, panned: false })
+  const [spaceHeld, setSpaceHeld] = useState(false)
+  const panDrag = useRef<{ x: number; y: number; from: Point } | null>(null)
+  const [panning, setPanning] = useState(false)
+  /** Whether the last press was on empty canvas, where a double-click fits it. */
+  const emptyPress = useRef(false)
 
   const style = history.present
   const { elements } = style
@@ -1011,6 +1051,110 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
   const dirty = JSON.stringify([name, style]) !== saved.snapshot
 
   useEffect(() => rootRef.current?.focus(), [])
+
+  // ---------- Zoom and pan ----------
+
+  const scale = scaleOf(zoomMode, area)
+  const canvas = canvasSize(scale)
+  const shownPan = zoomMode.mode === 'fit' ? { x: 0, y: 0 } : clampPan(pan, canvas, area)
+  /** The latest scale and pan, for wheel events that come faster than renders. */
+  const view = useRef({ scale, pan: shownPan })
+  view.current = { scale, pan: shownPan }
+
+  // The canvas refits as the window changes size and as the side panels open and close.
+  useLayoutEffect(() => {
+    const el = viewportRef.current
+    if (!el) return
+    const measure = () => setArea({ width: Math.max(0, el.clientWidth - 2 * CANVAS_PADDING), height: Math.max(0, el.clientHeight - 2 * CANVAS_PADDING) })
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  // Each design opens at the zoom it was left at.
+  useEffect(() => {
+    try {
+      localStorage.setItem(zoomKey(saved.id), JSON.stringify(zoomMode))
+    } catch {
+      // It opens at Fit next time.
+    }
+  }, [saved.id, zoomMode])
+
+  /** Zooms to `zoom`, keeping the point `at` (from the area's centre) where it is. */
+  function zoomTo(zoom: number, at: Point = { x: 0, y: 0 }) {
+    const to = clampZoom(zoom)
+    const next = clampPan(panToKeep(view.current.pan, at, view.current.scale, to), canvasSize(to), area)
+    view.current = { scale: to, pan: next }
+    setPan(next)
+    setZoomMode({ mode: 'zoom', zoom: to })
+  }
+
+  function fit() {
+    setPan({ x: 0, y: 0 })
+    setZoomMode({ mode: 'fit' })
+  }
+
+  // The wheel zooms around the pointer. It is listened to directly, as React's wheel listener cannot prevent scrolling.
+  const onWheel = useRef<(e: WheelEvent) => void>(() => undefined)
+  onWheel.current = (e) => {
+    const el = viewportRef.current
+    if (!el || e.deltaY === 0) return
+    e.preventDefault()
+    const rect = el.getBoundingClientRect()
+    const at = { x: e.clientX - rect.left - rect.width / 2, y: e.clientY - rect.top - rect.height / 2 }
+    zoomTo(view.current.scale * Math.exp(-e.deltaY * WHEEL_ZOOM * (e.deltaMode === 1 ? 16 : 1)), at)
+  }
+  useEffect(() => {
+    const el = viewportRef.current
+    if (!el) return
+    const listener = (e: WheelEvent) => onWheel.current(e)
+    el.addEventListener('wheel', listener, { passive: false })
+    return () => el.removeEventListener('wheel', listener)
+  }, [])
+
+  // Space let go while the window is in the background never arrives.
+  useEffect(() => {
+    const reset = () => {
+      space.current = { held: false, panned: false }
+      setSpaceHeld(false)
+    }
+    window.addEventListener('blur', reset)
+    return () => window.removeEventListener('blur', reset)
+  }, [])
+
+  function onKeyUp(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== ' ' || !space.current.held) return
+    const { panned } = space.current
+    space.current = { held: false, panned: false }
+    setSpaceHeld(false)
+    if (!panned && single?.kind === 'text' && !single.locked && editing === null) setEditing({ id: single.id, initial: ' ' })
+  }
+
+  /** Space and drag pans, from Fit too, which then holds its scale. Presses on the canvas go no further. */
+  function startPan(e: PointerEvent<HTMLElement>) {
+    emptyPress.current = false
+    if (!space.current.held || e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    space.current.panned = true
+    if (zoomMode.mode === 'fit') setZoomMode({ mode: 'zoom', zoom: scale })
+    panDrag.current = { x: e.clientX, y: e.clientY, from: shownPan }
+    setPanning(true)
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  function movePan(e: PointerEvent) {
+    const drag = panDrag.current
+    if (!drag) return
+    setPan(clampPan({ x: drag.from.x + e.clientX - drag.x, y: drag.from.y + e.clientY - drag.y }, canvas, area))
+  }
+
+  function endPan() {
+    if (!panDrag.current) return
+    panDrag.current = null
+    setPanning(false)
+  }
 
   // Play steps from the way in to the way out after a hold, then back to editing.
   useEffect(() => {
@@ -1347,6 +1491,13 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
     } else if (mod && key === 'a') {
       handled()
       setSelected(elements.filter((el) => !el.locked && !el.hidden).map((el) => el.id))
+    } else if (e.key === ' ' && !mod && !e.altKey && target.tagName !== 'BUTTON') {
+      // Held, a drag pans the canvas; let go without one on a selected text, it starts typing with the space.
+      handled()
+      if (!e.repeat) {
+        space.current = { held: true, panned: false }
+        setSpaceHeld(true)
+      }
     } else if (arrows[e.key] && picked.length > 0) {
       handled()
       const step = e.shiftKey ? NUDGE * 10 : NUDGE
@@ -1456,83 +1607,62 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
           },
         }
 
+  const transparent = style.background.kind === 'transparent'
   const designer = (
-      <div
-        ref={rootRef}
-        className={page ? 'designer designer-page' : 'modal designer'}
-        role={page ? 'region' : 'dialog'}
-        aria-label="Designer"
-        tabIndex={-1}
-        onKeyDown={onKeyDown}
-        onPaste={onPaste}
-      >
-        <header className="designer-header">
-          <input className="input designer-name" aria-label="Design name" value={name} onChange={(e) => setName(e.target.value)} />
-          <select className="input" aria-label="Kind of design" value={style.category} onChange={(e) => setCategory(e.target.value as DesignCategory)}>
-            <option value="lowerThird">Lower third</option>
-            <option value="slide">Slide</option>
-          </select>
-          <div className="designer-tools" role="toolbar" aria-label="Add and edit">
-            <button type="button" className="button" onClick={() => add(newDesignElement('text', newId()))} title="Add text">
-              <Type size={14} aria-hidden="true" /> Text
-            </button>
-            <button type="button" className="button" onClick={() => add(newDesignElement('rect', newId()))} title="Add a rectangle">
-              <Square size={14} aria-hidden="true" /> Rectangle
-            </button>
-            <button type="button" className="button" onClick={() => add(newDesignElement('line', newId()))} title="Add a line">
-              <Minus size={14} aria-hidden="true" /> Line
-            </button>
-            <button type="button" className="button" onClick={() => void addImage()} title="Add an image">
-              <ImageIcon size={14} aria-hidden="true" /> Image
-            </button>
-            <button type="button" className="button" onClick={() => fileRef.current?.click()} title={`Import design: an SVG (from Figma, Illustrator or Inkscape) or a PNG. You can also drop one on the canvas, or paste Figma's Copy as SVG with ${MOD}V`}>
-              <FileUp size={14} aria-hidden="true" /> Import
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept={IMPORT_ACCEPT}
-              multiple
-              hidden
-              onChange={(e) => {
-                const files = [...(e.target.files ?? [])]
-                e.target.value = ''
-                if (files.length > 0) importFiles(files)
-              }}
-            />
-            <span className="designer-tools-gap" />
-            <button type="button" className={`button${playing ? ' primary' : ''}`} onClick={play} title="Play the elements' animation in, then out" aria-pressed={playing !== null}>
-              <Play size={14} aria-hidden="true" /> {playing ? `Playing ${playing.phase}` : 'Play'}
-            </button>
-            <button type="button" className="button" onClick={buildInOrder} disabled={elements.length < 2} title="Build the elements one after another, bottom layer first, each fading in unless it has its own way in">
-              <ListOrdered size={14} aria-hidden="true" /> Build in order
-            </button>
-            <span className="designer-tools-gap" />
-            <button type="button" className="icon-button" aria-label="Undo" title={`Undo (${MOD}Z)`} disabled={history.past.length === 0} onClick={() => setHistory(undo)}>
-              <Undo2 size={15} />
-            </button>
-            <button type="button" className="icon-button" aria-label="Redo" title={`Redo (${MOD}⇧Z)`} disabled={history.future.length === 0} onClick={() => setHistory(redo)}>
-              <Redo2 size={15} />
-            </button>
-            <button type="button" className="icon-button" aria-label="Copy" title={`Copy (${MOD}C)`} disabled={picked.length === 0} onClick={copy}>
-              <Copy size={15} />
-            </button>
-            <button type="button" className="icon-button" aria-label="Paste" title={`Paste (${MOD}V)`} onClick={() => paste()}>
-              <ClipboardPaste size={15} />
-            </button>
-            <button type="button" className="icon-button" aria-label="Duplicate" title={`Duplicate (${MOD}D)`} disabled={picked.length === 0} onClick={duplicate}>
-              <CopyPlus size={15} />
-            </button>
-            <button type="button" className="icon-button" aria-label="Delete" title="Delete (Delete)" disabled={picked.length === 0} onClick={remove}>
-              <Trash2 size={15} />
-            </button>
-          </div>
-          <button type="button" className="icon-button" aria-label="Close" title="Close" onClick={close}>
-            <X size={18} />
+    <div
+      ref={rootRef}
+      className="designer"
+      role={page ? 'region' : 'dialog'}
+      aria-label="Designer"
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
+      onKeyUp={onKeyUp}
+      onPaste={onPaste}
+    >
+      <header className="designer-header">
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={panels.layers ? 'Hide layers' : 'Show layers'}
+          title={panels.layers ? 'Hide layers' : 'Show layers'}
+          aria-pressed={panels.layers}
+          onClick={() => setPanels((p) => ({ ...p, layers: !p.layers }))}
+        >
+          {panels.layers ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+        </button>
+        <input className="input designer-name" aria-label="Design name" value={name} onChange={(e) => setName(e.target.value)} />
+        <select className="input" aria-label="Kind of design" value={style.category} onChange={(e) => setCategory(e.target.value as DesignCategory)}>
+          <option value="lowerThird">Lower third</option>
+          <option value="slide">Slide</option>
+        </select>
+        <span className="designer-header-gap">
+          {!custom && saved.type === 'builtin' && <span className="hint">Built-in designs cannot be changed: Save as new keeps your changes.</span>}
+        </span>
+        {custom && (
+          <button type="button" className="button" onClick={() => void save(true)} title="A new design with these changes">
+            <FilePlus size={14} aria-hidden="true" /> Save as new
           </button>
-        </header>
+        )}
+        <button type="button" className="button primary" disabled={custom && !dirty} onClick={() => void save(false)} title={`${MOD}S`}>
+          <Save size={14} aria-hidden="true" /> {custom ? 'Save' : saved.type === 'builtin' ? 'Save as new' : 'Save to Designs'}
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={panels.inspector ? 'Hide properties' : 'Show properties'}
+          title={panels.inspector ? 'Hide properties' : 'Show properties'}
+          aria-pressed={panels.inspector}
+          onClick={() => setPanels((p) => ({ ...p, inspector: !p.inspector }))}
+        >
+          {panels.inspector ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+        </button>
+        <button type="button" className="icon-button" aria-label="Close" title="Close" onClick={close}>
+          <X size={18} />
+        </button>
+      </header>
 
-        <div className="designer-body">
+      <div className={`designer-body${panels.layers ? '' : ' no-layers'}${panels.inspector ? '' : ' no-inspector'}`}>
+        {panels.layers && (
           <aside className="designer-layers" aria-label="Layers">
             <h3>Layers</h3>
             {layers.length === 0 && <p className="hint">Add text, a rectangle, a line or an image.</p>}
@@ -1606,87 +1736,167 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
               </button>
             </div>
           </aside>
+        )}
 
-          <main className="designer-stage-area">
-            <div
-              ref={stageRef}
-              className={`designer-stage${dragging ? ' dragging' : ''}${fileOver ? ' file-over' : ''}`}
-              aria-label="Canvas. Arrow keys move the selection; Shift moves it further. Type on a selected text to change its words."
-              onDragOver={(e) => {
-                if (!isFileDrag(e)) return
-                e.preventDefault()
-                e.dataTransfer.dropEffect = 'copy'
-                setFileOver(true)
-              }}
-              onDragLeave={(e) => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFileOver(false)
-              }}
-              onDrop={(e) => {
-                if (!isFileDrag(e)) return
-                e.preventDefault()
-                setFileOver(false)
-                importFiles([...e.dataTransfer.files])
-              }}
-              onPointerDown={(e) => {
-                if (e.button !== 0) return
-                rootRef.current?.focus()
-                setSelected([])
-              }}
-              onPointerMove={onPointerMove}
-              onPointerUp={endDrag}
-              onPointerCancel={endDrag}
-            >
-              {playing ? (
-                <DesignView key={playing.run} style={style} checker phase={playing.phase} />
-              ) : (
-                <DesignView style={shown} edit={edit} checker placeholders warnings />
-              )}
-              <div className="designer-frames" hidden={playing !== null}>
-                {elements.map((element) => {
-                  if (element.hidden || element.locked || element.id === editingId) return null
-                  const isSelected = selectedSet.has(element.id)
-                  const box = boxOf(element)
-                  return (
-                    <div
-                      key={element.id}
-                      className={`designer-frame${isSelected ? ' selected' : ''}${element.fitToText ? ' fitted' : ''}`}
-                      style={{
-                        left: `${box.x}%`,
-                        top: `${box.y}%`,
-                        width: `${box.width}%`,
-                        height: `${box.height}%`,
-                        transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
-                      }}
-                      title={element.name}
-                      onPointerDown={(e) => startMove(e, element)}
-                    >
-                      {single?.id === element.id && (
-                        <>
-                          {HANDLES.map((handle) => (
-                            <span key={handle} className={`designer-handle ${handle}`} onPointerDown={(e) => startResize(e, element, handle)} />
+        <main
+          ref={viewportRef}
+          className={`designer-stage-area${spaceHeld ? ' space' : ''}${panning ? ' panning' : ''}`}
+          onPointerDownCapture={startPan}
+          onPointerDown={(e) => {
+            if (e.target === e.currentTarget) emptyPress.current = true
+          }}
+          onPointerMove={movePan}
+          onPointerUp={endPan}
+          onPointerCancel={endPan}
+          onDoubleClick={(e) => {
+            if (emptyPress.current && (e.target === e.currentTarget || stageRef.current?.contains(e.target as Node))) fit()
+          }}
+        >
+          <div
+            ref={stageRef}
+            className={`designer-stage${dragging ? ' dragging' : ''}${fileOver ? ' file-over' : ''}${backdrop === 'camera' ? ' camera' : ''}`}
+            style={{
+              left: CANVAS_PADDING + (area.width - canvas.width) / 2 + shownPan.x,
+              top: CANVAS_PADDING + (area.height - canvas.height) / 2 + shownPan.y,
+              width: canvas.width,
+              height: canvas.height,
+            }}
+            aria-label="Canvas. Arrow keys move the selection; Shift moves it further. Type on a selected text to change its words."
+            onDragOver={(e) => {
+              if (!isFileDrag(e)) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'copy'
+              setFileOver(true)
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFileOver(false)
+            }}
+            onDrop={(e) => {
+              if (!isFileDrag(e)) return
+              e.preventDefault()
+              setFileOver(false)
+              importFiles([...e.dataTransfer.files])
+            }}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return
+              emptyPress.current = true
+              rootRef.current?.focus()
+              setSelected([])
+            }}
+            onPointerMove={onPointerMove}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+          >
+            {playing ? (
+              <DesignView key={playing.run} style={style} checker phase={playing.phase} />
+            ) : (
+              <DesignView style={shown} edit={edit} checker placeholders warnings />
+            )}
+            <div className="designer-frames" hidden={playing !== null}>
+              {elements.map((element) => {
+                if (element.hidden || element.locked || element.id === editingId) return null
+                const isSelected = selectedSet.has(element.id)
+                const box = boxOf(element)
+                return (
+                  <div
+                    key={element.id}
+                    className={`designer-frame${isSelected ? ' selected' : ''}${element.fitToText ? ' fitted' : ''}`}
+                    style={{
+                      left: `${box.x}%`,
+                      top: `${box.y}%`,
+                      width: `${box.width}%`,
+                      height: `${box.height}%`,
+                      transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
+                    }}
+                    title={element.name}
+                    onPointerDown={(e) => startMove(e, element)}
+                  >
+                    {single?.id === element.id && (
+                      <>
+                        {HANDLES.map((handle) => (
+                          <span key={handle} className={`designer-handle ${handle}`} onPointerDown={(e) => startResize(e, element, handle)} />
+                        ))}
+                        <span className="designer-rotate" title="Drag to rotate (Shift: 15° steps)" onPointerDown={(e) => startRotate(e, element)} />
+                        {element.kind === 'image' &&
+                          element.slice &&
+                          SIDES.map((side) => (
+                            <span
+                              key={side}
+                              className={`designer-slice ${side}`}
+                              style={{ [side]: `${element.slice![side]}%` }}
+                              title={`9 slice: drag to set how much of the ${side} keeps its size`}
+                              onPointerDown={(e) => startSlice(e, element, side)}
+                            />
                           ))}
-                          <span className="designer-rotate" title="Drag to rotate (Shift: 15° steps)" onPointerDown={(e) => startRotate(e, element)} />
-                          {element.kind === 'image' &&
-                            element.slice &&
-                            SIDES.map((side) => (
-                              <span
-                                key={side}
-                                className={`designer-slice ${side}`}
-                                style={{ [side]: `${element.slice![side]}%` }}
-                                title={`9 slice: drag to set how much of the ${side} keeps its size`}
-                                onPointerDown={(e) => startSlice(e, element, side)}
-                              />
-                            ))}
-                        </>
-                      )}
-                    </div>
-                  )
-                })}
-                {guides.map((guide, index) => (
-                  <span key={index} className={`designer-guide ${guide.axis}`} style={guide.axis === 'x' ? { left: `${guide.at}%` } : { top: `${guide.at}%` }} />
-                ))}
-              </div>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+              {guides.map((guide, index) => (
+                <span key={index} className={`designer-guide ${guide.axis}`} style={guide.axis === 'x' ? { left: `${guide.at}%` } : { top: `${guide.at}%` }} />
+              ))}
             </div>
+          </div>
+
+          <div className="designer-tools designer-float" role="toolbar" aria-label="Add and edit">
+            <button type="button" className="button" onClick={() => add(newDesignElement('text', newId()))} title="Add text" aria-label="Text">
+              <Type size={14} aria-hidden="true" /> <span className="designer-tool-label">Text</span>
+            </button>
+            <button type="button" className="button" onClick={() => add(newDesignElement('rect', newId()))} title="Add a rectangle" aria-label="Rectangle">
+              <Square size={14} aria-hidden="true" /> <span className="designer-tool-label">Rectangle</span>
+            </button>
+            <button type="button" className="button" onClick={() => add(newDesignElement('line', newId()))} title="Add a line" aria-label="Line">
+              <Minus size={14} aria-hidden="true" /> <span className="designer-tool-label">Line</span>
+            </button>
+            <button type="button" className="button" onClick={() => void addImage()} title="Add an image" aria-label="Image">
+              <ImageIcon size={14} aria-hidden="true" /> <span className="designer-tool-label">Image</span>
+            </button>
+            <button type="button" className="button" aria-label="Import" onClick={() => fileRef.current?.click()} title={`Import design: an SVG (from Figma, Illustrator or Inkscape) or a PNG. You can also drop one on the canvas, or paste Figma's Copy as SVG with ${MOD}V`}>
+              <FileUp size={14} aria-hidden="true" /> <span className="designer-tool-label">Import</span>
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept={IMPORT_ACCEPT}
+              multiple
+              hidden
+              onChange={(e) => {
+                const files = [...(e.target.files ?? [])]
+                e.target.value = ''
+                if (files.length > 0) importFiles(files)
+              }}
+            />
+            <span className="designer-tools-gap" />
+            <button type="button" className={`button${playing ? ' primary' : ''}`} onClick={play} title="Play the elements' animation in, then out" aria-label={playing ? `Playing ${playing.phase}` : 'Play'} aria-pressed={playing !== null}>
+              <Play size={14} aria-hidden="true" /> <span className="designer-tool-label">{playing ? `Playing ${playing.phase}` : 'Play'}</span>
+            </button>
+            <button type="button" className="button" onClick={buildInOrder} disabled={elements.length < 2} aria-label="Build in order" title="Build the elements one after another, bottom layer first, each fading in unless it has its own way in">
+              <ListOrdered size={14} aria-hidden="true" /> <span className="designer-tool-label">Build in order</span>
+            </button>
+            <span className="designer-tools-gap" />
+            <button type="button" className="icon-button" aria-label="Undo" title={`Undo (${MOD}Z)`} disabled={history.past.length === 0} onClick={() => setHistory(undo)}>
+              <Undo2 size={15} />
+            </button>
+            <button type="button" className="icon-button" aria-label="Redo" title={`Redo (${MOD}⇧Z)`} disabled={history.future.length === 0} onClick={() => setHistory(redo)}>
+              <Redo2 size={15} />
+            </button>
+            <button type="button" className="icon-button" aria-label="Copy" title={`Copy (${MOD}C)`} disabled={picked.length === 0} onClick={copy}>
+              <Copy size={15} />
+            </button>
+            <button type="button" className="icon-button" aria-label="Paste" title={`Paste (${MOD}V)`} onClick={() => paste()}>
+              <ClipboardPaste size={15} />
+            </button>
+            <button type="button" className="icon-button" aria-label="Duplicate" title={`Duplicate (${MOD}D)`} disabled={picked.length === 0} onClick={duplicate}>
+              <CopyPlus size={15} />
+            </button>
+            <button type="button" className="icon-button" aria-label="Delete" title="Delete (Delete)" disabled={picked.length === 0} onClick={remove}>
+              <Trash2 size={15} />
+            </button>
+          </div>
+
+          <div className="designer-notes">
+            <ErrorNote error={error} />
             {imported && (
               <div className="designer-import-note" role="status">
                 <span>
@@ -1708,12 +1918,52 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
                 </button>
               </div>
             )}
-            <p className="hint designer-hint">
-              Click text and type, or double-click it, to change the words: Enter keeps them, Esc cancels, Tab goes to the next text. Hold Alt to place without
-              snapping, Shift to keep the shape or rotate in 15° steps. Drop or paste an SVG or PNG to import it.
-            </p>
-          </main>
+          </div>
 
+          <div className="designer-zoom designer-float" role="toolbar" aria-label="Zoom">
+            <button type="button" className={`button${zoomMode.mode === 'fit' ? ' primary' : ''}`} aria-pressed={zoomMode.mode === 'fit'} title="Fit the canvas to the window (double-click empty canvas)" onClick={fit}>
+              Fit
+            </button>
+            <button type="button" className="button" title="The output's size, 1920 by 1080" onClick={() => zoomTo(1)}>
+              100%
+            </button>
+            <button type="button" className="button" onClick={() => zoomTo(2)}>
+              200%
+            </button>
+            <input
+              type="range"
+              aria-label="Zoom"
+              title="Zoom (scroll wheel); hold Space and drag to pan"
+              min={Math.log2(ZOOM_MIN)}
+              max={Math.log2(ZOOM_MAX)}
+              step={0.01}
+              value={Math.log2(Math.max(ZOOM_MIN, scale))}
+              onChange={(e) => zoomTo(2 ** Number(e.target.value))}
+            />
+            <span className="designer-zoom-value">{Math.round(scale * 100)}%</span>
+            {transparent && (
+              <Segmented<Backdrop>
+                label="Behind the design"
+                value={backdrop}
+                options={[
+                  { value: 'checker', label: 'Checker' },
+                  { value: 'camera', label: 'Camera' },
+                ]}
+                onChange={setBackdrop}
+              />
+            )}
+            <span
+              className="designer-help"
+              role="img"
+              aria-label="Canvas tips"
+              title="Click text and type, or double-click it, to change the words: Enter keeps them, Esc cancels, Tab goes to the next text. Hold Alt to place without snapping, Shift to keep the shape or rotate in 15° steps. Drop or paste an SVG or PNG to import it. Scroll to zoom, hold Space and drag to pan, double-click empty canvas to fit."
+            >
+              <CircleHelp size={15} aria-hidden="true" />
+            </span>
+          </div>
+        </main>
+
+        {panels.inspector && (
           <aside className="designer-inspector" aria-label="Properties">
             {single ? (
               <ElementFields
@@ -1740,23 +1990,10 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
               <BackgroundFields background={style.background} onChange={(background) => change({ ...style, background }, 'background')} pickImage={pickImage} />
             )}
           </aside>
-        </div>
-
-        <ErrorNote error={error} />
-
-        <footer className="modal-actions designer-actions">
-          {!custom && saved.type === 'builtin' && <span className="hint">Built-in designs cannot be changed: Save as new keeps your changes.</span>}
-          {custom && (
-            <button type="button" className="button" onClick={() => void save(true)} title="A new design with these changes">
-              <FilePlus size={14} aria-hidden="true" /> Save as new
-            </button>
-          )}
-          <button type="button" className="button primary" disabled={custom && !dirty} onClick={() => void save(false)} title={`${MOD}S`}>
-            <Save size={14} aria-hidden="true" /> {custom ? 'Save' : saved.type === 'builtin' ? 'Save as new' : 'Save to Designs'}
-          </button>
-        </footer>
+        )}
       </div>
+    </div>
   )
-  if (page) return designer
-  return createPortal(<div className="modal-backdrop designer-backdrop">{designer}</div>, document.body)
+  // A page of the workspace or a dialog, it takes the whole window either way.
+  return createPortal(<div className="designer-window">{designer}</div>, document.body)
 }

@@ -3,6 +3,7 @@
 //
 //   node scripts/ui-audit.ts             every screen and state
 //   node scripts/ui-audit.ts --compare   only the operator screen, Settings and the welcome, beside the design
+//   node scripts/ui-audit.ts --designer  only the designer, at each size, with its canvas size (designer.json)
 //
 // Both save the operator screen, Settings and the first run welcome at each size to docs/ui-audit/compare/, each beside
 // a picture of its approved design (docs/design/*.reference.html, drawn at the same size) and an index.html that shows
@@ -34,6 +35,8 @@ const OUT = path.join(ROOT, 'docs', 'ui-audit')
 const COMPARE = path.join(OUT, 'compare')
 /** Only the screens compared with the design, for a quick run while matching it. */
 const COMPARE_ONLY = process.argv.includes('--compare')
+/** Only the designer at each size, for a quick run while working on it. */
+const DESIGNER_ONLY = process.argv.includes('--designer')
 /**
  * The approved designs, by the name of the screen they are compared with. The operator screen is Main2 (drawn at 1366
  * by 768), which replaced the operator layout of Main.reference.html.
@@ -882,6 +885,66 @@ async function compareScreens(page: Page, serviceId: number, size: { width: numb
   await resetScreens(page)
 }
 
+/** The designer's canvas at each size: its size in px, and the share of the window it takes. Saved to designer.json. */
+const designerCanvas: Record<string, { width: number; height: number; share: number }> = {}
+
+/**
+ * The designer at one size, opened from the Lower thirds workspace with the Figma style SVG imported: as it opens, with
+ * an element selected, at 200%, and with the layers and inspector hidden over the camera backdrop. Its canvas is
+ * measured as it opens; it fails when 200% is not twice the output's size, the handles change size with the zoom, a
+ * double-click on empty canvas does not fit it again, or hiding the panels does not make it larger.
+ */
+async function designerShots(page: Page, size: { width: number; height: number }) {
+  const at = `@${size.width}`
+  await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openLowerThirds(true))
+  await page.locator('.ltw-library input[type=file]').setInputFiles({ name: 'Name bar.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(AUDIT_SVG) })
+  await page.locator('.designer-import-note').waitFor()
+  await page.locator('.designer-import-note').getByRole('button', { name: 'Dismiss' }).click()
+  await settle(page)
+  const canvas = await page.locator('.designer-stage').evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    return { width: Math.round(r.width), height: Math.round(r.height), share: Math.round(((r.width * r.height) / (innerWidth * innerHeight)) * 1000) / 10 }
+  })
+  designerCanvas[`${size.width}x${size.height}`] = canvas
+  console.log(`  Designer canvas at ${size.width} by ${size.height}: ${canvas.width} by ${canvas.height} px (${canvas.share}% of the window)`)
+  await shot(page, `60-designer${at}`)
+  await page.locator('.designer-layer', { hasText: 'Name' }).first().click()
+  await shot(page, `60-designer-selected${at}`)
+  const handleWidth = () => page.locator('.designer-handle').first().evaluate((el) => el.getBoundingClientRect().width)
+  const stageWidth = () => page.locator('.designer-stage').evaluate((el) => Math.round(el.getBoundingClientRect().width))
+  const atFit = await handleWidth()
+
+  // 200%: the canvas is twice the output's width, and the handles keep their size on screen.
+  const zoom = page.getByRole('toolbar', { name: 'Zoom' })
+  await zoom.getByRole('button', { name: '200%' }).click()
+  await shot(page, `60-designer-200${at}`)
+  if ((await stageWidth()) !== 3840) throw new Error(`At 200% the canvas is ${await stageWidth()} px wide, not 3840`)
+  if (Math.abs((await handleWidth()) - atFit) > 0.5) throw new Error(`The handles are ${await handleWidth()} px at 200% and ${atFit} px at Fit`)
+
+  // A double-click on empty canvas (its middle, as this design sits low on the left) fits it again.
+  const area = await page.locator('.designer-stage-area').boundingBox()
+  await page.mouse.dblclick(area!.x + area!.width / 2, area!.y + area!.height / 2)
+  await settle(page, 200)
+  if ((await stageWidth()) !== canvas.width) throw new Error(`Double-click gave a ${await stageWidth()} px canvas, not the fitted ${canvas.width} px`)
+
+  // The side panels folded away: the canvas refits to the wider area. The camera backdrop behind the transparent design.
+  await page.locator('.designer').getByRole('button', { name: 'Hide layers' }).click()
+  await page.locator('.designer').getByRole('button', { name: 'Hide properties' }).click()
+  await zoom.getByRole('radio', { name: 'Camera' }).click()
+  await shot(page, `60-designer-wide-camera${at}`)
+  const wide = await stageWidth()
+  if (wide <= canvas.width) throw new Error(`With the panels hidden the canvas is ${wide} px, no wider than ${canvas.width} px`)
+  const tall = Math.round((wide * 9) / 16)
+  designerCanvas[`${size.width}x${size.height} panels hidden`] = { width: wide, height: tall, share: Math.round(((wide * tall) / (size.width * size.height)) * 1000) / 10 }
+  await zoom.getByRole('radio', { name: 'Checker' }).click()
+  await page.locator('.designer').getByRole('button', { name: 'Show layers' }).click()
+  await page.locator('.designer').getByRole('button', { name: 'Show properties' }).click()
+
+  page.once('dialog', (dialog) => void dialog.accept())
+  await page.locator('.designer').getByRole('button', { name: 'Close', exact: true }).click()
+  await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openLowerThirds(false))
+}
+
 /** compare/index.html: each screen beside its design, at each size. */
 function writeCompareIndex() {
   const rows = compared
@@ -928,10 +991,13 @@ async function captureUiKit() {
 async function main() {
   // Last run's pictures and measurements go; the report, which is committed, stays.
   mkdirSync(OUT, { recursive: true })
-  for (const file of readdirSync(OUT)) if (file !== 'REPORT.md') rmSync(path.join(OUT, file), { recursive: true, force: true })
-  if (!COMPARE_ONLY) await captureUiKit()
-  console.log('The approved designs:')
-  await captureReferences()
+  // A designer only run keeps the last full run's pictures, and replaces its own.
+  if (!DESIGNER_ONLY) for (const file of readdirSync(OUT)) if (file !== 'REPORT.md') rmSync(path.join(OUT, file), { recursive: true, force: true })
+  if (!COMPARE_ONLY && !DESIGNER_ONLY) await captureUiKit()
+  if (!DESIGNER_ONLY) {
+    console.log('The approved designs:')
+    await captureReferences()
+  }
 
   // An empty server address means the build talks to no server; account screens show their offline states.
   delete process.env.SERVICEEX_API_URL
@@ -981,11 +1047,21 @@ async function main() {
     for (const size of SIZES) {
       await setSize(app, page, size)
       if (await page.locator('.welcome').count()) {
+        if (DESIGNER_ONLY) break
         if (!COMPARE_ONLY) await shot(page, `00-welcome@${size.width}`)
         await compareShot(page, 'welcome', size)
       }
     }
     if (await page.locator('.welcome').count()) await page.getByRole('button', { name: 'Continue without an account' }).click()
+    if (DESIGNER_ONLY) {
+      for (const size of SIZES) {
+        console.log(`At ${size.width} by ${size.height}:`)
+        await setSize(app, page, size)
+        await designerShots(page, size)
+      }
+      writeResults()
+      return
+    }
     for (const size of SIZES) {
       if (COMPARE_ONLY) break
       await setSize(app, page, size)
@@ -1138,6 +1214,7 @@ async function main() {
       if (!typed.includes('Guest Speaker')) throw new Error(`Typing on the lower third canvas gave ${JSON.stringify(typed)}`)
       await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().updateSettings({ lowerThirdCanvasText: {} }))
       await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openLowerThirds(false))
+      await designerShots(page, size)
       if (await page.locator('.statusbar').getByRole('button', { name: 'Transcript' }).count()) {
         await page.locator('.statusbar').getByRole('button', { name: 'Transcript' }).click()
         await shot(page, `12-transcript-docked${at}`)
@@ -1397,40 +1474,46 @@ async function main() {
       shots.push('42-stage-display.png')
     }
 
-    writeCompareIndex()
-    writeFileSync(path.join(OUT, 'metrics.json'), JSON.stringify({ shots, screens: metrics, totals: totals(metrics) }, null, 2))
-    writeFileSync(path.join(OUT, 'static.json'), JSON.stringify(staticScan(), null, 2))
-    writeFileSync(path.join(OUT, 'layout.json'), JSON.stringify(layout, null, 2))
-    writeFileSync(path.join(OUT, 'states.json'), JSON.stringify(states, null, 2))
-    console.log(`Saved ${shots.length} screenshots and the measurements to ${path.relative(ROOT, OUT)}/`)
-
-    const failing = Object.entries(layout).filter(([, problems]) => problems.length > 0)
-    if (failing.length > 0) {
-      console.error(`\nLayout check failed on ${failing.length} of ${Object.keys(layout).length} screens:`)
-      for (const [name, problems] of failing) {
-        console.error(`  ${name}`)
-        for (const p of problems) console.error(`    ${p.kind}: ${p.what}: ${p.detail}`)
-      }
-      process.exitCode = 1
-    } else console.log(`Layout check passed on all ${Object.keys(layout).length} screens at ${SIZES.map((s) => `${s.width}x${s.height}`).join(', ')}.`)
-
-    const unfinished = Object.entries(states).filter(([, st]) => st.developerText.length > 0 || st.toastsInLiveRed.length > 0)
-    const lingering = Object.entries(states).filter(([, st]) => st.loadingText.length > 0 || st.bareEmptyLines.length > 0)
-    for (const [name, st] of lingering) console.warn(`  Note, ${name}: ${[...st.loadingText, ...st.bareEmptyLines.map((t) => `bare empty line "${t}"`)].join('; ')}`)
-    if (unfinished.length > 0) {
-      console.error(`\nState check failed on ${unfinished.length} of ${Object.keys(states).length} screens:`)
-      for (const [name, st] of unfinished) {
-        console.error(`  ${name}`)
-        for (const t of st.developerText) console.error(`    developer text: ${t.slice(0, 120)}`)
-        for (const t of st.toastsInLiveRed) console.error(`    toast in live red: ${t.slice(0, 120)}`)
-      }
-      process.exitCode = 1
-    } else console.log(`State check passed on all ${Object.keys(states).length} screens: no developer text, no toast in live red.`)
+    writeResults()
   } finally {
     await app.close().catch(() => undefined)
     await server.close()
     rmSync(userData, { recursive: true, force: true })
   }
+}
+
+/** Saves the measurements and reports the layout and state checks, failing the run when either failed. */
+function writeResults() {
+  if (!DESIGNER_ONLY) writeCompareIndex()
+  writeFileSync(path.join(OUT, 'metrics.json'), JSON.stringify({ shots, screens: metrics, totals: totals(metrics) }, null, 2))
+  writeFileSync(path.join(OUT, 'static.json'), JSON.stringify(staticScan(), null, 2))
+  writeFileSync(path.join(OUT, 'layout.json'), JSON.stringify(layout, null, 2))
+  writeFileSync(path.join(OUT, 'states.json'), JSON.stringify(states, null, 2))
+  writeFileSync(path.join(OUT, 'designer.json'), JSON.stringify(designerCanvas, null, 2))
+  console.log(`Saved ${shots.length} screenshots and the measurements to ${path.relative(ROOT, OUT)}/`)
+
+  const failing = Object.entries(layout).filter(([, problems]) => problems.length > 0)
+  if (failing.length > 0) {
+    console.error(`\nLayout check failed on ${failing.length} of ${Object.keys(layout).length} screens:`)
+    for (const [name, problems] of failing) {
+      console.error(`  ${name}`)
+      for (const p of problems) console.error(`    ${p.kind}: ${p.what}: ${p.detail}`)
+    }
+    process.exitCode = 1
+  } else console.log(`Layout check passed on all ${Object.keys(layout).length} screens at ${SIZES.map((s) => `${s.width}x${s.height}`).join(', ')}.`)
+
+  const unfinished = Object.entries(states).filter(([, st]) => st.developerText.length > 0 || st.toastsInLiveRed.length > 0)
+  const lingering = Object.entries(states).filter(([, st]) => st.loadingText.length > 0 || st.bareEmptyLines.length > 0)
+  for (const [name, st] of lingering) console.warn(`  Note, ${name}: ${[...st.loadingText, ...st.bareEmptyLines.map((t) => `bare empty line "${t}"`)].join('; ')}`)
+  if (unfinished.length > 0) {
+    console.error(`\nState check failed on ${unfinished.length} of ${Object.keys(states).length} screens:`)
+    for (const [name, st] of unfinished) {
+      console.error(`  ${name}`)
+      for (const t of st.developerText) console.error(`    developer text: ${t.slice(0, 120)}`)
+      for (const t of st.toastsInLiveRed) console.error(`    toast in live red: ${t.slice(0, 120)}`)
+    }
+    process.exitCode = 1
+  } else console.log(`State check passed on all ${Object.keys(states).length} screens: no developer text, no toast in live red.`)
 }
 
 /** Every screen's counts added up, with near duplicate colors grouped. */

@@ -5305,21 +5305,24 @@ textarea {
 }
 
 /* Over every popover of the operator screen (the heard list sits at 30), under the first run welcome. */
-.modal-backdrop.designer-backdrop,
-.modal-backdrop.designs-backdrop {
+.modal-backdrop.designs-backdrop,
+.designer-window {
   z-index: 100;
 }
 
-.designer-backdrop {
-  padding: var(--space-4);
+/* The designer takes the whole window: a 56 px header, then the layers, the canvas and the inspector. */
+.designer-window {
+  position: fixed;
+  inset: 0;
+  display: flex;
 }
 
-.modal.designer {
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  padding: var(--space-3) var(--space-4);
-  overflow: hidden;
+.designer {
+  display: grid;
+  grid-template-rows: 56px minmax(0, 1fr);
+  flex: 1;
+  min-width: 0;
+  background: var(--panel);
   outline: none;
 }
 
@@ -5330,18 +5333,28 @@ textarea {
   gap: var(--space-2);
 }
 
-.designer-header > .input {
+.designer-header {
+  min-width: 0;
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.designer-header > .input,
+.designer-header > .button {
   flex: none;
   width: auto;
 }
 
-.designer-tools {
+.designer-header-gap {
   flex: 1;
-  flex-wrap: wrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .designer-tools-gap {
-  width: var(--space-3);
+  width: var(--space-2);
 }
 
 .designer-name {
@@ -5350,10 +5363,20 @@ textarea {
 
 .designer-body {
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr) 300px;
-  flex: 1;
-  gap: var(--space-3);
+  grid-template-columns: 240px minmax(0, 1fr) 300px;
   min-height: 0;
+}
+
+.designer-body.no-layers {
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+
+.designer-body.no-inspector {
+  grid-template-columns: 240px minmax(0, 1fr);
+}
+
+.designer-body.no-layers.no-inspector {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .designer-layers,
@@ -5362,7 +5385,16 @@ textarea {
   flex-direction: column;
   gap: var(--space-2);
   min-height: 0;
+  padding: var(--space-3);
   overflow-y: auto;
+}
+
+.designer-layers {
+  border-right: 1px solid var(--border);
+}
+
+.designer-inspector {
+  border-left: 1px solid var(--border);
 }
 
 .designer-layers h3 {
@@ -5424,29 +5456,108 @@ textarea {
   margin-top: auto;
 }
 
-/* The canvas, as large as fits at 16:9. */
+/*
+ * The canvas area: the canvas is placed and sized in px by the designer (Fit, or a zoom panned about), so the handles,
+ * guides and outlines on it keep their size on screen at any zoom. The toolbars float over it.
+ */
 .designer-stage-area {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
+  position: relative;
+  min-width: 0;
   min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
   container-type: size;
 }
 
+.designer-stage-area.space,
+.designer-stage-area.space * {
+  cursor: grab !important;
+}
+
+.designer-stage-area.panning,
+.designer-stage-area.panning * {
+  cursor: grabbing !important;
+}
+
 .designer-stage {
-  position: relative;
-  flex-shrink: 0;
-  width: min(100cqw, (100cqh - 28px) * 16 / 9);
-  aspect-ratio: 16 / 9;
-  border: 1px solid var(--border);
+  position: absolute;
+  box-shadow: 0 0 0 1px var(--border);
   user-select: none;
   touch-action: none;
 }
 
-.designer-hint {
-  margin: 0;
+/* Behind a transparent design: a dim, uneven camera picture instead of the checkerboard, to judge an overlay by. */
+.designer-stage.camera .design-view.checker {
+  background:
+    radial-gradient(ellipse 60% 70% at 38% 40%, rgb(92 84 74 / 0.55), transparent 70%),
+    radial-gradient(ellipse 40% 50% at 78% 30%, rgb(60 70 88 / 0.5), transparent 70%),
+    linear-gradient(180deg, #23252b 0%, #15171c 60%, #0b0c0f 100%);
+}
+
+.designer-float {
+  position: absolute;
+  z-index: 3;
+  padding: var(--space-1-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  box-shadow: var(--shadow-2);
+}
+
+.designer-tools.designer-float {
+  top: var(--space-4);
+  left: 50%;
+  max-width: calc(100% - 2 * var(--space-4));
+  transform: translateX(-50%);
+}
+
+/* A narrow canvas area: the add and play buttons show their icons only. */
+@container (max-width: 900px) {
+  .designer-tool-label {
+    display: none;
+  }
+}
+
+.designer-zoom {
+  right: var(--space-4);
+  bottom: var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  max-width: calc(100% - 2 * var(--space-4));
+  font-size: 12px;
+}
+
+.designer-zoom input[type='range'] {
+  width: 110px;
+}
+
+.designer-zoom-value {
+  min-width: 38px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.designer-help {
+  display: inline-flex;
+  color: var(--text-3);
+  cursor: help;
+}
+
+.designer-notes {
+  position: absolute;
+  bottom: calc(var(--space-4) + 52px);
+  left: var(--space-4);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: min(560px, calc(100% - 2 * var(--space-4)));
+}
+
+.designer-notes:empty {
+  display: none;
 }
 
 .designer-frames {
@@ -5565,14 +5676,6 @@ textarea {
 .designer-words {
   resize: vertical;
   font-family: inherit;
-}
-
-.designer-actions {
-  align-items: center;
-}
-
-.designer-actions .hint {
-  margin-right: auto;
 }
 
 .modal.designs-library {
@@ -10775,17 +10878,6 @@ svg.lucide {
   margin-right: var(--space-1-5);
 }
 
-/* The designer as a page of the workspace, not a dialog over the screen. */
-.designer.designer-page {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: var(--space-3);
-  min-height: 0;
-  padding: var(--space-3) var(--space-4);
-  outline: none;
-}
-
 /* ---------- Send as lower third ---------- */
 
 .quick-lower-third {
@@ -10926,10 +11018,11 @@ svg.lucide {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
-  margin-top: var(--space-2);
   padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--raised);
+  box-shadow: var(--shadow-2);
   font-size: var(--text-sm);
 }
 
