@@ -28,6 +28,7 @@ import { formatHours } from '../../shared/account'
 import { can, hasFeature, upgradeNote } from '../../shared/features'
 import { layoutById } from '../../shared/layouts'
 import type { OutputMode } from '../../shared/types'
+import markUrl from '../../assets/brand/mark.svg'
 import { useAccount } from '../lib/account'
 import { switchLayout } from '../lib/layouts'
 import { useListener } from '../lib/listener'
@@ -359,16 +360,6 @@ function MoreMenu() {
   )
 }
 
-/** The ServiceEx mark: a rounded square in the accent with a rising path. */
-function LogoMark() {
-  return (
-    <svg className="brand-mark" width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">
-      <rect width="28" height="28" rx="8" fill="var(--accent)" />
-      <path d="M8 19l5-5 3 3 5-6" fill="none" stroke="var(--ink)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
 /** "Saved just now", "Saved 4 min ago": every change to the service is written to disk as it is made. */
 function useSavedText(service: unknown): string {
   const [savedAt, setSavedAt] = useState(() => Date.now())
@@ -424,7 +415,7 @@ export function Toolbar() {
   return (
     <header className="toolbar">
       <div className="brand">
-        <LogoMark />
+        <img className="brand-mark" src={markUrl} width={28} height={28} alt="" draggable={false} />
         <span className="brand-wordmark">ServiceEx</span>
       </div>
       <span className="toolbar-divider" aria-hidden="true" />

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { openSettingsAt } from '../lib/shell'
 import { Button } from './ui'
+import markUrl from '../../assets/brand/mark.svg'
 
 /** Stepped paths rising to the right over the gradient, the brightest ending in a dot. */
 function SteppedPaths() {
@@ -41,10 +42,7 @@ export function WelcomeScreen({ onAccount, onContinue }: { onAccount(): void; on
       <div className="welcome-art">
         <SteppedPaths />
         <div className="welcome-brand">
-          <svg width="32" height="32" viewBox="0 0 28 28" aria-hidden="true">
-            <rect width="28" height="28" rx="8" fill="var(--accent)" />
-            <path d="M8 19l5-5 3 3 5-6" fill="none" stroke="var(--ink)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <img src={markUrl} width={32} height={32} alt="" draggable={false} />
           <span className="welcome-wordmark">ServiceEx</span>
         </div>
         <div className="welcome-caption">For the people behind the screen</div>

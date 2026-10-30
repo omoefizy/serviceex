@@ -1,0 +1,14 @@
+{
+  "name": "ServiceEx",
+  "short_name": "ServiceEx",
+  "icons": [
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#0A0F1E",
+  "background_color": "#0A0F1E",
+  "display": "standalone"
+}

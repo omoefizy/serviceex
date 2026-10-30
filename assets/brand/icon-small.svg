@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- The 16 and 24 px icon: the frame and bar thickened and snapped to the 16 px grid (16 units a pixel), no live dot. -->
+  <rect id="background" width="256" height="256" rx="58" fill="#0A0F1E"/>
+  <rect x="48" y="64" width="160" height="128" rx="20" fill="none" stroke="#0087CB" stroke-width="32"/>
+  <rect x="80" y="128" width="80" height="32" rx="6" fill="#00AFEF"/>
+</svg>

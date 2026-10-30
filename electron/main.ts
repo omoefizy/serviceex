@@ -80,7 +80,8 @@ function loadRenderer(target: BrowserWindow, route?: string) {
 
 function createWindow() {
   win = new BrowserWindow({
-    icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
+    // Windows and Linux; on macOS the Dock icon is the app's own (in development, set in whenReady).
+    icon: path.join(process.env.VITE_PUBLIC, 'app-icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       // The sermon listener captures audio and keeps time here; it must not slow down when the window is hidden.
@@ -371,6 +372,10 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(async () => {
+  // A packaged app takes its icon from build/icon.icns; in development the Dock would show Electron's.
+  if (VITE_DEV_SERVER_URL) app.dock?.setIcon(path.join(process.env.APP_ROOT, 'build/icon-mac.png'))
+  // The About panel on Windows and Linux (macOS's shows the app icon).
+  app.setAboutPanelOptions({ iconPath: path.join(process.env.VITE_PUBLIC, 'app-icon.png') })
   // First: what the licence allows is fixed now, for this whole run, before any feature starts.
   await loadLicense()
   registerLicenseIpc()

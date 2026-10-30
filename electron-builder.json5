@@ -4,6 +4,7 @@
   "appId": "com.worshipdeck.app",
   "asar": true,
   "productName": "WorshipDeck",
+  // The icons come from `npm run icons`, made from assets/brand/icon.svg.
   "directories": {
     "output": "release/${version}"
   },
@@ -67,9 +68,14 @@
       "NSBonjourServices": ["_serviceex._tcp"]
     },
     // Signed builds use the hardened runtime, which also needs the audio-input and Apple Events entitlements.
+    "icon": "build/icon.icns",
     "entitlements": "build/entitlements.mac.plist",
     "entitlementsInherit": "build/entitlements.mac.plist",
     "artifactName": "${productName}-Mac-${version}-${arch}.${ext}"
+  },
+  // The mounted disk image's icon.
+  "dmg": {
+    "icon": "build/icon.icns"
   },
   "win": {
     "target": [
@@ -80,6 +86,7 @@
         ]
       }
     ],
+    "icon": "build/icon.ico",
     "artifactName": "${productName}-Windows-${version}-Setup.${ext}"
   },
   // Installs per user, without administrator rights, so it cannot add a Windows Firewall rule for Sharing (netsh needs
@@ -89,12 +96,17 @@
     "oneClick": false,
     "perMachine": false,
     "allowToChangeInstallationDirectory": true,
-    "deleteAppDataOnUninstall": false
+    "deleteAppDataOnUninstall": false,
+    "installerIcon": "build/icon.ico",
+    "uninstallerIcon": "build/icon.ico",
+    "installerHeaderIcon": "build/icon.ico"
   },
   "linux": {
     "target": [
       "AppImage"
     ],
+    // One PNG per size, named NxN.png.
+    "icon": "build/icons",
     "artifactName": "${productName}-Linux-${version}.${ext}"
   }
 }
