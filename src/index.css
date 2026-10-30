@@ -2687,10 +2687,8 @@ textarea {
 }
 
 .font-picker-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 6;
+  position: fixed;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
   gap: var(--space-1-5);
@@ -2702,8 +2700,11 @@ textarea {
   box-shadow: var(--shadow-2);
 }
 
+.font-picker-menu.dropping {
+  border-color: var(--accent-bright);
+}
+
 .font-picker-menu ul {
-  max-height: 320px;
   margin: 0;
   padding: 0;
   overflow-y: auto;
@@ -2801,15 +2802,30 @@ textarea {
   white-space: nowrap;
 }
 
-.font-picker-import {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding-top: var(--space-1-5);
-  border-top: 1px solid var(--border);
+/* The list takes the room the window leaves, and scrolls; search, import and preview stay put above it. */
+.font-picker-menu > :not(.font-picker-list) {
+  flex: none;
 }
 
-.font-picker-import .hint {
+.font-picker-menu > .font-picker-list {
+  flex: 1 1 auto;
+  min-height: 80px;
+  overflow-y: auto;
+}
+
+.font-picker-import {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.font-picker-import .button {
+  align-self: flex-start;
+}
+
+.font-picker-import .hint,
+.font-picker-note {
   margin: 0;
 }
 
@@ -5057,6 +5073,82 @@ textarea {
   }
 }
 
+/* Light effects (shared/designEffects.ts): layers over an element in its shape, drawn once; the effect clock moves
+   (.dv-fx-band, .dv-fx-spin, .dv-fx-bolt) and fades (.dv-fx-glow, .dv-fx-fill, .dv-fx-light) them, and between passes
+   they rest out of sight. Each moving layer is its own compositor layer, so a tick repaints nothing. */
+.dv-fx-host {
+  pointer-events: none;
+}
+
+.dv-fx {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.dv-fx-unclipped {
+  overflow: visible;
+}
+
+.dv-fx-turn {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+
+.dv-fx-band {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  transform: translateX(-100%);
+  will-change: transform;
+}
+
+/* Border chase: a ring the width of the light, round the edge; inside it a turning cone of light. */
+.dv-fx-ring {
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+
+.dv-fx-spin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  will-change: transform, opacity;
+}
+
+.dv-fx-glow,
+.dv-fx-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  will-change: opacity;
+}
+
+.dv-fx-bolt {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  transform: translateX(-100%);
+  will-change: transform;
+}
+
+.dv-fx-light {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  opacity: 0;
+  will-change: opacity;
+}
+
 /* An element's way in and out (shared/designAnimation.ts). They use opacity, translate, scale and clip-path, so an
    element keeps its own rotation. --dv-dx and --dv-dy are how far off screen its edge is, in cqw and cqh. */
 @keyframes dv-in-pop {
@@ -5451,6 +5543,23 @@ textarea {
 .designer-number .input {
   flex: 1;
   min-width: 0;
+}
+
+/* One light effect in the inspector's Effects list. */
+.designer-effect {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.designer-effect-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
 }
 
 .designer-words {
@@ -8001,20 +8110,116 @@ svg.lucide {
   margin-left: auto;
 }
 
-.statusbar-plan {
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border-strong);
+/* The plan badge: PRO on an accent gradient, or a quiet outlined FREE pill with Upgrade beside it. */
+.plan-badge-area {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.plan-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--plan-border);
   border-radius: var(--radius-full);
+  background: linear-gradient(135deg, var(--plan-fill-from), var(--plan-fill-to));
+  color: var(--plan-text);
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.plan-badge:hover,
+.plan-badge[aria-expanded='true'] {
+  border-color: var(--plan-border-hover);
+  box-shadow: 0 0 10px var(--plan-glow);
+}
+
+.plan-badge:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
+.plan-badge-icon {
+  color: var(--plan-icon);
+}
+
+.plan-badge.free {
+  border-color: var(--border-strong);
   background: none;
+  color: var(--text-3);
+}
+
+.plan-badge.free:hover,
+.plan-badge.free[aria-expanded='true'] {
+  border-color: var(--text-3);
+  box-shadow: none;
   color: var(--text-2);
+}
+
+.plan-badge-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning-fill);
+}
+
+.plan-upgrade {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
   font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
   cursor: pointer;
 }
 
-.statusbar-plan:hover {
-  border-color: var(--text-3);
-  color: var(--text-1);
+.plan-upgrade:hover {
+  color: var(--accent-bright);
+}
+
+.plan-popover {
+  right: 0;
+  width: min(280px, calc(100vw - 32px));
+}
+
+.plan-popover-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+}
+
+.plan-popover-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1-5) var(--space-3);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.plan-popover-list dt {
+  color: var(--text-3);
+}
+
+.plan-popover-list dd {
+  margin: 0;
+  text-align: right;
+}
+
+.plan-ended {
+  color: var(--warning);
 }
 
 /* Everything that pops up from the status bar opens upwards. */
@@ -9958,10 +10163,6 @@ svg.lucide {
 
 .statusbar .ui-button,
 .statusbar .status-button,
-.statusbar-plan {
-  height: 28px;
-}
-
 /* Icon buttons here are 32px, and so is their hit area, so nothing reaches past the 36px bar. */
 .statusbar .ui-icon-button {
   --_size: var(--control-sm);
@@ -10464,22 +10665,8 @@ svg.lucide {
 
 .ltw-fields {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  justify-content: flex-end;
   gap: var(--space-2);
-}
-
-.ltw-field {
-  display: flex;
-  flex: 1 1 200px;
-  flex-direction: column;
-  gap: var(--space-1);
-  font-size: 12px;
-  color: var(--text-2);
-}
-
-.ltw-field-number {
-  flex: 0 1 90px;
 }
 
 .ltw-field-actions {

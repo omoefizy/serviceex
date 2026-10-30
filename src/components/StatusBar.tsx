@@ -1,9 +1,10 @@
 import { Mic, MicOff, PanelBottomOpen } from 'lucide-react'
-import { openPlans, useAccount } from '../lib/account'
+import { useAccount } from '../lib/account'
 import { useListener } from '../lib/listener'
 import { chipOf } from '../lib/listenerStatus'
 import { toggleTranscriptDrawer } from '../lib/shell'
 import { LevelMeter } from './LevelMeter'
+import { PlanBadge } from './PlanBadge'
 import { StatusArea } from './StatusArea'
 import { Button } from './ui'
 
@@ -27,7 +28,6 @@ export function StatusBar({ showListener, transcriptOpen }: { showListener: bool
   const account = useAccount()
   const chip = chipOf(status, mode, modeReason, error, restarting)
   const running = status === 'starting' || status === 'connecting' || status === 'listening'
-  const plan = account?.signedIn ? account.license.plan : account?.configured ? 'Not signed in' : null
 
   const MicIcon = running ? Mic : MicOff
 
@@ -58,11 +58,7 @@ export function StatusBar({ showListener, transcriptOpen }: { showListener: bool
         )}
         <div className="statusbar-end">
           <StatusArea />
-          {plan && (
-            <button type="button" className="statusbar-plan" title="Plans and Credits" onClick={() => openPlans(true)}>
-              {plan}
-            </button>
-          )}
+          {account && (account.signedIn || account.configured) && <PlanBadge account={account} />}
         </div>
     </footer>
   )

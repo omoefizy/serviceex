@@ -31,6 +31,14 @@
   --accent-number: #7ccbf2;
   /* The soft glow under the live screen. */
   --accent-glow: color-mix(in srgb, var(--accent) 18%, transparent);
+  /* The plan badge in the status bar: an accent gradient, the accent ring, and pale blue letters. */
+  --plan-fill-from: color-mix(in srgb, var(--accent) 22%, transparent);
+  --plan-fill-to: color-mix(in srgb, var(--accent-bright) 6%, transparent);
+  --plan-border: var(--accent-ring);
+  --plan-border-hover: color-mix(in srgb, var(--accent-bright) 70%, transparent);
+  --plan-glow: color-mix(in srgb, var(--accent-bright) 28%, transparent);
+  --plan-icon: var(--accent-bright);
+  --plan-text: #bfe6fa;
 
   /* ---------- Surfaces and lines ---------- */
 
@@ -281,6 +289,7 @@
     --scrim: rgb(13 19 36 / 0.45);
     --accent-text: color-mix(in srgb, var(--accent), black 30%);
     --accent-number: color-mix(in srgb, var(--accent), black 22%);
+    --plan-text: var(--accent-text);
     --live-chip-text: #a3142a;
     --live-dot: #d62b43;
     --match-strong: #12814f;
@@ -316,6 +325,7 @@
   --scrim: rgb(13 19 36 / 0.45);
   --accent-text: color-mix(in srgb, var(--accent), black 30%);
   --accent-number: color-mix(in srgb, var(--accent), black 22%);
+  --plan-text: var(--accent-text);
   --live-chip-text: #a3142a;
   --live-dot: #d62b43;
   --match-strong: #12814f;

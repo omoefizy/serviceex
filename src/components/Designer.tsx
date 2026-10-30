@@ -32,12 +32,16 @@ import { createPortal } from 'react-dom'
 import { paddingBetween, type DesignLayout } from '../../shared/autoLayout'
 import { linkAll, makeStretch, suggestLinks, textBehind } from '../../shared/designLinks'
 import { DESIGN_EASINGS, DESIGN_MOTIONS, designTimeline, MOTION_LIMITS, type AnimationPhase } from '../../shared/designAnimation'
+import { DESIGN_EFFECTS, EFFECT_DIRECTIONS, EFFECT_LABELS, EFFECT_LIMITS, effectEndMs, newEffect } from '../../shared/designEffects'
 import { BRAND, DEFAULT_MAX, KIND_NAMES, newDesignElement, normalizeDesign } from '../../shared/designs'
 import type {
   Design,
   DesignBackground,
   DesignCategory,
   DesignEasing,
+  DesignEffect,
+  DesignEffectDirection,
+  DesignEffectKind,
   DesignElement,
   DesignElementAnimation,
   DesignElementKind,
@@ -94,6 +98,25 @@ const PASTE_OFFSET = 2
 const DOUBLE_CLICK_MS = 400
 /** How long Play holds the design on screen between its way in and its way out. */
 const PLAY_HOLD_MS = 1500
+
+/** Play holds the design long enough to see its light effects, up to this long. */
+const PLAY_EFFECTS_MAX_MS = 20000
+
+/** How long after Play starts the light effects have each been seen once: to their end, or one pass of a loop. */
+function effectsShownMs(elements: DesignElement[]): number {
+  const entries = new Map(designTimeline(elements, 'in').entries.map((entry) => [entry.id, entry]))
+  let end = 0
+  for (const element of elements) {
+    if (element.hidden) continue
+    const entry = entries.get(element.id)
+    const inAt = entry ? entry.startMs + entry.durationMs : 0
+    for (const effect of element.effects) {
+      const finite = effectEndMs(effect)
+      end = Math.max(end, inAt + (Number.isFinite(finite) ? finite : effect.delayMs + (effect.durationMs + effect.gapMs) / effect.speed) + 300)
+    }
+  }
+  return Math.min(end, PLAY_EFFECTS_MAX_MS)
+}
 
 const WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900]
 const CASES: { value: TextCase; label: string }[] = [
@@ -358,6 +381,125 @@ const MOTION_LABELS: Record<DesignMotion, string> = {
 const OUT_LABELS: Partial<Record<DesignMotion, string>> = { slideLeft: 'Slide to left', slideRight: 'Slide to right', slideBottom: 'Slide to bottom', slideTop: 'Slide to top' }
 const EASING_LABELS: Record<DesignEasing, string> = { linear: 'Linear', ease: 'Ease', easeIn: 'Ease in', easeOut: 'Ease out', easeInOut: 'Ease in and out', back: 'Overshoot' }
 
+const DIRECTION_LABELS: Record<DesignEffectDirection, string> = { forward: 'Forward', reverse: 'Reverse', alternate: 'Back and forth' }
+
+/** One light effect's settings: its timing, its light, then the settings its kind has. */
+function EffectFields({ effect, onChange, onRemove }: { effect: DesignEffect; onChange(effect: DesignEffect, key: string): void; onRemove(): void }) {
+  const set = <K extends keyof DesignEffect>(key: K) => (value: DesignEffect[K]) => onChange({ ...effect, [key]: value }, key)
+  const L = EFFECT_LIMITS
+  const { kind } = effect
+  const travels = kind === 'lightSweep' || kind === 'scanLine' || kind === 'lightning'
+  return (
+    <div className="designer-effect" aria-label={EFFECT_LABELS[kind]} role="group">
+      <div className="designer-effect-head">
+        <strong>{EFFECT_LABELS[kind]}</strong>
+        <button type="button" className="icon-button" aria-label={`Remove ${EFFECT_LABELS[kind]}`} title="Remove this effect" onClick={onRemove}>
+          <Trash2 size={13} />
+        </button>
+      </div>
+      <div className="designer-fields">
+        <NumberField label="Time" value={effect.durationMs} step={100} min={L.durationMs[0]} max={L.durationMs[1]} onChange={(v) => set('durationMs')(Math.round(v))} suffix="ms" />
+        <NumberField label="Speed" value={effect.speed} step={0.25} min={L.speed[0]} max={L.speed[1]} onChange={set('speed')} suffix="×" />
+        <NumberField label="Delay" value={effect.delayMs} step={100} min={0} max={L.delayMs[1]} onChange={(v) => set('delayMs')(Math.round(v))} suffix="ms" />
+        <NumberField label="Gap" value={effect.gapMs} step={100} min={0} max={L.gapMs[1]} onChange={(v) => set('gapMs')(Math.round(v))} suffix="ms" />
+      </div>
+      <div className="designer-fields">
+        <label className="inline-check" title="Plays until the element goes; off, it plays the number of times set">
+          <input type="checkbox" checked={effect.repeat === 0} onChange={(e) => set('repeat')(e.target.checked ? 0 : 1)} />
+          Loop
+        </label>
+        {effect.repeat > 0 && <NumberField label="Times" value={effect.repeat} step={1} min={1} max={L.repeat[1]} onChange={(v) => set('repeat')(Math.max(1, Math.round(v)))} />}
+        <label className="designer-number">
+          <span>Easing</span>
+          <select className="input" aria-label="Effect easing" value={effect.easing} onChange={(e) => set('easing')(e.target.value as DesignEasing)}>
+            {DESIGN_EASINGS.map((easing) => (
+              <option key={easing} value={easing}>
+                {EASING_LABELS[easing]}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="designer-fields">
+        <Color label="Effect colour" value={effect.color} onChange={set('color')} />
+        <Slider label="Intensity" min={0} max={1} step={0.05} value={effect.intensity} onChange={set('intensity')} format={(v) => `${Math.round(v * 100)}%`} />
+      </div>
+      {(travels || kind === 'borderChase') && (
+        <div className="designer-fields">
+          {(kind === 'lightSweep' || kind === 'scanLine') && <NumberField label="Angle" value={effect.angle} step={5} min={L.angle[0]} max={L.angle[1]} onChange={(v) => set('angle')(Math.round(v))} suffix="°" />}
+          <NumberField
+            label={kind === 'borderChase' ? 'Length' : kind === 'lightning' ? 'Spread' : 'Width'}
+            value={effect.width}
+            step={1}
+            min={L.width[0]}
+            max={L.width[1]}
+            onChange={(v) => set('width')(Math.round(v))}
+            suffix="%"
+          />
+          {kind === 'borderChase' && <NumberField label="Thickness" value={effect.thickness} step={0.05} min={L.thickness[0]} max={L.thickness[1]} onChange={set('thickness')} />}
+          <label className="designer-number">
+            <span>Direction</span>
+            <select className="input" aria-label="Effect direction" value={effect.direction} onChange={(e) => set('direction')(e.target.value as DesignEffectDirection)}>
+              {EFFECT_DIRECTIONS.map((d) => (
+                <option key={d} value={d}>
+                  {DIRECTION_LABELS[d]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+      {(kind === 'lightning' || kind === 'flicker' || kind === 'glowPulse') && (
+        <div className="designer-fields">
+          {kind !== 'glowPulse' && <Slider label="Flicker" min={0} max={1} step={0.05} value={effect.flicker} onChange={set('flicker')} format={(v) => `${Math.round(v * 100)}%`} />}
+          {kind !== 'glowPulse' && (
+            <NumberField label="Seed" value={effect.seed} step={1} min={L.seed[0]} max={L.seed[1]} onChange={(v) => set('seed')(Math.round(v))} />
+          )}
+          {kind !== 'flicker' && <NumberField label="Glow" value={effect.glow} step={0.1} min={L.glow[0]} max={L.glow[1]} onChange={set('glow')} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The element's light effects, in the order they draw, and Add effect. Play shows them; they run on air. */
+function EffectsFields({ effects, onChange }: { effects: DesignEffect[]; onChange(effects: DesignEffect[], key: string): void }) {
+  const add = (kind: DesignEffectKind) => {
+    const used = new Set(effects.map((e) => e.id))
+    let n = effects.length + 1
+    while (used.has(`fx${n}`)) n++
+    onChange([...effects, newEffect(kind, `fx${n}`)], 'add')
+  }
+  return (
+    <Section title="Effects">
+      {effects.map((effect) => (
+        <EffectFields
+          key={effect.id}
+          effect={effect}
+          onChange={(changed, key) => onChange(effects.map((e) => (e.id === effect.id ? changed : e)), `${effect.id}.${key}`)}
+          onRemove={() => onChange(effects.filter((e) => e.id !== effect.id), `${effect.id}.remove`)}
+        />
+      ))}
+      {effects.length < EFFECT_LIMITS.count && (
+        <label className="designer-number">
+          <span>Add effect</span>
+          <select className="input" aria-label="Add effect" value="" onChange={(e) => e.target.value && add(e.target.value as DesignEffectKind)}>
+            <option value="" disabled>
+              Choose…
+            </option>
+            {DESIGN_EFFECTS.map((kind) => (
+              <option key={kind} value={kind}>
+                {EFFECT_LABELS[kind]}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <p className="hint">Light inside the element's shape once it is in. Play previews them; they run on the outputs.</p>
+    </Section>
+  )
+}
+
 /** One way in or out: the movement, then its timing once it has one. */
 function MotionFields({ phase, step, onChange }: { phase: AnimationPhase; step: DesignMotionStep; onChange(step: DesignMotionStep, key: string): void }) {
   const set = <K extends keyof DesignMotionStep>(key: K) => (value: DesignMotionStep[K]) => onChange({ ...step, [key]: value }, key)
@@ -621,6 +763,8 @@ function ElementFields({ element, elements, layout, onChange, onStretch, pickIma
         <p className="hint">Lower orders build first; the next order starts when they are done. On the way out the last in goes first.</p>
       </Section>
 
+      <EffectsFields effects={element.effects} onChange={(effects, key) => onChange({ effects }, `${element.id}.effects.${key}`)} />
+
       <Section title="On air">
         <label className="designer-number">
           <span>Loop</span>
@@ -874,7 +1018,7 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
     const total = designTimeline(style.elements, playing.phase).totalMs
     const timer = setTimeout(
       () => setPlaying((p) => (p === playing ? (p.phase === 'in' ? { phase: 'out', run: p.run + 1 } : null) : p)),
-      playing.phase === 'in' ? total + PLAY_HOLD_MS : total + 200,
+      playing.phase === 'in' ? Math.max(total + PLAY_HOLD_MS, effectsShownMs(style.elements)) : total + 200,
     )
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- timed from when each phase starts

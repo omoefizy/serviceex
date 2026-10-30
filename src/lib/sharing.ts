@@ -304,7 +304,7 @@ async function localSongId(title: string): Promise<number | null> {
   return same?.id ?? null
 }
 
-/** Shows a cue in the grid and preview, or for a point in the lower third draft. It never goes live. */
+/** Shows a cue in the grid and preview, or for a point on the lower third canvas. It never goes live. */
 export async function previewCue(cue: Cue): Promise<void> {
   const st = useOperatorStore.getState()
   st.showGrid()
@@ -319,9 +319,14 @@ export async function previewCue(cue: Cue): Promise<void> {
       else st.selectScripture(cue.title, [{ text: cue.song?.lyrics || cue.text, caption: cue.title }])
       return
     }
-    case 'point':
-      st.setLowerThirdDraft({ headline: cue.text || cue.title, body: '' })
+    case 'point': {
+      // Onto the canvas of the workspace's design, ready to send; with no design, staged on Preview in the template.
+      const words = cue.text || cue.title
+      const designId = st.lowerThirdWorkspaceDesignId ?? st.settings.lowerThirdDesignId
+      if (designId !== null && st.designs.some((d) => d.id === designId)) await st.setCanvasText(designId, { headline: words })
+      else st.previewLowerThirdLine({ headline: words, body: '' })
       return
+    }
     case 'note':
     case 'text':
       st.selectQuote(cue.text || cue.title, '')

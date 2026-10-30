@@ -1126,14 +1126,17 @@ async function main() {
       await shot(page, `12-designer-stretch-inspector${at}`)
       page.once('dialog', (dialog) => void dialog.accept())
       await page.locator('.designer').getByRole('button', { name: 'Close' }).click()
-      // Typing on the workspace's canvas: click the name, type, Enter; the words land in the headline.
+      // Typing on the workspace's canvas: click the name, type, Enter; the words stay on that design's canvas.
       await page.locator('.ltw-frame').first().click()
       await page.keyboard.type('Guest Speaker')
       await shot(page, `12-workspace-typing${at}`)
       await page.keyboard.press('Enter')
-      const typed = await page.locator('#lower-third-headline').inputValue()
-      if (typed !== 'Guest Speaker') throw new Error(`Typing on the lower third canvas gave "${typed}"`)
-      await page.locator('#lower-third-headline').fill('')
+      const typed = await page.evaluate(() => {
+        const st = (window as unknown as AuditWindow).__audit.store.getState()
+        return Object.values(st.settings.lowerThirdCanvasText[String(st.lowerThirdWorkspaceDesignId)] ?? {})
+      })
+      if (!typed.includes('Guest Speaker')) throw new Error(`Typing on the lower third canvas gave ${JSON.stringify(typed)}`)
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().updateSettings({ lowerThirdCanvasText: {} }))
       await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openLowerThirds(false))
       if (await page.locator('.statusbar').getByRole('button', { name: 'Transcript' }).count()) {
         await page.locator('.statusbar').getByRole('button', { name: 'Transcript' }).click()

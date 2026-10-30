@@ -64,4 +64,27 @@ describe('readFontInfo', () => {
   it('rejects files that are not fonts', () => {
     expect(() => readFontInfo(Buffer.from('not a font at all'))).toThrow()
   })
+
+  it('reads a WOFF (1.0) font from its compressed tables, not its file name', async () => {
+    const woff = await readFile(path.join(__dirname, '..', 'node_modules', '@fontsource', 'bricolage-grotesque', 'files', 'bricolage-grotesque-latin-800-normal.woff'))
+    expect(readFontInfo(woff)).toEqual({ family: 'Bricolage Grotesque', weight: '800', italic: false })
+  })
+
+  it('reads an OpenType font with several weights in one variable file', async () => {
+    const ttf = await readFile(path.join(__dirname, '..', 'node_modules', 'pdfjs-dist', 'standard_fonts', 'LiberationSans-BoldItalic.ttf'))
+    expect(readFontInfo(ttf)).toEqual({ family: 'Liberation Sans', weight: '700', italic: true })
+  })
+
+  it('says why in plain words', () => {
+    expect(() => readFontInfo(Buffer.from('ttcf and the rest'))).toThrow(/font collection/)
+    // A WOFF whose table runs past the end of the file.
+    const cut = Buffer.alloc(64)
+    cut.write('wOFF', 0, 'latin1')
+    cut.writeUInt16BE(1, 12)
+    cut.write('name', 44, 'latin1')
+    cut.writeUInt32BE(60, 48)
+    cut.writeUInt32BE(400, 52)
+    cut.writeUInt32BE(400, 56)
+    expect(() => readFontInfo(cut)).toThrow(/cut short/)
+  })
 })

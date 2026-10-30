@@ -10,6 +10,7 @@ import type {
   LogoAnchor,
   LogoItem,
   SavedLowerThirdLine,
+  LowerThirdCanvasText,
   SermonPoint,
   ScreenMargins,
   ScriptureAdjust,
@@ -55,6 +56,7 @@ const DEFAULTS: AppSettings = {
   lowerThirdHoldSeconds: 0,
   lowerThirdSavedLines: [],
   lowerThirdServicePoints: {},
+  lowerThirdCanvasText: {},
   lowerThirdQuickTarget: 'preview',
   logoUrl: null,
   churchName: '',
@@ -150,6 +152,7 @@ const KEYS: Record<keyof AppSettings, string> = {
   lowerThirdHoldSeconds: 'lowerThird.holdSeconds',
   lowerThirdSavedLines: 'lowerThird.savedLines',
   lowerThirdServicePoints: 'lowerThird.servicePoints',
+  lowerThirdCanvasText: 'lowerThird.canvasText',
   lowerThirdQuickTarget: 'lowerThird.quickTarget',
   logoUrl: 'output.logoUrl',
   churchName: 'church.name',
@@ -307,6 +310,22 @@ function cleanServicePoints(value: unknown): Record<string, SermonPoint[]> | und
   return result
 }
 
+/** The words on each design's canvas, by design id; anything but a design id and its fields' words is dropped. */
+function cleanCanvasText(value: unknown): Record<string, LowerThirdCanvasText> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const result: Record<string, LowerThirdCanvasText> = {}
+  for (const [id, fields] of Object.entries(value).slice(0, 500)) {
+    if (!/^\d+$/.test(id) || typeof fields !== 'object' || fields === null) continue
+    const kept: LowerThirdCanvasText = {}
+    for (const field of ['headline', 'body', 'number'] as const) {
+      const words = (fields as LowerThirdCanvasText)[field]
+      if (typeof words === 'string') kept[field] = words.slice(0, LOWER_THIRD_LIMITS.text)
+    }
+    if (Object.keys(kept).length > 0) result[id] = kept
+  }
+  return result
+}
+
 /** Saved lines with a usable shape; anything else in the list is dropped. */
 function cleanSavedLines(value: unknown): SavedLowerThirdLine[] | undefined {
   if (!Array.isArray(value)) return undefined
@@ -414,6 +433,8 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
       return cleanSavedLines(value) as never
     case 'lowerThirdServicePoints':
       return cleanServicePoints(value) as never
+    case 'lowerThirdCanvasText':
+      return cleanCanvasText(value) as never
     case 'lowerThirdQuickTarget':
       return value === 'preview' || value === 'live' ? v : undefined
     case 'logoUrl':

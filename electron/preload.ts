@@ -313,6 +313,8 @@ const log: LogApi = {
 const fonts: FontsApi = {
   list: () => ipcRenderer.invoke('fonts:list'),
   import: () => ipcRenderer.invoke('fonts:import'),
+  importFiles: (files) => ipcRenderer.invoke('fonts:importFiles', files.map((file) => webUtils.getPathForFile(file))),
+  remove: (files) => ipcRenderer.invoke('fonts:remove', files),
   onChanged(listener) {
     const handler = () => listener()
     ipcRenderer.on('fonts:changed', handler)

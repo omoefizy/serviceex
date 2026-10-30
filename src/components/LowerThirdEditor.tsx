@@ -109,15 +109,14 @@ export function LowerThirdEditor({ onClose, onOpenInDesigner }: { onClose: () =>
   const loadTemplates = useOperatorStore((s) => s.loadLowerThirdTemplates)
   const settings = useOperatorStore((s) => s.settings)
   const updateSettings = useOperatorStore((s) => s.updateSettings)
-  const typed = useOperatorStore((s) => s.lowerThirdDraft)
   const inUse = templates.find((t) => t.id === settings.lowerThirdTemplateId) ?? templates[0]
   const [selectedId, setSelectedId] = useState<number | null>(inUse?.id ?? null)
   const selected = templates.find((t) => t.id === selectedId) ?? null
   const [name, setName] = useState(selected?.name ?? '')
   const [style, setStyle] = useState<LowerThirdStyle | null>(selected?.style ?? null)
   const [sample, setSample] = useState({
-    headline: typed.headline.trim() || 'Pastor Sam Example',
-    body: typed.body.trim() || 'Lead Pastor · Grace Community Church',
+    headline: 'Pastor Sam Example',
+    body: 'Lead Pastor · Grace Community Church',
   })
   const [error, setError] = useState<ErrorLike | null>(null)
   const stageRef = useRef<HTMLDivElement>(null)

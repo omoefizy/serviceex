@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { buildSongSlides } from '../shared/lyrics'
 import { DEFAULT_LOWER_THIRD_STYLE } from '../shared/lowerThirds'
+import { canvasFields } from '../shared/designs'
 import { DEFAULT_HIGHLIGHT, isMarked, markSlide, slideRich, unmarkSlide } from '../shared/highlights'
 import { can } from '../shared/features'
 import { DEFAULT_LAYOUT_ID, PRESET_LAYOUTS } from '../shared/layouts'
@@ -21,6 +22,7 @@ import type {
   DualTranslation,
   HighlightStyle,
   LivePowerPointStatus,
+  LowerThirdCanvasText,
   LowerThirdDisplay,
   LowerThirdStyle,
   LowerThirdTemplate,
@@ -297,9 +299,7 @@ interface OperatorState {
   lowerThirdTemplates: LowerThirdTemplate[]
   /** The designs from the designer, for the idle layer and lower thirds. */
   designs: Design[]
-  /** What is typed in the Lower Third panel; Enter shows it. */
-  lowerThirdDraft: LowerThirdLine
-  /** Lines shown during this service, newest first, at most 30, for Up and Down in the panel. */
+  /** Lines shown during this service, newest first, at most 30. */
   lowerThirdHistory: LowerThirdLine[]
   /** The sermon point last shown or previewed from the Points list, or -1 before the first. */
   lowerThirdPointIndex: number
@@ -420,9 +420,13 @@ interface OperatorState {
   setOutputTestPattern(on: boolean): void
   loadLowerThirdTemplates(): Promise<void>
   loadDesigns(): Promise<void>
-  setLowerThirdDraft(patch: Partial<LowerThirdLine>): void
-  /** Shows the draft on every output, or changes the text in place if a lower third is already up. */
-  showLowerThird(): void
+  /**
+   * Changes the words on a design's canvas (kept in Settings, so they survive switching designs and restarting).
+   * Nothing else writes them but picking a sermon point, a saved line or a cue for that design.
+   */
+  setCanvasText(designId: number, patch: LowerThirdCanvasText): Promise<void>
+  /** The workspace design with the words on its canvas, exactly as shown there: to the Preview, or live. */
+  sendCanvasLowerThird(where: 'preview' | 'live'): void
   /** Shows `line` on every output; with one up in the same design the text changes in place. */
   showLowerThirdLine(line: LowerThirdLine): void
   /** Clear lower third: animates just the lower third out, leaving the main content and the idle design. */
@@ -568,6 +572,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lowerThirdHoldSeconds: 0,
   lowerThirdSavedLines: [],
   lowerThirdServicePoints: {},
+  lowerThirdCanvasText: {},
   lowerThirdQuickTarget: 'preview',
   logoUrl: null,
   churchName: '',
@@ -654,7 +659,6 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   sermonsOpen: false,
   lowerThirdTemplates: [],
   designs: [],
-  lowerThirdDraft: { headline: '', body: '' },
   lowerThirdHistory: [],
   lowerThirdPointIndex: -1,
   lowerThirdPreview: null,
@@ -1233,19 +1237,25 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     set({ lowerThirdTemplates: await window.api.lowerThirds.list() })
   },
 
-  setLowerThirdDraft(patch) {
-    set({ lowerThirdDraft: { ...get().lowerThirdDraft, ...patch } })
+  setCanvasText(designId, patch) {
+    const all = get().settings.lowerThirdCanvasText
+    const key = String(designId)
+    return get().updateSettings({ lowerThirdCanvasText: { ...all, [key]: { ...all[key], ...patch } } })
   },
 
-  showLowerThird() {
-    get().showLowerThirdLine(get().lowerThirdDraft)
+  sendCanvasLowerThird(where) {
+    const s = get()
+    const line = s.lowerThirdWorkspaceDesignId === null ? null : selectCanvasLine(s, s.lowerThirdWorkspaceDesignId)
+    if (!line) return
+    if (where === 'live') get().showLowerThirdLine(line)
+    else get().previewLowerThirdLine(line)
   },
 
   showLowerThirdLine(next) {
     if (!can('lowerThirds')) return
     const { live, lowerThirdHistory, settings } = get()
     const line = trimLowerThirdLine(next)
-    if (!line.headline && !line.body) return
+    if (isEmptyLine(line)) return
     // An update in the same design changes the words in place; another design comes on afresh.
     const runId = live.lowerThird && live.lowerThird.designId === line.designId ? live.lowerThird.runId : ++lowerThirdRuns
     const history = [line, ...lowerThirdHistory.filter((l) => l.headline !== line.headline || l.body !== line.body)].slice(0, LOWER_THIRD_HISTORY)
@@ -1274,7 +1284,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
 
   previewLowerThirdLine(next) {
     const line = trimLowerThirdLine(next)
-    if (!line.headline && !line.body) return
+    if (isEmptyLine(line)) return
     // Each staging animates in afresh.
     set({ lowerThirdPreview: { runId: ++lowerThirdRuns, ...line } })
   },
@@ -1299,8 +1309,15 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     const point = selectSermonPoints(s)[index]
     if (!point) return
     const designId = point.designId ?? s.lowerThirdWorkspaceDesignId ?? undefined
-    const line: LowerThirdLine = { headline: point.text, body: '', number: String(index + 1), ...(designId !== undefined ? { designId } : {}) }
+    const number = String(index + 1)
     set({ lowerThirdPointIndex: index })
+    // Picking a point puts it on its design's canvas, where it stays until another point or an edit replaces it.
+    let line: LowerThirdLine | null = null
+    if (designId !== undefined && s.designs.some((d) => d.id === designId)) {
+      get().setCanvasText(designId, { headline: point.text, number }).catch((err) => console.error('Sermon point', err))
+      line = selectCanvasLine(get(), designId)
+    }
+    line ??= { headline: point.text, body: '', number, ...(designId !== undefined ? { designId } : {}) }
     if (where === 'live') get().showLowerThirdLine(line)
     else get().previewLowerThirdLine(line)
   },
@@ -1849,6 +1866,8 @@ const newRun = (texts: string[], loops: number, riches: (RichText | null)[]): Ti
 /** A message's formatting, trimmed like its text, or null. */
 const alertRich = (message: AlertMessage): RichText | null => matching(message.rich && trimRich(message.rich), message.text.trim())
 
+const isEmptyLine = (line: LowerThirdLine) => !line.headline && !line.body && !line.number
+
 /** A lower third line trimmed, keeping each field's formatting while it still matches its words. */
 function trimLowerThirdLine(line: LowerThirdLine): LowerThirdLine {
   const headline = line.headline.trim()
@@ -2170,6 +2189,22 @@ const NO_POINTS: SermonPoint[] = []
 /** The open service's sermon points, in order. */
 export function selectSermonPoints(s: OperatorState): SermonPoint[] {
   return s.settings.lowerThirdServicePoints[pointsKey(s)] ?? NO_POINTS
+}
+
+/**
+ * A design's canvas in the Lower thirds workspace as a line to send: exactly the words the canvas shows, so what goes
+ * out is what the operator sees. Words kept for a field no shown text is bound to (a point's number) go along unseen.
+ * Null for a design that does not exist.
+ */
+export function selectCanvasLine(s: OperatorState, designId: number): LowerThirdLine | null {
+  const design = s.designs.find((d) => d.id === designId)
+  return design ? canvasLine(design, s.settings.lowerThirdCanvasText[String(designId)]) : null
+}
+
+/** `design` with the words `typed` on its canvas, as a line to send. */
+export function canvasLine(design: Design, typed: LowerThirdCanvasText = {}): LowerThirdLine {
+  const fields = { ...typed, ...canvasFields(design.style, typed) }
+  return { headline: fields.headline ?? '', body: fields.body ?? '', ...(fields.number ? { number: fields.number } : {}), designId: design.id }
 }
 
 /** The design a line shows in: its own (unless deleted since), else the default. */

@@ -1,18 +1,12 @@
-import { Bookmark, EyeOff, LayoutTemplate, ListPlus, Pin, PinOff, Play, RefreshCw, SkipForward, SlidersHorizontal, Trash2 } from 'lucide-react'
-import { useRef, useState, type KeyboardEvent } from 'react'
-import { hasFormatting, matching, plainText, richOrPlain, trimRich } from '../../shared/richText'
-import type { AppSettings, LowerThirdAnimation, RichText, SavedLowerThirdLine } from '../../shared/types'
+import { Bookmark, EyeOff, LayoutTemplate, ListPlus, Pin, PinOff, SkipForward, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import type { AppSettings, LowerThirdAnimation, SavedLowerThirdLine } from '../../shared/types'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { canSendCues, openCueMenu } from '../lib/sharing'
-import { LOWER_THIRD_HEADLINE_ID, MOD } from '../lib/shortcuts'
-import { selectLowerThirdDesign, selectLowerThirdStyle, selectSermonPoints, useOperatorStore, type LowerThirdLine } from '../store'
-import { DesignView } from './DesignView'
-import { LowerThirdGraphic } from './LowerThird'
+import { canvasLine, selectLowerThirdDesign, selectSermonPoints, useOperatorStore } from '../store'
 import { LowerThirdEditor } from './LowerThirdEditor'
 import type { DesignerDocument } from './Designer'
 import { DesignsLibrary } from './DesignsLibrary'
-import type { FormatControl } from './FormatToolbar'
-import { RichTextEditor } from './RichTextEditor'
 import { ErrorNote } from './ui'
 
 const ANIMATIONS: { value: LowerThirdAnimation; label: string }[] = [
@@ -21,115 +15,37 @@ const ANIMATIONS: { value: LowerThirdAnimation; label: string }[] = [
   { value: 'wipe', label: 'Wipe' },
 ]
 
-/** A field's formatting as it would show: trimmed with its words, or null. */
-const shownRich = (rich: RichText | undefined, text: string) => (rich ? matching(trimRich(rich), text.trim()) : null)
-
-const sameLine = (a: LowerThirdLine, b: LowerThirdLine) =>
-  a.headline.trim() === b.headline.trim() &&
-  a.body.trim() === b.body.trim() &&
-  JSON.stringify([shownRich(a.headlineRich, a.headline), shownRich(a.bodyRich, a.body)]) ===
-    JSON.stringify([shownRich(b.headlineRich, b.headline), shownRich(b.bodyRich, b.body)])
-
-/** The template places and aligns the words, so only the marks apply to a lower third. */
-const LINE_CONTROLS_OFF: FormatControl[] = ['align', 'justify', 'verticalAlign', 'lineHeight']
+const sameLine = (a: { headline: string; body: string }, b: { headline: string; body: string }) => a.headline.trim() === b.headline.trim() && a.body.trim() === b.body.trim()
 
 /**
- * Typing a lower third: the draft, and the keys in its fields. Enter shows it (or, with one up, updates it in place),
- * Esc hides it, and Up and Down step through the lines used this service.
+ * The lower third's style and lines, in the Lower thirds workspace's Style popover: the template or design, saved
+ * lines and the sermon's points, and the animation. The words themselves are typed on the design's canvas only:
+ * Save line keeps what is on it, and a saved line puts its words back on it.
  */
-function useLowerThirdTyping() {
-  const draft = useOperatorStore((s) => s.lowerThirdDraft)
-  const history = useOperatorStore((s) => s.lowerThirdHistory)
-  const setDraft = useOperatorStore((s) => s.setLowerThirdDraft)
-  const show = useOperatorStore((s) => s.showLowerThird)
-  const hide = useOperatorStore((s) => s.hideLowerThird)
-  /** Where Up and Down are in the history: -1 is the line being typed, kept in `typed` meanwhile. */
-  const historyIndex = useRef(-1)
-  const typed = useRef<LowerThirdLine>(draft)
-
-  function type(patch: Partial<LowerThirdLine>) {
-    historyIndex.current = -1
-    setDraft(patch)
-  }
-
-  function step(delta: number) {
-    const next = Math.min(history.length - 1, Math.max(-1, historyIndex.current + delta))
-    if (next === historyIndex.current) return
-    if (historyIndex.current === -1) typed.current = draft
-    historyIndex.current = next
-    setDraft(next === -1 ? typed.current : history[next])
-  }
-
-  /** A field changed: its words, and its formatting when it has any. */
-  const typeField = (field: 'headline' | 'body', rich: RichText) =>
-    type({ [field]: plainText(rich), [`${field}Rich`]: hasFormatting(rich) ? rich : undefined })
-
-  function onKeyDown(e: KeyboardEvent<HTMLElement>) {
-    if (e.key === 'Enter') {
-      // Enter shows the line; with a lower third up, it (or Ctrl+Enter) updates it in place.
-      e.preventDefault()
-      historyIndex.current = -1
-      show()
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      hide()
-    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      e.preventDefault()
-      step(e.key === 'ArrowUp' ? 1 : -1)
-    }
-  }
-
-  return { draft, history, type, typeField, onKeyDown }
-}
-
-/** The headline field, the one Cmd+L (Ctrl+L) jumps to. */
-function HeadlineField({ typing }: { typing: ReturnType<typeof useLowerThirdTyping> }) {
-  return (
-    <RichTextEditor
-      id={LOWER_THIRD_HEADLINE_ID}
-      placeholder={`Lower third text (${MOD}L)`}
-      ariaLabel="Headline"
-      singleLine
-      maxLength={300}
-      toolbar="focus"
-      disabled={LINE_CONTROLS_OFF}
-      base={null}
-      value={richOrPlain(typing.draft.headlineRich, typing.draft.headline)}
-      onChange={(rich) => typing.typeField('headline', rich)}
-      onKeyDown={typing.onKeyDown}
-    />
-  )
-}
-
-/**
- * Types a lower third and puts it on every output, on top of everything. Enter shows it, Esc hides it, Up and Down step through the
- * lines used this service, and Cmd+L (Ctrl+L) jumps to the headline from anywhere. Below: saved lines and a sermon's
- * points. Without `headline` it leaves the headline to the Lower thirds workspace, which shows it.
- */
-export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
+export function LowerThirdPanel() {
   const settings = useOperatorStore((s) => s.settings)
   const updateSettings = useOperatorStore((s) => s.updateSettings)
   const live = useOperatorStore((s) => s.live.lowerThird)
   const templates = useOperatorStore((s) => s.lowerThirdTemplates)
-  const templateStyle = useOperatorStore(selectLowerThirdStyle)
   const design = useOperatorStore(selectLowerThirdDesign)
   const designs = useOperatorStore((s) => s.designs).filter((d) => d.style.category === 'lowerThird')
   const pointIndex = useOperatorStore((s) => s.lowerThirdPointIndex)
-  const show = useOperatorStore((s) => s.showLowerThird)
   const hide = useOperatorStore((s) => s.hideLowerThird)
   const points = useOperatorStore(selectSermonPoints)
   const triggerPoint = useOperatorStore((s) => s.triggerPoint)
   const nextPoint = useOperatorStore((s) => s.nextPoint)
   const openWorkspace = useOperatorStore((s) => s.openLowerThirds)
-  const typing = useLowerThirdTyping()
-  const { draft, history, type, typeField, onKeyDown } = typing
+  const workspaceDesignId = useOperatorStore((s) => s.lowerThirdWorkspaceDesignId)
+  const workspaceDesign = useOperatorStore((s) => s.designs.find((d) => d.id === workspaceDesignId))
+  const typed = useOperatorStore((s) => s.settings.lowerThirdCanvasText[String(workspaceDesignId)])
+  const canvas = workspaceDesign ? canvasLine(workspaceDesign, typed) : null
+  const setCanvasText = useOperatorStore((s) => s.setCanvasText)
   const [editorOpen, setEditorOpen] = useState(false)
   /** The Designs library while it is open, and the document it opens straight into, if any. */
   const [library, setLibrary] = useState<{ open: DesignerDocument | null } | null>(null)
   const [error, setError] = useState<ErrorLike | null>(null)
 
-  const empty = !draft.headline.trim() && !draft.body.trim()
-  const edited = live !== null && !empty && !sameLine(draft, live)
+  const empty = !canvas || (!canvas.headline.trim() && !canvas.body.trim())
   const saved = [...settings.lowerThirdSavedLines].sort((a, b) => Number(b.pinned) - Number(a.pinned))
   const templateId = templates.some((t) => t.id === settings.lowerThirdTemplateId) ? settings.lowerThirdTemplateId : (templates[0]?.id ?? null)
   // A design chosen here wins over the template; the picker holds both, as "design:<id>" and "template:<id>".
@@ -141,14 +57,8 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
   }
 
   function saveLine() {
-    const headlineRich = shownRich(draft.headlineRich, draft.headline)
-    const bodyRich = shownRich(draft.bodyRich, draft.body)
-    const line = {
-      headline: draft.headline.trim(),
-      body: draft.body.trim(),
-      ...(headlineRich ? { headlineRich } : {}),
-      ...(bodyRich ? { bodyRich } : {}),
-    }
+    if (!canvas) return
+    const line = { headline: canvas.headline.trim(), body: canvas.body.trim() }
     if (settings.lowerThirdSavedLines.some((l) => sameLine(l, line))) return
     save({ lowerThirdSavedLines: [{ id: crypto.randomUUID(), ...line, pinned: false }, ...settings.lowerThirdSavedLines] })
   }
@@ -195,58 +105,20 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
         </button>
       </header>
 
-      {headline && <HeadlineField typing={typing} />}
-      <RichTextEditor
-        placeholder="Body"
-        ariaLabel="Body"
-        singleLine
-        maxLength={300}
-        toolbar="focus"
-        disabled={LINE_CONTROLS_OFF}
-        base={null}
-        value={richOrPlain(draft.bodyRich, draft.body)}
-        onChange={(rich) => typeField('body', rich)}
-        onKeyDown={onKeyDown}
-      />
-      {!empty && (
-        <div className="lower-third-preview" aria-label="Live preview">
-          {design ? (
-            <DesignView style={design} fields={{ headline: draft.headline.trim(), body: draft.body.trim(), number: '' }} onAir />
-          ) : (
-            <LowerThirdGraphic
-              style={templateStyle}
-              headline={draft.headline.trim()}
-              body={draft.body.trim()}
-              headlineRich={shownRich(draft.headlineRich, draft.headline) ?? undefined}
-              bodyRich={shownRich(draft.bodyRich, draft.body) ?? undefined}
-            />
-          )}
-        </div>
-      )}
       <div className="lower-third-actions">
-        {edited ? (
-          <button type="button" className="button primary" onClick={show} title={`Change the live lower third to this (Enter or ${MOD}Enter)`}>
-            <RefreshCw size={14} aria-hidden="true" /> Update
-          </button>
-        ) : (
-          <button type="button" className="button primary" disabled={empty || live !== null} onClick={show} title="Show it on every output (Enter)">
-            <Play size={14} aria-hidden="true" /> {live ? 'Showing' : 'Show'}
-          </button>
-        )}
-        <button type="button" className="button" disabled={!live} onClick={hide} title="Take it off, leaving the slide and the idle design (Esc in a field, Shift+C anywhere)">
+        <button type="button" className="button" disabled={!live} onClick={hide} title="Take it off, leaving the slide and the idle design (Shift+C anywhere)">
           <EyeOff size={14} aria-hidden="true" /> Hide
         </button>
-        <button type="button" className="button" disabled={empty} onClick={saveLine} title="Keep this line in Saved lines">
+        <button type="button" className="button" disabled={empty} onClick={saveLine} title="Keep the words on the design's canvas in Saved lines">
           <Bookmark size={14} aria-hidden="true" /> Save line
         </button>
       </div>
-      {history.length > 0 && <p className="hint">↑ ↓ in a field: the last {history.length} lines used this service.</p>}
       <ErrorNote error={error} />
 
       <details className="lower-third-section" open>
         <summary>Saved lines ({saved.length})</summary>
         {saved.length === 0 ? (
-          <p className="hint">Type a line and press Save line to keep it here.</p>
+          <p className="hint">Type on the design and press Save line to keep the words here.</p>
         ) : (
           <ul className="lower-third-list">
             {saved.map((line) => (
@@ -254,10 +126,12 @@ export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
                 <button
                   type="button"
                   className="lower-third-line"
-                  title="Put it in the fields; Enter shows it"
+                  title="Put its words on the selected design"
+                  disabled={workspaceDesignId === null}
                   onClick={() => {
-                    type({ headline: line.headline, body: line.body, headlineRich: line.headlineRich, bodyRich: line.bodyRich })
-                    document.getElementById(LOWER_THIRD_HEADLINE_ID)?.focus()
+                    if (workspaceDesignId === null) return
+                    setError(null)
+                    setCanvasText(workspaceDesignId, { headline: line.headline, body: line.body }).catch((err) => setError(reportError('Lower third', err)))
                   }}
                 >
                   <strong>{line.headline}</strong>

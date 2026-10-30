@@ -340,7 +340,7 @@ function App() {
         st.setPaletteOpen(!st.paletteOpen)
         return
       }
-      // Cmd+L (Ctrl+L) jumps to the lower third headline from anywhere, in the Lower thirds workspace.
+      // Cmd+L (Ctrl+L) selects the lower third headline on the canvas from anywhere, in the Lower thirds workspace.
       if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'l') {
         e.preventDefault()
         if (can('lowerThirds')) st.openLowerThirds(true)

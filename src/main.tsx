@@ -21,16 +21,23 @@ installFonts()
 // Dev only: every shared component and state at #/ui-kit. Production builds drop it, and its import, entirely.
 const UiKit = import.meta.env.DEV ? lazy(() => import('./dev/UiKit')) : null
 const isUiKit = UiKit !== null && window.location.hash === '#/ui-kit'
+// Dev only: every light effect on air, for scripts/fx-bench.ts.
+const FxBench = import.meta.env.DEV ? lazy(() => import('./dev/FxBench')) : null
+const isFxBench = FxBench !== null && window.location.hash.startsWith('#/fx-bench')
 
 // The operator window learns what the plan allows before its first render. The output, stage and Stream windows never
 // ask: a licence problem must never touch what the audience sees. If the answer cannot be had, every feature stays on.
-if (!isUiKit && !['#/output', '#/stage', '#/stream', '#/stream-key', '#/rasterize'].includes(window.location.hash)) setEntitlements(window.api.license.entitlements())
+if (!isUiKit && !isFxBench && !['#/output', '#/stage', '#/stream', '#/stream-key', '#/rasterize'].includes(window.location.hash)) setEntitlements(window.api.license.entitlements())
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     {isUiKit && UiKit ? (
       <Suspense fallback={null}>
         <UiKit />
+      </Suspense>
+    ) : isFxBench && FxBench ? (
+      <Suspense fallback={null}>
+        <FxBench />
       </Suspense>
     ) : window.location.hash === '#/output' ? (
       <OutputView />

@@ -1,14 +1,15 @@
-// Imported fonts: .ttf, .otf and .woff2 files copied into <userData>/fonts and served to every window as
-// wd-media://font/<name>. The family, weight and style come from the file's own tables, so a theme that names the
-// family finds it on any machine the file is imported on.
+// Imported fonts: .ttf, .otf, .woff and .woff2 files copied into <userData>/fonts and served to every window as
+// wd-media://font/<name>. The family, weight and style come from the file's own name, OS/2 and fvar tables (never the
+// file name), so a theme that names the family finds it on any machine the file is imported on.
 
 import { app } from 'electron'
-import { copyFile, mkdir, readdir, readFile } from 'node:fs/promises'
+import { readdirSync, readFileSync } from 'node:fs'
+import { copyFile, mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
-import { brotliDecompressSync } from 'node:zlib'
+import { brotliDecompressSync, inflateSync } from 'node:zlib'
 import type { ImportedFont } from '../shared/types'
 
-export const FONT_EXTENSIONS = ['ttf', 'otf', 'woff2']
+export const FONT_EXTENSIONS = ['ttf', 'otf', 'woff', 'woff2']
 const MAX_FONT_BYTES = 50 * 1024 * 1024
 
 export const fontsDir = () => path.join(app.getPath('userData'), 'fonts')
@@ -51,6 +52,22 @@ const WOFF2_TAGS = (
 )
   .match(/.{4}\s?/g)!
   .map((tag) => tag.slice(0, 4))
+
+/** The tables of a WOFF (1.0) file: each stored as it is, or zlib compressed when that is smaller. */
+function woffTables(data: Buffer): Tables {
+  const count = data.readUInt16BE(12)
+  const tables: Tables = new Map()
+  for (let i = 0; i < count; i++) {
+    const at = 44 + i * 20
+    const offset = data.readUInt32BE(at + 4)
+    const compressed = data.readUInt32BE(at + 8)
+    const original = data.readUInt32BE(at + 12)
+    const stored = data.subarray(offset, offset + compressed)
+    if (stored.length !== compressed) throw new Error('The font file is cut short')
+    tables.set(data.toString('latin1', at, at + 4), compressed < original ? inflateSync(stored) : stored)
+  }
+  return tables
+}
 
 /**
  * The tables of a WOFF2 file. Only glyf and loca are ever transformed, and only the plain tables (name, OS/2,
@@ -118,11 +135,14 @@ function nameOf(table: Buffer, id: number): string | null {
 /** Reads a font file's family (the typographic family when it has one), weight and style. */
 export function readFontInfo(data: Buffer): FontInfo {
   const signature = data.toString('latin1', 0, 4)
-  const tables = signature === 'wOF2' ? woff2Tables(data) : signature === '\0\x01\0\0' || signature === 'OTTO' || signature === 'true' ? sfntTables(data) : null
-  if (!tables) throw new Error('Not a TrueType, OpenType or WOFF2 font')
+  if (signature === 'ttcf') throw new FontError('is a font collection (.ttc), which cannot be imported; import its fonts one by one')
+  const sfnt = signature === '\0\x01\0\0' || signature === 'OTTO' || signature === 'true'
+  const tables = signature === 'wOF2' ? woff2Tables(data) : signature === 'wOFF' ? woffTables(data) : sfnt ? sfntTables(data) : null
+  if (!tables) throw new FontError('is not a TrueType, OpenType, WOFF or WOFF2 font')
   const name = tables.get('name')
-  const family = name && (nameOf(name, 16) ?? nameOf(name, 1))
-  if (!family) throw new Error('The font has no family name')
+  const typographic = name && nameOf(name, 16)
+  const legacy = name && nameOf(name, 1)
+  if (!typographic && !legacy) throw new FontError('has no family name inside it')
 
   const os2 = tables.get('OS/2')
   const head = tables.get('head')
@@ -143,7 +163,35 @@ export function readFontInfo(data: Buffer): FontInfo {
       if (min >= 1 && max <= 1000 && min < max) weight = `${min} ${max}`
     }
   }
+  // Without a typographic family, a weight other than regular and bold is part of the family name ("Name ExtraBold");
+  // it comes off when it is the file's own weight, so a family's weights stay one family.
+  const family = typographic || withoutWeight(legacy!, Number(weight.split(' ')[0]))
   return { family: family.replace(/["\\]/g, '').slice(0, 200), weight, italic }
+}
+
+const WEIGHT_WORDS: [RegExp, number][] = [
+  [/\s+(thin|hairline)$/i, 100],
+  [/\s+(extra|ultra)[\s-]?light$/i, 200],
+  [/\s+light$/i, 300],
+  [/\s+(medium)$/i, 500],
+  [/\s+(semi|demi)[\s-]?bold$/i, 600],
+  [/\s+(extra|ultra)[\s-]?bold$/i, 800],
+  [/\s+(black|heavy)$/i, 900],
+]
+
+function withoutWeight(family: string, weight: number): string {
+  for (const [word, value] of WEIGHT_WORDS) if (value === weight && word.test(family)) return family.replace(word, '')
+  return family
+}
+
+/** Why a font file cannot be imported, in words for the operator: "<file name> " goes before it. */
+export class FontError extends Error {}
+
+/** A plain reason a file could not be imported, after its name. */
+function reasonOf(err: unknown): string {
+  if (err instanceof FontError) return err.message
+  // A table that points past the end of the file, a bad compressed stream and the like.
+  return 'is damaged or is not a font this app can read'
 }
 
 // ---------- The fonts folder ----------
@@ -164,21 +212,27 @@ export async function listImportedFonts(): Promise<ImportedFont[]> {
   return fonts.filter((font): font is ImportedFont => font !== null).sort((a, b) => a.family.localeCompare(b.family) || a.file.localeCompare(b.file))
 }
 
+/** A file that could not be imported, and why, in plain words. */
+export interface SkippedFont {
+  file: string
+  reason: string
+}
+
 /**
  * Copies font files into the folder. A file already there with the same bytes is not copied again; one with the same
- * name and other bytes gets a number. Files that are not fonts it can read are skipped.
+ * name and other bytes gets a number. Files that are not fonts it can read are skipped, each with the reason.
  */
-export async function importFontFiles(sources: string[]): Promise<{ fonts: ImportedFont[]; skipped: string[] }> {
+export async function importFontFiles(sources: string[]): Promise<{ fonts: ImportedFont[]; skipped: SkippedFont[] }> {
   await mkdir(fontsDir(), { recursive: true })
   const existing = new Set(await readdir(fontsDir()))
   const fonts: ImportedFont[] = []
-  const skipped: string[] = []
+  const skipped: SkippedFont[] = []
   for (const source of sources) {
     const extension = path.extname(source).toLowerCase()
     try {
-      if (!FONT_EXTENSIONS.includes(extension.slice(1))) throw new Error('Not a font file')
+      if (!FONT_EXTENSIONS.includes(extension.slice(1))) throw new FontError('is not a font file (TTF, OTF, WOFF or WOFF2)')
       const data = await readFile(source)
-      if (data.length > MAX_FONT_BYTES) throw new Error('Too large')
+      if (data.length > MAX_FONT_BYTES) throw new FontError('is larger than 50 MB')
       const info = readFontInfo(data)
       const base = path.basename(source, path.extname(source)).replace(/[^\w.-]+/g, '-').replace(/^[.-]+/, '').slice(0, 80) || 'font'
       let name = `${base}${extension}`
@@ -189,9 +243,39 @@ export async function importFontFiles(sources: string[]): Promise<{ fonts: Impor
       if (!existing.has(name)) await copyFile(source, path.join(fontsDir(), name))
       existing.add(name)
       fonts.push({ file: name, ...info, url: fontUrl(name) })
-    } catch {
-      skipped.push(path.basename(source))
+    } catch (err) {
+      skipped.push({ file: path.basename(source), reason: reasonOf(err) })
     }
   }
   return { fonts, skipped }
+}
+
+/** Removes imported font files from the folder; names that are not font files there are ignored. */
+export async function removeFontFiles(names: string[]): Promise<void> {
+  for (const name of names) {
+    const file = fontFileName(name)
+    if (file) await rm(path.join(fontsDir(), file), { force: true })
+  }
+}
+
+/** The imported font files, by family (lower case), read at once: for packing the fonts a theme uses. */
+export function importedFontFilesSync(): Map<string, string[]> {
+  const byFamily = new Map<string, string[]>()
+  let names: string[] = []
+  try {
+    names = readdirSync(fontsDir())
+  } catch {
+    return byFamily
+  }
+  for (const name of names) {
+    if (!fontFileName(name)) continue
+    try {
+      const info = readFontInfo(readFileSync(path.join(fontsDir(), name)))
+      const key = info.family.toLowerCase()
+      byFamily.set(key, [...(byFamily.get(key) ?? []), path.join(fontsDir(), name)])
+    } catch {
+      // A file that cannot be read is not packed.
+    }
+  }
+  return byFamily
 }

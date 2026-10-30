@@ -8,6 +8,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { extensionOf, safeFileName, shareKindOf } from '../../shared/sharing'
+import { familiesOf } from '../../shared/fonts'
 import { normalizeTheme } from '../../shared/themes'
 import type { AcceptResult, ConflictChoice, InboxConflict, InboxItem, InboxPreview, ServiceItem } from '../../shared/types'
 import { getMediaRow, getSlideBackgrounds, insertMedia, listMedia, replaceMediaFile, setSlideBackground } from '../db/media'
@@ -15,6 +16,8 @@ import { presentationStore } from '../db/presentations'
 import { addItem, createService, deleteService, getService, listServices } from '../db/services'
 import { createSong, getSong, listSongs, updateSong } from '../db/songs'
 import { createTheme, listThemes, updateTheme } from '../db/themes'
+import { importedFontFilesSync, importFontFiles } from '../fonts'
+import { announceFontsChanged } from '../ipc/fonts'
 import { assertItem } from '../ipc/services'
 import { assertSongInput } from '../ipc/songs'
 import { copyIntoMedia, mediaFilePath, mediaUrl, removeMedia } from '../media'
@@ -63,6 +66,36 @@ class PackageBuilder {
   private readonly themeKeys = new Map<number, number>()
   private readonly songKeys = new Map<number, number>()
   private readonly presentationKeys = new Map<number, number>()
+  private readonly fontFamilies = new Set<string>()
+  /** The imported font files on this computer by family, read once the first theme asks. */
+  private importedFonts: Map<string, string[]> | null = null
+
+  /** Every imported font file of each family the style names, so its text looks the same on the other computer. */
+  private fonts(style: unknown): void {
+    const families = new Set<string>()
+    const walk = (value: unknown) => {
+      if (Array.isArray(value)) value.forEach(walk)
+      else if (value && typeof value === 'object') {
+        for (const [key, inner] of Object.entries(value)) {
+          if (key === 'fontFamily' && typeof inner === 'string') familiesOf(inner).forEach((f) => families.add(f.toLowerCase()))
+          else walk(inner)
+        }
+      }
+    }
+    walk(style)
+    for (const family of families) {
+      if (this.fontFamilies.has(family)) continue
+      this.fontFamilies.add(family)
+      this.importedFonts ??= importedFontFilesSync()
+      for (const source of this.importedFonts.get(family) ?? []) {
+        const fonts = (this.contents.fonts ??= [])
+        const key = fonts.length
+        const inPackage = packagePath('fonts', key, extensionOf(source))
+        fonts.push({ key, family, name: path.basename(source), file: inPackage })
+        this.sources.set(inPackage, source)
+      }
+    }
+  }
 
   /**
    * Adds the file behind a wd-media:// URL; a Media library item goes as one, under its library name. Null when
@@ -106,6 +139,7 @@ class PackageBuilder {
     if (!theme) return null
     const key = this.contents.themes.length
     this.themeKeys.set(id, key)
+    if (theme.type !== 'builtin') this.fonts(theme.style)
     this.contents.themes.push({
       key,
       name: theme.name,
@@ -349,6 +383,24 @@ async function acceptPackage(file: string, opened: OpenedPackage, choices: Recor
   const changed = new Set<Done['changed'][number]>()
   const summary: string[] = []
   try {
+    // Fonts first, so the themes that use them draw with them as soon as they arrive.
+    if (contents.fonts && contents.fonts.length > 0) {
+      const sources: string[] = []
+      for (const font of contents.fonts) {
+        if (typeof font?.file !== 'string') continue
+        const name = safeFileName(String(font.name ?? '')) || `font-${font.key}`
+        const temp = path.join(work, 'fonts', String(font.key), name.includes('.') ? name : `${name}.${extensionOf(font.file)}`)
+        await mkdir(path.dirname(temp), { recursive: true })
+        await extractFile(file, opened, font.file, temp)
+        sources.push(temp)
+      }
+      const imported = await importFontFiles(sources)
+      if (imported.fonts.length > 0) {
+        announceFontsChanged()
+        summary.push('fonts')
+      }
+    }
+
     // Media first: themes, songs and items refer to it.
     const mediaUrls = new Map<number, string>()
     const mediaIds = new Map<number, number>()

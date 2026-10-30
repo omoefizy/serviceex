@@ -85,7 +85,8 @@ describe('cues', () => {
     }
     expect(selectLiveSlide(st())).toEqual(live)
     expect(st().live.slideIndex).toBe(0)
-    expect(st().lowerThirdDraft.headline).toBe('Grace is a gift')
+    // With no lower third design, a point is staged on Preview in the template; it never goes live.
+    expect(st().lowerThirdPreview?.headline).toBe('Grace is a gift')
     expect(st().live.lowerThird).toBeNull()
     // Added to the schedule, then gone from the tray; the free text kept exactly as sent.
     expect(added).toHaveLength(5)

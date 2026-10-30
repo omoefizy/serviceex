@@ -448,6 +448,51 @@ export interface DesignShadow {
  */
 export type DesignTextField = 'headline' | 'body' | 'number'
 
+/** The words typed on a design's canvas, by the field its text is bound to; a field left out shows the design's own words. */
+export type LowerThirdCanvasText = Partial<Record<DesignTextField, string>>
+
+/** A light effect over an element: a band of light, a bolt, a light round its edge, a glow, a flicker or a scan line. */
+export type DesignEffectKind = 'lightSweep' | 'lightning' | 'borderChase' | 'glowPulse' | 'flicker' | 'scanLine'
+
+/** Which way a pass goes: as set, the other way, or there and back on alternate passes. */
+export type DesignEffectDirection = 'forward' | 'reverse' | 'alternate'
+
+/**
+ * One light effect on an element. It starts once the element has come in (after `delayMs`), plays `repeat` passes (0
+ * loops while the element is on screen), each `durationMs` long at speed 1 with `gapMs` dark between them, and is drawn
+ * inside the element's shape: its box with its rounded corners, or a picture's own outline.
+ */
+export interface DesignEffect {
+  id: string
+  kind: DesignEffectKind
+  /** One pass, at speed 1. */
+  durationMs: number
+  /** How fast it plays, 0.25 to 4 times. */
+  speed: number
+  delayMs: number
+  /** Dark time between passes, at speed 1. */
+  gapMs: number
+  /** Passes before it stops; 0 loops. */
+  repeat: number
+  easing: DesignEasing
+  /** How strong the light is, 0 to 1. */
+  intensity: number
+  color: string
+  /** The direction the band travels, in degrees: 0 left to right, 90 top to bottom (Light sweep, Scan line). */
+  angle: number
+  /** The band's width, the bolt's spread or the length of the light round the edge, in percent (1 to 100). */
+  width: number
+  direction: DesignEffectDirection
+  /** How much the light flickers, 0 to 1 (Lightning, Flicker). */
+  flicker: number
+  /** Picks the bolt's shape and the flicker's pattern; the same seed draws the same each time. */
+  seed: number
+  /** The glow round the light, in percent of screen height (Lightning, Glow pulse). */
+  glow: number
+  /** The thickness of the light round the edge, in percent of screen height (Border chase). */
+  thickness: number
+}
+
 /** A movement an element repeats while it is on screen, such as a church logo that gently pulses. */
 export type DesignLoop = 'none' | 'pulse' | 'float' | 'glow' | 'spin' | 'shimmer'
 
@@ -532,6 +577,8 @@ interface DesignElementBase {
   hideWithLowerThird: boolean
   loop: DesignLoop
   animation: DesignElementAnimation
+  /** Light effects over the element while it is on screen, in the order they draw (see shared/designEffects.ts). */
+  effects: DesignEffect[]
   /** Pins to the lower third's edges, for when stretching text makes it larger or smaller. */
   constraints: DesignConstraints
   /** Sized to a text element as its background; ignored on text. */
@@ -1164,6 +1211,11 @@ export interface AppSettings {
   lowerThirdSavedLines: SavedLowerThirdLine[]
   /** The sermon points of each service, by service id ("0" while no service is open), for the Lower thirds workspace. */
   lowerThirdServicePoints: Record<string, SermonPoint[]>
+  /**
+   * The words on each lower third design's canvas in the Lower thirds workspace, by design id: what the operator typed on
+   * it, or a sermon point picked for it. A field left out shows the design's own words. What Preview and Show live send.
+   */
+  lowerThirdCanvasText: Record<string, LowerThirdCanvasText>
   /** Where Send as lower third (the transcript, the heard cards, the workspace) puts a quote: the Preview, or live. */
   lowerThirdQuickTarget: 'preview' | 'live'
   /** wd-media:// URL of the church logo, shown by Logo theme images without a picture of their own; null for the placeholder. */
@@ -1928,12 +1980,22 @@ export interface ImportedFont {
   url: string
 }
 
+/** A font file that could not be imported, and why, in plain words to follow its name. */
+export interface SkippedFont {
+  file: string
+  reason: string
+}
+
 export interface FontsApi {
   /** Imported fonts, by family. */
   list(): Promise<ImportedFont[]>
-  /** Picks .ttf, .otf and .woff2 files and copies them in. Skipped lists files that are not fonts it can read. */
-  import(): Promise<{ fonts: ImportedFont[]; skipped: string[] }>
-  /** Called in every window when fonts are imported. Returns an unsubscribe function. */
+  /** Picks .ttf, .otf, .woff and .woff2 files and copies them in. Skipped lists files it could not read, with why. */
+  import(): Promise<{ fonts: ImportedFont[]; skipped: SkippedFont[] }>
+  /** The same for files dropped on the app, as File objects. */
+  importFiles(files: File[]): Promise<{ fonts: ImportedFont[]; skipped: SkippedFont[] }>
+  /** Removes imported font files, by file name. */
+  remove(files: string[]): Promise<void>
+  /** Called in every window when fonts are imported or removed. Returns an unsubscribe function. */
   onChanged(listener: () => void): () => void
 }
 

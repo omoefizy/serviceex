@@ -9,7 +9,10 @@ const { normalizeDesign } = await import('../shared/designs')
 
 const st = () => useOperatorStore.getState()
 const onStream = () => selectStreamState(st()).overlays.lowerThird
-const type = (headline: string, body = '') => st().setLowerThirdDraft({ headline, body })
+/** The line the tests send, as the canvas would; `show` sends it live. */
+let typed = { headline: '', body: '' }
+const type = (headline: string, body = '') => (typed = { headline, body })
+const show = () => st().showLowerThirdLine(typed)
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -20,6 +23,7 @@ beforeEach(() => {
       streamSlideContent: 'full',
       lowerThirdHoldSeconds: 0,
       lowerThirdServicePoints: {},
+      lowerThirdCanvasText: {},
       overlaysOnChurchScreen: false,
     },
     lowerThirdHistory: [],
@@ -42,7 +46,7 @@ afterEach(() => {
 describe('lower third', () => {
   it('shows the typed line, untouched by going live, changing slides or Go Back', () => {
     type('Pastor Sam', 'Lead Pastor')
-    st().showLowerThird()
+    show()
     const shown = st().live.lowerThird
     expect(shown).toMatchObject({ headline: 'Pastor Sam', body: 'Lead Pastor' })
     st().goLive(0)
@@ -55,27 +59,27 @@ describe('lower third', () => {
 
   it('does nothing with both fields empty, and an update keeps its run so the text changes in place', () => {
     type('  ')
-    st().showLowerThird()
+    show()
     expect(st().live.lowerThird).toBeNull()
     type('First point')
-    st().showLowerThird()
+    show()
     const runId = st().live.lowerThird?.runId
     type('First point, corrected')
-    st().showLowerThird()
+    show()
     expect(st().live.lowerThird).toMatchObject({ runId, headline: 'First point, corrected' })
     st().hideLowerThird()
     type('Second point')
-    st().showLowerThird()
+    show()
     expect(st().live.lowerThird?.runId).not.toBe(runId)
   })
 
   it('keeps the last 30 lines used, newest first, without repeats', () => {
     for (let i = 0; i < 35; i++) {
       type(`Line ${i}`)
-      st().showLowerThird()
+      show()
     }
     type('Line 33')
-    st().showLowerThird()
+    show()
     const history = st().lowerThirdHistory
     expect(history).toHaveLength(30)
     expect(history.slice(0, 3).map((l) => l.headline)).toEqual(['Line 33', 'Line 34', 'Line 32'])
@@ -83,7 +87,7 @@ describe('lower third', () => {
 
   it('stays up over a full screen slide on every output, and Black takes it off until it lifts', () => {
     type('Welcome')
-    st().showLowerThird()
+    show()
     st().goLive(0)
     expect(onStream()?.headline).toBe('Welcome')
     expect(selectOutputState(st()).overlays?.lowerThird?.headline).toBe('Welcome')
@@ -101,7 +105,7 @@ describe('lower third', () => {
     const logo = { id: 'l', name: 'Logo', url: 'wd-media://logo.png', anchor: 'top-right', x: 50, y: 50, size: 10, margin: 0, opacity: 1, enabled: true } as const
     useOperatorStore.setState((s) => ({ settings: { ...s.settings, logoItems: [logo] } }))
     type('Welcome')
-    st().showLowerThird()
+    show()
     expect(selectOutputState(st()).overlays?.lowerThird?.headline).toBe('Welcome')
     expect(selectOutputState(st()).overlays?.logos).toEqual([])
     useOperatorStore.setState((s) => ({ settings: { ...s.settings, overlaysOnChurchScreen: true } }))
@@ -110,12 +114,12 @@ describe('lower third', () => {
 
   it('Clear takes off the slide and the lower third; Clear lower third only the lower third', () => {
     type('Welcome')
-    st().showLowerThird()
+    show()
     st().goLive(0)
     st().hideLowerThird()
     expect(st().live.mode).toBe('show')
     expect(st().live.lowerThird).toBeNull()
-    st().showLowerThird()
+    show()
     st().setOutputMode('clear')
     expect(st().live.lowerThird).toBeNull()
     expect(st().live.mode).toBe('clear')
@@ -141,10 +145,10 @@ describe('lower third', () => {
   it('hides itself after the hold time, counted from the latest show or update', () => {
     useOperatorStore.setState((s) => ({ settings: { ...s.settings, lowerThirdHoldSeconds: 10 } }))
     type('Welcome')
-    st().showLowerThird()
+    show()
     vi.advanceTimersByTime(8000)
     type('Welcome, everyone')
-    st().showLowerThird()
+    show()
     vi.advanceTimersByTime(8000)
     expect(st().live.lowerThird?.headline).toBe('Welcome, everyone')
     vi.advanceTimersByTime(2000)

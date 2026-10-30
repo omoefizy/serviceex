@@ -2,7 +2,7 @@
 // and the font picker's favorites and recently used. Names, fallbacks and the bundled list are in shared/fonts.ts.
 
 import { BUNDLED_FONTS, cssFontFamily, familiesOf, isGenericFamily } from '../../shared/fonts'
-import type { ImportedFont } from '../../shared/types'
+import type { ImportedFont, SkippedFont } from '../../shared/types'
 
 export { cssFontFamily }
 
@@ -49,12 +49,52 @@ export function installFonts(): void {
   window.api.fonts.onChanged(() => loadImported().catch(console.error))
 }
 
-/** Imports font files the operator picks; resolves to the families added and the files that could not be read. */
-export async function importFonts(): Promise<{ families: string[]; skipped: string[] }> {
-  const result = await window.api.fonts.import()
+/**
+ * Imports font files: `files` dropped on the app, or else the ones the operator picks. Each new face is loaded at once,
+ * so a file Chromium cannot draw is reported (and taken out again) rather than failing quietly on a slide later.
+ * Resolves to the families added and, for each file that could not be used, why in plain words.
+ */
+export async function importFonts(files?: File[]): Promise<{ families: string[]; skipped: SkippedFont[] }> {
+  const result = files ? await window.api.fonts.importFiles(files) : await window.api.fonts.import()
   await loadImported()
-  return { families: [...new Set(result.fonts.map((font) => font.family))], skipped: result.skipped }
+  const skipped = [...result.skipped]
+  const broken: ImportedFont[] = []
+  await Promise.all(
+    result.fonts.map(async (font) => {
+      // The faces are made in the order of the list.
+      const face = importedFaces[imported.findIndex((f) => f.file === font.file)]
+      try {
+        await face?.load()
+      } catch {
+        broken.push(font)
+        skipped.push({ file: font.file, reason: 'is damaged or is not a font this app can draw' })
+      }
+    }),
+  )
+  if (broken.length > 0) {
+    await window.api.fonts.remove(broken.map((font) => font.file))
+    await loadImported()
+  }
+  const families = [...new Set(result.fonts.filter((font) => !broken.includes(font)).map((font) => font.family))]
+  return { families, skipped }
 }
+
+/** Removes an imported family: every file of it. */
+export async function removeImportedFamily(family: string): Promise<void> {
+  await window.api.fonts.remove(imported.filter((font) => font.family === family).map((font) => font.file))
+  await loadImported()
+}
+
+/** What an import did, in a sentence or two for the operator. */
+export function importNote({ families, skipped }: { families: string[]; skipped: SkippedFont[] }): string | null {
+  const parts = []
+  if (families.length > 0) parts.push(`Added ${families.join(', ')}.`)
+  for (const s of skipped) parts.push(`${s.file} ${s.reason}.`)
+  return parts.join(' ') || null
+}
+
+/** Whether a drag holds files that look like fonts. */
+export const isFontFile = (file: File) => /\.(ttf|otf|woff2?)$/i.test(file.name)
 
 export const importedFamilies = (): string[] => [...new Set(imported.map((font) => font.family))].sort((a, b) => a.localeCompare(b))
 

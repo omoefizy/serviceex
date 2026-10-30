@@ -3,12 +3,14 @@
 // process (database) and the renderer (the designer and the design renderer), like shared/lowerThirds.ts.
 
 import { DESIGN_EASINGS, DESIGN_MOTIONS, MOTION_LIMITS, NO_ANIMATION } from './designAnimation'
+import { normalizeEffects } from './designEffects'
 import { migrateFontName } from './fonts'
 import { fieldsOf, flag, hex, number, oneOf, text, TEXT_CASES } from './themes'
 import type {
   DesignBackground,
   DesignCategory,
   DesignConstraints,
+  DesignEffect,
   DesignElement,
   DesignElementAnimation,
   DesignElementKind,
@@ -23,6 +25,7 @@ import type {
   DesignTextField,
   DesignTextSizing,
   LowerThirdBox,
+  LowerThirdCanvasText,
   LowerThirdStyle,
   ThemeBox,
 } from './types'
@@ -72,6 +75,7 @@ const base = (id: string, name: string, box: ThemeBox) => ({
   hideWithLowerThird: false,
   loop: 'none' as DesignLoop,
   animation: NO_ANIMATION,
+  effects: [] as DesignEffect[],
   constraints: PINNED,
   fitToText: null,
 })
@@ -286,6 +290,19 @@ export function shownText(element: Text, fields?: Partial<Record<DesignTextField
   return value ?? element.text
 }
 
+/**
+ * The words a design's canvas shows, by field, for each field a shown text is bound to: the typed words (even none),
+ * else the first such text's own words. The Lower thirds workspace draws these, and Preview and Show live send them.
+ */
+export function canvasFields(style: DesignStyle, typed: LowerThirdCanvasText = {}): LowerThirdCanvasText {
+  const fields: LowerThirdCanvasText = {}
+  for (const e of style.elements) {
+    if (e.kind !== 'text' || !e.field || e.hidden || e.field in fields) continue
+    fields[e.field] = typed[e.field] ?? e.text
+  }
+  return fields
+}
+
 // ---------- From a lower third template ----------
 
 /** A lower third template as a design, with `sample` as the words of its headline and body. */
@@ -443,6 +460,7 @@ function normalizeElement(value: unknown): DesignElement | null {
     hideWithLowerThird: flag(v.hideWithLowerThird, false),
     loop: oneOf(v.loop, DESIGN_LOOPS, 'none'),
     animation: normalizeAnimation(v.animation),
+    effects: normalizeEffects(v.effects),
     constraints: normalizeConstraints(v.constraints),
     // Only shapes and pictures follow a text element.
     fitToText: kind === 'text' ? null : normalizeFit(v.fitToText),

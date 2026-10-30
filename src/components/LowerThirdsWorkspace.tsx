@@ -1,21 +1,19 @@
 import { Copy, Eye, EyeOff, FileUp, Paintbrush, Pencil, Play, Plus, RefreshCw, SkipForward, Star, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { DESIGN_FIELDS, EMPTY_DESIGN } from '../../shared/designs'
-import type { Design, DesignElement, DesignTextField, Service, SermonPoint } from '../../shared/types'
+import { canvasFields, DESIGN_FIELDS, EMPTY_DESIGN } from '../../shared/designs'
+import type { Design, DesignElement, DesignTextField, LowerThirdCanvasText, Service, SermonPoint } from '../../shared/types'
 import { canImport, IMPORT_ACCEPT, importDesignFile } from '../lib/designImport'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { pointKeyLabel, pointShortcut } from '../lib/sermonPoints'
 import { CLEAR_LOWER_THIRD_KEY, isTyping, LOWER_THIRD_HEADLINE_ID } from '../lib/shortcuts'
 import { useDesignLayout } from '../lib/textMeasure'
-import { selectSermonPoints, useOperatorStore, type LowerThirdLine } from '../store'
+import { canvasLine, selectSermonPoints, useOperatorStore } from '../store'
 import { Designer, type DesignerDocument } from './Designer'
 import { DesignView, type InlineEdit } from './DesignView'
 import { HeaderPopover } from './LivePreview'
 import { LowerThirdPanel } from './LowerThirdPanel'
 import { QuickLowerThird } from './QuickLowerThird'
 import { Button, ErrorNote, IconButton, Select } from './ui'
-
-const FIELD_LABELS: Record<DesignTextField, string> = { headline: 'Headline', body: 'Body', number: 'Number' }
 
 const newId = () => crypto.randomUUID().slice(0, 8)
 
@@ -167,35 +165,38 @@ function Library({ designs, selectedId, onSelect, onEdit }: { designs: Design[];
 /** Text in a design that typed words fill: bound to a field and shown. */
 const editable = (e: DesignElement): e is Extract<DesignElement, { kind: 'text' }> => e.kind === 'text' && e.field !== null && !e.hidden
 
+const NO_TEXT: LowerThirdCanvasText = {}
+
 /**
  * The selected design large, to type into on the canvas: click a text to select it, then type (or double-click) to
  * change its words in place; Enter keeps them, Esc cancels, Tab goes on to the next text. The design stretches with
- * the words as they are typed. The fields under it hold the same words.
+ * the words as they are typed. The canvas is the only place the words are typed: they are kept for each design, and
+ * Send to Preview and Show live send exactly what it shows.
  */
 function Stage({ design }: { design: Design | undefined }) {
-  const draft = useOperatorStore((s) => s.lowerThirdDraft)
-  const setDraft = useOperatorStore((s) => s.setLowerThirdDraft)
+  const typed = useOperatorStore((s) => (design ? s.settings.lowerThirdCanvasText[String(design.id)] : undefined) ?? NO_TEXT)
+  const setCanvasText = useOperatorStore((s) => s.setCanvasText)
   const live = useOperatorStore((s) => s.live.lowerThird)
-  const showLine = useOperatorStore((s) => s.showLowerThirdLine)
-  const previewLine = useOperatorStore((s) => s.previewLowerThirdLine)
+  const send = useOperatorStore((s) => s.sendCanvasLowerThird)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editing, setEditing] = useState<{ id: string; initial?: string } | null>(null)
   /** The words as they are typed, so the design stretches with them live. */
   const [liveText, setLiveText] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorLike | null>(null)
   const frames = useRef(new Map<string, HTMLButtonElement>())
   const fields = boundFields(design)
-  const shownFields = fields.length > 0 ? fields : (['headline'] as DesignTextField[])
-  const line: LowerThirdLine = { ...draft, ...(design ? { designId: design.id } : {}) }
-  const empty = !draft.headline.trim() && !draft.body.trim()
-  const onAirHere = live !== null && live.designId === line.designId
-  const edited = onAirHere && !empty && (live.headline !== draft.headline.trim() || live.body !== draft.body.trim() || (live.number ?? '') !== (draft.number ?? '').trim())
-  const valueOf = (field: DesignTextField) => (field === 'number' ? (draft.number ?? '') : draft[field])
+  const line = design ? canvasLine(design, typed) : null
+  const empty = !line || (!line.headline.trim() && !line.body.trim() && !line.number?.trim())
+  const onAirHere = live !== null && line !== null && live.designId === line.designId
+  const edited = onAirHere && !empty && (live.headline !== line.headline.trim() || live.body !== line.body.trim() || (live.number ?? '') !== (line.number ?? '').trim())
   const texts = (design?.style.elements ?? []).filter(editable)
   const editingElement = texts.find((e) => e.id === editing?.id)
-  // Empty fields show the design's sample words, so the canvas always reads as the design; what is being typed shows as it is.
-  const canvasFields: Partial<Record<DesignTextField, string>> = Object.fromEntries(DESIGN_FIELDS.flatMap((f) => (valueOf(f) ? [[f, valueOf(f)]] : [])))
-  if (editingElement?.field && liveText !== null) canvasFields[editingElement.field] = liveText
-  const layout = useDesignLayout(design?.style ?? EMPTY_DESIGN.lowerThird, canvasFields)
+  // Exactly what is sent: the typed words, else the design's own; what is being typed shows as it is.
+  const kept = design ? canvasFields(design.style, typed) : {}
+  const shown = editingElement?.field && liveText !== null ? { ...kept, [editingElement.field]: liveText } : kept
+  const layout = useDesignLayout(design?.style ?? EMPTY_DESIGN.lowerThird, shown)
+  // Cmd+L (Ctrl+L) selects the headline's text, else the first one.
+  const firstId = (texts.find((e) => e.field === 'headline') ?? texts[0])?.id
 
   // A design change leaves nothing selected.
   useEffect(() => {
@@ -206,7 +207,9 @@ function Stage({ design }: { design: Design | undefined }) {
   const focusFrame = (id: string) => requestAnimationFrame(() => frames.current.get(id)?.focus())
   const commit = (id: string, text: string) => {
     const element = texts.find((e) => e.id === id)
-    if (element?.field) setDraft({ [element.field]: text })
+    if (!design || !element?.field || text === kept[element.field]) return
+    setError(null)
+    setCanvasText(design.id, { [element.field]: text }).catch((err) => setError(reportError('Lower thirds', err)))
   }
   const stop = (id: string) => {
     setEditing(null)
@@ -251,26 +254,16 @@ function Stage({ design }: { design: Design | undefined }) {
     }
   }
 
-  function onFieldKey(e: ReactKeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') {
-      // Enter puts it on air (or updates it in place); Shift+Enter stages it on Preview.
-      e.preventDefault()
-      if (e.shiftKey) previewLine(line)
-      else showLine(line)
-    }
-  }
-
   return (
     <section className="ltw-stage-area" aria-label="Selected design">
       <div className="ltw-stage">
         {design ? (
           <>
-            <DesignView style={design.style} fields={canvasFields} edit={edit} checker warnings />
+            <DesignView style={design.style} fields={shown} edit={edit} checker warnings />
             <div className="ltw-frames">
               {texts.map((element) => {
                 if (element.id === editing?.id) return null
                 const box = layout.boxes.get(element.id) ?? element.box
-                const field = element.field ? FIELD_LABELS[element.field].toLowerCase() : 'words'
                 return (
                   <button
                     key={element.id}
@@ -278,11 +271,12 @@ function Stage({ design }: { design: Design | undefined }) {
                       if (el) frames.current.set(element.id, el)
                       else frames.current.delete(element.id)
                     }}
+                    id={element.id === firstId ? LOWER_THIRD_HEADLINE_ID : undefined}
                     type="button"
                     className={`ltw-frame${selectedId === element.id ? ' selected' : ''}`}
                     style={{ left: `${box.x}%`, top: `${box.y}%`, width: `${box.width}%`, height: `${box.height}%` }}
-                    title={`Click, then type the ${field} (or double-click). Enter keeps it, Esc cancels, Tab goes to the next text`}
-                    aria-label={`${element.name}: type to change the ${field}`}
+                    title="Click, then type to change the words (or double-click). Enter keeps them, Esc cancels, Tab goes to the next text"
+                    aria-label={`${element.name}: type to change its words`}
                     aria-pressed={selectedId === element.id}
                     onClick={() => setSelectedId(element.id)}
                     onFocus={() => setSelectedId(element.id)}
@@ -298,36 +292,23 @@ function Stage({ design }: { design: Design | undefined }) {
         )}
       </div>
       <div className="ltw-fields">
-        {shownFields.map((field) => (
-          <label key={field} className={`ltw-field ltw-field-${field}`}>
-            <span>{FIELD_LABELS[field]}</span>
-            <input
-              id={field === 'headline' ? LOWER_THIRD_HEADLINE_ID : undefined}
-              className="input"
-              value={valueOf(field)}
-              maxLength={300}
-              placeholder={field === 'headline' ? 'Type here or on the design' : ''}
-              onChange={(e) => setDraft({ [field]: e.target.value })}
-              onKeyDown={onFieldKey}
-            />
-          </label>
-        ))}
         <div className="ltw-field-actions">
-          <Button size="sm" icon={<Eye size={13} aria-hidden="true" />} disabled={empty} title="Stage it on Preview (Shift+Enter in a field)" onClick={() => previewLine(line)}>
+          <Button size="sm" icon={<Eye size={13} aria-hidden="true" />} disabled={empty} title="Stage the words on the design on Preview" onClick={() => send('preview')}>
             Send to Preview
           </Button>
           {edited ? (
-            <Button size="sm" variant="primary" icon={<RefreshCw size={13} aria-hidden="true" />} title="Change the words on air in place (Enter in a field)" onClick={() => showLine(line)}>
+            <Button size="sm" variant="primary" icon={<RefreshCw size={13} aria-hidden="true" />} title="Change the words on air in place" onClick={() => send('live')}>
               Update live
             </Button>
           ) : (
-            <Button size="sm" variant="primary" icon={<Play size={13} aria-hidden="true" />} disabled={empty} title="Put it on air (Enter in a field)" onClick={() => showLine(line)}>
+            <Button size="sm" variant="primary" icon={<Play size={13} aria-hidden="true" />} disabled={empty} title="Put the design on air with the words on it" onClick={() => send('live')}>
               Show live
             </Button>
           )}
         </div>
       </div>
-      {design && fields.length === 0 && <p className="hint">No text in this design is bound to Headline, Body or Number, so typed words do not show. Bind one in the designer.</p>}
+      <ErrorNote error={error} />
+      {design && fields.length === 0 && <p className="hint">No text in this design is bound to Headline, Body or Number, so there are no words to change here. Bind one in the designer.</p>}
     </section>
   )
 }
@@ -581,7 +562,7 @@ export function LowerThirdsWorkspace() {
           onOpenChange={setStyleOpen}
           className="lower-third-popover"
         >
-          <LowerThirdPanel headline={false} />
+          <LowerThirdPanel />
         </HeaderPopover>
         <IconButton label="Close Lower thirds" tooltip="Back to the schedule and slides" icon={<X size={18} />} onClick={() => close(false)} />
       </header>

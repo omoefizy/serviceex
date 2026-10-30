@@ -26,20 +26,18 @@ export function isTyping(target: EventTarget | null): boolean {
   )
 }
 
-/** The Lower thirds workspace's headline field, focused by Cmd+L (Ctrl+L). */
+/** The headline's text on the Lower thirds workspace's canvas (else its first text), selected by Cmd+L (Ctrl+L). */
 export const LOWER_THIRD_HEADLINE_ID = 'lower-third-headline'
 
 export function focusLowerThirdHeadline(): void {
-  // Once the workspace has opened, and after any menu that asked has closed, so the field keeps the keyboard.
-  requestAnimationFrame(() => requestAnimationFrame(focusHeadlineField))
+  // Once the workspace has opened, and after any menu that asked has closed, so the text keeps the keyboard.
+  requestAnimationFrame(() => requestAnimationFrame(focusHeadlineText))
 }
 
-function focusHeadlineField(): void {
-  const field = document.getElementById(LOWER_THIRD_HEADLINE_ID)
-  if (!(field instanceof HTMLInputElement) && !field?.isContentEditable) return
-  field.scrollIntoView({ block: 'nearest' })
-  field.focus()
-  // A formatted field selects its words the way an input's select() does.
-  if (field instanceof HTMLInputElement) field.select()
-  else window.getSelection()?.selectAllChildren(field)
+/** Selects the text on the canvas: typing (or Enter) then changes its words in place. */
+function focusHeadlineText(): void {
+  const frame = document.getElementById(LOWER_THIRD_HEADLINE_ID)
+  if (!(frame instanceof HTMLElement)) return
+  frame.scrollIntoView({ block: 'nearest' })
+  frame.focus()
 }

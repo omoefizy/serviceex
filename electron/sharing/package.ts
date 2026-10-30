@@ -1,4 +1,5 @@
-// The .serviceex package: a whole service (schedule, songs, themes, media, presentations) or a few library items
+// The .serviceex package: a whole service (schedule, songs, themes, media, presentations, and the imported fonts the
+// themes use) or a few library items
 // in one file, for sending over the network or carrying on a USB drive. Nothing here touches Electron.
 //
 // Layout: the 8 byte magic "SVCEX1\n\0", a 4 byte big-endian manifest length, the manifest as JSON, then each file's
@@ -16,8 +17,9 @@ import type { AnnouncementPayload, ScripturePayload, SlideFormats, SongArrangeme
 
 const MAGIC = Buffer.from('SVCEX1\n\0', 'latin1')
 const MAX_MANIFEST_BYTES = 32 * 1024 * 1024
-/** Files inside a package: media/<n>.<ext> or presentations/<n>.<ext>. */
-const FILE_PATH = /^(media|presentations)\/\d{1,6}\.([a-z0-9]{1,5})$/
+/** Files inside a package: media/<n>.<ext>, presentations/<n>.<ext> or fonts/<n>.<ext>. */
+const FILE_PATH = /^(media|presentations|fonts)\/\d{1,6}\.([a-z0-9]{1,5})$/
+const FONT_FILE = /^fonts\/\d{1,6}\.(ttf|otf|woff|woff2)$/
 /** Stands in for a media file's wd-media:// URL inside themes and payloads. */
 export const PACKAGE_MEDIA_PREFIX = 'serviceex-media:'
 
@@ -55,6 +57,16 @@ export interface PackageMedia {
   library: boolean
 }
 
+/** An imported font a theme in the package uses, so the theme looks the same on the other computer. */
+export interface PackageFont {
+  key: number
+  family: string
+  /** The font's file name where it was imported, kept when it is imported on the other computer. */
+  name: string
+  /** Its path in the package. */
+  file: string
+}
+
 export interface PackagePresentation {
   key: number
   title: string
@@ -77,6 +89,8 @@ export interface PackageContents {
   presentations: PackagePresentation[]
   /** Announcements sent on their own, for the receiver's open schedule. */
   announcements: AnnouncementPayload[]
+  /** Imported fonts the themes use; missing from packages made before fonts travelled. */
+  fonts?: PackageFont[]
 }
 
 export interface PackageFile {
@@ -93,12 +107,13 @@ export interface PackageManifest {
   files: PackageFile[]
 }
 
-export const emptyContents = (): PackageContents => ({ service: null, songs: [], themes: [], media: [], presentations: [], announcements: [] })
+export const emptyContents = (): PackageContents => ({ service: null, songs: [], themes: [], media: [], presentations: [], announcements: [], fonts: [] })
 
 /** A path inside a package for a file of this extension. */
-export const packagePath = (folder: 'media' | 'presentations', index: number, extension: string) => `${folder}/${index}.${extension.toLowerCase()}`
+export const packagePath = (folder: 'media' | 'presentations' | 'fonts', index: number, extension: string) => `${folder}/${index}.${extension.toLowerCase()}`
 
 function checkFilePath(file: string): void {
+  if (FONT_FILE.test(file)) return
   const match = FILE_PATH.exec(file)
   // Only media and presentation types, never another package.
   const kind = match ? shareKindOf(file) : null
@@ -167,6 +182,7 @@ export async function readPackage(file: string): Promise<OpenedPackage> {
     for (const list of ['songs', 'themes', 'media', 'presentations', 'announcements'] as const) {
       if (!Array.isArray(c[list])) throw new Error('The package is damaged')
     }
+    if (c.fonts !== undefined && !Array.isArray(c.fonts)) throw new Error('The package is damaged')
     const offsets = new Map<string, number>()
     let at = 12 + length
     for (const entry of manifest.files) {

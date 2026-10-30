@@ -1,0 +1,29 @@
+{
+  "seconds": 10,
+  "viewport": "1920x1080",
+  "headed": true,
+  "baseline": {
+    "cpu": {
+      "browser": 0.6,
+      "renderer": 0.1,
+      "GPU": 0.5,
+      "network.mojom.NetworkService": 0.2,
+      "storage.mojom.StorageService": 0
+    },
+    "fps": 0,
+    "effectsPlaying": 0,
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"
+  },
+  "effects": {
+    "cpu": {
+      "browser": 9.1,
+      "renderer": 6.2,
+      "GPU": 10.7,
+      "network.mojom.NetworkService": 0.1,
+      "storage.mojom.StorageService": 0
+    },
+    "fps": 49.5,
+    "effectsPlaying": 6,
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"
+  }
+}

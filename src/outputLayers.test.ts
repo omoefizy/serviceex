@@ -125,6 +125,9 @@ const DESIGNED: Design = {
   },
 }
 
+/** The line most tests show. */
+const PASTOR = { headline: 'Pastor Sam', body: 'Lead Pastor' }
+
 let renderers: ReactTestRenderer[] = []
 const render = (element: Parameters<typeof create>[0]) => {
   let renderer!: ReactTestRenderer
@@ -152,7 +155,6 @@ beforeEach(() => {
   }))
   st().selectScripture('John 3:16 KJV', [{ text: 'For God so loved the world', caption: 'John 3:16 KJV' }])
   st().goLive(0)
-  st().setLowerThirdDraft({ headline: 'Pastor Sam', body: 'Lead Pastor' })
 })
 
 afterEach(() => {
@@ -168,7 +170,7 @@ describe('the live output window', () => {
     expect(slide.node).not.toBeNull()
     expect(find(output, 'lower-third-layer', 'Pastor Sam').node).toBeNull()
 
-    act(() => st().showLowerThird())
+    act(() => st().showLowerThirdLine(PASTOR))
     sendToOutputs()
     const lowerThird = find(output, 'lower-third-layer', 'Pastor Sam')
     expect(lowerThird.node).not.toBeNull()
@@ -181,7 +183,7 @@ describe('the live output window', () => {
   it('draws the chosen design with the lower third’s words', () => {
     useOperatorStore.setState((s) => ({ settings: { ...s.settings, lowerThirdDesignId: DESIGNED.id } }))
     const output = render(createElement(OutputView))
-    act(() => st().showLowerThird())
+    act(() => st().showLowerThirdLine(PASTOR))
     sendToOutputs()
     const design = find(output, 'lt-design', 'Pastor Sam')
     expect(design.node).not.toBeNull()
@@ -241,7 +243,7 @@ describe('the live output window', () => {
 
   it('Clear lower third animates only the lower third out; the slide stays', () => {
     const output = render(createElement(OutputView))
-    act(() => st().showLowerThird())
+    act(() => st().showLowerThirdLine(PASTOR))
     sendToOutputs()
     act(() => st().hideLowerThird())
     sendToOutputs()
@@ -253,7 +255,7 @@ describe('the live output window', () => {
   it('Clear takes off the slide and the lower third, and shows the idle design, whose tag steps aside for a lower third', () => {
     useOperatorStore.setState((s) => ({ settings: { ...s.settings, idleDesignId: IDLE.id } }))
     const output = render(createElement(OutputView))
-    act(() => st().showLowerThird())
+    act(() => st().showLowerThirdLine(PASTOR))
     sendToOutputs()
     expect(find(output, 'idle-layer').node).toBeNull()
 
@@ -267,7 +269,7 @@ describe('the live output window', () => {
     expect(find(output, 'dv-aside', 'Welcome home').node).toBeNull()
 
     // A lower third over the idle design: the idle design stays, its flagged tag fades out.
-    act(() => st().showLowerThird())
+    act(() => st().showLowerThirdLine(PASTOR))
     sendToOutputs()
     expect(find(output, 'idle-layer', 'GRACE CHURCH').node).not.toBeNull()
     expect(find(output, 'dv-aside', 'Welcome home').node).not.toBeNull()
@@ -277,7 +279,7 @@ describe('the live output window', () => {
   it('Black takes everything off', () => {
     useOperatorStore.setState((s) => ({ settings: { ...s.settings, idleDesignId: IDLE.id } }))
     const output = render(createElement(OutputView))
-    act(() => st().showLowerThird())
+    act(() => st().showLowerThirdLine(PASTOR))
     act(() => st().setOutputMode('black'))
     sendToOutputs()
     expect(find(output, 'lower-third-layer', 'Pastor Sam').node).toBeNull()
@@ -289,7 +291,7 @@ describe('the live output window', () => {
 describe('the Stream output window', () => {
   it('draws the lower third over a full screen slide', () => {
     const stream = render(createElement(StreamView))
-    act(() => st().showLowerThird())
+    act(() => st().showLowerThirdLine(PASTOR))
     sendToOutputs()
     const slide = find(stream, 'output-frame', 'For God so loved the world')
     const lowerThird = find(stream, 'lower-third-layer', 'Pastor Sam')
@@ -300,14 +302,14 @@ describe('the Stream output window', () => {
   it('Overlay only leaves the slides off but keeps the lower third', () => {
     useOperatorStore.setState((s) => ({ settings: { ...s.settings, streamSlideContent: 'hide' } }))
     const stream = render(createElement(StreamView))
-    act(() => st().showLowerThird())
+    act(() => st().showLowerThirdLine(PASTOR))
     sendToOutputs()
     expect(find(stream, 'output-frame', 'For God so loved the world').node).toBeNull()
     expect(find(stream, 'lower-third-layer', 'Pastor Sam').node).not.toBeNull()
   })
 
   it('Transparent, chroma and black backgrounds, and the key matte for Key and Fill', () => {
-    act(() => st().showLowerThird())
+    act(() => st().showLowerThirdLine(PASTOR))
     const background = (keyMode: StreamState['keyMode'], props: Record<string, unknown> = {}) => {
       useOperatorStore.setState((s) => ({ settings: { ...s.settings, streamKeyMode: keyMode } }))
       const screen = render(createElement(StreamScreen, { state: selectStreamState(st()), ...props }))
@@ -325,7 +327,7 @@ describe('the Stream output window', () => {
   })
 
   it('the preview’s test background replaces the key color behind the overlay', () => {
-    act(() => st().showLowerThird())
+    act(() => st().showLowerThirdLine(PASTOR))
     const preview = render(createElement(StreamScreen, { state: selectStreamState(st()), testBackground: 'checker' }))
     expect(find(preview, 'checker').node).not.toBeNull()
     expect(find(preview, 'lower-third-layer', 'Pastor Sam').index).toBeGreaterThan(find(preview, 'checker').index)

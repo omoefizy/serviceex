@@ -1,8 +1,10 @@
-import { useContext, useLayoutEffect, useRef, type CSSProperties, type KeyboardEvent } from 'react'
+import { Fragment, useContext, useLayoutEffect, useRef, type CSSProperties, type KeyboardEvent } from 'react'
+import { boltPaths, diagonal, effectTracks, light } from '../../shared/designEffects'
 import { nineSliceBorders } from '../../shared/autoLayout'
 import { designTimeline, LOOP_CSS, motionCss, slideOffsets, type AnimationPhase, type TimelineEntry } from '../../shared/designAnimation'
 import { shownText } from '../../shared/designs'
-import type { DesignBackground, DesignElement, DesignShadow, DesignStyle, DesignTextField, TextCase, ThemeBox } from '../../shared/types'
+import type { DesignBackground, DesignEffect, DesignElement, DesignShadow, DesignStyle, DesignTextField, TextCase, ThemeBox } from '../../shared/types'
+import { driveEffect } from '../lib/effectClock'
 import { cssFontFamily } from '../lib/fonts'
 import { useDesignLayout } from '../lib/textMeasure'
 import { DefaultFontContext } from './themedSlideLayers'
@@ -270,6 +272,104 @@ function DesignElementView({ element, box, overflow, fields, edit, placeholders,
   }
 }
 
+/** A picture's own outline as a mask, sized as the picture is, so its effects light only the picture. */
+function pictureMask(element: Extract<DesignElement, { kind: 'image' }>): CSSProperties | undefined {
+  if (!element.src || element.slice) return undefined
+  return { maskImage: `url("${element.src}")`, maskSize: element.fit, maskPosition: 'center', maskRepeat: 'no-repeat' }
+}
+
+/**
+ * One light effect: its layers drawn once, then moved and faded on the effect clock. `startMs` is when the element has
+ * come in, from now; the effect's own delay counts from there.
+ */
+function DesignEffectLayer({ effect, box, mask, startMs }: { effect: DesignEffect; box: ThemeBox; mask?: CSSProperties; startMs: number }) {
+  const moveRef = useRef<HTMLDivElement>(null)
+  const lightRef = useRef<HTMLDivElement & SVGSVGElement>(null)
+  const settings = JSON.stringify(effect)
+
+  useLayoutEffect(() => {
+    const targets = { move: moveRef.current, light: lightRef.current }
+    const tracks = effectTracks(effect)
+    const ready = tracks.every((t) => typeof targets[t.part]?.animate === 'function')
+    if (!ready) return
+    const animations = tracks.map((t) => targets[t.part]!.animate(t.keyframes, { duration: effect.durationMs, easing: t.easing, fill: 'none' }))
+    return driveEffect(effect, animations, performance.now() + startMs)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `settings` stands for the effect; a new copy of the same one keeps playing
+  }, [settings, startMs])
+
+  const { color, intensity } = effect
+  const side = `${diagonal(box)}cqw`
+  switch (effect.kind) {
+    case 'lightSweep':
+    case 'scanLine': {
+      const band =
+        effect.kind === 'scanLine'
+          ? `linear-gradient(90deg, transparent, ${light(color, intensity * 0.3)} 35%, ${light(color, intensity)} 50%, ${light(color, intensity * 0.3)} 65%, transparent)`
+          : `linear-gradient(90deg, transparent, ${light(color, intensity)} 50%, transparent)`
+      return (
+        <div className={`dv-fx dv-fx-${effect.kind}`} style={mask}>
+          <div className="dv-fx-turn" style={{ width: side, height: side, transform: `translate(-50%, -50%) rotate(${effect.angle}deg)` }}>
+            <div ref={moveRef} className="dv-fx-band" style={{ width: `${effect.width}%`, background: band }} />
+          </div>
+        </div>
+      )
+    }
+    case 'borderChase': {
+      const length = Math.round(effect.width * 3.6)
+      return (
+        <div className="dv-fx dv-fx-ring" style={{ padding: `${effect.thickness}cqh` }}>
+          <div
+            ref={moveRef}
+            className="dv-fx-spin"
+            style={{ width: side, height: side, background: `conic-gradient(transparent 0deg, transparent ${360 - length}deg, ${light(color, intensity)} 360deg)` }}
+          />
+        </div>
+      )
+    }
+    case 'glowPulse':
+      return (
+        <div className="dv-fx dv-fx-unclipped">
+          <div
+            ref={lightRef}
+            className="dv-fx-glow"
+            style={mask ? { ...mask, background: color, filter: `blur(${effect.glow / 2}cqh)` } : { boxShadow: `0 0 ${effect.glow}cqh ${effect.glow / 3}cqh ${color}` }}
+          />
+        </div>
+      )
+    case 'flicker':
+      return (
+        <div className="dv-fx" style={mask}>
+          <div ref={lightRef} className="dv-fx-fill" style={{ background: color }} />
+        </div>
+      )
+    case 'lightning':
+      return (
+        <div className="dv-fx" style={mask}>
+          <div ref={moveRef} className="dv-fx-bolt" style={{ width: `${effect.width}%` }}>
+            <svg ref={lightRef} className="dv-fx-light" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ filter: `drop-shadow(0 0 ${effect.glow}cqh ${color})` }}>
+              {boltPaths(effect.seed).map((points, i) => (
+                <polyline key={i} points={points} fill="none" stroke={color} strokeWidth={i === 0 ? 2.2 : 1.3} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+              ))}
+            </svg>
+          </div>
+        </div>
+      )
+  }
+}
+
+/** An element's light effects, over it in its place and shape, moving with it. */
+function DesignEffects({ element, box, motion, startMs }: { element: DesignElement; box: ThemeBox; motion?: CSSProperties; startMs: number }) {
+  const radius = element.kind === 'rect' || element.kind === 'image' ? `${element.radius}cqh` : undefined
+  const mask = element.kind === 'image' ? pictureMask(element) : undefined
+  return (
+    <div className="dv-el dv-fx-host" aria-hidden="true" style={{ ...placement(element, box, motion), borderRadius: radius }}>
+      {element.effects.map((effect) => (
+        <DesignEffectLayer key={effect.id} effect={effect} box={box} mask={mask} startMs={startMs} />
+      ))}
+    </div>
+  )
+}
+
 /**
  * A design drawn at the size of its parent, 16:9: the background and every visible element, bottom to top. Sizes are
  * cqh of this view. Bound text shows `fields` when given, else its sample words. `checker` shows a transparent
@@ -284,11 +384,14 @@ export function DesignView({ style, fields, edit, checker = false, placeholders 
   warnings?: boolean
   /** Shows an image element with no picture yet as an empty frame. */
   placeholders?: boolean
-  /** On an output: fills the screen, and the elements' loops run. */
+  /** On an output: fills the screen, and the elements' loops and light effects run. */
   onAir?: boolean
   /** On air with a lower third up: elements flagged to hide while one is live fade out. */
   lowerThirdLive?: boolean
-  /** Plays the elements' way in or out (see designTimeline); remount the view (a new key) to play it again. */
+  /**
+   * Plays the elements' way in or out (see designTimeline); remount the view (a new key) to play it again. On the way
+   * in, each element's light effects start once it has come in.
+   */
   phase?: AnimationPhase | null
   className?: string
 }) {
@@ -303,21 +406,29 @@ export function DesignView({ style, fields, edit, checker = false, placeholders 
       style={backgroundCss(background)}
     >
       {background.kind === 'image' && <img className="dv-background" src={background.src} alt="" draggable={false} style={{ objectFit: background.fit }} />}
-      {style.elements.map((element) =>
-        element.hidden ? null : (
-          <DesignElementView
-            key={element.id}
-            element={element}
-            box={layout.boxes.get(element.id) ?? element.box}
-            overflow={layout.overflow.has(element.id)}
-            fields={fields}
-            edit={edit}
-            placeholders={placeholders}
-            extra={extra(element)}
-            motion={phase && timeline ? motionStyle(element, timeline.get(element.id), phase) : undefined}
-          />
-        ),
-      )}
+      {style.elements.map((element) => {
+        if (element.hidden) return null
+        const box = layout.boxes.get(element.id) ?? element.box
+        const entry = timeline?.get(element.id)
+        const motion = phase && timeline ? motionStyle(element, entry, phase) : undefined
+        // Effects light an element on air and while the designer plays it in; on the way out they go with it.
+        const lit = element.effects.length > 0 && phase !== 'out' && (onAir || phase === 'in')
+        return (
+          <Fragment key={element.id}>
+            <DesignElementView
+              element={element}
+              box={box}
+              overflow={layout.overflow.has(element.id)}
+              fields={fields}
+              edit={edit}
+              placeholders={placeholders}
+              extra={extra(element)}
+              motion={motion}
+            />
+            {lit && <DesignEffects element={element} box={box} motion={motion} startMs={entry ? entry.startMs + entry.durationMs : 0} />}
+          </Fragment>
+        )
+      })}
     </div>
   )
 }
