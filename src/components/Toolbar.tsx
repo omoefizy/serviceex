@@ -26,6 +26,8 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { formatHours } from '../../shared/account'
 import { can, hasFeature, upgradeNote } from '../../shared/features'
+import { askUpgrade } from '../lib/upgrade'
+import { LockIcon } from './Locked'
 import { layoutById } from '../../shared/layouts'
 import type { OutputMode } from '../../shared/types'
 import markUrl from '../../assets/brand/mark.svg'
@@ -188,34 +190,36 @@ export function MoreMenuList({ onChoose }: { onChoose(): void }) {
         type="button"
         role="menuitemcheckbox"
         aria-checked={streamOpen}
-        disabled={!streamOpen && !can('multiOutput')}
         title={can('multiOutput') ? undefined : upgradeNote('multiOutput')}
         onClick={choose(() => toggleStream().catch(console.error))}
       >
         <Cast size={16} aria-hidden="true" />
         <span>Show Stream Output</span>
+        <LockIcon feature="multiOutput" />
         {streamOpen && <Check size={14} aria-hidden="true" />}
       </button>
       <button
         type="button"
         role="menuitemcheckbox"
         aria-checked={stageOpen}
-        disabled={!stageOpen && !can('stageDisplay')}
         title={can('stageDisplay') ? 'The stage display for the worship leader' : upgradeNote('stageDisplay')}
         onClick={choose(() => toggleStage().catch(console.error))}
       >
         <MonitorPlay size={16} aria-hidden="true" />
         <span>Stage Display</span>
+        <LockIcon feature="stageDisplay" />
         {stageOpen && <Check size={14} aria-hidden="true" />}
       </button>
       <button
         type="button"
         role="menuitemcheckbox"
         aria-checked={logoLayerVisible}
-        onClick={choose(() => updateSettings({ logoLayerVisible: !logoLayerVisible }).catch(console.error))}
+        title={can('brand.church') ? undefined : upgradeNote('brand.church')}
+        onClick={choose(() => (can('brand.church') ? updateSettings({ logoLayerVisible: !logoLayerVisible }).catch(console.error) : askUpgrade('brand.church')))}
       >
         <Layers size={16} aria-hidden="true" />
         <span>Logo Layer</span>
+        <LockIcon feature="brand.church" />
         {logoLayerVisible && <Check size={14} aria-hidden="true" />}
       </button>
       <button type="button" role="menuitemcheckbox" aria-checked={testPattern} onClick={choose(() => setTestPattern(!testPattern))}>
@@ -231,24 +235,24 @@ export function MoreMenuList({ onChoose }: { onChoose(): void }) {
         type="button"
         role="menuitemcheckbox"
         aria-checked={themeEditorOpen}
-        disabled={!can('themes.editor')}
         title={can('themes.editor') ? undefined : upgradeNote('themes.editor')}
         onClick={choose(() => openThemeEditor(!themeEditorOpen))}
       >
         <Palette size={16} aria-hidden="true" />
         <span>Themes</span>
+        <LockIcon feature="themes.editor" />
         {themeEditorOpen && <Check size={14} aria-hidden="true" />}
       </button>
       <button
         type="button"
         role="menuitemcheckbox"
         aria-checked={streamPanelOpen}
-        disabled={!streamPanelOpen && !can('multiOutput')}
         title={can('multiOutput') ? (streamOpen ? 'Studio: Stream output, logos and key (the Stream output is open)' : 'Studio: Stream output, logos and key') : upgradeNote('multiOutput')}
         onClick={choose(() => openStreamPanel(!streamPanelOpen))}
       >
         <Cast size={16} aria-hidden="true" />
         <span>Studio</span>
+        <LockIcon feature="multiOutput" />
         {streamPanelOpen && <Check size={14} aria-hidden="true" />}
       </button>
       <button
@@ -260,6 +264,7 @@ export function MoreMenuList({ onChoose }: { onChoose(): void }) {
       >
         <BookOpenText size={16} aria-hidden="true" />
         <span>Sermons</span>
+        <LockIcon feature="sermon.save" />
         {sermonsOpen && <Check size={14} aria-hidden="true" />}
       </button>
       {hasFeature('sharing.layouts') && (

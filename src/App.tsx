@@ -8,6 +8,7 @@ import { ListenerPanel } from './components/ListenerPanel'
 import { LiveMonitor, PreviewMonitor } from './components/LivePreview'
 import { LowerThirdsWorkspace } from './components/LowerThirdsWorkspace'
 import { PlansModal } from './components/PlansModal'
+import { UpgradePopover } from './components/Locked'
 import { MediaPanel } from './components/MediaPanel'
 import { PanelBoundary } from './components/PanelBoundary'
 import { PresentationsPanel } from './components/PresentationsPanel'
@@ -562,6 +563,7 @@ function App() {
       <StatusBar showListener={show.listener} transcriptOpen={transcriptOpen && show.listener} />
       {paletteOpen && <CommandPalette />}
       {plansOpen && <PlansModal />}
+      <UpgradePopover />
       <ScriptureEditHost />
       <CombineHost />
       {welcome.open && <WelcomeScreen onAccount={welcome.toAccount} onContinue={welcome.continueWithoutAccount} />}

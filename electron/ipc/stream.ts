@@ -1,6 +1,6 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import path from 'node:path'
-import { requireFeature } from '../../shared/features'
+import { markOnAir, requireFeature } from '../../shared/features'
 import { DEFAULT_FONT, DEFAULT_THEME_STYLE } from '../../shared/themes'
 import type { StreamKeyMode, StreamState } from '../../shared/types'
 import { copyIntoMedia, mediaUrl } from '../media'
@@ -62,7 +62,11 @@ export function registerStreamIpc(
 ): void {
   ipcMain.handle('stream:setOpen', (_event, open: unknown) => {
     // Closing always works; only opening needs the plan.
-    if (open === true) requireFeature('multiOutput')
+    if (open === true) {
+      requireFeature('multiOutput')
+      // On air from here: it stays available until the app restarts, whatever happens to the plan.
+      markOnAir('multiOutput')
+    }
     setOpen(open === true)
   })
   ipcMain.handle('stream:isOpen', () => getStreamWindow() !== null)

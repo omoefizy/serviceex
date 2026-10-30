@@ -1,7 +1,8 @@
 import { BookPlus, BookX, History, Search, SearchX, SlidersHorizontal, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { can, upgradeNote } from '../../shared/features'
+import { canAddTranslation } from '../../shared/features'
+import { Locked } from './Locked'
 import { BOOK_NAMES, formatReference, NEW_TESTAMENT_BOOKS, OLD_TESTAMENT_BOOKS, parseReference } from '../../shared/parseReference'
 import type { AiError, BibleVersion, BibleVersionCode, Testament, Verse } from '../../shared/types'
 import { describeError, reportError, type ErrorLike } from '../lib/errors'
@@ -570,19 +571,19 @@ export function ScripturePanel({ toolbar = null }: { toolbar?: HTMLElement | nul
               ))}
             </Select>
           </div>
-          <Button
-            size="sm"
-            icon={<BookPlus size={16} aria-hidden="true" />}
-            title="Import a Bible version your church owns"
-            disabled={!can('bible.extraVersions')}
-            disabledTooltip={upgradeNote('bible.extraVersions')}
-            onClick={() => {
-              setOptionsOpen(false)
-              setImportOpen(true)
-            }}
-          >
-            Import a Bible version
-          </Button>
+          <Locked feature="bible.extraVersions" locked={!canAddTranslation(installed.length)}>
+            <Button
+              size="sm"
+              icon={<BookPlus size={16} aria-hidden="true" />}
+              title="Import a Bible version your church owns"
+              onClick={() => {
+                setOptionsOpen(false)
+                setImportOpen(true)
+              }}
+            >
+              Import a Bible version
+            </Button>
+          </Locked>
         </div>
       </div>
     </>

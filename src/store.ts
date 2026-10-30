@@ -2,8 +2,10 @@ import { create } from 'zustand'
 import { buildSongSlides } from '../shared/lyrics'
 import { DEFAULT_LOWER_THIRD_STYLE } from '../shared/lowerThirds'
 import { canvasFields } from '../shared/designs'
+import { fadeOnly } from '../shared/designAnimation'
 import { DEFAULT_HIGHLIGHT, isMarked, markSlide, slideRich, unmarkSlide } from '../shared/highlights'
 import { can } from '../shared/features'
+import { askUpgrade } from './lib/upgrade'
 import { DEFAULT_LAYOUT_ID, PRESET_LAYOUTS } from '../shared/layouts'
 import { formatFor, matching, trimRich, type RichRange } from '../shared/richText'
 import { adjustTheme, isEmptyAdjust } from '../shared/scriptureLook'
@@ -1171,7 +1173,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   openThemeEditor(open) {
-    if (open && !can('themes.editor')) return
+    if (open && !can('themes.editor')) return askUpgrade('themes.editor')
     set(open ? { themeEditorOpen: true, editingSongId: null, settingsOpen: false, streamPanelOpen: false, sermonsOpen: false } : { themeEditorOpen: false })
   },
 
@@ -1180,10 +1182,12 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   openStreamPanel(open) {
+    if (open && !can('multiOutput')) return askUpgrade('multiOutput')
     set(open ? { streamPanelOpen: true, editingSongId: null, themeEditorOpen: false, settingsOpen: false, sermonsOpen: false } : { streamPanelOpen: false })
   },
 
   openSermons(open) {
+    if (open && !can('sermon.save')) return askUpgrade('sermon.save')
     set(open ? { sermonsOpen: true, editingSongId: null, themeEditorOpen: false, settingsOpen: false, streamPanelOpen: false } : { sermonsOpen: false })
   },
 
@@ -1196,7 +1200,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   async toggleStage() {
-    if (!get().stageOpen && !can('stageDisplay')) return
+    if (!get().stageOpen && !can('stageDisplay')) return askUpgrade('stageDisplay')
     await (get().stageOpen ? window.api.stage.close() : window.api.stage.open())
   },
 
@@ -1213,7 +1217,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   },
 
   async toggleStream() {
-    if (!get().streamOpen && !can('multiOutput')) return
+    if (!get().streamOpen && !can('multiOutput')) return askUpgrade('multiOutput')
     await window.api.stream.setOpen(!get().streamOpen)
   },
 
@@ -2149,7 +2153,7 @@ export function selectOutputState(s: OperatorState): OutputState {
     rich: live?.rich ?? null,
     theme: s.live.mode === 'logo' ? selectDefaultTheme(s, 'logo') : slideTheme(s.live.theme, live),
     fadeMs: s.settings.fadeMs,
-    logoUrl: s.settings.logoUrl,
+    logoUrl: can('brand.church') ? s.settings.logoUrl : null,
     defaultFont: s.settings.defaultFont,
     screenMargins: s.settings.screenMargins,
     testPattern: s.outputTestPattern,
@@ -2178,8 +2182,11 @@ export function selectLowerThirdDesign(s: OperatorState): DesignStyle | null {
 
 /** The idle design, shown whenever the main content is cleared; null for none. */
 export function selectIdleDesign(s: OperatorState): DesignStyle | null {
-  return designById(s, s.settings.idleDesignId)
+  return can('output.idle') ? planDesign(designById(s, s.settings.idleDesignId)) : null
 }
+
+/** A design as this run's plan plays it: fading in and out only, unless the plan has every animation and effect. */
+const planDesign = (style: DesignStyle | null): DesignStyle | null => (style && !can('effects.animations') ? fadeOnly(style) : style)
 
 /** Where the open service's sermon points are kept in Settings: its id, or "0" with no service open. */
 const pointsKey = (s: OperatorState) => String(s.service?.id ?? 0)
@@ -2212,7 +2219,7 @@ const lineDesign = (s: OperatorState, line: LowerThirdLine) => (line.designId !=
 
 /** A lower third line as the screens draw it. */
 function displayOf(s: OperatorState, lowerThird: LowerThirdLine, runId: number): LowerThirdDisplay {
-  const design = lineDesign(s, lowerThird)
+  const design = planDesign(lineDesign(s, lowerThird))
   return {
     runId,
     headline: lowerThird.headline,
@@ -2222,7 +2229,7 @@ function displayOf(s: OperatorState, lowerThird: LowerThirdLine, runId: number):
     style: selectLowerThirdStyle(s),
     ...(design ? { design } : {}),
     ...(lowerThird.number ? { number: lowerThird.number } : {}),
-    animation: s.settings.lowerThirdAnimation,
+    animation: can('effects.animations') ? s.settings.lowerThirdAnimation : 'fade',
     durationMs: s.settings.lowerThirdDurationMs,
   }
 }
@@ -2244,7 +2251,7 @@ export function selectPreviewLowerThirdDisplay(s: OperatorState): LowerThirdDisp
  */
 export function selectOverlayLayers(s: OperatorState): OverlayLayers {
   return {
-    logos: s.settings.logoLayerVisible ? s.settings.logoItems.filter((logo) => logo.enabled) : [],
+    logos: s.settings.logoLayerVisible && can('brand.church') ? s.settings.logoItems.filter((logo) => logo.enabled) : [],
     idle: s.live.mode === 'clear' ? selectIdleDesign(s) : null,
     lowerThird: selectLowerThirdDisplay(s),
   }

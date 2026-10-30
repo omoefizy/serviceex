@@ -1,7 +1,8 @@
 import { BadgeCheck, Check, CreditCard, Lock, LogIn, LogOut, Mail, MonitorX, RefreshCw, UserRound, WifiOff } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { allowancePercentLeft, allowanceTotalTokens, formatHours, isLowBalance, poolPercentLeft, type AccountState, type AiAllowance, type AiPool } from '../../shared/account'
-import { ENFORCE_ENTITLEMENTS, FEATURE_KEYS, FEATURES, includes } from '../../shared/features'
+import { enforcingEntitlements, FEATURE_KEYS, FEATURES, includes } from '../../shared/features'
+import { askUpgrade } from '../lib/upgrade'
 import type { LicenseStatus } from '../../shared/license'
 import { shortDate } from '../../shared/serviceErrors'
 import { openPlans, reloadAccount, setAccountState, useAccount } from '../lib/account'
@@ -357,13 +358,22 @@ export function AccountSection() {
       <ul className="plan-features" aria-label="Features">
         {FEATURE_KEYS.map((feature) => (
           <li key={feature} className={includes(feature) ? '' : 'off'} title={FEATURES[feature].description}>
-            {includes(feature) ? <Check size={13} aria-label="Included" /> : <Lock size={13} aria-label="Not included" />}
-            {FEATURES[feature].label}
+            {includes(feature) ? (
+              <>
+                <Check size={13} aria-label="Included" />
+                {FEATURES[feature].label}
+              </>
+            ) : (
+              <button type="button" className="upgrade-note" aria-haspopup="dialog" onClick={(e) => askUpgrade(feature, e.currentTarget)}>
+                <Lock size={13} aria-label="Not included" />
+                {FEATURES[feature].label}
+              </button>
+            )}
           </li>
         ))}
       </ul>
       <p className="hint">
-        {ENFORCE_ENTITLEMENTS ? '' : 'Plan limits are not enforced yet: every feature works. '}A change to the plan takes effect the next time
+        {enforcingEntitlements() ? '' : 'Plan limits are off in this developer build: every feature works. '}A change to the plan takes effect the next time
         ServiceEx starts, never during a service.
       </p>
     </Card>

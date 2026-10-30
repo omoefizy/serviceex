@@ -8,6 +8,7 @@ import { selectBaseThemeId, useOperatorStore } from '../store'
 import { openSendMenu, setShareDrag } from '../lib/sharing'
 import { clampBox } from '../lib/themeLayout'
 import { MissingFontChips } from './FontPicker'
+import { mayPickTheme, themeLabel } from '../lib/upgrade'
 import { FormatToolbar, type FormatControl, type FormatPatch, type FormatState } from './FormatToolbar'
 import { MediaPickerModal } from './MediaGrid'
 import { ErrorNote, SegmentedControl, Select } from './ui'
@@ -155,10 +156,10 @@ export function ThemeDefaultsForm() {
       {THEME_CONTENT_TYPES.map((type) => (
         <label key={type} className="field">
           <span>Default for {CONTENT_LABELS[type].toLowerCase()}</span>
-          <Select value={defaults?.[type] ?? ''} onChange={(e) => setDefault(type, Number(e.target.value))}>
+          <Select value={defaults?.[type] ?? ''} onChange={(e) => mayPickTheme(themes, Number(e.target.value), e.currentTarget) && setDefault(type, Number(e.target.value))}>
             {themes.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name}
+                {themeLabel(t)}
               </option>
             ))}
           </Select>

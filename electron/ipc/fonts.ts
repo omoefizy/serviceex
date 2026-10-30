@@ -1,4 +1,5 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { requireFeature } from '../../shared/features'
 import { FONT_EXTENSIONS, importFontFiles, listImportedFonts, removeFontFiles } from '../fonts'
 
 /** Every window draws slides, so each loads the fonts again. */
@@ -10,6 +11,7 @@ export function registerFontIpc(): void {
   ipcMain.handle('fonts:list', () => listImportedFonts())
 
   ipcMain.handle('fonts:import', async (event) => {
+    requireFeature('fonts.import')
     const win = BrowserWindow.fromWebContents(event.sender)
     const options: Electron.OpenDialogOptions = {
       title: 'Import fonts',
@@ -26,6 +28,7 @@ export function registerFontIpc(): void {
 
   // Files dropped on a font picker, by their paths on disk.
   ipcMain.handle('fonts:importFiles', async (_event, paths: unknown) => {
+    requireFeature('fonts.import')
     const files = Array.isArray(paths) ? paths.filter((p): p is string => typeof p === 'string' && p.length > 0).slice(0, 200) : []
     const result = await importFontFiles(files)
     if (result.fonts.length > 0) announceFontsChanged()

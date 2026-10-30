@@ -89,6 +89,8 @@ import { LevelMeter } from './LevelMeter'
 import { ScriptureDisplayForm } from './ScriptureDisplay'
 import { ThemeDefaultsForm } from './ThemeEditor'
 import { UpgradeNote } from './UpgradeNote'
+import { Locked } from './Locked'
+import { mayPickTheme, themeLabel } from '../lib/upgrade'
 import { AccountSection, BalanceLines } from './AccountSection'
 import { CopyDiagnosticsButton } from './PanelBoundary'
 import { openPlans, useAccount } from '../lib/account'
@@ -1222,9 +1224,11 @@ function SharingSection() {
           computers. Nothing goes over the internet. While on, computers on this network can see this computer's name; only paired ones can send to it.
         </span>
       </p>
-      <Toggle checked={settings.sharingEnabled} onChange={(e) => run(() => updateSettings({ sharingEnabled: e.target.checked }))}>
-        Share with other ServiceEx computers on this network
-      </Toggle>
+      <Locked feature="sharing.devices" block>
+        <Toggle checked={settings.sharingEnabled && can('sharing.devices')} onChange={(e) => run(() => updateSettings({ sharingEnabled: e.target.checked }))}>
+          Share with other ServiceEx computers on this network
+        </Toggle>
+      </Locked>
       <ErrorNote error={status?.error && describeError(status.error)} />
       {settings.sharingEnabled && status?.port && (
         <p className="hint">
@@ -1403,6 +1407,7 @@ function LayoutsSection() {
                         <Select
                           value={layout.themeDefaults[type] ?? ''}
                           onChange={(e) =>
+                            mayPickTheme(themes, e.target.value ? Number(e.target.value) : null, e.currentTarget) &&
                             save(() => {
                               const themeDefaults = { ...layout.themeDefaults }
                               if (e.target.value) themeDefaults[type] = Number(e.target.value)
@@ -1414,7 +1419,7 @@ function LayoutsSection() {
                           <option value="">Leave as it is</option>
                           {themes.map((theme) => (
                             <option key={theme.id} value={theme.id}>
-                              {theme.name}
+                              {themeLabel(theme)}
                             </option>
                           ))}
                         </Select>
@@ -1493,13 +1498,13 @@ function DevicesSection() {
 
   return (
     <Section icon={<Plug size={16} aria-hidden="true" />} title="Devices">
-      {hasFeature('sharing.presence') && (
+      <Locked feature="sharing.presence" block>
         <Toggle checked={settings.sharingDeviceChips} onChange={(e) => run(() => updateSettings({ sharingDeviceChips: e.target.checked }))}>
           Device chips in the toolbar status area, with the title of what each computer has live
         </Toggle>
-      )}
+      </Locked>
       <p className="hint">Only the title is shared, never the slide. Turned off, this computer also stops telling the others what it has live.</p>
-      {hasFeature('sharing.send') && (
+      {hasFeature('sharing.send') ? (
         <label className="field">
           <span>When a cue arrives</span>
           <Select value={settings.sharingCueAlert} onChange={(e) => run(() => updateSettings({ sharingCueAlert: e.target.value as AppSettings['sharingCueAlert'] }))}>
@@ -1509,6 +1514,8 @@ function DevicesSection() {
           </Select>
           <span className="hint">Cues wait in the tray with Preview, Add to schedule and Dismiss. A cue never changes what is on the output.</span>
         </label>
+      ) : (
+        <UpgradeNote feature="sharing.send" />
       )}
 
       {publicNetworks.length > 0 && (
@@ -1706,7 +1713,13 @@ function LibrarySyncSection() {
   const library = useSharingStore((s) => s.library)
   const [error, setError] = useState<ErrorLike | null>(null)
 
-  if (!hasFeature('sharing.librarySync')) return null
+  if (!hasFeature('sharing.librarySync')) {
+    return (
+      <Section icon={<Library size={16} aria-hidden="true" />} title="Library sync">
+        <UpgradeNote feature="sharing.librarySync" />
+      </Section>
+    )
+  }
   const run = (action: () => Promise<unknown>) => {
     setError(null)
     action().catch((err) => setError(reportError('Settings', err)))
@@ -1885,19 +1898,21 @@ function LowerThirdsSection() {
   return (
     <Section icon={<Layers size={16} aria-hidden="true" />} title="Lower thirds">
       <ErrorNote error={error} />
-      <label className="field">
-        <span>
-          Idle design <small>Shown on every output whenever the main content is cleared, such as the church logo in a corner.</small>
-        </span>
-        <Select value={chosen(settings.idleDesignId)} onChange={(e) => save({ idleDesignId: e.target.value ? Number(e.target.value) : null })}>
-          <option value="">None</option>
-          {designs.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </Select>
-      </label>
+      <Locked feature="output.idle" block>
+        <label className="field">
+          <span>
+            Idle design <small>Shown on every output whenever the main content is cleared, such as the church logo in a corner.</small>
+          </span>
+          <Select value={can('output.idle') ? chosen(settings.idleDesignId) : ''} onChange={(e) => save({ idleDesignId: e.target.value ? Number(e.target.value) : null })}>
+            <option value="">None</option>
+            {designs.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </Select>
+        </label>
+      </Locked>
       <p className="hint">
         Make it in Designs with a transparent background. An element marked "Hide while a lower third is live" steps aside whenever one is up.
       </p>
@@ -2176,29 +2191,31 @@ export function SettingsPanel() {
           <LowerThirdsSection />
 
           <Section icon={<Image size={16} aria-hidden="true" />} title="Church profile">
-            <ChurchProfileFields />
-            <span className="field-label">Church logo</span>
-            <div className="settings-logo">
-              <div className="settings-logo-preview">
-                {settings.logoUrl ? <img src={settings.logoUrl} alt="Current logo" /> : <span className="hint">Placeholder logo</span>}
-              </div>
-              <div className="settings-row">
-                <Button
-                  onClick={() => run(async () => {
-                    const saved = await window.api.settings.pickLogo()
-                    if (saved) await loadSettings()
-                  })}
-                >
-                  <Image size={15} aria-hidden="true" /> Choose image…
-                </Button>
-                {settings.logoUrl && (
-                  <Button onClick={() => run(() => updateSettings({ logoUrl: null }))}>
-                    <Trash2 size={15} aria-hidden="true" /> Use placeholder
+            <Locked feature="brand.church" block>
+              <ChurchProfileFields />
+              <span className="field-label">Church logo</span>
+              <div className="settings-logo">
+                <div className="settings-logo-preview">
+                  {settings.logoUrl ? <img src={settings.logoUrl} alt="Current logo" /> : <span className="hint">Placeholder logo</span>}
+                </div>
+                <div className="settings-row">
+                  <Button
+                    onClick={() => run(async () => {
+                      const saved = await window.api.settings.pickLogo()
+                      if (saved) await loadSettings()
+                    })}
+                  >
+                    <Image size={15} aria-hidden="true" /> Choose image…
                   </Button>
-                )}
+                  {settings.logoUrl && (
+                    <Button onClick={() => run(() => updateSettings({ logoUrl: null }))}>
+                      <Trash2 size={15} aria-hidden="true" /> Use placeholder
+                    </Button>
+                  )}
+                </div>
               </div>
-            </div>
-            <p className="hint">Shown when you press Logo (L), and at the top of sermon PDFs. A transparent PNG works best.</p>
+              <p className="hint">Shown when you press Logo (L), and at the top of sermon PDFs. A transparent PNG works best.</p>
+            </Locked>
           </Section>
 
           <Section icon={<Palette size={16} aria-hidden="true" />} title="Default themes">

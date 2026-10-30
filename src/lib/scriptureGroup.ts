@@ -3,6 +3,8 @@
 
 import { create } from 'zustand'
 import { MAX_GROUP_PASSAGES } from '../../shared/scriptureGroup'
+import { can } from '../../shared/features'
+import { askUpgrade } from './upgrade'
 import type { ScriptureGroup, ScriptureGroupPassage } from '../../shared/types'
 import { useOperatorStore } from '../store'
 
@@ -49,9 +51,11 @@ export const useCombine = create<CombineState>((set, get) => ({
     set({ passages: [] })
   },
   openTray() {
+    if (!can('scripture.combine')) return askUpgrade('scripture.combine')
     set({ editing: { itemId: null, group: { layout: 'stacked', passages: get().passages } } })
   },
   openGroup(group, itemId) {
+    if (!can('scripture.combine')) return askUpgrade('scripture.combine')
     set({ editing: { itemId, group } })
   },
   close() {
@@ -62,7 +66,7 @@ export const useCombine = create<CombineState>((set, get) => ({
 /** The grid slide open in the Edit text editor, by index. */
 export const useTextEdit = create<{ index: number | null; open(index: number): void; close(): void }>((set) => ({
   index: null,
-  open: (index) => set({ index }),
+  open: (index) => (can('scripture.editText') ? set({ index }) : askUpgrade('scripture.editText')),
   close: () => set({ index: null }),
 }))
 

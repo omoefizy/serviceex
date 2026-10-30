@@ -4,11 +4,13 @@
 //  - offline_valid_until, 14 days after it was issued. The app refreshes the token whenever it is online; a computer
 //    kept offline longer than that falls back to the free features until it next connects.
 //  - updates_until. Past it, the installed version keeps working with everything it had; only newer updates stop.
+//  - trial_ends_at, only on a Pro trial (product pro_trial): the server offers each account one trial, and signs this
+//    date into its token. Until then the trial is Pro; after it, the free plan.
 //
 // What a licence allows is decided once at startup (see electron/license), so a feature never turns off during a
 // service. Nothing here touches the output windows.
 
-import { FREE_FEATURES, FREE_PLAN, planOf, type Entitlements, type FeatureKey } from './features'
+import { FREE_FEATURES, FREE_PLAN, planOf, PRO_TRIAL, type Entitlements, type FeatureKey } from './features'
 
 /** The signed part of a licence token, as the server writes it. */
 export interface LicenseTokenPayload {
@@ -22,6 +24,8 @@ export interface LicenseTokenPayload {
   updates_expired: boolean
   issued_at: string
   offline_valid_until: string
+  /** Only on a Pro trial licence: when the trial ends. */
+  trial_ends_at?: string | null
   iat: number
   exp: number
 }
@@ -53,10 +57,31 @@ export interface LicenseStatus {
   updatesExpired: boolean
   issuedAt: string | null
   offlineValidUntil: string | null
+  /** A Pro trial: when it ends, and whether it has. Null for any other licence. */
+  trial: LicenseTrial | null
   /** What this run of the app allows: fixed at startup. */
   features: FeatureKey[]
   /** A sentence for Settings, Account, when something needs attention. */
   message: string | null
+}
+
+export interface LicenseTrial {
+  endsAt: string
+  ended: boolean
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** Whole days left of a trial, counting a part day as one: 0 once it has ended. */
+export function trialDaysLeft(endsAt: string, now = new Date()): number {
+  const left = Date.parse(endsAt) - now.getTime()
+  return Number.isFinite(left) && left > 0 ? Math.ceil(left / DAY_MS) : 0
+}
+
+/** "Trial, 9 days left", "Trial, 1 day left" or "Trial ended". */
+export function trialLabel(endsAt: string, now = new Date()): string {
+  const days = trialDaysLeft(endsAt, now)
+  return days === 0 ? 'Trial ended' : `Trial, ${days} day${days === 1 ? '' : 's'} left`
 }
 
 /** What is saved beside the token: details the server sent for display only. They are not signed and decide nothing. */
@@ -78,6 +103,7 @@ export const NO_LICENSE: LicenseStatus = {
   updatesExpired: false,
   issuedAt: null,
   offlineValidUntil: null,
+  trial: null,
   features: [...FREE_FEATURES],
   message: null,
 }
@@ -94,13 +120,18 @@ const PROBLEMS: Record<TokenProblem, string> = {
   unknown_key: 'This licence was signed with a newer key than this version of ServiceEx knows. Update ServiceEx to use it.',
 }
 
-/** What a checked token allows, at `now`. A token that fails its check gives the free features, never an error. */
-export function licenseStatusOf(check: TokenCheck, stored: Pick<StoredLicense, 'seatsUsed'> | null, now = new Date()): LicenseStatus {
+/**
+ * What a checked token allows, at `now`. A token that fails its check gives the free features, never an error.
+ * `trials` is PRO_TRIAL.enabled unless a test says otherwise.
+ */
+export function licenseStatusOf(check: TokenCheck, stored: Pick<StoredLicense, 'seatsUsed'> | null, now = new Date(), trials: boolean = PRO_TRIAL.enabled): LicenseStatus {
   const p = check.payload
   if (!p || (!check.valid && check.reason !== 'expired')) {
     return { ...NO_LICENSE, state: 'invalid', message: PROBLEMS[check.valid ? 'malformed' : check.reason] }
   }
+  if (typeof p.trial_ends_at === 'string') return trialStatusOf(check, p, p.trial_ends_at, now, trials)
   const { plan, features } = planOf(p.product_id)
+  // Updates only gate newer versions: the features stay.
   const updatesExpired = p.updates_expired || Date.parse(p.updates_until) <= now.getTime()
   const base: LicenseStatus = {
     state: check.valid ? 'active' : 'offline_expired',
@@ -113,11 +144,34 @@ export function licenseStatusOf(check: TokenCheck, stored: Pick<StoredLicense, '
     updatesExpired,
     issuedAt: p.issued_at,
     offlineValidUntil: p.offline_valid_until,
+    trial: null,
     features: check.valid ? [...features] : [...FREE_FEATURES],
     message: null,
   }
   if (!check.valid) return { ...base, message: PROBLEMS.expired }
   if (updatesExpired) return { ...base, message: 'Updates expired, app keeps working. Renew updates in Plans and Credits to get newer versions.' }
+  return base
+}
+
+/** A Pro trial: Pro until trial_ends_at, then the free plan. With PRO_TRIAL off, the free plan from the start. */
+function trialStatusOf(check: TokenCheck, p: LicenseTokenPayload, endsAt: string, now: Date, enabled: boolean): LicenseStatus {
+  const ended = !enabled || !(Date.parse(endsAt) > now.getTime())
+  const pro = check.valid && !ended
+  const base: LicenseStatus = {
+    ...NO_LICENSE,
+    state: check.valid ? 'active' : 'offline_expired',
+    plan: pro ? planOf(p.product_id).plan : FREE_PLAN,
+    productId: p.product_id,
+    licenseId: p.license_id,
+    seats: p.seats,
+    issuedAt: p.issued_at,
+    offlineValidUntil: p.offline_valid_until,
+    trial: enabled ? { endsAt, ended } : null,
+    features: pro ? [...planOf(p.product_id).features] : [...FREE_FEATURES],
+  }
+  if (!enabled) return base
+  if (ended) return { ...base, message: 'Your Pro trial has ended. Buy Pro in Plans and Credits to keep the Pro features.' }
+  if (!check.valid) return { ...base, message: PROBLEMS.expired }
   return base
 }
 

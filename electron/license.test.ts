@@ -25,10 +25,10 @@ const { FakeServiceServer } = await import('./service/fakeServer.test-helper')
 const server = new FakeServiceServer()
 keyHolder.pem = server.publicKeyPem
 
-const { can, FEATURE_KEYS, FREE_FEATURES, includes, setEntitlements } = await import('../shared/features')
-const { licenseStatusOf } = await import('../shared/license')
+const { can, FEATURE_KEYS, FREE_FEATURES, includes, pendingPlan, planChanged, PRO_FEATURES, setEntitlements } = await import('../shared/features')
+const { entitlementsOf, licenseStatusOf, trialDaysLeft, trialLabel } = await import('../shared/license')
 const { keyIdOf, verifyLicenseToken, publicKeyFromPem } = await import('./service/licenseToken')
-const { loadLicense } = await import('./license')
+const { enforceEntitlements, loadLicense } = await import('./license')
 
 const DAY = 24 * 3600 * 1000
 const issued = new Date('2026-10-01T10:00:00.000Z')
@@ -99,6 +99,9 @@ describe('expired updates', () => {
     const status = licenseStatusOf(check(server.tokenFor(lapsed, machine.id, issued), issued), null, issued)
     expect(status).toMatchObject({ state: 'active', updatesExpired: true, features: FEATURE_KEYS })
     expect(status.message).toMatch(/^Updates expired, app keeps working/)
+    // The licence only gates updates: every Pro feature still works.
+    setEntitlements(entitlementsOf(status))
+    expect(PRO_FEATURES.every(can)).toBe(true)
   })
 })
 
@@ -110,7 +113,7 @@ describe('at startup', () => {
     expect(FEATURE_KEYS.every(includes)).toBe(true)
   })
 
-  it('gives the free plan for no licence, a broken file or a tampered token, and still blocks nothing', async () => {
+  it('gives the free plan for no licence, a broken file or a tampered token, and enforces it in a release build', async () => {
     expect(await loadLicense(folder)).toMatchObject({ state: 'none', plan: 'Free' })
     writeFileSync(path.join(folder, 'serviceex-license.json'), '{not json')
     expect(await loadLicense(folder)).toMatchObject({ state: 'none', plan: 'Free' })
@@ -118,10 +121,9 @@ describe('at startup', () => {
     writeFileSync(path.join(folder, 'serviceex-license.json'), JSON.stringify({ token: `${h}.${Buffer.from('{"typ":"serviceex-license"}').toString('base64url')}.${s}` }))
     expect(await loadLicense(folder)).toMatchObject({ state: 'invalid', plan: 'Free' })
     expect(includes('themes.editor')).toBe(false)
-    // ENFORCE_ENTITLEMENTS is false: nothing is blocked.
-    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
-    expect(can('themes.editor')).toBe(true)
-    info.mockRestore()
+    // A packaged build enforces the plan: Pro features are locked, the free ones work.
+    expect(can('themes.editor')).toBe(false)
+    expect(FREE_FEATURES.every(can)).toBe(true)
   })
 
   it('asks for an update when a token names a key this version does not know', async () => {
@@ -140,5 +142,71 @@ describe('the built-in key', () => {
     const key = publicKeyFromPem(config.LICENSE_PUBLIC_KEY_PEM)
     expect(key).not.toBeNull()
     expect(keyIdOf(key!)).toBe('ed25519-xuDBNVVVtmbR')
+  })
+})
+
+describe('enforcement', () => {
+  it('is always on in a release build, whatever the environment says', () => {
+    expect(enforceEntitlements(true, {})).toBe(true)
+    expect(enforceEntitlements(true, { SERVICEEX_ENFORCE_ENTITLEMENTS: '0' })).toBe(true)
+  })
+
+  it('is on in a developer build unless SERVICEEX_ENFORCE_ENTITLEMENTS=0 turns it off', () => {
+    expect(enforceEntitlements(false, {})).toBe(true)
+    expect(enforceEntitlements(false, { SERVICEEX_ENFORCE_ENTITLEMENTS: '0' })).toBe(false)
+    expect(enforceEntitlements(false, { SERVICEEX_ENFORCE_ENTITLEMENTS: '1' })).toBe(true)
+  })
+})
+
+describe('the Pro trial', () => {
+  const trialFor = (endsAt: Date) => ({ ...server.addLicense('pro_trial', 1), trial_ends_at: endsAt.toISOString() })
+
+  it('is Pro until it ends, with the days left for the plan badge', () => {
+    const endsAt = new Date(issued.getTime() + 8.5 * DAY)
+    const status = licenseStatusOf(check(server.tokenFor(trialFor(endsAt), machine.id, issued), issued), null, issued)
+    expect(status).toMatchObject({ state: 'active', plan: 'Pro', updatesExpired: false, trial: { endsAt: endsAt.toISOString(), ended: false }, message: null })
+    expect(status.features).toEqual(FEATURE_KEYS)
+    expect(trialDaysLeft(endsAt.toISOString(), issued)).toBe(9)
+    expect(trialLabel(endsAt.toISOString(), issued)).toBe('Trial, 9 days left')
+    expect(trialLabel(endsAt.toISOString(), new Date(endsAt.getTime() - 3600_000))).toBe('Trial, 1 day left')
+  })
+
+  it('gives the free plan once it has ended', () => {
+    const endsAt = new Date(issued.getTime() + 2 * DAY)
+    const later = new Date(issued.getTime() + 3 * DAY)
+    const status = licenseStatusOf(check(server.tokenFor(trialFor(endsAt), machine.id, later), later), null, later)
+    expect(status).toMatchObject({ state: 'active', plan: 'Free', trial: { ended: true }, features: [...FREE_FEATURES] })
+    expect(status.message).toMatch(/Pro trial has ended/)
+    expect(trialLabel(endsAt.toISOString(), later)).toBe('Trial ended')
+  })
+
+  it('gives the free plan when trials are turned off', () => {
+    const endsAt = new Date(issued.getTime() + 10 * DAY)
+    const status = licenseStatusOf(check(server.tokenFor(trialFor(endsAt), machine.id, issued), issued), null, issued, false)
+    expect(status).toMatchObject({ plan: 'Free', trial: null, features: [...FREE_FEATURES] })
+  })
+
+  it('keeps Pro for the rest of the run when it ends during a service, and gives the free plan at the next start', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const start = new Date('2026-11-01T08:00:00.000Z')
+      vi.setSystemTime(start)
+      const trial = trialFor(new Date(start.getTime() + 3600_000))
+      writeFileSync(path.join(folder, 'serviceex-license.json'), JSON.stringify({ token: server.tokenFor(trial, machine.id, start), seatsUsed: 1, checkedAt: null }))
+      expect(await loadLicense(folder)).toMatchObject({ plan: 'Pro', trial: { ended: false } })
+
+      // Two hours into the service the account refreshes and finds the trial over.
+      const later = new Date(start.getTime() + 2 * 3600_000)
+      vi.setSystemTime(later)
+      planChanged(entitlementsOf(licenseStatusOf(check(server.tokenFor(trial, machine.id, start), later), null, later)))
+      expect(PRO_FEATURES.every(can)).toBe(true)
+      expect(pendingPlan()).toMatchObject({ plan: 'Free' })
+
+      // The next start.
+      expect(await loadLicense(folder)).toMatchObject({ plan: 'Free', trial: { ended: true } })
+      expect(can('stageDisplay')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

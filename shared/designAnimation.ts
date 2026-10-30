@@ -106,3 +106,22 @@ export function slideOffsets(element: DesignElement): { dx: number; dy: number }
   const round = (n: number) => Math.round(n * 100) / 100
   return { dx: round(Math.max(x + width, 100 - x)), dy: round(Math.max(y + height, 100 - y)) }
 }
+
+/** The movements the free plan plays: an element appears, or fades in and out. */
+export const FREE_MOTIONS: readonly DesignMotion[] = ['none', 'fade']
+
+/**
+ * A design as the free plan plays it: every movement becomes a fade (keeping its timing), and loops and light
+ * effects are left out. The design itself is not changed.
+ */
+export function fadeOnly(style: DesignStyle): DesignStyle {
+  const step = (s: DesignMotionStep): DesignMotionStep => (FREE_MOTIONS.includes(s.motion) ? s : { ...s, motion: 'fade' })
+  return {
+    ...style,
+    elements: style.elements.map((e: DesignElement) => ({ ...e, loop: 'none', effects: [], animation: { ...e.animation, in: step(e.animation.in), out: step(e.animation.out) } })),
+  }
+}
+
+/** Whether a design uses anything beyond fading in and out. */
+export const usesProMotion = (style: DesignStyle): boolean =>
+  style.elements.some((e) => e.loop !== 'none' || e.effects.length > 0 || !FREE_MOTIONS.includes(e.animation.in.motion) || !FREE_MOTIONS.includes(e.animation.out.motion))

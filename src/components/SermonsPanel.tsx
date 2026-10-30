@@ -1,6 +1,7 @@
 import { BookOpenText, Download, FileText, ListPlus, Pin, PinOff, Plus, Presentation, Search, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
-import { can, upgradeNote, type FeatureKey } from '../../shared/features'
+import { can, type FeatureKey } from '../../shared/features'
+import { Locked } from './Locked'
 import { formatReference, parseReference } from '../../shared/parseReference'
 import { DEFAULT_EXPORT, longDate, rawParagraphs, sermonContentCount, sermonTitle, textParagraphs, UNTITLED_SERMON } from '../../shared/sermons'
 import type { AiError, AiResult, Sermon, SermonAiOutcome, SermonAiProgress, SermonExportOptions, SermonExportResult, SermonPatch, SermonSummary } from '../../shared/types'
@@ -20,15 +21,14 @@ const clock = (ms: number) => {
   return seconds >= 3600 ? `${Math.floor(seconds / 3600)}:${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}` : `${Math.floor(seconds / 60)}:${pad(seconds % 60)}`
 }
 
-/** A button gated by a plan feature: disabled with the plan's note when it is not included. */
+/** A button gated by a plan feature: locked, opening the upgrade popover, when it is not included. */
 function GatedButton({ feature, children, onClick, busy, primary }: { feature: FeatureKey; children: ReactNode; onClick(): void; busy?: boolean; primary?: boolean }) {
-  const allowed = can(feature)
   return (
-    <span title={allowed ? undefined : upgradeNote(feature)}>
-      <button type="button" className={`button${primary ? ' primary' : ''}`} disabled={!allowed || busy} onClick={onClick}>
+    <Locked feature={feature}>
+      <button type="button" className={`button${primary ? ' primary' : ''}`} disabled={busy} onClick={onClick}>
         {children}
       </button>
-    </span>
+    </Locked>
   )
 }
 
@@ -349,7 +349,7 @@ function SermonDetail({ id, onChanged, onDeleted }: { id: number; onChanged(): v
 
       <section className="sermon-section">
         <h3>Summary and key points</h3>
-        {aiAvailable && can('sermon.ai.cleanup') && (
+        {aiAvailable && (
           <div className="settings-row">
             <AiButton
               feature="sermon.ai.cleanup"

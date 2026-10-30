@@ -1,5 +1,6 @@
 import { Bookmark, EyeOff, LayoutTemplate, ListPlus, Pin, PinOff, SkipForward, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { useState } from 'react'
+import { can } from '../../shared/features'
 import type { AppSettings, LowerThirdAnimation, SavedLowerThirdLine } from '../../shared/types'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { canSendCues, openCueMenu } from '../lib/sharing'
@@ -7,6 +8,7 @@ import { canvasLine, selectLowerThirdDesign, selectSermonPoints, useOperatorStor
 import { LowerThirdEditor } from './LowerThirdEditor'
 import type { DesignerDocument } from './Designer'
 import { DesignsLibrary } from './DesignsLibrary'
+import { Locked } from './Locked'
 import { ErrorNote } from './ui'
 
 const ANIMATIONS: { value: LowerThirdAnimation; label: string }[] = [
@@ -24,6 +26,8 @@ const sameLine = (a: { headline: string; body: string }, b: { headline: string; 
  */
 export function LowerThirdPanel() {
   const settings = useOperatorStore((s) => s.settings)
+  // The free plan fades in and out, whatever was chosen before.
+  const animation = can('effects.animations') ? settings.lowerThirdAnimation : 'fade'
   const updateSettings = useOperatorStore((s) => s.updateSettings)
   const live = useOperatorStore((s) => s.live.lowerThird)
   const templates = useOperatorStore((s) => s.lowerThirdTemplates)
@@ -196,16 +200,17 @@ export function LowerThirdPanel() {
         <summary>Animation and timing</summary>
         <span className="segmented" role="radiogroup" aria-label="Animation">
           {ANIMATIONS.map((a) => (
-            <button
-              key={a.value}
-              type="button"
-              role="radio"
-              aria-checked={settings.lowerThirdAnimation === a.value}
-              className={settings.lowerThirdAnimation === a.value ? 'active' : ''}
-              onClick={() => save({ lowerThirdAnimation: a.value })}
-            >
-              {a.label}
-            </button>
+            <Locked key={a.value} feature={a.value === 'fade' ? 'lowerThirds' : 'effects.animations'}>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={animation === a.value}
+                className={animation === a.value ? 'active' : ''}
+                onClick={() => save({ lowerThirdAnimation: a.value })}
+              >
+                {a.label}
+              </button>
+            </Locked>
           ))}
         </span>
         <label className="fade-control">

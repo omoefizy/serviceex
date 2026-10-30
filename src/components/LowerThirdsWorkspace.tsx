@@ -1,6 +1,7 @@
 import { Copy, Eye, EyeOff, FileUp, Paintbrush, Pencil, Play, Plus, RefreshCw, SkipForward, Star, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { canvasFields, DESIGN_FIELDS, EMPTY_DESIGN } from '../../shared/designs'
+import { can, canSaveLowerThirdDesign } from '../../shared/features'
 import type { Design, DesignElement, DesignTextField, LowerThirdCanvasText, Service, SermonPoint } from '../../shared/types'
 import { canImport, IMPORT_ACCEPT, importDesignFile } from '../lib/designImport'
 import { reportError, type ErrorLike } from '../lib/errors'
@@ -8,9 +9,11 @@ import { pointKeyLabel, pointShortcut } from '../lib/sermonPoints'
 import { CLEAR_LOWER_THIRD_KEY, isTyping, LOWER_THIRD_HEADLINE_ID } from '../lib/shortcuts'
 import { useDesignLayout } from '../lib/textMeasure'
 import { canvasLine, selectSermonPoints, useOperatorStore } from '../store'
+import { askUpgrade } from '../lib/upgrade'
 import { Designer, type DesignerDocument } from './Designer'
 import { DesignView, type InlineEdit } from './DesignView'
 import { HeaderPopover } from './LivePreview'
+import { Locked } from './Locked'
 import { LowerThirdPanel } from './LowerThirdPanel'
 import { QuickLowerThird } from './QuickLowerThird'
 import { Button, ErrorNote, IconButton, Select } from './ui'
@@ -55,6 +58,8 @@ function Library({ designs, selectedId, onSelect, onEdit }: { designs: Design[];
     })
 
   const fileRef = useRef<HTMLInputElement>(null)
+  // The free plan keeps one saved lower third design of its own; built-in ones do not count.
+  const atLimit = !canSaveLowerThirdDesign(designs.filter((d) => d.type === 'custom').length)
 
   /** Import design: the file as a new, unsaved lower third, open in the designer to check and save. */
   const importFiles = (files: File[]) =>
@@ -86,23 +91,28 @@ function Library({ designs, selectedId, onSelect, onEdit }: { designs: Design[];
       onDrop={(e) => {
         if (!e.dataTransfer.types.includes('Files')) return
         e.preventDefault()
+        if (!can('designs.figmaImport')) return askUpgrade('designs.figmaImport', e.currentTarget)
         void importFiles([...e.dataTransfer.files])
       }}
     >
       <div className="ltw-library-actions">
-        <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden="true" />} onClick={() => onEdit({ id: null, name: 'New lower third', type: 'custom', style: EMPTY_DESIGN.lowerThird })}>
-          New design
-        </Button>
+        <Locked feature="lowerThirds.designs" locked={atLimit}>
+          <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden="true" />} onClick={() => onEdit({ id: null, name: 'New lower third', type: 'custom', style: EMPTY_DESIGN.lowerThird })}>
+            New design
+          </Button>
+        </Locked>
         <Button size="sm" icon={<Pencil size={13} aria-hidden="true" />} disabled={!selected} title="Open the selected design in the designer" onClick={() => selected && onEdit(selected)}>
           Edit
         </Button>
-        <IconButton
-          size="sm"
-          label="Import design"
-          tooltip="Import design: an SVG from Figma, Illustrator or Inkscape, or a PNG. You can also drop one on the list"
-          icon={<FileUp size={14} />}
-          onClick={() => fileRef.current?.click()}
-        />
+        <Locked feature="designs.figmaImport">
+          <IconButton
+            size="sm"
+            label="Import design"
+            tooltip="Import design: an SVG from Figma, Illustrator or Inkscape, or a PNG. You can also drop one on the list"
+            icon={<FileUp size={14} />}
+            onClick={() => fileRef.current?.click()}
+          />
+        </Locked>
         <input
           ref={fileRef}
           type="file"
@@ -115,7 +125,9 @@ function Library({ designs, selectedId, onSelect, onEdit }: { designs: Design[];
             if (files.length > 0) void importFiles(files)
           }}
         />
-        <IconButton size="sm" label="Duplicate" tooltip="Duplicate the selected design" icon={<Copy size={14} />} disabled={!selected} onClick={() => selected && void duplicate(selected)} />
+        <Locked feature="lowerThirds.designs" locked={atLimit}>
+          <IconButton size="sm" label="Duplicate" tooltip="Duplicate the selected design" icon={<Copy size={14} />} disabled={!selected} onClick={() => selected && void duplicate(selected)} />
+        </Locked>
         <IconButton
           size="sm"
           label="Delete"

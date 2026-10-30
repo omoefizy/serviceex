@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron'
-import { requireFeature } from '../../shared/features'
+import { markOnAir, requireFeature } from '../../shared/features'
 import { sanitizeRichFor } from '../../shared/richText'
 import type { OutputMode, SlideContent, StageState } from '../../shared/types'
 import { alertDisplayOf } from './output'
@@ -44,6 +44,8 @@ interface StageWindowControls {
 export function registerStageIpc(controls: StageWindowControls): void {
   ipcMain.handle('stage:open', () => {
     requireFeature('stageDisplay')
+    // On air from here: it stays available until the app restarts, whatever happens to the plan.
+    markOnAir('stageDisplay')
     controls.open()
   })
   ipcMain.handle('stage:close', () => controls.close())

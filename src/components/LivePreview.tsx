@@ -26,6 +26,7 @@ import type { DualTranslation, HighlightKind, LivePowerPointStatus, LowerThirdDi
 import { reportError, type ErrorLike } from '../lib/errors'
 import { pickHighlightColor } from '../lib/highlights'
 import { editScriptureText } from '../lib/scriptureGroup'
+import { Locked } from './Locked'
 import { CLEAR_LOWER_THIRD_KEY, MOD } from '../lib/shortcuts'
 import { slideTranslation } from '../lib/translations'
 import { useDismiss } from '../lib/useDismiss'
@@ -445,14 +446,16 @@ export function PreviewMonitor() {
       actions={
         <>
           {scripture && previewSlide && highlightIndex !== null && (
-            <IconButton
-              size="sm"
-              className="monitor-header-button"
-              label="Edit text"
-              tooltip="Edit text: change the words, hide some with “…”, or move a part’s split"
-              icon={<Pencil size={15} />}
-              onClick={() => editScriptureText(highlightIndex)}
-            />
+            <Locked feature="scripture.editText">
+              <IconButton
+                size="sm"
+                className="monitor-header-button"
+                label="Edit text"
+                tooltip="Edit text: change the words, hide some with “…”, or move a part’s split"
+                icon={<Pencil size={15} />}
+                onClick={() => editScriptureText(highlightIndex)}
+              />
+            </Locked>
           )}
           <HeaderPopover label="Preview tools" tooltip="Highlighting and translations for the preview" icon={<SlidersHorizontal size={16} />} open={toolsOpen} onOpenChange={setToolsOpen}>
             <HighlightBar where="preview" />

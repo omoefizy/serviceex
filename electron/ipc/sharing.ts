@@ -857,13 +857,14 @@ export function registerSharingIpc(getOperatorWindow: () => BrowserWindow | null
     return library
   })
 
-  if (getAppSettings().sharingEnabled) start().catch(console.error)
+  // Device sharing is in the plan or not for the whole run; turning it on only starts it when it is.
+  if (getAppSettings().sharingEnabled && hasFeature('sharing.devices')) start().catch(console.error)
 
   return {
     settingsChanged(before, after) {
       if (before.sharingLibrarySync !== after.sharingLibrarySync && after.sharingEnabled === before.sharingEnabled) scheduleLibrarySync()
       if (before.sharingEnabled !== after.sharingEnabled) {
-        const change = after.sharingEnabled ? start() : stop()
+        const change = after.sharingEnabled ? (hasFeature('sharing.devices') ? start() : Promise.resolve()) : stop()
         change.catch(console.error)
       } else if (after.sharingEnabled && before.sharingDeviceName !== after.sharingDeviceName && server.port) {
         // A new name is announced again.

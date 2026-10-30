@@ -1,14 +1,14 @@
 // This computer's licence: the token the ServiceEx server signed when the computer was activated, kept as
 // <userData>/serviceex-license.json. It is checked once at startup (signature, this computer, 14 days offline) and what
 // it allows stays fixed until the app restarts, so a feature never turns off during a service. A missing, broken or
-// tampered file gives the free plan; while ENFORCE_ENTITLEMENTS is false that blocks nothing.
+// tampered file gives the free plan. Release builds always enforce the plan; see enforceEntitlements for developer builds.
 
 import { app, ipcMain } from 'electron'
 import type { KeyObject } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { setEntitlements } from '../shared/features'
+import { ENFORCE_ENTITLEMENTS, setEntitlements, type Entitlements } from '../shared/features'
 import { entitlementsOf, licenseStatusOf, NO_LICENSE, type LicenseStatus, type StoredLicense } from '../shared/license'
 import { developerMode } from './keys'
 import type { LicenseStore } from './service/account'
@@ -84,6 +84,19 @@ export function adoptServerKey(pem: string, folder = app.getPath('userData')): s
 
 let status: LicenseStatus | null = null
 
+/**
+ * Whether this run enforces the plan. A release (packaged) build always does, whatever the environment says. A
+ * developer build follows SERVICEEX_ENFORCE_ENTITLEMENTS (1 or 0) when it is set, else ENFORCE_ENTITLEMENTS.
+ */
+export function enforceEntitlements(packaged = app.isPackaged, env: Record<string, string | undefined> = process.env): boolean {
+  if (packaged) return true
+  const override = env.SERVICEEX_ENFORCE_ENTITLEMENTS?.trim()
+  return override === '0' ? false : override === '1' ? true : ENFORCE_ENTITLEMENTS
+}
+
+/** What a licence allows this run, with the enforcement decided here, for this process and every window. */
+const runEntitlements = (license: LicenseStatus): Entitlements => ({ ...entitlementsOf(license), enforce: enforceEntitlements() })
+
 /** Decides this run's features from the saved licence. Called once, before anything that checks a feature starts. */
 export async function loadLicense(folder = app.getPath('userData')): Promise<LicenseStatus> {
   try {
@@ -95,7 +108,7 @@ export async function loadLicense(folder = app.getPath('userData')): Promise<Lic
     console.error('Could not check the licence; using the free plan', error)
     status = NO_LICENSE
   }
-  setEntitlements(entitlementsOf(status))
+  setEntitlements(runEntitlements(status))
   return status
 }
 
@@ -106,6 +119,6 @@ export function registerLicenseIpc(): void {
   ipcMain.handle('license:status', () => startupLicense())
   // Asked synchronously as the operator window starts, so its first render already knows its features.
   ipcMain.on('license:entitlements', (event) => {
-    event.returnValue = entitlementsOf(startupLicense())
+    event.returnValue = runEntitlements(startupLicense())
   })
 }

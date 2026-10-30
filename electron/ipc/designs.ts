@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { normalizeDesign } from '../../shared/designs'
+import { canSaveLowerThirdDesign, requireFeature } from '../../shared/features'
 import { createDesign, deleteDesign, listDesigns, updateDesign } from '../db/designs'
 import { mediaUrl, writeMedia } from '../media'
 
@@ -29,7 +30,14 @@ function assertName(value: unknown): string {
 export function registerDesignIpc(): void {
   ipcMain.handle('designs:list', () => listDesigns())
 
-  ipcMain.handle('designs:create', (_event, name: unknown, style: unknown) => createDesign(assertName(name), normalizeDesign(style)))
+  ipcMain.handle('designs:create', (_event, name: unknown, style: unknown) => {
+    const design = normalizeDesign(style)
+    if (design.category === 'lowerThird') {
+      const saved = listDesigns().filter((d) => d.type === 'custom' && d.style.category === 'lowerThird').length
+      if (!canSaveLowerThirdDesign(saved)) requireFeature('lowerThirds.designs')
+    }
+    return createDesign(assertName(name), design)
+  })
 
   ipcMain.handle('designs:update', (_event, id: unknown, name: unknown, style: unknown) => updateDesign(assertId(id), assertName(name), normalizeDesign(style)))
 

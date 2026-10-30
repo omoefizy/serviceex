@@ -36,7 +36,8 @@ import { useContext, useEffect, useLayoutEffect, useRef, useState, type Clipboar
 import { createPortal } from 'react-dom'
 import { paddingBetween, type DesignLayout } from '../../shared/autoLayout'
 import { linkAll, makeStretch, suggestLinks, textBehind } from '../../shared/designLinks'
-import { DESIGN_EASINGS, DESIGN_MOTIONS, designTimeline, MOTION_LIMITS, type AnimationPhase } from '../../shared/designAnimation'
+import { DESIGN_EASINGS, DESIGN_MOTIONS, designTimeline, FREE_MOTIONS, MOTION_LIMITS, type AnimationPhase } from '../../shared/designAnimation'
+import { can, canSaveLowerThirdDesign } from '../../shared/features'
 import { DESIGN_EFFECTS, EFFECT_DIRECTIONS, EFFECT_LABELS, EFFECT_LIMITS, effectEndMs, newEffect } from '../../shared/designEffects'
 import { BRAND, DEFAULT_MAX, KIND_NAMES, newDesignElement, normalizeDesign } from '../../shared/designs'
 import type {
@@ -88,6 +89,8 @@ import {
 } from '../lib/designLayout'
 import { canvasSize, clampPan, clampZoom, panToKeep, readZoomMode, scaleOf, ZOOM_MAX, ZOOM_MIN, zoomKey, type Point, type ZoomMode } from '../lib/designerZoom'
 import { canImport, IMPORT_ACCEPT, importDesignFile, importFromTransfer, type DesignImport } from '../lib/designImport'
+import { askUpgrade, lockedOption } from '../lib/upgrade'
+import { Locked, LockIcon } from './Locked'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { MOD } from '../lib/shortcuts'
 import { usePersistentState } from '../lib/usePersistentState'
@@ -508,14 +511,25 @@ function EffectsFields({ effects, onChange }: { effects: DesignEffect[]; onChang
       ))}
       {effects.length < EFFECT_LIMITS.count && (
         <label className="designer-number">
-          <span>Add effect</span>
-          <select className="input" aria-label="Add effect" value="" onChange={(e) => e.target.value && add(e.target.value as DesignEffectKind)}>
+          <span>
+            Add effect <LockIcon feature="effects.animations" />
+          </span>
+          <select
+            className="input"
+            aria-label="Add effect"
+            value=""
+            onChange={(e) => {
+              if (!e.target.value) return
+              if (!can('effects.animations')) return askUpgrade('effects.animations', e.currentTarget)
+              add(e.target.value as DesignEffectKind)
+            }}
+          >
             <option value="" disabled>
               Choose…
             </option>
             {DESIGN_EFFECTS.map((kind) => (
               <option key={kind} value={kind}>
-                {EFFECT_LABELS[kind]}
+                {lockedOption('effects.animations', EFFECT_LABELS[kind])}
               </option>
             ))}
           </select>
@@ -533,10 +547,19 @@ function MotionFields({ phase, step, onChange }: { phase: AnimationPhase; step: 
     <>
       <label className="designer-number">
         <span>{phase === 'in' ? 'In' : 'Out'}</span>
-        <select className="input" aria-label={phase === 'in' ? 'In animation' : 'Out animation'} value={step.motion} onChange={(e) => set('motion')(e.target.value as DesignMotion)}>
+        <select
+          className="input"
+          aria-label={phase === 'in' ? 'In animation' : 'Out animation'}
+          value={step.motion}
+          onChange={(e) => {
+            const motion = e.target.value as DesignMotion
+            if (!FREE_MOTIONS.includes(motion) && !can('effects.animations')) return askUpgrade('effects.animations', e.currentTarget)
+            set('motion')(motion)
+          }}
+        >
           {DESIGN_MOTIONS.map((m) => (
             <option key={m} value={m}>
-              {(phase === 'out' && OUT_LABELS[m]) || MOTION_LABELS[m]}
+              {FREE_MOTIONS.includes(m) ? (phase === 'out' && OUT_LABELS[m]) || MOTION_LABELS[m] : lockedOption('effects.animations', (phase === 'out' && OUT_LABELS[m]) || MOTION_LABELS[m])}
             </option>
           ))}
         </select>
@@ -794,10 +817,19 @@ function ElementFields({ element, elements, layout, onChange, onStretch, pickIma
       <Section title="On air">
         <label className="designer-number">
           <span>Loop</span>
-          <select className="input" aria-label="Loop" value={element.loop} onChange={(e) => set('loop')(e.target.value as DesignLoop)}>
+          <select
+            className="input"
+            aria-label="Loop"
+            value={element.loop}
+            onChange={(e) => {
+              const loop = e.target.value as DesignLoop
+              if (loop !== 'none' && !can('effects.animations')) return askUpgrade('effects.animations', e.currentTarget)
+              set('loop')(loop)
+            }}
+          >
             {LOOPS.map((l) => (
               <option key={l.value} value={l.value}>
-                {l.label}
+                {l.value === 'none' ? l.label : lockedOption('effects.animations', l.label)}
               </option>
             ))}
           </select>
@@ -1259,6 +1291,7 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
   }
 
   function importFiles(files: File[]) {
+    if (!can('designs.figmaImport')) return askUpgrade('designs.figmaImport')
     const usable = files.filter(canImport)
     if (usable.length === 0) {
       setError(reportError('Designer', new Error('Import design takes SVG, PNG, JPEG and WebP files.')))
@@ -1284,6 +1317,7 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
     pasteWaiting.current = false
     e.preventDefault()
     const fromClipboard = importFromTransfer(e.clipboardData)
+    if (fromClipboard && !can('designs.figmaImport')) return askUpgrade('designs.figmaImport')
     if (fromClipboard) void run(async () => addImported(await fromClipboard()))
     else paste()
   }
@@ -1538,6 +1572,11 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
         setSaved({ ...saved, snapshot: JSON.stringify([trimmed, style]) })
         onSaved?.({ id: saved.id!, name: trimmed, type: 'custom', style: clean })
         return
+      }
+      // A new lower third design past the free plan's one asks for the plan instead; the design stays open, unsaved.
+      if (clean.category === 'lowerThird') {
+        const saved = (await window.api.designs.list()).filter((d) => d.type === 'custom' && d.style.category === 'lowerThird').length
+        if (!canSaveLowerThirdDesign(saved)) return askUpgrade('lowerThirds.designs')
       }
       // A copy of a saved design (Save as new, or any save of a built-in one) is named as a copy.
       const created = await window.api.designs.create(await freeName(saved.id !== null ? `${trimmed} copy` : trimmed), clean)
@@ -1852,9 +1891,11 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
             <button type="button" className="button" onClick={() => void addImage()} title="Add an image" aria-label="Image">
               <ImageIcon size={14} aria-hidden="true" /> <span className="designer-tool-label">Image</span>
             </button>
-            <button type="button" className="button" aria-label="Import" onClick={() => fileRef.current?.click()} title={`Import design: an SVG (from Figma, Illustrator or Inkscape) or a PNG. You can also drop one on the canvas, or paste Figma's Copy as SVG with ${MOD}V`}>
-              <FileUp size={14} aria-hidden="true" /> <span className="designer-tool-label">Import</span>
-            </button>
+            <Locked feature="designs.figmaImport">
+              <button type="button" className="button" aria-label="Import" onClick={() => fileRef.current?.click()} title={`Import design: an SVG (from Figma, Illustrator or Inkscape) or a PNG. You can also drop one on the canvas, or paste Figma's Copy as SVG with ${MOD}V`}>
+                <FileUp size={14} aria-hidden="true" /> <span className="designer-tool-label">Import</span>
+              </button>
+            </Locked>
             <input
               ref={fileRef}
               type="file"

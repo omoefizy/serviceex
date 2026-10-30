@@ -6,6 +6,8 @@ import { chipOf } from '../lib/listenerStatus'
 import { groupPassageOf } from '../lib/scripture'
 import { useSuggestions, type ScriptureSuggestion, type StatementSuggestion, type Suggestion } from '../lib/scriptureDetection'
 import { useCombine } from '../lib/scriptureGroup'
+import { askUpgrade } from '../lib/upgrade'
+import { Locked, LockIcon } from './Locked'
 import { canSendCues, openCueMenu, useSharingStore } from '../lib/sharing'
 import { quotePayload } from '../lib/slides'
 import { useDismiss } from '../lib/useDismiss'
@@ -146,6 +148,7 @@ export function SuggestionTray({ fullList }: { fullList: boolean }) {
 
   /** Into the combine tray on the Preview header, to go on one slide with other passages. */
   function addToCombine(s: ScriptureSuggestion) {
+    if (!can('scripture.combine')) return askUpgrade('scripture.combine')
     setError(null)
     if (!useCombine.getState().add(groupPassageOf(s.passage, s.label, s.version))) setError('The combine tray holds at most four passages.')
   }
@@ -211,7 +214,7 @@ export function SuggestionTray({ fullList }: { fullList: boolean }) {
                 </MenuItem>
               ))}
               <MenuItem close={close} title="Put it in the tray on the Preview header, to combine on one slide with other passages" disabled={inTray(s)} onClick={() => addToCombine(s)}>
-                {inTray(s) ? 'In the combine tray' : 'Add to combine'}
+                {inTray(s) ? 'In the combine tray' : 'Add to combine'} <LockIcon feature="scripture.combine" />
               </MenuItem>
               <MenuItem close={close} title={service ? `Add it to ${service.name}` : 'Create or pick a service first'} disabled={!service || ordered.has(s.id)} onClick={() => addVerse(s)}>
                 {ordered.has(s.id) ? 'Added to order' : 'Add to order'}
@@ -308,14 +311,16 @@ export function SuggestionTray({ fullList }: { fullList: boolean }) {
             />
           )}
           {scripture && !isLive(s) && (
-            <IconButton
-              size="sm"
-              label={inTray(s) ? `${s.label} is in the combine tray` : `Add ${s.label} to combine`}
-              tooltip="Add to combine: the tray on the Preview header puts several passages on one slide"
-              icon={<Layers size={14} />}
-              disabled={inTray(s)}
-              onClick={() => addToCombine(s)}
-            />
+            <Locked feature="scripture.combine">
+              <IconButton
+                size="sm"
+                label={inTray(s) ? `${s.label} is in the combine tray` : `Add ${s.label} to combine`}
+                tooltip="Add to combine: the tray on the Preview header puts several passages on one slide"
+                icon={<Layers size={14} />}
+                disabled={inTray(s)}
+                onClick={() => addToCombine(s)}
+              />
+            </Locked>
           )}
         </div>
         <button

@@ -78,7 +78,7 @@ describe('plans', () => {
     setEntitlementEnforcement(true)
     try {
       const result = await runTask('cleanLyrics', { lyrics: 'Amazing grace' })
-      expect(result).toEqual({ ok: false, error: { code: 'not_in_plan', message: 'AI lyrics cleaner is not included in the Basic plan. See Settings, Account.' } })
+      expect(result).toEqual({ ok: false, error: { code: 'not_in_plan', message: 'AI lyrics cleaner is not included in this plan. See Settings, Account.' } })
       expect(create).not.toHaveBeenCalled()
     } finally {
       setEntitlementEnforcement(ENFORCE_ENTITLEMENTS)
@@ -86,9 +86,9 @@ describe('plans', () => {
     }
   })
 
-  it('runs the task while ENFORCE_ENTITLEMENTS is false, and logs what it would have blocked', async () => {
-    const { ENFORCE_ENTITLEMENTS, setEntitlements } = await import('../../shared/features')
-    expect(ENFORCE_ENTITLEMENTS).toBe(false)
+  it('runs the task with enforcement off (a developer build), and logs what it would have blocked', async () => {
+    const { ENFORCE_ENTITLEMENTS, setEntitlementEnforcement, setEntitlements } = await import('../../shared/features')
+    setEntitlementEnforcement(false)
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
     setEntitlements({ plan: 'Basic', features: ['ai.statements'] })
     create.mockResolvedValue({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ lyrics: 'Amazing grace', order: [] }) }] })
@@ -99,6 +99,7 @@ describe('plans', () => {
       expect(info).toHaveBeenCalledWith(expect.stringContaining('would block "ai.lyricsCleaner"'))
     } finally {
       info.mockRestore()
+      setEntitlementEnforcement(ENFORCE_ENTITLEMENTS)
       setEntitlements(null)
     }
   })

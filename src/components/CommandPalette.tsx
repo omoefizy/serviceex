@@ -19,7 +19,8 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { can, type FeatureKey } from '../../shared/features'
+import type { FeatureKey } from '../../shared/features'
+import { LockIcon } from './Locked'
 import { formatReference, parseReference } from '../../shared/parseReference'
 import {
   bookNeeded,
@@ -44,7 +45,7 @@ interface Command {
   run(): void | Promise<unknown>
   /** Choosing it fills the box with this instead of running (a book or chapter while typing a reference). */
   complete?: string
-  /** The plan feature it starts; left out of the list when the plan does not include it. */
+  /** The plan feature it starts; marked with a lock when the plan does not include it, and running it then asks for the plan. */
   feature?: FeatureKey
 }
 
@@ -66,7 +67,7 @@ function actionCommands(): Command[] {
     { id: 'next-item', group: 'Actions', label: 'Stage the next schedule item', shortcut: `${MOD}↓`, icon: SkipForward, run: () => st().nextItem() },
     { id: 'themes', group: 'Actions', label: 'Open themes', icon: Palette, feature: 'themes.editor', run: () => st().openThemeEditor(true) },
     { id: 'settings', group: 'Actions', label: 'Open settings', shortcut: `${MOD},`, icon: Settings, run: () => st().openSettings(true) },
-    { id: 'sermons', group: 'Actions', label: 'Open sermons', icon: BookOpenText, run: () => st().openSermons(true) },
+    { id: 'sermons', group: 'Actions', label: 'Open sermons', icon: BookOpenText, feature: 'sermon.save', run: () => st().openSermons(true) },
     {
       id: 'stage',
       group: 'Actions',
@@ -83,7 +84,7 @@ function actionCommands(): Command[] {
       run: () => st().updateSettings({ appearance: appearance === 'light' ? 'dark' : 'light' }),
     },
   ]
-  return commands.filter((c) => !c.feature || can(c.feature))
+  return commands
 }
 
 /** Search for songs, verses and actions; Cmd+K (Ctrl+K) opens it. */
@@ -295,7 +296,9 @@ export function CommandPalette() {
                   onClick={() => run(command)}
                 >
                   <Icon size={16} aria-hidden="true" />
-                  <span className="palette-label">{command.label}</span>
+                  <span className="palette-label">
+                    {command.label} {command.feature && <LockIcon feature={command.feature} />}
+                  </span>
                   {command.detail && <span className="palette-detail">{command.detail}</span>}
                   {command.shortcut && <kbd>{command.shortcut}</kbd>}
                 </button>

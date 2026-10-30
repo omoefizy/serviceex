@@ -17,6 +17,9 @@ import {
   removeImportedFamily,
   toggleFavoriteFont,
 } from '../lib/fonts'
+import { can } from '../../shared/features'
+import { askUpgrade } from '../lib/upgrade'
+import { Locked } from './Locked'
 
 const PREVIEW_TEXT = 'How great is our God · Aa Bb Cc 123'
 const BUNDLED = BUNDLED_FONTS.map((font) => font.family).sort((a, b) => a.localeCompare(b))
@@ -119,6 +122,7 @@ export function FontPicker({ value, onChange, emptyLabel, buttonLabel }: { value
   }
 
   async function runImport(files?: File[]) {
+    if (!can('fonts.import')) return askUpgrade('fonts.import')
     importing.current = true
     try {
       setNote(importNote(await importFonts(files)))
@@ -200,9 +204,11 @@ export function FontPicker({ value, onChange, emptyLabel, buttonLabel }: { value
               }}
             />
             <div className="font-picker-import">
-              <button type="button" className="button" onClick={() => void runImport()}>
-                <Upload size={14} aria-hidden="true" /> Import font…
-              </button>
+              <Locked feature="fonts.import">
+                <button type="button" className="button" onClick={() => void runImport()}>
+                  <Upload size={14} aria-hidden="true" /> Import font…
+                </button>
+              </Locked>
               <span className="hint">or drop TTF, OTF, WOFF or WOFF2 files here. Only fonts your church is licensed to use.</span>
             </div>
             {note && (
@@ -297,9 +303,11 @@ export function MissingFontChips({ values, onReplace }: { values: (string | unde
           <span>
             Missing font: <strong>{font}</strong>
           </span>
-          <button type="button" className="button font-picker-replace" onClick={() => void runImport()}>
-            Import font
-          </button>
+          <Locked feature="fonts.import">
+            <button type="button" className="button font-picker-replace" onClick={() => void runImport()}>
+              Import font
+            </button>
+          </Locked>
           <FontPicker value="" buttonLabel="Replace" onChange={(to) => to && onReplace(font, to)} />
         </span>
       ))}

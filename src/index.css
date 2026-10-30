@@ -585,6 +585,86 @@ textarea {
   align-items: center;
   gap: var(--space-1);
   margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.upgrade-note:hover {
+  color: var(--text-1);
+}
+
+/* A control the plan leaves out: visible, dimmed, with a small lock; a click opens the upgrade popover. */
+.locked-feature {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+}
+
+.locked-feature.block {
+  display: flex;
+  flex-direction: column;
+}
+
+.locked-feature-content {
+  display: contents;
+}
+
+.locked-feature-content > * {
+  opacity: 0.55;
+}
+
+.locked-feature-hit {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  cursor: pointer;
+}
+
+.locked-feature-hit:hover {
+  background: var(--hover);
+}
+
+.locked-feature-hit:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 1px;
+}
+
+.locked-feature-icon {
+  margin: -4px -4px 0 0;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--raised-2);
+  color: var(--text-2);
+  box-sizing: content-box;
+}
+
+.lock-icon {
+  flex: none;
+  color: var(--text-3);
+  vertical-align: -1px;
+}
+
+.upgrade-popover {
+  position: fixed;
+  right: auto;
+  z-index: 1000;
+  width: min(300px, calc(100vw - 32px));
+}
+
+.upgrade-popover .plan-popover-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
 }
 
 /* Settings, Account */

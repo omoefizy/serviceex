@@ -1,9 +1,11 @@
 import { ArrowDown, ArrowUp, Cast, Eye, EyeOff, Plus, ScanLine, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { AppSettings, DisplayInfo, LogoAnchor, LogoItem, StreamKeyMode, StreamResolution, StreamState, StreamTestBackground } from '../../shared/types'
+import type { FeatureKey } from '../../shared/features'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { usePersistentState } from '../lib/usePersistentState'
 import { selectStreamState, useOperatorStore } from '../store'
+import { Locked } from './Locked'
 import { StreamScreen } from './StreamView'
 import { ErrorNote } from './ui'
 import { CONTENT_COLORS } from '../styles/contentColors'
@@ -29,6 +31,9 @@ const BACKGROUNDS: { value: StreamKeyMode; label: string; hint: string }[] = [
   { value: 'luma', label: 'Black (luma key)', hint: 'Black behind the graphics, for a luma key.' },
   { value: 'keyFill', label: 'Key and Fill', hint: 'This output is the fill (graphics on black); a second output shows the key, white shapes on black.' },
 ]
+
+/** The plan feature each background belongs to; the rest come with the Stream output. */
+const KEY_FEATURES: Record<StreamKeyMode, FeatureKey> = { transparent: 'multiOutput', luma: 'multiOutput', chroma: 'output.chroma', keyFill: 'output.keyFill' }
 
 const TEST_BACKGROUNDS: { value: StreamTestBackground; label: string }[] = [
   { value: 'off', label: 'Off' },
@@ -303,9 +308,11 @@ export function StreamPanel() {
               ['hide', 'Overlay only'],
             ] as const
           ).map(([value, label]) => (
-            <button key={value} type="button" role="radio" aria-checked={settings.streamSlideContent === value} className={settings.streamSlideContent === value ? 'active' : ''} onClick={() => save({ streamSlideContent: value })}>
-              {label}
-            </button>
+            <Locked key={value} feature={value === 'hide' ? 'output.overlay' : 'multiOutput'}>
+              <button type="button" role="radio" aria-checked={settings.streamSlideContent === value} className={settings.streamSlideContent === value ? 'active' : ''} onClick={() => save({ streamSlideContent: value })}>
+                {label}
+              </button>
+            </Locked>
           ))}
         </span>
         <p className="hint">
@@ -318,9 +325,11 @@ export function StreamPanel() {
         <div className="settings-row">
           <span className="segmented" role="radiogroup" aria-label="Background">
             {BACKGROUNDS.map(({ value, label }) => (
-              <button key={value} type="button" role="radio" aria-checked={settings.streamKeyMode === value} className={settings.streamKeyMode === value ? 'active' : ''} onClick={() => save({ streamKeyMode: value })}>
-                {label}
-              </button>
+              <Locked key={value} feature={KEY_FEATURES[value]}>
+                <button type="button" role="radio" aria-checked={settings.streamKeyMode === value} className={settings.streamKeyMode === value ? 'active' : ''} onClick={() => save({ streamKeyMode: value })}>
+                  {label}
+                </button>
+              </Locked>
             ))}
           </span>
           {settings.streamKeyMode === 'chroma' && (
@@ -371,9 +380,11 @@ export function StreamPanel() {
             {settings.logoLayerVisible ? <Eye size={15} aria-hidden="true" /> : <EyeOff size={15} aria-hidden="true" />}
             {settings.logoLayerVisible ? 'Showing' : 'Hidden'}
           </button>
-          <button type="button" className="button" onClick={addLogo}>
-            <Plus size={15} aria-hidden="true" /> Add logo…
-          </button>
+          <Locked feature="brand.church">
+            <button type="button" className="button" onClick={addLogo}>
+              <Plus size={15} aria-hidden="true" /> Add logo…
+            </button>
+          </Locked>
         </div>
         {logos.length === 0 ? (
           <p className="hint">No logos yet. A PNG with transparency works best; it is copied into the app data folder.</p>
@@ -396,10 +407,12 @@ export function StreamPanel() {
       </Section>
 
       <Section title="Church screen">
-        <label className="inline-check">
-          <input type="checkbox" checked={settings.overlaysOnChurchScreen} onChange={(e) => save({ overlaysOnChurchScreen: e.target.checked })} />
-          Show the logo layer on the church screen
-        </label>
+        <Locked feature="brand.church">
+          <label className="inline-check">
+            <input type="checkbox" checked={settings.overlaysOnChurchScreen} onChange={(e) => save({ overlaysOnChurchScreen: e.target.checked })} />
+            Show the logo layer on the church screen
+          </label>
+        </Locked>
         <p className="hint">Off: the logos go to the Stream output only. Lower thirds and the idle design show on every output.</p>
       </Section>
     </section>

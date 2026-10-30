@@ -1,5 +1,5 @@
 // The plan badge in the status bar: PRO for a paid plan, an amber dot once updates have ended, and a quiet FREE pill
-// with Upgrade on the free plan. Click opens what the plan has left.
+// with Upgrade on the free plan. Click opens what the plan has left, and how long a Pro trial has to go.
 import { createElement } from 'react'
 import { act, create, type ReactTestInstance } from 'react-test-renderer'
 import { describe, expect, it, vi } from 'vitest'
@@ -59,5 +59,21 @@ describe('the plan badge', () => {
     expect(badge.root.findAll((n) => n.type === 'button' && n.props.className === 'plan-upgrade')).toHaveLength(1)
     expect(textOf(popover)).toContain('Free plan')
     expect(textOf(popover)).not.toContain('Devices used')
+  })
+
+  it('shows a Pro trial as PRO, with the days left in its popover', () => {
+    const endsAt = new Date(Date.now() + 8.5 * 24 * 3600 * 1000).toISOString()
+    const { button, popover } = open({ ...pro, license: { ...pro.license, productId: 'pro_trial', trial: { endsAt, ended: false } } })
+    expect(textOf(button)).toBe('PRO')
+    const text = textOf(popover)
+    expect(text).toContain('Pro plan')
+    expect(text).toContain('Trial, 9 days left')
+    expect(text).not.toContain('Updates valid until')
+  })
+
+  it('says when the trial has ended', () => {
+    const { popover } = open({ ...pro, license: { ...NO_LICENSE, state: 'active', productId: 'pro_trial', trial: { endsAt: '2026-10-01T00:00:00Z', ended: true } } })
+    expect(textOf(popover)).toContain('Free plan')
+    expect(textOf(popover)).toContain('Trial ended')
   })
 })

@@ -10,6 +10,7 @@ import { duplicateSection, mergeWithNext, splitSlideAt, type ToolResult } from '
 import { MOD } from '../lib/shortcuts'
 import { useOperatorStore } from '../store'
 import { LyricsDiffModal } from './LyricsDiffModal'
+import { mayPickTheme, themeLabel } from '../lib/upgrade'
 import { SlideFormatter } from './SlideFormatter'
 import { Button, EmptyState, ErrorNote, Skeleton } from './ui'
 import { themeForContent } from '../../shared/textAreas'
@@ -486,12 +487,15 @@ export function SongEditor({ songId }: { songId: number }) {
           <select
             className="input"
             value={form.themeId ?? ''}
-            onChange={(e) => update({ themeId: e.target.value ? Number(e.target.value) : null })}
+            onChange={(e) => {
+              const themeId = e.target.value ? Number(e.target.value) : null
+              if (mayPickTheme(themes, themeId, e.currentTarget)) update({ themeId })
+            }}
           >
             <option value="">Default for songs{songDefaultTheme ? ` (${songDefaultTheme.name})` : ''}</option>
             {themes.map((theme) => (
               <option key={theme.id} value={theme.id}>
-                {theme.name}
+                {themeLabel(theme)}
               </option>
             ))}
           </select>

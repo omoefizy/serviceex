@@ -19,6 +19,8 @@ export interface FakeLicense {
   updates_until: string
   status: 'active' | 'revoked'
   moves: number
+  /** A Pro trial: when it ends, signed into the token. */
+  trial_ends_at?: string
 }
 
 export class FakeServiceServer {
@@ -103,6 +105,7 @@ export class FakeServiceServer {
       updates_expired: Date.parse(license.updates_until) <= issuedAt.getTime(),
       issued_at: issuedAt.toISOString(),
       offline_valid_until: until.toISOString(),
+      ...(license.trial_ends_at ? { trial_ends_at: license.trial_ends_at } : {}),
       iat: Math.floor(issuedAt.getTime() / 1000),
       exp: Math.floor(until.getTime() / 1000),
     })

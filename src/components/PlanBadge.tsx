@@ -1,7 +1,8 @@
 import { Sparkle } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
 import { formatHours, type AccountState } from '../../shared/account'
-import { FREE_PLAN } from '../../shared/features'
+import { FREE_PLAN, pendingPlan } from '../../shared/features'
+import { trialLabel } from '../../shared/license'
 import { shortDate } from '../../shared/serviceErrors'
 import { openPlans } from '../lib/account'
 import { useDismiss } from '../lib/useDismiss'
@@ -12,7 +13,7 @@ const badgeName = (plan: string) => plan.replace(/\s+plan$/i, '').trim().toUpper
 
 /**
  * The plan at the bottom right of the status bar: a PRO badge (an amber dot once updates have ended), or a quiet FREE
- * pill with Upgrade. Click opens what the plan has left, with Manage plan.
+ * pill with Upgrade. Click opens what the plan has left, with Manage plan, and how long a Pro trial has to go.
  */
 export function PlanBadge({ account }: { account: AccountState }) {
   const [open, setOpen] = useState(false)
@@ -21,7 +22,8 @@ export function PlanBadge({ account }: { account: AccountState }) {
   useDismiss(open, ref, close)
   const { license, balance, allowance } = account
   const free = !account.signedIn || license.state === 'none' || license.plan === FREE_PLAN
-  const ended = !free && license.updatesExpired
+  const trial = license.trial
+  const ended = !free && !trial && license.updatesExpired
   const name = free ? 'FREE' : badgeName(license.plan)
   const plans = () => {
     setOpen(false)
@@ -50,12 +52,13 @@ export function PlanBadge({ account }: { account: AccountState }) {
       {open && (
         <div className="status-popover plan-popover" role="dialog" aria-label="Plan">
           <h3 className="plan-popover-title">{free ? 'Free plan' : `${license.plan.replace(/\s+plan$/i, '')} plan`}</h3>
+          {trial && <p className="status-line plan-trial">{trial.ended ? 'Trial ended' : trialLabel(trial.endsAt)}</p>}
           <dl className="plan-popover-list">
             <dt>Cloud listening left</dt>
             <dd>{balance ? formatHours(balance.totalSeconds) : 'None'}</dd>
             <dt>AI tokens left</dt>
             <dd>{allowance ? allowance.remainingTokens.toLocaleString() : 'None'}</dd>
-            {!free && (
+            {!free && !trial && (
               <>
                 <dt>Updates valid until</dt>
                 <dd className={ended ? 'plan-ended' : undefined}>
@@ -73,6 +76,7 @@ export function PlanBadge({ account }: { account: AccountState }) {
             )}
           </dl>
           {ended && <p className="hint">The app keeps working. Renew to get newer updates.</p>}
+          {pendingPlan() && <p className="hint">Plan changes apply the next time ServiceEx starts, so nothing on air changes now.</p>}
           {account.configured && (
             <div className="status-actions">
               <Button size="sm" variant={free ? 'primary' : 'secondary'} onClick={plans}>

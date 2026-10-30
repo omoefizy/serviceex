@@ -4,6 +4,9 @@ import { formatReference } from '../../shared/parseReference'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { canMakeRange, passageOf, passagesOf, previewPassage, resultSegments, type ResultItem } from '../lib/scripture'
 import { useCombine } from '../lib/scriptureGroup'
+import { can } from '../../shared/features'
+import { askUpgrade } from '../lib/upgrade'
+import { LockIcon } from './Locked'
 import { IS_MAC } from '../lib/shortcuts'
 import { canSendCues, openCueMenu, useSharingStore } from '../lib/sharing'
 import { verseCaption } from '../lib/slides'
@@ -141,6 +144,7 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
 
   /** The ticked verses as passages in the combine tray, neighbouring verses as one range. */
   function addToCombine() {
+    if (!can('scripture.combine')) return askUpgrade('scripture.combine')
     setError(null)
     const tray = useCombine.getState()
     const passages = passagesOf(chosen)
@@ -184,7 +188,7 @@ export const VerseResults = forwardRef<VerseResultsHandle, Props>(function Verse
             <ListPlus size={15} aria-hidden="true" /> Schedule
           </Button>
           <Button size="sm" title="Put these in the tray on the Preview header, to combine on one slide with other passages" onClick={addToCombine}>
-            <Layers size={15} aria-hidden="true" /> Add to combine
+            <Layers size={15} aria-hidden="true" /> Add to combine <LockIcon feature="scripture.combine" />
           </Button>
           {sendable && (
             <Button size="sm" title="Send to device: a cue in another computer's tray" onClick={(e) => use(chosen, effectiveMode, 'send', e)}>

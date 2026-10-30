@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
-import { AlertTriangle, Clapperboard, Columns2, CornerUpLeft, ImageOff, Layers, LayoutGrid, List, MonitorUp, Pencil, RefreshCw, StickyNote, Type, ZoomIn } from 'lucide-react'
+import { AlertTriangle, Clapperboard, Columns2, CornerUpLeft, ImageOff, Layers, LayoutGrid, List, Lock, MonitorUp, Pencil, RefreshCw, StickyNote, Type, ZoomIn } from 'lucide-react'
+import { can, upgradeNote } from '../../shared/features'
 import { MEDIA_DRAG_TYPE } from '../lib/media'
 import { editScriptureText } from '../lib/scriptureGroup'
 import { sectionColor } from '../lib/sections'
@@ -8,6 +9,7 @@ import { MOD } from '../lib/shortcuts'
 import { usePersistentState } from '../lib/usePersistentState'
 import { useVirtualGrid } from '../lib/useVirtualGrid'
 import { selectBaseThemeId, selectBrowsingLive, selectDeckPresentation, selectDeckTheme, slideTheme, useOperatorStore } from '../store'
+import { mayPickTheme, themeLabel } from '../lib/upgrade'
 import { NativeSlideEditor } from './NativeSlideEditor'
 import { SlideFormatModal } from './SlideFormatModal'
 import { ThemedSlide } from './ThemedSlide'
@@ -47,6 +49,7 @@ function WarningMark({ warnings }: { warnings: string[] }) {
 }
 
 export function SlideGrid() {
+  const canEditText = can('scripture.editText')
   const song = useOperatorStore((s) => s.selectedSong)
   const title = useOperatorStore((s) => s.deckTitle)
   const slides = useOperatorStore((s) => s.slides)
@@ -180,7 +183,10 @@ export function SlideGrid() {
             aria-label="Theme"
             value={deckThemeId ?? ''}
             disabled={title === null}
-            onChange={(e) => setDeckTheme(e.target.value ? Number(e.target.value) : null)}
+            onChange={(e) => {
+              const id = e.target.value ? Number(e.target.value) : null
+              if (mayPickTheme(themes, id, e.currentTarget)) setDeckTheme(id)
+            }}
           >
             <option value="">
               {usesSongTheme ? 'Song theme' : 'Default'}
@@ -188,7 +194,7 @@ export function SlideGrid() {
             </option>
             {themes.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name}
+                {themeLabel(t)}
               </option>
             ))}
           </select>
@@ -304,8 +310,8 @@ export function SlideGrid() {
                 {warnings && <WarningMark warnings={warnings} />}
               </button>
               {deckType === 'scripture' && (
-                <button className="slide-edit-text" aria-label={`Edit text of slide ${index + 1}`} title="Edit text" onClick={() => editScriptureText(index)}>
-                  <Pencil size={12} aria-hidden="true" />
+                <button className="slide-edit-text" aria-label={`Edit text of slide ${index + 1}`} title={canEditText ? 'Edit text' : upgradeNote('scripture.editText')} onClick={() => editScriptureText(index)}>
+                  {canEditText ? <Pencil size={12} aria-hidden="true" /> : <Lock size={12} aria-hidden="true" />}
                 </button>
               )}
             </div>
@@ -340,8 +346,8 @@ export function SlideGrid() {
                 {warnings && <WarningMark warnings={warnings} />}
               </button>
               {deckType === 'scripture' && (
-                <button className="slide-edit-text" aria-label={`Edit text of slide ${index + 1}`} title="Edit text" onClick={() => editScriptureText(index)}>
-                  <Pencil size={12} aria-hidden="true" />
+                <button className="slide-edit-text" aria-label={`Edit text of slide ${index + 1}`} title={canEditText ? 'Edit text' : upgradeNote('scripture.editText')} onClick={() => editScriptureText(index)}>
+                  {canEditText ? <Pencil size={12} aria-hidden="true" /> : <Lock size={12} aria-hidden="true" />}
                 </button>
               )}
               {nativePresentation && (
