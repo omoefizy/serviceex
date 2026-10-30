@@ -6,7 +6,7 @@ import { useOperatorStore } from '../store'
 export const SHOW_SERVICE_PICKER_EVENT = 'serviceex:show-service-picker'
 export const TRANSCRIPT_DRAWER_EVENT = 'serviceex:transcript-drawer'
 
-/** Unfolds the Order of service and puts the keyboard on its service picker. */
+/** Unfolds the Schedule and puts the keyboard on its service picker. */
 export function showServicePicker(): void {
   window.dispatchEvent(new Event(SHOW_SERVICE_PICKER_EVENT))
 }

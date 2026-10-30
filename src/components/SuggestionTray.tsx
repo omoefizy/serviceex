@@ -87,7 +87,7 @@ export function SuggestionTray({ fullList }: { fullList: boolean }) {
   const canLowerThird = can('lowerThirds')
   /** Statements saved to the schedule this session, so the menu says so. */
   const [scheduled, setScheduled] = useState<Set<number>>(new Set())
-  /** Verses added to the order of service this session, so the menu says so. */
+  /** Verses added to the schedule this session, so the menu says so. */
   const [ordered, setOrdered] = useState<Set<number>>(new Set())
   /** Statements pinned to the sermon being recorded, so the menu says so. */
   const [pinned, setPinned] = useState<Set<number>>(new Set())

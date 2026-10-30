@@ -474,6 +474,46 @@ export interface DesignElementAnimation {
   order: number
 }
 
+/** Where an element stays when the lower third grows or shrinks around stretching text (see shared/autoLayout.ts). */
+export type DesignPinX = 'left' | 'right' | 'center' | 'scale'
+export type DesignPinY = 'top' | 'bottom' | 'center' | 'scale'
+export interface DesignConstraints {
+  horizontal: DesignPinX
+  vertical: DesignPinY
+}
+
+/** Four sides, each in percent: of the canvas for padding, of the picture for 9 slice insets. */
+export interface DesignInsets {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+/**
+ * How a text element's box follows its words. Fixed keeps the box; Auto width grows sideways and wraps at the maximum
+ * width; Auto height wraps at the box's width and grows down (or up); Shrink to fit keeps the box and makes the words
+ * smaller.
+ */
+export type DesignTextSizing = 'fixed' | 'autoWidth' | 'autoHeight' | 'shrink'
+
+/** Which way a stretching text and the shapes fitted to it grow: the opposite edge (or the centre) stays put. */
+export type DesignGrowth = 'right' | 'left' | 'up' | 'down' | 'center'
+
+/** A shape or picture sized to a text element's box, as a background that stretches with the words. */
+export interface DesignFitToText {
+  /** The text element's id. */
+  textId: string
+  /** Around the text's box, in percent of the canvas. */
+  padding: DesignInsets
+  /** Width limits in percent of the canvas; a maximum of 0 is no limit. */
+  minWidth: number
+  maxWidth: number
+  anchor: DesignGrowth
+  /** Which sizes follow the text: a stripe along the edge of a bar follows only its height. */
+  axes: 'both' | 'width' | 'height'
+}
+
 interface DesignElementBase {
   id: string
   /** Shown in the layers list. */
@@ -492,6 +532,10 @@ interface DesignElementBase {
   hideWithLowerThird: boolean
   loop: DesignLoop
   animation: DesignElementAnimation
+  /** Pins to the lower third's edges, for when stretching text makes it larger or smaller. */
+  constraints: DesignConstraints
+  /** Sized to a text element as its background; ignored on text. */
+  fitToText: DesignFitToText | null
 }
 
 export interface DesignTextProps {
@@ -503,8 +547,13 @@ export interface DesignTextProps {
   italic: boolean
   /** Percent of screen height: the size, or the largest size when auto fit is on. */
   fontSize: number
-  /** Shrinks the words until they fit the box. */
+  /** How the box follows the words (see DesignTextSizing). */
+  sizing: DesignTextSizing
+  /** With Auto width or Auto height: also shrinks the words when they still overflow the maximum size. */
   autoFit: boolean
+  /** The largest box Auto width and Auto height grow to, in percent of the canvas. */
+  maxWidth: number
+  maxHeight: number
   color: string
   align: 'left' | 'center' | 'right'
   verticalAlign: 'top' | 'middle' | 'bottom'
@@ -530,7 +579,14 @@ export type DesignElement =
     })
   /** A line across the middle of its box, as wide as the box; rotate it for any angle. */
   | (DesignElementBase & { kind: 'line'; color: string; thickness: number; dashed: boolean })
-  | (DesignElementBase & { kind: 'image'; src: string | null; fit: 'contain' | 'cover'; radius: number })
+  | (DesignElementBase & {
+      kind: 'image'
+      src: string | null
+      fit: 'contain' | 'cover'
+      radius: number
+      /** 9 slice insets in percent of the picture: the corners and edges keep their size when it stretches. */
+      slice: DesignInsets | null
+    })
 
 export type DesignElementKind = DesignElement['kind']
 
@@ -558,6 +614,8 @@ export interface DesignsApi {
   /** Custom designs only; resolves to false for a built-in or missing one. */
   update(id: number, name: string, style: DesignStyle): Promise<boolean>
   delete(id: number): Promise<boolean>
+  /** Stores a picture an import brought (from an SVG or a pasted PNG) in the media folder; resolves to its URL. */
+  saveAsset(bytes: Uint8Array, extension: 'png' | 'jpg' | 'webp' | 'gif' | 'svg'): Promise<string>
 }
 
 /**

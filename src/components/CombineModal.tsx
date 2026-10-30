@@ -101,7 +101,7 @@ function PassageBlock({
 /**
  * Combine on one slide: the passages from the tray (or a saved Scripture group), stacked or in two columns, each under
  * its own reference. The words fit the theme's text box; when they get too small, Split into slides is offered. The
- * group goes to the Preview, or into the Order of service as one "Scripture group" item.
+ * group goes to the Preview, or into the Schedule as one "Scripture group" item.
  */
 function CombineModal({ editing }: { editing: CombineEditing }) {
   const close = useCombine((s) => s.close)
@@ -174,10 +174,10 @@ function CombineModal({ editing }: { editing: CombineEditing }) {
             <Button
               variant="primary"
               disabled={busy || passages.length === 0 || tooMany || (itemId === null && !service)}
-              title={itemId !== null ? 'Save the group in the Order of service' : service ? `Add to ${service.name} as one Scripture group` : 'Create or pick a service first'}
+              title={itemId !== null ? 'Save the group in the Schedule' : service ? `Add to ${service.name} as one Scripture group` : 'Create or pick a service first'}
               onClick={() => run(save)}
             >
-              {itemId !== null ? 'Save' : 'Add to Order of service'}
+              {itemId !== null ? 'Save' : 'Add to Schedule'}
             </Button>
           </>
         }

@@ -26,12 +26,12 @@ export function isTyping(target: EventTarget | null): boolean {
   )
 }
 
-/** The Lower third card's headline field, focused by Cmd+L (Ctrl+L) and by Send to Lower Third. */
+/** The Lower thirds workspace's headline field, focused by Cmd+L (Ctrl+L). */
 export const LOWER_THIRD_HEADLINE_ID = 'lower-third-headline'
 
 export function focusLowerThirdHeadline(): void {
-  // After the menu that asked has closed, so the field keeps the keyboard.
-  requestAnimationFrame(focusHeadlineField)
+  // Once the workspace has opened, and after any menu that asked has closed, so the field keeps the keyboard.
+  requestAnimationFrame(() => requestAnimationFrame(focusHeadlineField))
 }
 
 function focusHeadlineField(): void {

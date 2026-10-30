@@ -104,3 +104,30 @@ describe('design layout', () => {
     expect(commitFrom(h, h.present)).toBe(h)
   })
 })
+
+describe('stretching in the designer', async () => {
+  const { resizedElement, withLinked } = await import('./designLayout')
+  const { rectElement, textElement } = await import('../../shared/designs')
+  const text = textElement('name', 'Name', { x: 10, y: 80, width: 10, height: 6 }, { sizing: 'autoWidth' })
+  const bar = rectElement('bar', 'Bar', { x: 8, y: 79, width: 14, height: 8 }, {
+    fitToText: { textId: 'name', padding: { top: 1, right: 2, bottom: 1, left: 2 }, minWidth: 0, maxWidth: 0, anchor: 'right', axes: 'both' },
+  })
+  const logo = rectElement('logo', 'Logo', { x: 30, y: 79, width: 4, height: 8 })
+
+  it('moves a text and the shapes fitted to it together, whichever is dragged', () => {
+    expect(withLinked([bar, text, logo], ['bar']).sort()).toEqual(['bar', 'name'])
+    expect(withLinked([bar, text, logo], ['name']).sort()).toEqual(['bar', 'name'])
+    expect(withLinked([bar, text, logo], ['logo'])).toEqual(['logo'])
+  })
+
+  it('turns Auto width text resized sideways into Auto height, and resized taller into Fixed', () => {
+    const box = { x: 10, y: 80, width: 20, height: 6 }
+    expect(resizedElement(text, box, 'e', new Map())).toMatchObject({ sizing: 'autoHeight', box })
+    expect(resizedElement(text, box, 's', new Map())).toMatchObject({ sizing: 'fixed' })
+  })
+
+  it('keeps a fitted shape’s new size as its padding around the text', () => {
+    const resized = resizedElement(bar, { x: 6, y: 79, width: 18, height: 8 }, 'w', new Map([['name', text.box]]))
+    expect(resized.fitToText?.padding).toEqual({ top: 1, right: 4, bottom: 1, left: 4 })
+  })
+})

@@ -49,6 +49,14 @@ const SIZES = [
 
 // ---------- Invented sample data ----------
 
+/** A lower third as Figma exports it as SVG, with its text kept as text, for Import design. */
+const AUDIT_SVG = `<svg width="1920" height="1080" viewBox="0 0 1920 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Name_bar"><rect x="96" y="778" width="560" height="108" rx="12" fill="url(#paint0)"/></g>
+<rect id="Accent" x="96" y="778" width="12" height="108" fill="#00AFEF"/>
+<text id="Name" fill="white" font-family="Montserrat" font-size="54" font-weight="bold"><tspan x="134" y="851">Pastor Sam</tspan></text>
+<defs><linearGradient id="paint0" x1="96" y1="832" x2="656" y2="832" gradientUnits="userSpaceOnUse"><stop stop-color="#0087CB"/><stop offset="1" stop-color="#0B1F44"/></linearGradient></defs>
+</svg>`
+
 const SONGS = [
   {
     title: 'Morning Light Rising',
@@ -1070,16 +1078,63 @@ async function main() {
       await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().goLive(1))
       await shot(page, `12-main-live${at}`)
 
-      // From the right column: the Queue under Preview's header and the lower third's Edit style, then the transcript
-      // docked in the middle column (it must not cover Live or Preview).
-      await page.locator('.preview-card').getByRole('button', { name: /^Queue/ }).click()
-      await shot(page, `12-queue-popover${at}`)
+      // The right column: the Queue under Preview with Recently shown, and Clear lower third on Live's header while
+      // one is on air. Then the Lower thirds workspace with its style popover, and the transcript docked in the middle
+      // column (it must not cover Live or Preview).
+      // A design that stretches: a bar fitted to the name, a logo tab pinned to the bar's end. A short name is staged on
+      // Preview and a long one is live; the bar must hug each.
+      await page.evaluate(async () => {
+        const st = (window as unknown as AuditWindow).__audit.store.getState() as unknown as {
+          loadDesigns(): Promise<void>
+          previewLowerThirdLine(line: unknown): void
+          showLowerThirdLine(line: unknown): void
+        }
+        const api = (window as unknown as { api: { designs: { create(name: string, style: unknown): Promise<{ id: number }> } } }).api
+        const pad = { top: 0, right: 2, bottom: 0, left: 2 }
+        const design = await api.designs.create(`Audit stretch ${Date.now()}`, {
+          category: 'lowerThird',
+          background: { kind: 'transparent' },
+          elements: [
+            { kind: 'rect', id: 'bar', name: 'Bar', box: { x: 5, y: 76, width: 24, height: 9 }, fill: { kind: 'solid', color: '#0b1f44' }, radius: 0.8, fitToText: { textId: 'name', padding: pad, minWidth: 10, maxWidth: 0, anchor: 'right', axes: 'both' } },
+            { kind: 'rect', id: 'tab', name: 'Tab', box: { x: 29, y: 76, width: 5.06, height: 9 }, fill: { kind: 'solid', color: '#0087cb' }, constraints: { horizontal: 'right', vertical: 'top' } },
+            { kind: 'text', id: 'name', name: 'Name', box: { x: 7, y: 76, width: 20, height: 9 }, text: 'Pastor Sam', field: 'headline', fontSize: 4.5, fontWeight: 700, sizing: 'autoWidth', maxWidth: 70, autoFit: true },
+          ],
+        })
+        await st.loadDesigns()
+        st.previewLowerThirdLine({ headline: 'Sam', body: '', designId: design.id })
+        st.showLowerThirdLine({ headline: 'Pastor Samuel Alexander Example-Longname', body: '', designId: design.id })
+      })
+      await page.waitForTimeout(900)
+      await shot(page, `12-queue-recently-shown${at}`)
+      await page.locator('.live-card').getByRole('button', { name: 'Clear lower third' }).click()
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openLowerThirds(true))
+      await shot(page, `12-lower-thirds-workspace${at}`)
+      await page.locator('.ltw-head').getByRole('button', { name: /Style and saved lines/ }).click()
+      await shot(page, `12-lower-third-style${at}`)
       await page.keyboard.press('Escape')
-      if (await page.locator('.lower-third-card').count()) {
-        await page.locator('.lower-third-card').getByRole('button', { name: 'Edit style' }).click()
-        await shot(page, `12-lower-third-style${at}`)
-        await page.keyboard.press('Escape')
-      }
+      // Import design: a Figma style SVG opens in the designer with the offer to make its bar stretch; then typing on
+      // the selected name changes it in place and the bar follows.
+      await page.locator('.ltw-library input[type=file]').setInputFiles({ name: 'Name bar.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(AUDIT_SVG) })
+      await page.locator('.designer-import-note').waitFor()
+      await shot(page, `12-designer-imported${at}`)
+      await page.getByRole('button', { name: 'Make them stretch' }).click()
+      await page.locator('.designer-layer', { hasText: 'Name' }).first().click()
+      await page.locator('.designer').press('P')
+      await page.keyboard.type('astor Samuel Alexander Example')
+      await shot(page, `12-designer-typing-stretch${at}`)
+      await page.keyboard.press('Enter')
+      await shot(page, `12-designer-stretch-inspector${at}`)
+      page.once('dialog', (dialog) => void dialog.accept())
+      await page.locator('.designer').getByRole('button', { name: 'Close' }).click()
+      // Typing on the workspace's canvas: click the name, type, Enter; the words land in the headline.
+      await page.locator('.ltw-frame').first().click()
+      await page.keyboard.type('Guest Speaker')
+      await shot(page, `12-workspace-typing${at}`)
+      await page.keyboard.press('Enter')
+      const typed = await page.locator('#lower-third-headline').inputValue()
+      if (typed !== 'Guest Speaker') throw new Error(`Typing on the lower third canvas gave "${typed}"`)
+      await page.locator('#lower-third-headline').fill('')
+      await page.evaluate(() => (window as unknown as AuditWindow).__audit.store.getState().openLowerThirds(false))
       if (await page.locator('.statusbar').getByRole('button', { name: 'Transcript' }).count()) {
         await page.locator('.statusbar').getByRole('button', { name: 'Transcript' }).click()
         await shot(page, `12-transcript-docked${at}`)
@@ -1094,6 +1149,11 @@ async function main() {
       await page.evaluate((id) => (window as unknown as AuditWindow).__audit.store.getState().openService(id), seeded.emptyServiceId)
       await shot(page, `13-schedule-empty${at}`)
       await page.evaluate((id) => (window as unknown as AuditWindow).__audit.store.getState().openService(id), seeded.serviceId)
+
+      // The Schedule folded to its rail, and back.
+      await page.getByRole('button', { name: 'Hide the schedule' }).click()
+      await shot(page, `14-schedule-rail${at}`)
+      await page.getByRole('button', { name: 'Show the schedule' }).click()
 
       // The service picker opens from the top bar's service button.
       await page.locator('.toolbar-service').click()

@@ -123,7 +123,7 @@ function LowerThirdsButton() {
         className={`toolbar-workspace${open ? ' active' : ''}`}
         aria-pressed={open}
         disabled={!allowed}
-        title={open ? 'Back to the order of service and slides' : 'Lower thirds: designs, live text and sermon points'}
+        title={open ? 'Back to the schedule and slides' : 'Lower thirds: designs, live text and sermon points'}
         onClick={() => openLowerThirds(!open)}
       >
         <PanelBottom size={16} aria-hidden="true" />

@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
   ChevronsDown,
@@ -9,7 +10,9 @@ import {
   Eye,
   EyeOff,
   FilePlus,
+  FileUp,
   Image as ImageIcon,
+  Link2,
   Lock,
   ListOrdered,
   Minus,
@@ -21,12 +24,15 @@ import {
   Type,
   Undo2,
   Unlock,
+  WandSparkles,
   X,
 } from 'lucide-react'
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
+import { useContext, useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { paddingBetween, type DesignLayout } from '../../shared/autoLayout'
+import { linkAll, makeStretch, suggestLinks, textBehind } from '../../shared/designLinks'
 import { DESIGN_EASINGS, DESIGN_MOTIONS, designTimeline, MOTION_LIMITS, type AnimationPhase } from '../../shared/designAnimation'
-import { BRAND, KIND_NAMES, newDesignElement, normalizeDesign } from '../../shared/designs'
+import { BRAND, DEFAULT_MAX, KIND_NAMES, newDesignElement, normalizeDesign } from '../../shared/designs'
 import type {
   Design,
   DesignBackground,
@@ -36,13 +42,18 @@ import type {
   DesignElementAnimation,
   DesignElementKind,
   DesignFill,
+  DesignFitToText,
+  DesignGrowth,
+  DesignInsets,
   DesignLoop,
   DesignMotion,
   DesignMotionStep,
   DesignShadow,
   DesignStyle,
   DesignTextField,
+  DesignTextSizing,
   TextCase,
+  ThemeBox,
 } from '../../shared/types'
 import {
   ASPECT,
@@ -56,18 +67,23 @@ import {
   record,
   redo,
   resizeDesignBox,
+  resizedElement,
   rotationToward,
   roundBox,
   startHistory,
   undo,
+  withLinked,
   type Guide,
   type Handle,
   type History,
 } from '../lib/designLayout'
+import { canImport, IMPORT_ACCEPT, importDesignFile, importFromTransfer, type DesignImport } from '../lib/designImport'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { MOD } from '../lib/shortcuts'
-import { DesignView } from './DesignView'
+import { measureWith, useDesignLayout } from '../lib/textMeasure'
+import { DesignView, type InlineEdit } from './DesignView'
 import { FontPicker, MissingFontChips } from './FontPicker'
+import { DefaultFontContext } from './themedSlideLayers'
 import { ErrorNote } from './ui'
 
 /** Arrow keys move by a tenth of a percent of the canvas; with Shift, ten times as far. */
@@ -86,6 +102,18 @@ const CASES: { value: TextCase; label: string }[] = [
   { value: 'lower', label: 'lowercase' },
 ]
 const FIELD_LABELS: Record<DesignTextField, string> = { headline: 'Headline', body: 'Body', number: 'Number' }
+const SIZINGS: { value: DesignTextSizing; label: string; hint: string }[] = [
+  { value: 'fixed', label: 'Fixed', hint: 'The box keeps its size and the words keep theirs' },
+  { value: 'autoWidth', label: 'Auto width', hint: 'The box grows with the words, then wraps at the maximum width' },
+  { value: 'autoHeight', label: 'Auto height', hint: 'The words wrap in the box, which grows taller' },
+  { value: 'shrink', label: 'Shrink to fit', hint: 'The box keeps its size and the words get smaller to fit' },
+]
+const GROWTH_LABELS: Record<DesignGrowth, string> = { right: 'Grow right', left: 'Grow left', down: 'Grow down', up: 'Grow up', center: 'Grow from centre' }
+const AXES_LABELS: Record<DesignFitToText['axes'], string> = { both: 'Width and height', width: 'Width only', height: 'Height only' }
+/** A new 9 slice starts with a fifth of each side fixed. */
+const NEW_SLICE: DesignInsets = { top: 20, right: 20, bottom: 20, left: 20 }
+const SIDES = ['top', 'right', 'bottom', 'left'] as const
+const SIDE_LABELS = { top: 'Top', right: 'Right', bottom: 'Bottom', left: 'Left' } as const
 const KIND_ICONS: Record<DesignElementKind, ReactNode> = {
   text: <Type size={14} aria-hidden="true" />,
   rect: <Square size={14} aria-hidden="true" />,
@@ -104,12 +132,17 @@ export interface DesignerDocument {
   name: string
   type: Design['type']
   style: DesignStyle
+  /** Opened from Import design: its warnings, shown with the offer to make its backgrounds stretch. */
+  imported?: string[]
 }
 
 type Drag =
   | { kind: 'move'; x: number; y: number; ids: string[]; before: DesignStyle }
-  | { kind: 'resize'; x: number; y: number; id: string; handle: Handle; before: DesignStyle }
+  /** `boxes` are where the layout drew everything when the drag began. */
+  | { kind: 'resize'; x: number; y: number; id: string; handle: Handle; before: DesignStyle; boxes: Map<string, ThemeBox> }
   | { kind: 'rotate'; id: string; centre: { x: number; y: number }; before: DesignStyle }
+  /** A 9 slice guide of a picture, dragged within its frame. */
+  | { kind: 'slice'; id: string; side: keyof DesignInsets; frame: DOMRect; before: DesignStyle }
 
 // ---------- Inspector fields ----------
 
@@ -360,8 +393,192 @@ function MotionFields({ phase, step, onChange }: { phase: AnimationPhase; step: 
   )
 }
 
+/** Pins: where the element stays when stretching text makes the lower third larger or smaller. */
+function PinFields({ element, onChange }: { element: DesignElement; onChange(patch: Partial<DesignElement>, key: string): void }) {
+  const { constraints } = element
+  return (
+    <Section title="Pin">
+      <div className="designer-fields">
+        <label className="designer-number">
+          <span>Across</span>
+          <select
+            className="input"
+            aria-label="Pin across"
+            value={constraints.horizontal}
+            onChange={(e) => onChange({ constraints: { ...constraints, horizontal: e.target.value as typeof constraints.horizontal } }, 'pin.h')}
+          >
+            <option value="left">Left</option>
+            <option value="right">Right</option>
+            <option value="center">Centre</option>
+            <option value="scale">Scale</option>
+          </select>
+        </label>
+        <label className="designer-number">
+          <span>Down</span>
+          <select
+            className="input"
+            aria-label="Pin down"
+            value={constraints.vertical}
+            onChange={(e) => onChange({ constraints: { ...constraints, vertical: e.target.value as typeof constraints.vertical } }, 'pin.v')}
+          >
+            <option value="top">Top</option>
+            <option value="bottom">Bottom</option>
+            <option value="center">Centre</option>
+            <option value="scale">Scale</option>
+          </select>
+        </label>
+      </div>
+      <p className="hint">When text stretches the lower third, this stays at that edge of it, in its middle, or keeps its share (Scale).</p>
+    </Section>
+  )
+}
+
+/** How a text element's box follows its words, and Make this stretch when shapes sit behind it. */
+function SizeFields({ element, elements, overflow, onChange, onStretch }: {
+  element: Extract<DesignElement, { kind: 'text' }>
+  elements: DesignElement[]
+  overflow: boolean
+  onChange(patch: Partial<DesignElement>, key: string): void
+  onStretch(textId: string, shapeIds: string[]): void
+}) {
+  const auto = element.sizing === 'autoWidth' || element.sizing === 'autoHeight'
+  const backgrounds = elements.filter((e) => e.fitToText?.textId === element.id)
+  const behind = elements.filter((e) => (e.kind === 'rect' || e.kind === 'image') && !e.fitToText && !e.hidden && textBehind(e, elements)?.id === element.id)
+  return (
+    <Section title="Size">
+      <label className="designer-number">
+        <span>Box</span>
+        <select
+          className="input"
+          aria-label="Text box size"
+          title={SIZINGS.find((o) => o.value === element.sizing)?.hint}
+          value={element.sizing}
+          onChange={(e) => {
+            const sizing = e.target.value as DesignTextSizing
+            // A box set to stretch grows from where it is, up to the edge of the screen.
+            const maxWidth = sizing === 'autoWidth' ? Math.max(element.box.width, Math.min(DEFAULT_MAX.width, 100 - element.box.x)) : element.maxWidth
+            onChange({ sizing, maxWidth }, 'sizing')
+          }}
+        >
+          {SIZINGS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {auto && (
+        <>
+          <div className="designer-fields">
+            <NumberField label="Max W" value={element.maxWidth} min={1} max={300} onChange={(maxWidth) => onChange({ maxWidth }, 'maxWidth')} />
+            <NumberField label="Max H" value={element.maxHeight} min={1} max={300} onChange={(maxHeight) => onChange({ maxHeight }, 'maxHeight')} />
+          </div>
+          <label className="inline-check" title="Past the maximum size the words wrap, then get smaller">
+            <input type="checkbox" checked={element.autoFit} onChange={(e) => onChange({ autoFit: e.target.checked }, 'autoFit')} />
+            Then shrink to fit
+          </label>
+        </>
+      )}
+      {overflow && (
+        <p className="designer-overflow" role="status">
+          <AlertTriangle size={13} aria-hidden="true" /> The sample words need more room than the maximum size.
+        </p>
+      )}
+      {backgrounds.length > 0 && <p className="hint">Stretches: {backgrounds.map((b) => b.name).join(', ')}</p>}
+      {behind.length > 0 && (
+        <button type="button" className="button" title={`Auto width, with ${behind.map((b) => b.name).join(' and ')} fitted to the words`} onClick={() => onStretch(element.id, behind.map((b) => b.id))}>
+          <WandSparkles size={14} aria-hidden="true" /> Make this stretch
+        </button>
+      )}
+    </Section>
+  )
+}
+
+/** A shape or picture sized to a text element, as its background. */
+function FitFields({ element, elements, layout, onChange, onStretch }: {
+  element: DesignElement
+  elements: DesignElement[]
+  layout: DesignLayout
+  onChange(patch: Partial<DesignElement>, key: string): void
+  onStretch(textId: string, shapeIds: string[]): void
+}) {
+  const fit = element.fitToText
+  const texts = elements.filter((e): e is Extract<DesignElement, { kind: 'text' }> => e.kind === 'text')
+  const target = texts.find((t) => t.id === fit?.textId)
+  const suggestion = fit ? null : textBehind(element, elements)
+  const setFit = (patch: Partial<DesignFitToText>, key: string) => fit && onChange({ fitToText: { ...fit, ...patch } }, `fit.${key}`)
+  return (
+    <Section title="Fit to text">
+      <select
+        className="input"
+        aria-label="Fit to text"
+        value={fit?.textId ?? ''}
+        onChange={(e) => {
+          const textId = e.target.value
+          const text = layout.boxes.get(textId)
+          const box = layout.boxes.get(element.id) ?? element.box
+          // Linking keeps it where it is: the padding is the room it has around the text now.
+          onChange(
+            { fitToText: textId && text ? { textId, padding: paddingBetween(box, text), minWidth: 0, maxWidth: 0, anchor: 'right', axes: 'both' } : null },
+            'fit',
+          )
+        }}
+      >
+        <option value="">Not fitted to text</option>
+        {texts.map((t) => (
+          <option key={t.id} value={t.id}>
+            Fit to “{t.name}”
+          </option>
+        ))}
+      </select>
+      {fit && (
+        <>
+          <div className="designer-fields">
+            {SIDES.map((side) => (
+              <NumberField key={side} label={SIDE_LABELS[side]} value={fit.padding[side]} min={0} max={100} onChange={(v) => setFit({ padding: { ...fit.padding, [side]: v } }, `padding.${side}`)} />
+            ))}
+            <NumberField label="Min W" value={fit.minWidth} min={0} max={300} onChange={(minWidth) => setFit({ minWidth }, 'minWidth')} />
+            <NumberField label="Max W" value={fit.maxWidth} min={0} max={300} onChange={(maxWidth) => setFit({ maxWidth }, 'maxWidth')} suffix={fit.maxWidth === 0 ? 'none' : undefined} />
+          </div>
+          <div className="lt-editor-row">
+            <select className="input" aria-label="Grows" value={fit.anchor} onChange={(e) => setFit({ anchor: e.target.value as DesignGrowth }, 'anchor')}>
+              {(Object.keys(GROWTH_LABELS) as DesignGrowth[]).map((g) => (
+                <option key={g} value={g}>
+                  {GROWTH_LABELS[g]}
+                </option>
+              ))}
+            </select>
+            <select className="input" aria-label="Follows" value={fit.axes} onChange={(e) => setFit({ axes: e.target.value as DesignFitToText['axes'] }, 'axes')}>
+              {(Object.keys(AXES_LABELS) as DesignFitToText['axes'][]).map((a) => (
+                <option key={a} value={a}>
+                  {AXES_LABELS[a]}
+                </option>
+              ))}
+            </select>
+          </div>
+          {target && (target.sizing === 'fixed' || target.sizing === 'shrink') && (
+            <p className="hint">“{target.name}” keeps its size, so this does too. Set its Size to Auto width to stretch with the words.</p>
+          )}
+        </>
+      )}
+      {suggestion && (
+        <button type="button" className="button" title={`Fit this to “${suggestion.name}” and make it Auto width`} onClick={() => onStretch(suggestion.id, [element.id])}>
+          <WandSparkles size={14} aria-hidden="true" /> Make this stretch with “{suggestion.name}”
+        </button>
+      )}
+    </Section>
+  )
+}
+
 /** The fields for the one selected element: its place, then what its kind has. */
-function ElementFields({ element, onChange, pickImage }: { element: DesignElement; onChange(patch: Partial<DesignElement>, key: string): void; pickImage(): Promise<string | null> }) {
+function ElementFields({ element, elements, layout, onChange, onStretch, pickImage }: {
+  element: DesignElement
+  elements: DesignElement[]
+  layout: DesignLayout
+  onChange(patch: Partial<DesignElement>, key: string): void
+  onStretch(textId: string, shapeIds: string[]): void
+  pickImage(): Promise<string | null>
+}) {
   // Each field is its own undo key, so a run of changes to one field undoes as one step.
   const set = <K extends string>(key: K) => (value: unknown) => onChange({ [key]: value } as Partial<DesignElement>, `${element.id}.${key}`)
   const setAnimation = (patch: Partial<DesignElementAnimation>, key: string) =>
@@ -382,6 +599,13 @@ function ElementFields({ element, onChange, pickImage }: { element: DesignElemen
         </div>
         <Slider label="Opacity" min={0} max={1} step={0.01} value={element.opacity} onChange={set('opacity')} format={(v) => `${Math.round(v * 100)}%`} />
       </Section>
+
+      {element.kind === 'text' ? (
+        <SizeFields element={element} elements={elements} overflow={layout.overflow.has(element.id)} onChange={(patch, key) => onChange(patch, `${element.id}.${key}`)} onStretch={onStretch} />
+      ) : (
+        <FitFields element={element} elements={elements} layout={layout} onChange={(patch, key) => onChange(patch, `${element.id}.${key}`)} onStretch={onStretch} />
+      )}
+      <PinFields element={element} onChange={(patch, key) => onChange(patch, `${element.id}.${key}`)} />
 
       <Section title="Animation">
         <MotionFields phase="in" step={element.animation.in} onChange={(step, key) => setAnimation({ in: step }, `in.${key}`)} />
@@ -444,12 +668,16 @@ function ElementFields({ element, onChange, pickImage }: { element: DesignElemen
               <Color label="Text colour" value={element.color} onChange={set('color')} />
             </div>
             <MissingFontChips values={[element.fontFamily]} onReplace={(_from, fontFamily) => set('fontFamily')(fontFamily)} />
-            <Slider label={element.autoFit ? 'Max size' : 'Size'} min={0.5} max={30} step={0.1} value={element.fontSize} onChange={set('fontSize')} format={(v) => v.toFixed(1)} />
+            <Slider
+              label={element.sizing === 'shrink' || (element.sizing !== 'fixed' && element.autoFit) ? 'Max size' : 'Size'}
+              min={0.5}
+              max={30}
+              step={0.1}
+              value={element.fontSize}
+              onChange={set('fontSize')}
+              format={(v) => v.toFixed(1)}
+            />
             <div className="lt-editor-row">
-              <label className="inline-check" title="Shrinks the words until they fit the box">
-                <input type="checkbox" checked={element.autoFit} onChange={(e) => set('autoFit')(e.target.checked)} />
-                Auto fit
-              </label>
               <label className="inline-check">
                 <input type="checkbox" checked={element.italic} onChange={(e) => set('italic')(e.target.checked)} />
                 Italic
@@ -556,6 +784,24 @@ function ElementFields({ element, onChange, pickImage }: { element: DesignElemen
             />
           </div>
           <Slider label="Corners" min={0} max={20} step={0.1} value={element.radius} onChange={set('radius')} format={(v) => v.toFixed(1)} />
+          <label className="inline-check" title="The corners and edges keep their size when the picture stretches; drag the guides on the canvas">
+            <input type="checkbox" checked={element.slice !== null} onChange={(e) => set('slice')(e.target.checked ? NEW_SLICE : null)} />9 slice
+          </label>
+          {element.slice && (
+            <div className="designer-fields">
+              {SIDES.map((side) => (
+                <NumberField
+                  key={side}
+                  label={SIDE_LABELS[side]}
+                  value={element.slice![side]}
+                  min={0}
+                  max={49}
+                  suffix="%"
+                  onChange={(v) => onChange({ slice: { ...element.slice!, [side]: v } }, `${element.id}.slice.${side}`)}
+                />
+              ))}
+            </div>
+          )}
         </Section>
       )}
     </>
@@ -581,7 +827,21 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
   const [name, setName] = useState(doc.name)
   const [saved, setSaved] = useState({ id: doc.id, type: doc.type, snapshot: doc.id === null ? '' : JSON.stringify([doc.name, doc.style]) })
   const [selected, setSelected] = useState<string[]>([])
-  const [editingId, setEditingId] = useState<string | null>(null)
+  /** The text being typed into on the canvas, and the letter that started it when typing began on a selected text. */
+  const [editing, setEditing] = useState<{ id: string; initial?: string } | null>(null)
+  const editingId = editing?.id ?? null
+  const setEditingId = (id: string | null) => setEditing(id === null ? null : { id })
+  /** The words as they are being typed, so what is fitted to them stretches live. */
+  const [liveText, setLiveText] = useState<string | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const [fileOver, setFileOver] = useState(false)
+  /** After an import: its warnings, and the backgrounds it can link to their text. */
+  const [imported, setImported] = useState<{ warnings: string[]; links: number } | null>(() =>
+    doc.imported ? { warnings: doc.imported, links: suggestLinks(doc.style.elements).length } : null,
+  )
+  const fileRef = useRef<HTMLInputElement>(null)
+  const pasteWaiting = useRef(false)
+  const defaultFont = useContext(DefaultFontContext)
   const [guides, setGuides] = useState<Guide[]>([])
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [error, setError] = useState<ErrorLike | null>(null)
@@ -596,6 +856,10 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
 
   const style = history.present
   const { elements } = style
+  // While typing, the canvas shows the words so far, laid out as they will be.
+  const shown = editingId !== null && liveText !== null ? { ...style, elements: elements.map((e) => (e.id === editingId && e.kind === 'text' ? { ...e, text: liveText } : e)) } : style
+  const layout = useDesignLayout(shown)
+  const boxOf = (e: DesignElement) => layout.boxes.get(e.id) ?? e.box
   const selectedSet = new Set(selected)
   const picked = elements.filter((e) => selectedSet.has(e.id))
   const single = picked.length === 1 ? picked[0] : null
@@ -695,6 +959,49 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
     setSelected(copies.map((c) => c.id))
   }
 
+  /** Adds what an import brought on top, selected, and offers to link its backgrounds to their text. */
+  function addImported(result: DesignImport) {
+    // Ids already in the design get new ones (from the latest design: the import may have taken a while).
+    const used = new Set(history.present.elements.map((e) => e.id))
+    const fixed = result.elements.map((e) => (used.has(e.id) ? { ...e, id: newId() } : e))
+    setHistory((h) => record(h, { ...h.present, elements: [...h.present.elements, ...fixed.filter((e) => !h.present.elements.some((p) => p.id === e.id))] }))
+    setSelected(fixed.filter((e) => !e.hidden).map((e) => e.id))
+    setImported({ warnings: result.warnings, links: suggestLinks(fixed).length })
+    rootRef.current?.focus()
+  }
+
+  function importFiles(files: File[]) {
+    const usable = files.filter(canImport)
+    if (usable.length === 0) {
+      setError(reportError('Designer', new Error('Import design takes SVG, PNG, JPEG and WebP files.')))
+      return
+    }
+    void run(async () => {
+      const results = await Promise.all(usable.map(importDesignFile))
+      addImported({ elements: results.flatMap((r) => r.elements), warnings: results.flatMap((r) => r.warnings) })
+    })
+  }
+
+  /** Links every background the last import brought to the text on it, so each stretches with its words. */
+  function linkImported() {
+    setElements(linkAll(elements, measureWith(defaultFont)), 'link')
+    setImported((note) => note && { ...note, links: 0 })
+  }
+
+  const stretch = (textId: string, shapeIds: string[]) => setElements(makeStretch(elements, textId, shapeIds, measureWith(defaultFont)), 'stretch')
+
+  function onPaste(e: ClipboardEvent<HTMLDivElement>) {
+    const target = e.target as HTMLElement
+    if (target.isContentEditable || ['INPUT', 'TEXTAREA'].includes(target.tagName)) return
+    pasteWaiting.current = false
+    e.preventDefault()
+    const fromClipboard = importFromTransfer(e.clipboardData)
+    if (fromClipboard) void run(async () => addImported(await fromClipboard()))
+    else paste()
+  }
+
+  const isFileDrag = (e: DragEvent) => e.dataTransfer.types.includes('Files')
+
   const duplicate = () => {
     if (picked.length === 0) return
     const copies = copiesOf(picked, newId, PASTE_OFFSET)
@@ -757,15 +1064,17 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
       ids = selectedSet.has(element.id) ? selected : [element.id]
       if (!selectedSet.has(element.id)) setSelected(ids)
     }
-    const movable = ids.filter((id) => elements.some((el) => el.id === id && !el.locked))
+    const movable = withLinked(elements, ids)
     dragRef.current = { kind: 'move', x: e.clientX, y: e.clientY, ids: movable, before: style }
+    setDragging(true)
     stageRef.current?.setPointerCapture(e.pointerId)
   }
 
   function startResize(e: PointerEvent, element: DesignElement, handle: Handle) {
     if (e.button !== 0) return
     e.stopPropagation()
-    dragRef.current = { kind: 'resize', x: e.clientX, y: e.clientY, id: element.id, handle, before: style }
+    dragRef.current = { kind: 'resize', x: e.clientX, y: e.clientY, id: element.id, handle, before: style, boxes: layout.boxes }
+    setDragging(true)
     stageRef.current?.setPointerCapture(e.pointerId)
   }
 
@@ -774,11 +1083,22 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
     e.stopPropagation()
     const rect = stageRef.current?.getBoundingClientRect()
     if (!rect) return
+    const box = boxOf(element)
     const centre = {
-      x: rect.left + ((element.box.x + element.box.width / 2) / 100) * rect.width,
-      y: rect.top + ((element.box.y + element.box.height / 2) / 100) * rect.height,
+      x: rect.left + ((box.x + box.width / 2) / 100) * rect.width,
+      y: rect.top + ((box.y + box.height / 2) / 100) * rect.height,
     }
     dragRef.current = { kind: 'rotate', id: element.id, centre, before: style }
+    stageRef.current?.setPointerCapture(e.pointerId)
+  }
+
+  function startSlice(e: PointerEvent, element: DesignElement, side: keyof DesignInsets) {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    const frame = (e.currentTarget as HTMLElement).parentElement?.getBoundingClientRect()
+    if (!frame) return
+    dragRef.current = { kind: 'slice', id: element.id, side, frame, before: style }
+    setDragging(true)
     stageRef.current?.setPointerCapture(e.pointerId)
   }
 
@@ -799,10 +1119,23 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
       const element = start.find((el) => el.id === drag.id)
       if (!element) return
       const { dx, dy } = delta(e, drag)
-      const keepRatio = e.shiftKey || (element.kind === 'image' && drag.handle.length === 2)
-      const resized = resizeDesignBox(element.box, element.rotation, drag.handle, dx, dy, e.altKey ? null : designTargets(start, new Set([drag.id])), keepRatio)
-      setHistory((h) => preview(h, { ...drag.before, elements: start.map((el) => (el.id === drag.id ? { ...el, box: resized.box } : el)) }))
+      const keepRatio = e.shiftKey || (element.kind === 'image' && !element.slice && drag.handle.length === 2)
+      // From where the layout drew it, snapping to where it drew the others.
+      const drawn = start.map((el) => ({ ...el, box: drag.boxes.get(el.id) ?? el.box }))
+      const from = drag.boxes.get(element.id) ?? element.box
+      const resized = resizeDesignBox(from, element.rotation, drag.handle, dx, dy, e.altKey ? null : designTargets(drawn, new Set([drag.id])), keepRatio)
+      const changed = resizedElement(element, resized.box, drag.handle, drag.boxes)
+      setHistory((h) => preview(h, { ...drag.before, elements: start.map((el) => (el.id === drag.id ? changed : el)) }))
       setGuides(resized.guides)
+    } else if (drag.kind === 'slice') {
+      const element = start.find((el) => el.id === drag.id)
+      if (element?.kind !== 'image' || !element.slice) return
+      const { frame, side } = drag
+      // The guide's distance in from its side, in percent of the picture, short of the middle.
+      const across = side === 'left' || side === 'right'
+      const at = across ? (e.clientX - frame.left) / frame.width : (e.clientY - frame.top) / frame.height
+      const inset = Math.round(Math.max(0, Math.min(49, (side === 'left' || side === 'top' ? at : 1 - at) * 100)) * 10) / 10
+      setHistory((h) => preview(h, { ...drag.before, elements: start.map((el) => (el.id === drag.id ? { ...element, slice: { ...element.slice!, [side]: inset } } : el)) }))
     } else {
       const rotation = rotationToward(drag.centre, { x: e.clientX, y: e.clientY }, e.shiftKey)
       setHistory((h) => preview(h, { ...drag.before, elements: start.map((el) => (el.id === drag.id ? { ...el, rotation } : el)) }))
@@ -812,6 +1145,7 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
   function endDrag() {
     const drag = dragRef.current
     dragRef.current = null
+    setDragging(false)
     setGuides([])
     if (drag) setHistory((h) => commitFrom(h, drag.before))
   }
@@ -855,8 +1189,14 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
       copy()
       remove()
     } else if (mod && key === 'v') {
-      handled()
-      paste()
+      // The paste event that follows brings an SVG or a picture from the clipboard; without one, the elements copied.
+      e.stopPropagation()
+      pasteWaiting.current = true
+      setTimeout(() => {
+        if (!pasteWaiting.current) return
+        pasteWaiting.current = false
+        paste()
+      }, 60)
     } else if (mod && key === 'd') {
       handled()
       duplicate()
@@ -873,6 +1213,10 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
     } else if (e.key === 'Enter' && single?.kind === 'text' && !single.locked) {
       handled()
       setEditingId(single.id)
+    } else if (single?.kind === 'text' && !single.locked && !mod && !e.altKey && e.key.length === 1) {
+      // Typing on a selected text starts editing it with that letter.
+      handled()
+      setEditing({ id: single.id, initial: e.key })
     } else if (e.key === 'Escape') {
       handled()
       if (selected.length > 0) setSelected([])
@@ -934,20 +1278,37 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
   const setCategory = (category: DesignCategory) =>
     change({ ...style, category, background: category === 'lowerThird' ? { kind: 'transparent' } : style.background.kind === 'transparent' ? { kind: 'solid', color: BRAND.navy } : style.background })
 
-  const edit =
-    editingId === null
+  const commitText = (id: string, text: string) => {
+    const element = elements.find((e) => e.id === id)
+    if (element?.kind === 'text' && element.text !== text) patchElement(id, { text })
+  }
+  const stopEditing = () => {
+    setEditing(null)
+    setLiveText(null)
+    rootRef.current?.focus()
+  }
+  const edit: InlineEdit | undefined =
+    editing === null
       ? undefined
       : {
-          id: editingId,
-          onCommit: (text: string) => {
-            const element = elements.find((e) => e.id === editingId)
-            if (element?.kind === 'text' && element.text !== text) patchElement(editingId, { text })
-            setEditingId(null)
-            rootRef.current?.focus()
+          id: editing.id,
+          initial: editing.initial,
+          onInput: setLiveText,
+          onCommit: (text) => {
+            commitText(editing.id, text)
+            stopEditing()
           },
-          onCancel: () => {
-            setEditingId(null)
-            rootRef.current?.focus()
+          onCancel: stopEditing,
+          onTab: (text, back) => {
+            commitText(editing.id, text)
+            // On to the next text on the canvas (Shift: the one before), bottom layer first, round again at the end.
+            const texts = elements.filter((e) => e.kind === 'text' && !e.hidden && !e.locked)
+            const at = texts.findIndex((e) => e.id === editing.id)
+            const next = texts[(at + (back ? -1 : 1) + texts.length) % texts.length]
+            setLiveText(null)
+            if (!next) return stopEditing()
+            setSelected([next.id])
+            setEditing({ id: next.id })
           },
         }
 
@@ -959,6 +1320,7 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
         aria-label="Designer"
         tabIndex={-1}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
       >
         <header className="designer-header">
           <input className="input designer-name" aria-label="Design name" value={name} onChange={(e) => setName(e.target.value)} />
@@ -979,6 +1341,21 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
             <button type="button" className="button" onClick={() => void addImage()} title="Add an image">
               <ImageIcon size={14} aria-hidden="true" /> Image
             </button>
+            <button type="button" className="button" onClick={() => fileRef.current?.click()} title={`Import design: an SVG (from Figma, Illustrator or Inkscape) or a PNG. You can also drop one on the canvas, or paste Figma's Copy as SVG with ${MOD}V`}>
+              <FileUp size={14} aria-hidden="true" /> Import
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept={IMPORT_ACCEPT}
+              multiple
+              hidden
+              onChange={(e) => {
+                const files = [...(e.target.files ?? [])]
+                e.target.value = ''
+                if (files.length > 0) importFiles(files)
+              }}
+            />
             <span className="designer-tools-gap" />
             <button type="button" className={`button${playing ? ' primary' : ''}`} onClick={play} title="Play the elements' animation in, then out" aria-pressed={playing !== null}>
               <Play size={14} aria-hidden="true" /> {playing ? `Playing ${playing.phase}` : 'Play'}
@@ -1089,8 +1466,23 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
           <main className="designer-stage-area">
             <div
               ref={stageRef}
-              className="designer-stage"
-              aria-label="Canvas. Arrow keys move the selection; Shift moves it further."
+              className={`designer-stage${dragging ? ' dragging' : ''}${fileOver ? ' file-over' : ''}`}
+              aria-label="Canvas. Arrow keys move the selection; Shift moves it further. Type on a selected text to change its words."
+              onDragOver={(e) => {
+                if (!isFileDrag(e)) return
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'copy'
+                setFileOver(true)
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFileOver(false)
+              }}
+              onDrop={(e) => {
+                if (!isFileDrag(e)) return
+                e.preventDefault()
+                setFileOver(false)
+                importFiles([...e.dataTransfer.files])
+              }}
               onPointerDown={(e) => {
                 if (e.button !== 0) return
                 rootRef.current?.focus()
@@ -1103,21 +1495,22 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
               {playing ? (
                 <DesignView key={playing.run} style={style} checker phase={playing.phase} />
               ) : (
-                <DesignView style={style} edit={edit} checker placeholders />
+                <DesignView style={shown} edit={edit} checker placeholders warnings />
               )}
               <div className="designer-frames" hidden={playing !== null}>
                 {elements.map((element) => {
                   if (element.hidden || element.locked || element.id === editingId) return null
                   const isSelected = selectedSet.has(element.id)
+                  const box = boxOf(element)
                   return (
                     <div
                       key={element.id}
-                      className={`designer-frame${isSelected ? ' selected' : ''}`}
+                      className={`designer-frame${isSelected ? ' selected' : ''}${element.fitToText ? ' fitted' : ''}`}
                       style={{
-                        left: `${element.box.x}%`,
-                        top: `${element.box.y}%`,
-                        width: `${element.box.width}%`,
-                        height: `${element.box.height}%`,
+                        left: `${box.x}%`,
+                        top: `${box.y}%`,
+                        width: `${box.width}%`,
+                        height: `${box.height}%`,
                         transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
                       }}
                       title={element.name}
@@ -1129,6 +1522,17 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
                             <span key={handle} className={`designer-handle ${handle}`} onPointerDown={(e) => startResize(e, element, handle)} />
                           ))}
                           <span className="designer-rotate" title="Drag to rotate (Shift: 15° steps)" onPointerDown={(e) => startRotate(e, element)} />
+                          {element.kind === 'image' &&
+                            element.slice &&
+                            SIDES.map((side) => (
+                              <span
+                                key={side}
+                                className={`designer-slice ${side}`}
+                                style={{ [side]: `${element.slice![side]}%` }}
+                                title={`9 slice: drag to set how much of the ${side} keeps its size`}
+                                onPointerDown={(e) => startSlice(e, element, side)}
+                              />
+                            ))}
                         </>
                       )}
                     </div>
@@ -1139,14 +1543,43 @@ export function Designer({ document: doc, onClose, onSaved, page = false }: {
                 ))}
               </div>
             </div>
+            {imported && (
+              <div className="designer-import-note" role="status">
+                <span>
+                  Imported.
+                  {imported.links > 0 && ` ${imported.links === 1 ? 'A background sits' : `${imported.links} backgrounds sit`} behind text and can stretch with it.`}
+                  {imported.warnings.map((w) => (
+                    <span key={w} className="designer-import-warning">
+                      <AlertTriangle size={12} aria-hidden="true" /> {w}
+                    </span>
+                  ))}
+                </span>
+                {imported.links > 0 && (
+                  <button type="button" className="button primary" onClick={linkImported} title="Fit each background to the text on it and make that text Auto width; the design looks the same until the words change">
+                    <Link2 size={14} aria-hidden="true" /> Make them stretch
+                  </button>
+                )}
+                <button type="button" className="icon-button" aria-label="Dismiss" title="Dismiss" onClick={() => setImported(null)}>
+                  <X size={14} />
+                </button>
+              </div>
+            )}
             <p className="hint designer-hint">
-              Double-click text to edit it. Hold Alt to place without snapping, Shift to keep the shape or rotate in 15° steps.
+              Click text and type, or double-click it, to change the words: Enter keeps them, Esc cancels, Tab goes to the next text. Hold Alt to place without
+              snapping, Shift to keep the shape or rotate in 15° steps. Drop or paste an SVG or PNG to import it.
             </p>
           </main>
 
           <aside className="designer-inspector" aria-label="Properties">
             {single ? (
-              <ElementFields element={single} onChange={(patch, key) => patchElement(single.id, patch, key)} pickImage={pickImage} />
+              <ElementFields
+                element={single}
+                elements={elements}
+                layout={layout}
+                onChange={(patch, key) => patchElement(single.id, patch, key)}
+                onStretch={stretch}
+                pickImage={pickImage}
+              />
             ) : picked.length > 1 ? (
               <Section title={`${picked.length} selected`}>
                 <Slider

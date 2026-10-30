@@ -53,7 +53,7 @@ describe('Sermons screen', () => {
       const html = renderToString(createElement(App))
       expect(html).toContain('sermons-panel')
       // The rest of the app is still there.
-      expect(html).toContain('Order of service')
+      expect(html).toContain('Schedule')
       expect(html).not.toContain('This panel had a problem')
     })
   })

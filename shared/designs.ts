@@ -8,15 +8,20 @@ import { fieldsOf, flag, hex, number, oneOf, text, TEXT_CASES } from './themes'
 import type {
   DesignBackground,
   DesignCategory,
+  DesignConstraints,
   DesignElement,
   DesignElementAnimation,
   DesignElementKind,
   DesignFill,
+  DesignFitToText,
+  DesignGrowth,
+  DesignInsets,
   DesignLoop,
   DesignMotionStep,
   DesignShadow,
   DesignStyle,
   DesignTextField,
+  DesignTextSizing,
   LowerThirdBox,
   LowerThirdStyle,
   ThemeBox,
@@ -41,6 +46,14 @@ export const DESIGN_LOOPS: DesignLoop[] = ['none', 'pulse', 'float', 'glow', 'sp
 export const NO_SHADOW: DesignShadow = { enabled: false, color: '#000000', opacity: 0.35, blur: 1.2, x: 0, y: 0.3 }
 const SOFT_SHADOW: DesignShadow = { ...NO_SHADOW, enabled: true }
 
+export const TEXT_SIZINGS: DesignTextSizing[] = ['fixed', 'autoWidth', 'autoHeight', 'shrink']
+export const GROWTHS: DesignGrowth[] = ['right', 'left', 'down', 'up', 'center']
+/** Where elements stay by default: as they were, at the lower third's top left. */
+export const PINNED: DesignConstraints = { horizontal: 'left', vertical: 'top' }
+export const NO_INSETS: DesignInsets = { top: 0, right: 0, bottom: 0, left: 0 }
+/** How large stretching text grows by default, in percent of the canvas. */
+export const DEFAULT_MAX = { width: 90, height: 40 } as const
+
 export const KIND_NAMES: Record<DesignElementKind, string> = { text: 'Text', rect: 'Rectangle', line: 'Line', image: 'Image' }
 
 type Text = Extract<DesignElement, { kind: 'text' }>
@@ -59,6 +72,8 @@ const base = (id: string, name: string, box: ThemeBox) => ({
   hideWithLowerThird: false,
   loop: 'none' as DesignLoop,
   animation: NO_ANIMATION,
+  constraints: PINNED,
+  fitToText: null,
 })
 
 export const textElement = (id: string, name: string, box: ThemeBox, overrides: Partial<Text> = {}): Text => ({
@@ -70,7 +85,11 @@ export const textElement = (id: string, name: string, box: ThemeBox, overrides: 
   fontWeight: 600,
   italic: false,
   fontSize: 4,
+  // Auto fit on its own was Shrink to fit; off, the words keep their size.
+  sizing: overrides.autoFit === false ? 'fixed' : 'shrink',
   autoFit: true,
+  maxWidth: DEFAULT_MAX.width,
+  maxHeight: DEFAULT_MAX.height,
   color: BRAND.white,
   align: 'left',
   verticalAlign: 'middle',
@@ -107,6 +126,7 @@ export const imageElement = (id: string, name: string, box: ThemeBox, overrides:
   src: null,
   fit: 'contain',
   radius: 0,
+  slice: null,
   ...overrides,
 })
 
@@ -360,6 +380,34 @@ function normalizeBackground(value: unknown, category: DesignCategory): DesignBa
   return EMPTY_DESIGN[category].background
 }
 
+function normalizeInsets(value: unknown, max: number): DesignInsets {
+  const v = fieldsOf(value)
+  return { top: number(v.top, 0, 0, max), right: number(v.right, 0, 0, max), bottom: number(v.bottom, 0, 0, max), left: number(v.left, 0, 0, max) }
+}
+
+function normalizeFit(value: unknown): DesignFitToText | null {
+  if (value === null || typeof value !== 'object') return null
+  const v = fieldsOf(value)
+  const textId = text(v.textId, '').slice(0, 64)
+  if (!textId) return null
+  return {
+    textId,
+    padding: normalizeInsets(v.padding, 100),
+    minWidth: number(v.minWidth, 0, 0, 300),
+    maxWidth: number(v.maxWidth, 0, 0, 300),
+    anchor: oneOf(v.anchor, GROWTHS, 'right'),
+    axes: oneOf(v.axes, ['both', 'width', 'height'], 'both'),
+  }
+}
+
+function normalizeConstraints(value: unknown): DesignConstraints {
+  const v = fieldsOf(value)
+  return {
+    horizontal: oneOf(v.horizontal, ['left', 'right', 'center', 'scale'], PINNED.horizontal),
+    vertical: oneOf(v.vertical, ['top', 'bottom', 'center', 'scale'], PINNED.vertical),
+  }
+}
+
 function normalizeStep(value: unknown, fallback: DesignMotionStep): DesignMotionStep {
   const v = fieldsOf(value)
   return {
@@ -395,10 +443,14 @@ function normalizeElement(value: unknown): DesignElement | null {
     hideWithLowerThird: flag(v.hideWithLowerThird, false),
     loop: oneOf(v.loop, DESIGN_LOOPS, 'none'),
     animation: normalizeAnimation(v.animation),
+    constraints: normalizeConstraints(v.constraints),
+    // Only shapes and pictures follow a text element.
+    fitToText: kind === 'text' ? null : normalizeFit(v.fitToText),
   }
   switch (d.kind) {
     case 'text': {
       const outline = fieldsOf(v.outline)
+      const autoFit = flag(v.autoFit, d.autoFit)
       return {
         ...d,
         ...common,
@@ -408,7 +460,11 @@ function normalizeElement(value: unknown): DesignElement | null {
         fontWeight: Math.round(number(v.fontWeight, d.fontWeight, 100, 900) / 100) * 100,
         italic: flag(v.italic, d.italic),
         fontSize: number(v.fontSize, d.fontSize, 0.5, 60),
-        autoFit: flag(v.autoFit, d.autoFit),
+        // Designs from before sizing had only auto fit: on was Shrink to fit, off kept the words' size.
+        sizing: oneOf(v.sizing, TEXT_SIZINGS, autoFit ? 'shrink' : 'fixed'),
+        autoFit,
+        maxWidth: number(v.maxWidth, d.maxWidth, 1, 300),
+        maxHeight: number(v.maxHeight, d.maxHeight, 1, 300),
         color: hex(v.color, d.color),
         align: oneOf(v.align, ['left', 'center', 'right'], d.align),
         verticalAlign: oneOf(v.verticalAlign, ['top', 'middle', 'bottom'], d.verticalAlign),
@@ -433,7 +489,14 @@ function normalizeElement(value: unknown): DesignElement | null {
     case 'line':
       return { ...d, ...common, color: hex(v.color, d.color), thickness: number(v.thickness, d.thickness, 0.05, 20), dashed: flag(v.dashed, false) }
     case 'image':
-      return { ...d, ...common, src: media(v.src), fit: oneOf(v.fit, ['contain', 'cover'], d.fit), radius: number(v.radius, 0, 0, 50) }
+      return {
+        ...d,
+        ...common,
+        src: media(v.src),
+        fit: oneOf(v.fit, ['contain', 'cover'], d.fit),
+        radius: number(v.radius, 0, 0, 50),
+        slice: v.slice && typeof v.slice === 'object' ? normalizeInsets(v.slice, 49) : null,
+      }
   }
 }
 

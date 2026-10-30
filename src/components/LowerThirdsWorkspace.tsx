@@ -1,13 +1,17 @@
-import { Copy, Eye, EyeOff, Pencil, Play, Plus, RefreshCw, SkipForward, Star, Trash2, X } from 'lucide-react'
-import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { Copy, Eye, EyeOff, FileUp, Paintbrush, Pencil, Play, Plus, RefreshCw, SkipForward, Star, Trash2, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { DESIGN_FIELDS, EMPTY_DESIGN } from '../../shared/designs'
 import type { Design, DesignElement, DesignTextField, Service, SermonPoint } from '../../shared/types'
+import { canImport, IMPORT_ACCEPT, importDesignFile } from '../lib/designImport'
 import { reportError, type ErrorLike } from '../lib/errors'
 import { pointKeyLabel, pointShortcut } from '../lib/sermonPoints'
-import { CLEAR_LOWER_THIRD_KEY, isTyping } from '../lib/shortcuts'
+import { CLEAR_LOWER_THIRD_KEY, isTyping, LOWER_THIRD_HEADLINE_ID } from '../lib/shortcuts'
+import { useDesignLayout } from '../lib/textMeasure'
 import { selectSermonPoints, useOperatorStore, type LowerThirdLine } from '../store'
 import { Designer, type DesignerDocument } from './Designer'
 import { DesignView, type InlineEdit } from './DesignView'
+import { HeaderPopover } from './LivePreview'
+import { LowerThirdPanel } from './LowerThirdPanel'
 import { QuickLowerThird } from './QuickLowerThird'
 import { Button, ErrorNote, IconButton, Select } from './ui'
 
@@ -52,6 +56,18 @@ function Library({ designs, selectedId, onSelect, onEdit }: { designs: Design[];
       onSelect(created.id)
     })
 
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  /** Import design: the file as a new, unsaved lower third, open in the designer to check and save. */
+  const importFiles = (files: File[]) =>
+    run(async () => {
+      const usable = files.filter(canImport)
+      if (usable.length === 0) throw new Error('Import design takes SVG, PNG, JPEG and WebP files.')
+      const results = await Promise.all(usable.map(importDesignFile))
+      const name = usable[0].name.replace(/\.[^.]+$/, '') || 'Imported design'
+      onEdit({ id: null, name, type: 'custom', style: { ...EMPTY_DESIGN.lowerThird, elements: results.flatMap((r) => r.elements) }, imported: results.flatMap((r) => r.warnings) })
+    })
+
   const remove = (design: Design) =>
     run(async () => {
       if (!window.confirm(`Delete the design "${design.name}"?`)) return
@@ -61,7 +77,20 @@ function Library({ designs, selectedId, onSelect, onEdit }: { designs: Design[];
     })
 
   return (
-    <aside className="ltw-library" aria-label="Lower third designs">
+    <aside
+      className="ltw-library"
+      aria-label="Lower third designs"
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        void importFiles([...e.dataTransfer.files])
+      }}
+    >
       <div className="ltw-library-actions">
         <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden="true" />} onClick={() => onEdit({ id: null, name: 'New lower third', type: 'custom', style: EMPTY_DESIGN.lowerThird })}>
           New design
@@ -69,6 +98,25 @@ function Library({ designs, selectedId, onSelect, onEdit }: { designs: Design[];
         <Button size="sm" icon={<Pencil size={13} aria-hidden="true" />} disabled={!selected} title="Open the selected design in the designer" onClick={() => selected && onEdit(selected)}>
           Edit
         </Button>
+        <IconButton
+          size="sm"
+          label="Import design"
+          tooltip="Import design: an SVG from Figma, Illustrator or Inkscape, or a PNG. You can also drop one on the list"
+          icon={<FileUp size={14} />}
+          onClick={() => fileRef.current?.click()}
+        />
+        <input
+          ref={fileRef}
+          type="file"
+          accept={IMPORT_ACCEPT}
+          multiple
+          hidden
+          onChange={(e) => {
+            const files = [...(e.target.files ?? [])]
+            e.target.value = ''
+            if (files.length > 0) void importFiles(files)
+          }}
+        />
         <IconButton size="sm" label="Duplicate" tooltip="Duplicate the selected design" icon={<Copy size={14} />} disabled={!selected} onClick={() => selected && void duplicate(selected)} />
         <IconButton
           size="sm"
@@ -116,14 +164,25 @@ function Library({ designs, selectedId, onSelect, onEdit }: { designs: Design[];
   )
 }
 
-/** The selected design large, its bound text editable on the canvas (double-click) or in the fields under it. */
+/** Text in a design that typed words fill: bound to a field and shown. */
+const editable = (e: DesignElement): e is Extract<DesignElement, { kind: 'text' }> => e.kind === 'text' && e.field !== null && !e.hidden
+
+/**
+ * The selected design large, to type into on the canvas: click a text to select it, then type (or double-click) to
+ * change its words in place; Enter keeps them, Esc cancels, Tab goes on to the next text. The design stretches with
+ * the words as they are typed. The fields under it hold the same words.
+ */
 function Stage({ design }: { design: Design | undefined }) {
   const draft = useOperatorStore((s) => s.lowerThirdDraft)
   const setDraft = useOperatorStore((s) => s.setLowerThirdDraft)
   const live = useOperatorStore((s) => s.live.lowerThird)
   const showLine = useOperatorStore((s) => s.showLowerThirdLine)
   const previewLine = useOperatorStore((s) => s.previewLowerThirdLine)
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [editing, setEditing] = useState<{ id: string; initial?: string } | null>(null)
+  /** The words as they are typed, so the design stretches with them live. */
+  const [liveText, setLiveText] = useState<string | null>(null)
+  const frames = useRef(new Map<string, HTMLButtonElement>())
   const fields = boundFields(design)
   const shownFields = fields.length > 0 ? fields : (['headline'] as DesignTextField[])
   const line: LowerThirdLine = { ...draft, ...(design ? { designId: design.id } : {}) }
@@ -131,21 +190,66 @@ function Stage({ design }: { design: Design | undefined }) {
   const onAirHere = live !== null && live.designId === line.designId
   const edited = onAirHere && !empty && (live.headline !== draft.headline.trim() || live.body !== draft.body.trim() || (live.number ?? '') !== (draft.number ?? '').trim())
   const valueOf = (field: DesignTextField) => (field === 'number' ? (draft.number ?? '') : draft[field])
-  // Empty fields show the design's sample words, so the canvas always reads as the design.
-  const canvasFields = Object.fromEntries(DESIGN_FIELDS.flatMap((f) => (valueOf(f) ? [[f, valueOf(f)]] : [])))
+  const texts = (design?.style.elements ?? []).filter(editable)
+  const editingElement = texts.find((e) => e.id === editing?.id)
+  // Empty fields show the design's sample words, so the canvas always reads as the design; what is being typed shows as it is.
+  const canvasFields: Partial<Record<DesignTextField, string>> = Object.fromEntries(DESIGN_FIELDS.flatMap((f) => (valueOf(f) ? [[f, valueOf(f)]] : [])))
+  if (editingElement?.field && liveText !== null) canvasFields[editingElement.field] = liveText
+  const layout = useDesignLayout(design?.style ?? EMPTY_DESIGN.lowerThird, canvasFields)
 
+  // A design change leaves nothing selected.
+  useEffect(() => {
+    setSelectedId(null)
+    setEditing(null)
+  }, [design?.id])
+
+  const focusFrame = (id: string) => requestAnimationFrame(() => frames.current.get(id)?.focus())
+  const commit = (id: string, text: string) => {
+    const element = texts.find((e) => e.id === id)
+    if (element?.field) setDraft({ [element.field]: text })
+  }
+  const stop = (id: string) => {
+    setEditing(null)
+    setLiveText(null)
+    focusFrame(id)
+  }
   const edit: InlineEdit | undefined =
-    editingId === null
+    editing === null
       ? undefined
       : {
-          id: editingId,
+          id: editing.id,
+          initial: editing.initial,
+          onInput: setLiveText,
           onCommit: (text) => {
-            const element = design?.style.elements.find((e) => e.id === editingId)
-            if (element?.kind === 'text' && element.field) setDraft({ [element.field]: text })
-            setEditingId(null)
+            commit(editing.id, text)
+            stop(editing.id)
           },
-          onCancel: () => setEditingId(null),
+          onCancel: () => stop(editing.id),
+          onTab: (text, back) => {
+            commit(editing.id, text)
+            const at = texts.findIndex((e) => e.id === editing.id)
+            const next = texts[(at + (back ? -1 : 1) + texts.length) % texts.length]
+            setLiveText(null)
+            setSelectedId(next.id)
+            setEditing({ id: next.id })
+          },
         }
+
+  function onFrameKey(e: ReactKeyboardEvent<HTMLButtonElement>, id: string) {
+    const mod = e.metaKey || e.ctrlKey
+    if (e.key === 'Enter' || (e.key.length === 1 && !mod && !e.altKey)) {
+      // Enter, or the first letter typed, starts editing in place.
+      e.preventDefault()
+      e.stopPropagation()
+      setSelectedId(id)
+      setEditing(e.key === 'Enter' ? { id } : { id, initial: e.key })
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      setSelectedId(null)
+      e.currentTarget.blur()
+    }
+  }
 
   function onFieldKey(e: ReactKeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') {
@@ -156,28 +260,37 @@ function Stage({ design }: { design: Design | undefined }) {
     }
   }
 
-  const editable = (e: DesignElement) => e.kind === 'text' && e.field !== null && !e.hidden
-
   return (
     <section className="ltw-stage-area" aria-label="Selected design">
       <div className="ltw-stage">
         {design ? (
           <>
-            <DesignView style={design.style} fields={canvasFields} edit={edit} checker />
+            <DesignView style={design.style} fields={canvasFields} edit={edit} checker warnings />
             <div className="ltw-frames">
-              {design.style.elements.filter(editable).map((element) =>
-                element.id === editingId ? null : (
+              {texts.map((element) => {
+                if (element.id === editing?.id) return null
+                const box = layout.boxes.get(element.id) ?? element.box
+                const field = element.field ? FIELD_LABELS[element.field].toLowerCase() : 'words'
+                return (
                   <button
                     key={element.id}
+                    ref={(el) => {
+                      if (el) frames.current.set(element.id, el)
+                      else frames.current.delete(element.id)
+                    }}
                     type="button"
-                    className="ltw-frame"
-                    style={{ left: `${element.box.x}%`, top: `${element.box.y}%`, width: `${element.box.width}%`, height: `${element.box.height}%` }}
-                    title={`Double-click to type the ${element.kind === 'text' && element.field ? FIELD_LABELS[element.field].toLowerCase() : 'words'}`}
-                    aria-label={`Edit ${element.name}`}
-                    onDoubleClick={() => setEditingId(element.id)}
+                    className={`ltw-frame${selectedId === element.id ? ' selected' : ''}`}
+                    style={{ left: `${box.x}%`, top: `${box.y}%`, width: `${box.width}%`, height: `${box.height}%` }}
+                    title={`Click, then type the ${field} (or double-click). Enter keeps it, Esc cancels, Tab goes to the next text`}
+                    aria-label={`${element.name}: type to change the ${field}`}
+                    aria-pressed={selectedId === element.id}
+                    onClick={() => setSelectedId(element.id)}
+                    onFocus={() => setSelectedId(element.id)}
+                    onDoubleClick={() => setEditing({ id: element.id })}
+                    onKeyDown={(e) => onFrameKey(e, element.id)}
                   />
-                ),
-              )}
+                )
+              })}
             </div>
           </>
         ) : (
@@ -189,10 +302,11 @@ function Stage({ design }: { design: Design | undefined }) {
           <label key={field} className={`ltw-field ltw-field-${field}`}>
             <span>{FIELD_LABELS[field]}</span>
             <input
+              id={field === 'headline' ? LOWER_THIRD_HEADLINE_ID : undefined}
               className="input"
               value={valueOf(field)}
               maxLength={300}
-              placeholder={field === 'headline' ? 'Type while the pastor preaches' : ''}
+              placeholder={field === 'headline' ? 'Type here or on the design' : ''}
               onChange={(e) => setDraft({ [field]: e.target.value })}
               onKeyDown={onFieldKey}
             />
@@ -200,7 +314,7 @@ function Stage({ design }: { design: Design | undefined }) {
         ))}
         <div className="ltw-field-actions">
           <Button size="sm" icon={<Eye size={13} aria-hidden="true" />} disabled={empty} title="Stage it on Preview (Shift+Enter in a field)" onClick={() => previewLine(line)}>
-            Preview
+            Send to Preview
           </Button>
           {edited ? (
             <Button size="sm" variant="primary" icon={<RefreshCw size={13} aria-hidden="true" />} title="Change the words on air in place (Enter in a field)" onClick={() => showLine(line)}>
@@ -388,7 +502,7 @@ function Points({ designs }: { designs: Design[] }) {
 }
 
 /**
- * The Lower thirds workspace, in place of the order of service and the middle column, with Live and Preview still on
+ * The Lower thirds workspace, in place of the schedule and the middle column, with Live and Preview still on
  * the right: the designs on the left, the selected one large in the centre to type into live, the sermon points
  * under it, and a quick quote. 1 to 9 show the first nine points live, Space the next, Enter the lower third staged
  * on Preview, and Esc clears it. Edit design opens the designer here, as a page.
@@ -402,6 +516,7 @@ export function LowerThirdsWorkspace() {
   const loadDesigns = useOperatorStore((s) => s.loadDesigns)
   const close = useOperatorStore((s) => s.openLowerThirds)
   const [designing, setDesigning] = useState<DesignerDocument | null>(null)
+  const [styleOpen, setStyleOpen] = useState(false)
   // The workspace's choice, else the default, else the first; a deleted one falls through.
   const selected = [workspaceId, defaultId].map((id) => designs.find((d) => d.id === id)).find(Boolean) ?? designs[0]
 
@@ -415,7 +530,9 @@ export function LowerThirdsWorkspace() {
     if (designing) return
     const onKey = (e: KeyboardEvent) => {
       const st = useOperatorStore.getState()
-      const action = pointShortcut(e, selectSermonPoints(st).length, isTyping(e.target))
+      // A selected text on the canvas takes the keys: typing changes its words.
+      const onCanvas = !!(e.target as Element | null)?.closest?.('.ltw-frame')
+      const action = pointShortcut(e, selectSermonPoints(st).length, isTyping(e.target) || onCanvas)
       if (!action) return
       const onButton = (e.target as Element | null)?.closest?.('button, select, a')
       if (action.kind === 'takePreview' && (onButton || !st.lowerThirdPreview)) return
@@ -455,7 +572,18 @@ export function LowerThirdsWorkspace() {
       <header className="ltw-head">
         <h2>Lower thirds</h2>
         <span className="hint">1–9 show a point live · Space the next · Enter takes Preview live · Esc clears</span>
-        <IconButton label="Close Lower thirds" tooltip="Back to the order of service and slides" icon={<X size={18} />} onClick={() => close(false)} />
+        <HeaderPopover
+          label="Lower third style"
+          text="Style and saved lines"
+          tooltip="Template, saved lines, animation and timing"
+          icon={<Paintbrush size={14} aria-hidden="true" />}
+          open={styleOpen}
+          onOpenChange={setStyleOpen}
+          className="lower-third-popover"
+        >
+          <LowerThirdPanel headline={false} />
+        </HeaderPopover>
+        <IconButton label="Close Lower thirds" tooltip="Back to the schedule and slides" icon={<X size={18} />} onClick={() => close(false)} />
       </header>
       <div className="ltw-body">
         <Library designs={designs} selectedId={selected?.id ?? null} onSelect={setWorkspaceDesign} onEdit={setDesigning} />

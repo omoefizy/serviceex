@@ -6,7 +6,7 @@ import { MAX_GROUP_PASSAGES } from '../../shared/scriptureGroup'
 import type { ScriptureGroup, ScriptureGroupPassage } from '../../shared/types'
 import { useOperatorStore } from '../store'
 
-/** What the combine editor is working on: a new group (itemId null) or a Scripture group in the Order of service. */
+/** What the combine editor is working on: a new group (itemId null) or a Scripture group in the Schedule. */
 export interface CombineEditing {
   itemId: number | null
   group: ScriptureGroup
@@ -25,7 +25,7 @@ interface CombineState {
   clear(): void
   /** Opens the editor on the tray's passages. */
   openTray(): void
-  /** Opens the editor on a group: one in the Order of service (`itemId`), or one only previewed (null). */
+  /** Opens the editor on a group: one in the Schedule (`itemId`), or one only previewed (null). */
   openGroup(group: ScriptureGroup, itemId: number | null): void
   close(): void
 }
@@ -66,7 +66,7 @@ export const useTextEdit = create<{ index: number | null; open(index: number): v
   close: () => set({ index: null }),
 }))
 
-/** The Scripture group in the grid: a group item from the Order of service, or one previewed from the editor. */
+/** The Scripture group in the grid: a group item from the Schedule, or one previewed from the editor. */
 export function deckGroup(): CombineEditing | null {
   const s = useOperatorStore.getState()
   if (s.deckType !== 'scripture') return null

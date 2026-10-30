@@ -32,7 +32,7 @@ export const passageWords = (passage: ScriptureGroupPassage) =>
 /** A passage as slide lines: its words, then its reference on a {reference} line. */
 export const passageBlock = (passage: ScriptureGroupPassage) => `${passageWords(passage)}\n{${passageLabel(passage)}}`
 
-/** The group's title in the Order of service: "John 3:16 KJV; Romans 5:8 KJV". */
+/** The group's title in the Schedule: "John 3:16 KJV; Romans 5:8 KJV". */
 export const groupTitle = (group: ScriptureGroup) => group.passages.slice(0, MAX_GROUP_PASSAGES).map(passageLabel).join('; ')
 
 /** The room the words have in a theme's text box, in percent of the slide's height. */

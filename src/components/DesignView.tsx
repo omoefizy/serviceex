@@ -1,8 +1,10 @@
 import { useContext, useLayoutEffect, useRef, type CSSProperties, type KeyboardEvent } from 'react'
+import { nineSliceBorders } from '../../shared/autoLayout'
 import { designTimeline, LOOP_CSS, motionCss, slideOffsets, type AnimationPhase, type TimelineEntry } from '../../shared/designAnimation'
 import { shownText } from '../../shared/designs'
-import type { DesignBackground, DesignElement, DesignShadow, DesignStyle, DesignTextField, TextCase } from '../../shared/types'
+import type { DesignBackground, DesignElement, DesignShadow, DesignStyle, DesignTextField, TextCase, ThemeBox } from '../../shared/types'
 import { cssFontFamily } from '../lib/fonts'
+import { useDesignLayout } from '../lib/textMeasure'
 import { DefaultFontContext } from './themedSlideLayers'
 
 type Text = Extract<DesignElement, { kind: 'text' }>
@@ -22,11 +24,11 @@ function backgroundCss(background: DesignBackground): CSSProperties {
 }
 
 /** An element's place, and its animation while one plays (its movement, then its loop once that is done). */
-const placement = (e: DesignElement, motion?: CSSProperties): CSSProperties => ({
-  left: `${e.box.x}%`,
-  top: `${e.box.y}%`,
-  width: `${e.box.width}%`,
-  height: `${e.box.height}%`,
+const placement = (e: DesignElement, box: ThemeBox, motion?: CSSProperties): CSSProperties => ({
+  left: `${box.x}%`,
+  top: `${box.y}%`,
+  width: `${box.width}%`,
+  height: `${box.height}%`,
   opacity: e.opacity,
   transform: e.rotation ? `rotate(${e.rotation}deg)` : undefined,
   ...motion,
@@ -48,15 +50,37 @@ function motionStyle(element: DesignElement, entry: TimelineEntry | undefined, p
   return { animation: animation.filter(Boolean).join(', '), ['--dv-dx' as string]: dx, ['--dv-dy' as string]: dy }
 }
 
-/** What editing a text element in place needs: the words go back on commit (blur, or Cmd+Enter); Escape cancels. */
+/**
+ * What editing a text element in place needs: the words go back on commit (Enter, or leaving it), Escape cancels, and
+ * Tab commits and moves to the next text (Shift+Tab the one before). Shift+Enter starts a new line.
+ */
 export interface InlineEdit {
   id: string
+  /** Words to start with in place of the element's, the caret after them: typing on a selected text starts this way. */
+  initial?: string
   onCommit(text: string): void
   onCancel(): void
+  /** Each change while typing, so stretching shapes follow the words live. */
+  onInput?(text: string): void
+  onTab?(text: string, back: boolean): void
 }
 
-/** A text element in its box: at its size, or with auto fit as large as fits up to its size. */
-function DesignText({ element, words, edit, extra, motion }: { element: Text; words: string; edit?: InlineEdit; extra: string; motion?: CSSProperties }) {
+const editedText = (el: HTMLElement) => el.innerText.replace(/\n$/, '')
+
+/** Whether the words need the box to shrink them: Shrink to fit, or a stretching box with auto fit on. */
+const shrinks = (e: Text) => e.sizing === 'shrink' || (e.autoFit && (e.sizing === 'autoWidth' || e.sizing === 'autoHeight'))
+
+/** A text element in its box: at its size, or shrunk as large as fits up to its size. */
+function DesignText({ element, box, words, edit, extra, motion, overflow }: {
+  element: Text
+  box: ThemeBox
+  words: string
+  edit?: InlineEdit
+  extra: string
+  motion?: CSSProperties
+  /** The layout found the words need more room than the maximum size. */
+  overflow: boolean
+}) {
   const defaultFont = useContext(DefaultFontContext)
   const boxRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLParagraphElement>(null)
@@ -67,14 +91,16 @@ function DesignText({ element, words, edit, extra, motion }: { element: Text; wo
     const box = boxRef.current
     const el = textRef.current
     if (!box || !el) return
+    const fits = (size: number) => {
+      el.style.fontSize = `${size}cqh`
+      return el.scrollHeight <= box.clientHeight + 1 && el.scrollWidth <= box.clientWidth + 1
+    }
+    // Marked when the words still do not fit, for the editors' overflow warning.
+    const mark = (over: boolean) => box.toggleAttribute('data-overflow', over)
     const fit = () => {
       el.style.fontSize = `${element.fontSize}cqh`
-      if (!element.autoFit || box.clientHeight === 0) return
-      const fits = (size: number) => {
-        el.style.fontSize = `${size}cqh`
-        return el.scrollHeight <= box.clientHeight + 1 && el.scrollWidth <= box.clientWidth + 1
-      }
-      if (fits(element.fontSize)) return
+      if (box.clientHeight === 0) return
+      if (!shrinks(element) || fits(element.fontSize)) return mark(overflow || !fits(element.fontSize))
       let low = MIN_FONT
       let high = element.fontSize
       while (high - low > 0.05) {
@@ -82,43 +108,62 @@ function DesignText({ element, words, edit, extra, motion }: { element: Text; wo
         if (fits(size)) low = size
         else high = size
       }
-      el.style.fontSize = `${low}cqh`
+      mark(!fits(low))
     }
     fitRef.current = fit
     fit()
     const observer = new ResizeObserver(fit)
     observer.observe(box)
     return () => observer.disconnect()
-  }, [element, words, editing])
+  }, [element, words, editing, overflow, box.width, box.height])
 
-  // Editing starts with the words in place, the caret at the end and everything selected.
+  // Editing starts with the words in place and selected, so typing replaces them; or with the first letter typed.
+  const editId = edit?.id
   useLayoutEffect(() => {
     const el = textRef.current
     if (!editing || !el) return
-    el.textContent = words
+    const initial = edit.initial
+    el.textContent = initial ?? words
     el.focus()
     const range = document.createRange()
     range.selectNodeContents(el)
+    if (initial !== undefined) range.collapse(false)
     const selection = window.getSelection()
     selection?.removeAllRanges()
     selection?.addRange(range)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when editing starts
-  }, [editing])
+    if (initial !== undefined) edit.onInput?.(initial)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when editing starts, or moves to another element
+  }, [editing, editId])
+
+  /** Set while a key ends the edit, so the blur that follows does not commit it a second time. */
+  const ended = useRef(false)
+  useLayoutEffect(() => {
+    ended.current = false
+  }, [editing, editId])
 
   function onKeyDown(e: KeyboardEvent<HTMLParagraphElement>) {
     e.stopPropagation()
-    if (e.key === 'Escape') {
+    const el = e.currentTarget
+    const end = (action: () => void) => {
       e.preventDefault()
-      edit?.onCancel()
-    } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault()
-      e.currentTarget.blur()
+      ended.current = true
+      action()
     }
+    if (e.key === 'Escape') end(() => edit?.onCancel())
+    else if (e.key === 'Enter' && !e.shiftKey) end(() => edit?.onCommit(editedText(el)))
+    else if (e.key === 'Tab' && edit?.onTab) end(() => edit.onTab!(editedText(el), e.shiftKey))
   }
 
   const { shadow, outline } = element
+  // Auto width keeps a line that fits on one line, whatever the browser's own measure.
+  const oneLine = element.sizing === 'autoWidth' && box.width < element.maxWidth - 0.01
   return (
-    <div ref={boxRef} className={`dv-el dv-text${extra}`} style={{ ...placement(element, motion), justifyContent: JUSTIFY[element.verticalAlign], textAlign: element.align }}>
+    <div
+      ref={boxRef}
+      className={`dv-el dv-text${oneLine ? ' dv-one-line' : ''}${extra}`}
+      data-id={element.id}
+      style={{ ...placement(element, box, motion), justifyContent: JUSTIFY[element.verticalAlign], textAlign: element.align }}
+    >
       <p
         ref={textRef}
         className={editing ? 'editing' : undefined}
@@ -138,8 +183,11 @@ function DesignText({ element, words, edit, extra, motion }: { element: Text; wo
         contentEditable={editing ? 'plaintext-only' : undefined}
         suppressContentEditableWarning
         spellCheck={editing}
-        onInput={() => fitRef.current()}
-        onBlur={editing ? (e) => edit.onCommit(e.currentTarget.innerText.replace(/\n$/, '')) : undefined}
+        onInput={(e) => {
+          edit?.onInput?.(editedText(e.currentTarget))
+          fitRef.current()
+        }}
+        onBlur={editing ? (e) => !ended.current && edit.onCommit(editedText(e.currentTarget)) : undefined}
         onKeyDown={editing ? onKeyDown : undefined}
         onPointerDown={editing ? (e) => e.stopPropagation() : undefined}
       >
@@ -149,8 +197,11 @@ function DesignText({ element, words, edit, extra, motion }: { element: Text; wo
   )
 }
 
-function DesignElementView({ element, fields, edit, placeholders, extra, motion }: {
+function DesignElementView({ element, box, overflow, fields, edit, placeholders, extra, motion }: {
   element: DesignElement
+  /** Where the layout put it. */
+  box: ThemeBox
+  overflow: boolean
   fields?: Partial<Record<DesignTextField, string>>
   edit?: InlineEdit
   placeholders: boolean
@@ -161,14 +212,24 @@ function DesignElementView({ element, fields, edit, placeholders, extra, motion 
 }) {
   switch (element.kind) {
     case 'text':
-      return <DesignText element={element} words={shownText(element, fields)} edit={edit?.id === element.id ? edit : undefined} extra={extra} motion={motion} />
+      return (
+        <DesignText
+          element={element}
+          box={box}
+          words={shownText(element, fields)}
+          edit={edit?.id === element.id ? edit : undefined}
+          extra={extra}
+          motion={motion}
+          overflow={overflow}
+        />
+      )
     case 'rect': {
       const { fill, border, shadow } = element
       return (
         <div
           className={`dv-el${extra}`}
           style={{
-            ...placement(element, motion),
+            ...placement(element, box, motion),
             background: fill.kind === 'solid' ? fill.color : `linear-gradient(${fill.angle}deg, ${fill.from}, ${fill.to})`,
             borderRadius: `${element.radius}cqh`,
             border: border.width > 0 ? `${border.width}cqh solid ${border.color}` : undefined,
@@ -179,13 +240,33 @@ function DesignElementView({ element, fields, edit, placeholders, extra, motion 
     }
     case 'line':
       return (
-        <div className={`dv-el dv-line${extra}`} style={placement(element, motion)}>
+        <div className={`dv-el dv-line${extra}`} style={placement(element, box, motion)}>
           <span style={{ borderTop: `${element.thickness}cqh ${element.dashed ? 'dashed' : 'solid'} ${element.color}` }} />
         </div>
       )
-    case 'image':
-      if (!element.src) return placeholders ? <div className={`dv-el dv-image-empty${extra}`} style={placement(element, motion)} /> : null
-      return <img className={`dv-el${extra}`} src={element.src} alt="" draggable={false} style={{ ...placement(element, motion), objectFit: element.fit, borderRadius: `${element.radius}cqh` }} />
+    case 'image': {
+      if (!element.src) return placeholders ? <div className={`dv-el dv-image-empty${extra}`} style={placement(element, box, motion)} /> : null
+      if (element.slice) {
+        // 9 slice: the picture as a border image, its corners and edges at their designed size.
+        const b = nineSliceBorders(element.slice, element.box, box)
+        const s = element.slice
+        return (
+          <div
+            className={`dv-el dv-slice${extra}`}
+            style={{
+              ...placement(element, box, motion),
+              borderStyle: 'solid',
+              borderColor: 'transparent',
+              borderWidth: `${b.top}cqh ${b.right}cqw ${b.bottom}cqh ${b.left}cqw`,
+              borderImageSource: `url("${element.src}")`,
+              borderImageSlice: `${s.top}% ${s.right}% ${s.bottom}% ${s.left}% fill`,
+              borderImageRepeat: 'stretch',
+            }}
+          />
+        )
+      }
+      return <img className={`dv-el${extra}`} src={element.src} alt="" draggable={false} style={{ ...placement(element, box, motion), objectFit: element.fit, borderRadius: `${element.radius}cqh` }} />
+    }
   }
 }
 
@@ -194,11 +275,13 @@ function DesignElementView({ element, fields, edit, placeholders, extra, motion 
  * cqh of this view. Bound text shows `fields` when given, else its sample words. `checker` shows a transparent
  * background as a checkerboard, as an editor does.
  */
-export function DesignView({ style, fields, edit, checker = false, placeholders = false, onAir = false, lowerThirdLive = false, phase = null, className = '' }: {
+export function DesignView({ style, fields, edit, checker = false, placeholders = false, warnings = false, onAir = false, lowerThirdLive = false, phase = null, className = '' }: {
   style: DesignStyle
   fields?: Partial<Record<DesignTextField, string>>
   edit?: InlineEdit
   checker?: boolean
+  /** Marks text whose words do not fit, as the editors do. */
+  warnings?: boolean
   /** Shows an image element with no picture yet as an empty frame. */
   placeholders?: boolean
   /** On an output: fills the screen, and the elements' loops run. */
@@ -210,12 +293,13 @@ export function DesignView({ style, fields, edit, checker = false, placeholders 
   className?: string
 }) {
   const { background } = style
+  const layout = useDesignLayout(style, fields)
   const timeline = phase ? new Map(designTimeline(style.elements, phase).entries.map((entry) => [entry.id, entry])) : null
   const extra = (element: DesignElement) =>
     onAir ? `${element.loop !== 'none' ? ` dv-loop-${element.loop}` : ''}${lowerThirdLive && element.hideWithLowerThird ? ' dv-aside' : ''}` : ''
   return (
     <div
-      className={`design-view${checker && background.kind === 'transparent' ? ' checker' : ''}${onAir ? ' on-air' : ''} ${className}`}
+      className={`design-view${checker && background.kind === 'transparent' ? ' checker' : ''}${onAir ? ' on-air' : ''}${warnings ? ' warnings' : ''} ${className}`}
       style={backgroundCss(background)}
     >
       {background.kind === 'image' && <img className="dv-background" src={background.src} alt="" draggable={false} style={{ objectFit: background.fit }} />}
@@ -224,6 +308,8 @@ export function DesignView({ style, fields, edit, checker = false, placeholders 
           <DesignElementView
             key={element.id}
             element={element}
+            box={layout.boxes.get(element.id) ?? element.box}
+            overflow={layout.overflow.has(element.id)}
             fields={fields}
             edit={edit}
             placeholders={placeholders}

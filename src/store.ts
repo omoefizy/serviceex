@@ -122,6 +122,26 @@ type BrowseSnapshot = Pick<
   'selectedSong' | 'deckTitle' | 'slides' | 'deckType' | 'deckKey' | 'deckThemeId' | 'activeItemId'
 >
 
+/** Something that went live, for Recently shown: an item (its slides as they were) or a lower third. */
+export interface RecentItem {
+  /** Unique while the app runs, for Resend. */
+  id: number
+  /** The item's deck key, or the lower third's words and design: sending it again moves it to the top. */
+  key: string
+  kind: DeckType | 'lowerThird'
+  title: string
+  /** The words of the slide that was live last, or the lower third's second line. */
+  detail: string
+  /** An item: what the grid held, and the slide that was live last. */
+  source?: BrowseSnapshot
+  slideIndex?: number
+  /** A lower third. */
+  line?: LowerThirdLine
+}
+
+/** How many items Recently shown keeps. */
+export const RECENT_LIMIT = 8
+
 /** One run of the ticker: these messages, scrolling from `startedAt`. */
 export interface TickerRun {
   runId: number
@@ -248,6 +268,8 @@ interface OperatorState {
   live: LiveState
   /** What was live before, newest last, for Go Back. */
   liveHistory: LiveState[]
+  /** The last items and lower thirds sent live, newest first (see RECENT_LIMIT). */
+  recentlyShown: RecentItem[]
 
   /** App settings from the main process (crossfade, output display, logo, appearance, backups). */
   settings: AppSettings
@@ -283,7 +305,7 @@ interface OperatorState {
   lowerThirdPointIndex: number
   /** The lower third staged on the Preview monitor; Show live (or Enter in the workspace) puts it on air. */
   lowerThirdPreview: LiveLowerThird | null
-  /** The Lower thirds workspace in place of the order of service and the middle column. */
+  /** The Lower thirds workspace in place of the schedule and the middle column. */
   lowerThirdsOpen: boolean
   /** The design selected in the workspace: what typed lines and points without their own design show in. */
   lowerThirdWorkspaceDesignId: number | null
@@ -338,6 +360,12 @@ interface OperatorState {
   previousSlide(): void
   /** Puts the slide that was live before the current one back on screen. */
   goBack(): void
+  /** Puts a recently shown item or lower third back on Preview (staged) or live. */
+  resendRecent(id: number, where: 'preview' | 'live'): void
+  /** The queue: the live item's slides after the one on screen. Plays one now, takes one out, or moves one. */
+  playQueued(index: number): void
+  removeQueued(index: number): void
+  moveQueued(from: number, to: number): void
   /** Starts the ticker with these messages in turn, from the first, replacing whatever it was running. */
   startAlerts(messages: AlertMessage[]): void
   /** Interrupts the ticker with a priority message; the normal messages carry on where they were afterwards. */
@@ -609,6 +637,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
   activeItemId: null,
   live: NOTHING_LIVE,
   liveHistory: [],
+  recentlyShown: [],
   settings: DEFAULT_SETTINGS,
   themes: [],
   themeDefaults: null,
@@ -740,7 +769,7 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
       powerPoint,
       powerPointCue: powerPoint ? ++powerPointCues : 0,
     }
-    set({ ...leaveSlide(s, live), liveHistory: historyBefore(s, live), highlightIndex: index })
+    set({ ...leaveSlide(s, live), liveHistory: historyBefore(s, live), highlightIndex: index, recentlyShown: rememberSlide(s.recentlyShown, live) })
   },
 
   goLiveHighlighted() {
@@ -780,6 +809,44 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     // With Clear highlights when the slide changes on, the slide coming back has no marks either.
     const slides = s.settings.highlightClearOnSlideChange ? unmarkAt(previous.slides, previous.slideIndex) : previous.slides
     set({ ...leaveSlide(s, { ...previous, slides, mode: 'show', alert: live.alert, lowerThird: live.lowerThird }), liveHistory: liveHistory.slice(0, -1) })
+  },
+
+  resendRecent(id, where) {
+    const recent = get().recentlyShown.find((r) => r.id === id)
+    if (!recent) return
+    if (recent.line) {
+      if (where === 'live') get().showLowerThirdLine(recent.line)
+      else get().previewLowerThirdLine(recent.line)
+      return
+    }
+    if (!recent.source) return
+    // Back in the grid as it went live, on the slide that was live last.
+    loadToken++
+    const index = Math.min(recent.slideIndex ?? 0, recent.source.slides.length - 1)
+    set({ ...recent.source, highlightIndex: index })
+    if (where === 'live') get().goLive(index)
+  },
+
+  playQueued(index) {
+    const { live } = get()
+    if (live.slideIndex === null || index <= live.slideIndex || index >= live.slides.length || live.powerPoint) return
+    showLiveSlide(live.slides, index)
+  },
+
+  removeQueued(index) {
+    const { live } = get()
+    if (live.slideIndex === null || index <= live.slideIndex || index >= live.slides.length) return
+    set({ live: { ...live, slides: live.slides.filter((_, i) => i !== index) } })
+  },
+
+  moveQueued(from, to) {
+    const { live } = get()
+    const first = (live.slideIndex ?? Infinity) + 1
+    if (from === to || from < first || to < first || from >= live.slides.length || to >= live.slides.length) return
+    const slides = [...live.slides]
+    const [moved] = slides.splice(from, 1)
+    slides.splice(to, 0, moved)
+    set({ live: { ...live, slides } })
   },
 
   startAlerts(messages) {
@@ -1182,7 +1249,14 @@ export const useOperatorStore = create<OperatorState>((set, get) => ({
     // An update in the same design changes the words in place; another design comes on afresh.
     const runId = live.lowerThird && live.lowerThird.designId === line.designId ? live.lowerThird.runId : ++lowerThirdRuns
     const history = [line, ...lowerThirdHistory.filter((l) => l.headline !== line.headline || l.body !== line.body)].slice(0, LOWER_THIRD_HISTORY)
-    set({ live: { ...live, lowerThird: { runId, ...line } }, lowerThirdHistory: history })
+    const recent = remember(get().recentlyShown, {
+      key: `lowerThird:${line.designId ?? ''}:${line.headline}\n${line.body}\n${line.number ?? ''}`,
+      kind: 'lowerThird',
+      title: line.headline || line.body,
+      detail: line.headline ? line.body : '',
+      line,
+    })
+    set({ live: { ...live, lowerThird: { runId, ...line } }, lowerThirdHistory: history, recentlyShown: recent })
     // The hold timer counts from the latest show or update.
     clearTimeout(lowerThirdTimer)
     if (settings.lowerThirdHoldSeconds > 0) {
@@ -1510,7 +1584,37 @@ function showLiveSlide(slides: DeckSlide[], index: number): void {
   const live: LiveState = { ...s.live, slides, slideIndex: index, powerPoint, powerPointCue: powerPoint ? ++powerPointCues : 0 }
   const follow = s.live.itemType === 'scripture' && selectBrowsingLive(s)
   const left = leaveSlide(s, live)
-  useOperatorStore.setState({ ...left, liveHistory: historyBefore(s, live), ...(follow ? { slides: left.live.slides, highlightIndex: index } : {}) })
+  useOperatorStore.setState({
+    ...left,
+    liveHistory: historyBefore(s, live),
+    recentlyShown: rememberSlide(s.recentlyShown, live),
+    ...(follow ? { slides: left.live.slides, highlightIndex: index } : {}),
+  })
+}
+
+// ---------- Recently shown ----------
+
+let recentIds = 0
+
+/** Puts an entry at the top of Recently shown: one with the same key moves up rather than showing twice. */
+function remember(list: RecentItem[], entry: Omit<RecentItem, 'id'>): RecentItem[] {
+  const same = list.find((r) => r.key === entry.key)
+  return [{ ...entry, id: same?.id ?? ++recentIds }, ...list.filter((r) => r.key !== entry.key)].slice(0, RECENT_LIMIT)
+}
+
+/** Recently shown once `live` is on screen: its item at the top, at this slide, with the slides as they are now. */
+function rememberSlide(list: RecentItem[], live: LiveState): RecentItem[] {
+  const slide = live.slideIndex === null ? undefined : live.slides[live.slideIndex]
+  if (!live.deckKey || !live.source || !slide) return list
+  const words = slide.page ? (slide.pageText?.split('\n')[0] ?? '') : slide.text.replace(/\s+/g, ' ').trim()
+  return remember(list, {
+    key: live.deckKey,
+    kind: live.itemType ?? 'song',
+    title: live.title ?? 'Untitled',
+    detail: slide.caption && live.itemType === 'scripture' ? slide.caption : words.slice(0, 120),
+    source: { ...live.source, slides: live.slides },
+    slideIndex: live.slideIndex ?? 0,
+  })
 }
 
 /** True while the next or previous verse is being read, so key presses meanwhile do not skip ahead. */

@@ -3,7 +3,8 @@
 // size; rotation works in units of screen height so it stays true on the 16:9 canvas. Unlike the theme editor, boxes
 // may run off the canvas, as a full width bar or a bleed often does.
 
-import type { DesignElement, ThemeBox } from '../../shared/types'
+import { paddingBetween } from '../../shared/autoLayout'
+import type { DesignElement, DesignTextSizing, ThemeBox } from '../../shared/types'
 import { snapShift, snapTargets, unionBox, type Guide, type Handle } from './themeLayout'
 
 export { HANDLES, type Guide, type Handle } from './themeLayout'
@@ -127,6 +128,29 @@ export function moveToIndex<T extends { id: string }>(items: T[], id: string, in
 /** Copies of `copied` with new ids, moved by `offset` percent, for paste and duplicate. Copies are never locked. */
 export function copiesOf(copied: DesignElement[], newId: () => string, offset: number): DesignElement[] {
   return copied.map((e) => ({ ...e, id: newId(), locked: false, box: roundBox({ ...e.box, x: e.box.x + offset, y: e.box.y + offset }) }))
+}
+
+/** A text element and the shapes fitted to it move together, so a background never parts from its words. */
+export function withLinked(elements: DesignElement[], ids: string[]): string[] {
+  const set = new Set(ids)
+  for (const e of elements) if (set.has(e.id) && e.fitToText) set.add(e.fitToText.textId)
+  for (const e of elements) if (e.fitToText && set.has(e.fitToText.textId)) set.add(e.id)
+  return elements.filter((e) => set.has(e.id) && !e.locked).map((e) => e.id)
+}
+
+/**
+ * An element after its frame was resized to `box` (from `from`, where it was drawn). Stretching text that is resized
+ * sideways wraps at the new width (Auto height); made taller or shorter by hand it becomes Fixed, as in Figma. A shape
+ * fitted to text keeps the new size as its padding around the text.
+ */
+export function resizedElement(element: DesignElement, box: ThemeBox, handle: Handle, boxes: Map<string, ThemeBox>): DesignElement {
+  if (element.kind === 'text' && (element.sizing === 'autoWidth' || element.sizing === 'autoHeight')) {
+    const sizing: DesignTextSizing = handle.includes('n') || handle.includes('s') ? 'fixed' : 'autoHeight'
+    return { ...element, sizing, box }
+  }
+  const text = element.fitToText ? boxes.get(element.fitToText.textId) : undefined
+  if (element.fitToText && text) return { ...element, box, fitToText: { ...element.fitToText, padding: paddingBetween(box, text) } } as DesignElement
+  return { ...element, box }
 }
 
 // ---------- Undo and redo ----------

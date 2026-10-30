@@ -94,7 +94,7 @@ function AddMenu({ disabled, importing, onAnnouncement, onPresentation, onSermon
         onClick={() => setOpen(!open)}
       />
       {open && (
-        <div className="live-menu-list" role="menu" aria-label="Add to the order of service">
+        <div className="live-menu-list" role="menu" aria-label="Add to the schedule">
           <button type="button" role="menuitem" onClick={choose(() => showLibraryTab('songs'))}>
             <Music size={16} aria-hidden="true" />
             <span>Song…</span>
@@ -111,7 +111,7 @@ function AddMenu({ disabled, importing, onAnnouncement, onPresentation, onSermon
             type="button"
             role="menuitem"
             disabled={importing}
-            title="PowerPoint, PDF or images, one slide per page; or drop files and folders on the order of service"
+            title="PowerPoint, PDF or images, one slide per page; or drop files and folders on the schedule"
             onClick={choose(onPresentation)}
           >
             <Presentation size={16} aria-hidden="true" />
@@ -293,36 +293,15 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
     setDropIndex(null)
   }
 
-  const stateOf = (item: ServiceItem, index: number) =>
-    item.id === liveItemId ? ', on screen now' : item.id === activeItemId ? ', in preview' : liveIndex !== -1 && index === liveIndex + 1 ? ', next' : liveIndex !== -1 && index < liveIndex ? ', done' : ''
-
-  // The rail: a 64 pixel column of item icons, when collapsed or in a window under 1280 pixels.
+  // The rail: a slim column with the expand control at the top and the panel's name reading bottom to top. The whole
+  // rail is the button, so it is easy to hit.
   if (collapsed) {
     return (
-      <aside className="schedule collapsed" aria-label="Order of service">
-        <IconButton label="Show the order of service" icon={<ChevronRight size={18} />} aria-expanded={false} onClick={() => onCollapsedChange(false)} />
-        <ol className="schedule-rail-items">
-          {items.map((item, index) => (
-            <li key={item.id}>
-              <button
-                type="button"
-                className={['schedule-rail-item', item.id === activeItemId && 'active', item.id === liveItemId && 'on-air'].filter(Boolean).join(' ')}
-                title={`${item.title}: click to preview, double-click to go live`}
-                aria-label={`${item.title}${stateOf(item, index)}`}
-                aria-current={item.id === activeItemId ? 'true' : undefined}
-                onClick={() => run(() => loadItem(item))}
-                onDoubleClick={() =>
-                  run(async () => {
-                    if (await loadItem(item)) useOperatorStore.getState().goLive(0)
-                  })
-                }
-              >
-                <ItemIcon type={item.type} />
-              </button>
-            </li>
-          ))}
-        </ol>
-        <IconButton className="schedule-rail-add" label="Add song, slide or verse" icon={<Plus size={18} />} disabled={!service} onClick={() => showLibraryTab('songs')} />
+      <aside className="schedule collapsed" aria-label="Schedule">
+        <button type="button" className="panel-rail-toggle" aria-expanded={false} aria-label="Show the schedule" title="Show the schedule" onClick={() => onCollapsedChange(false)}>
+          <ChevronRight size={16} aria-hidden="true" />
+          <span className="panel-rail-label">Schedule</span>
+        </button>
       </aside>
     )
   }
@@ -348,7 +327,7 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
     >
       <header className="panel-header ui-panel-head schedule-head">
         <div className="schedule-head-text">
-          <h2 className="ui-panel-title">Order of service</h2>
+          <h2 className="ui-panel-title">Schedule</h2>
           {service && (
             <span className="ui-panel-meta schedule-count">
               {items.length} item{items.length === 1 ? '' : 's'}
@@ -365,7 +344,7 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
           />
           <IconButton
             className="schedule-collapse"
-            label="Hide the order of service"
+            label="Hide the schedule"
             icon={<ChevronLeft size={18} />}
             aria-expanded={true}
             onClick={() => onCollapsedChange(true)}
@@ -515,8 +494,8 @@ export function SchedulePanel({ collapsed, onCollapsedChange }: Props) {
                   ) : null}
                 </button>
                 <IconButton
-                  label={`Remove ${item.title} from the order of service`}
-                  tooltip="Remove from the order of service"
+                  label={`Remove ${item.title} from the schedule`}
+                  tooltip="Remove from the schedule"
                   icon={<X size={14} />}
                   onClick={() => run(() => removeFromSchedule(item.id))}
                 />

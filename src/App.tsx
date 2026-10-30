@@ -6,12 +6,12 @@ import { CombineHost } from './components/CombineModal'
 import { CommandPalette } from './components/CommandPalette'
 import { ListenerPanel } from './components/ListenerPanel'
 import { LiveMonitor, PreviewMonitor } from './components/LivePreview'
-import { LowerThirdCard } from './components/LowerThirdPanel'
 import { LowerThirdsWorkspace } from './components/LowerThirdsWorkspace'
 import { PlansModal } from './components/PlansModal'
 import { MediaPanel } from './components/MediaPanel'
 import { PanelBoundary } from './components/PanelBoundary'
 import { PresentationsPanel } from './components/PresentationsPanel'
+import { QueueCard } from './components/QueueCard'
 import { SchedulePanel } from './components/SchedulePanel'
 import { SermonsPanel } from './components/SermonsPanel'
 import { ScripturePanel } from './components/ScripturePanel'
@@ -53,7 +53,7 @@ import {
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
 
 /**
- * What the splitters resize: the Order of service's width, the monitors' column width and the finder's height. A size
+ * What the splitters resize: the Schedule's width, the monitors' column width and the finder's height. A size
  * left out is the stylesheet's default (--order-width, --monitor-column-width, --finder-height); a double click on a
  * splitter puts it back. The middle column keeps at least its stylesheet minimum, so a column cannot squeeze it away.
  */
@@ -101,7 +101,7 @@ function Slot({ show, children }: { show: boolean; children: ReactNode }) {
 function App() {
   const [chosenTab, setLibraryTab] = useState<(typeof LIBRARY_TABS)[number]['id']>('scripture')
   const railWidth = useMediaQuery('(max-width: 1279px)')
-  // Below 1280 pixels the Order of service is a rail unless it was opened out for now.
+  // Below 1280 pixels the Schedule is a rail unless it was opened out for now.
   const [orderOpenedOut, setOrderOpenedOut] = useState(false)
   const [sizes, setSizes] = usePersistentState<PanelSizes>('serviceex.panelSizes', {}, isPanelSizes)
   /** The live transcript, docked over the finder in the middle column. */
@@ -125,7 +125,7 @@ function App() {
     return () => window.removeEventListener(SHOW_LIBRARY_TAB_EVENT, show)
   }, [])
 
-  // The top bar's service button: the Order of service unfolds with the keyboard on its service picker.
+  // The top bar's service button: the Schedule unfolds with the keyboard on its service picker.
   useEffect(() => {
     const show = () => {
       setScheduleCollapsed(false)
@@ -159,7 +159,7 @@ function App() {
   const settingsOpen = useOperatorStore((s) => s.settingsOpen)
   const streamPanelOpen = useOperatorStore((s) => s.streamPanelOpen)
   const sermonsOpen = useOperatorStore((s) => s.sermonsOpen)
-  // The Lower thirds workspace takes the order of service and the middle column; Live and Preview stay on the right.
+  // The Lower thirds workspace takes the schedule and the middle column; Live and Preview stay on the right.
   const lowerThirdsOpen = useOperatorStore((s) => s.lowerThirdsOpen && can('lowerThirds'))
   const paletteOpen = useOperatorStore((s) => s.paletteOpen)
   const plansOpen = usePlansOpen()
@@ -340,9 +340,10 @@ function App() {
         st.setPaletteOpen(!st.paletteOpen)
         return
       }
-      // Cmd+L (Ctrl+L) jumps to the lower third headline from anywhere.
+      // Cmd+L (Ctrl+L) jumps to the lower third headline from anywhere, in the Lower thirds workspace.
       if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'l') {
         e.preventDefault()
+        if (can('lowerThirds')) st.openLowerThirds(true)
         focusLowerThirdHeadline()
         return
       }
@@ -435,7 +436,7 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  // Three columns: the Order of service (236px, a 64px rail below 1280 pixels), the middle (Heard in the sermon, the
+  // Three columns: the Schedule (236px, a 64px rail below 1280 pixels), the middle (Heard in the sermon, the
   // main area, the finder) and the monitors (Live, Preview, Lower third; 352px). Splitters between them resize them.
   // Nothing scrolls but the lists inside.
   return (
@@ -461,7 +462,7 @@ function App() {
               <SchedulePanel collapsed={orderRail} onCollapsedChange={setOrderRail} />
             </PanelBoundary>
           </div>
-          {!orderRail && splitter('order', 'Resize the order of service', 'vertical', 1, '.operator-order')}
+          {!orderRail && splitter('order', 'Resize the schedule', 'vertical', 1, '.operator-order')}
         </Slot>
         <div className="operator-middle" hidden={lowerThirdsOpen}>
           {centreOpen &&
@@ -552,11 +553,9 @@ function App() {
                 </PanelBoundary>
               </>
             )}
-            {show.points && !lowerThirdsOpen && (
-              <PanelBoundary name="Lower third">
-                <LowerThirdCard />
-              </PanelBoundary>
-            )}
+            <PanelBoundary name="Queue">
+              <QueueCard />
+            </PanelBoundary>
           </div>
         </Slot>
       </main>

@@ -81,7 +81,7 @@ export function SlideGrid() {
     const item = s.service?.items.find((i) => i.id === s.activeItemId)
     return item && s.deckKey === `item:${item.id}` && (item.type === 'scripture' || item.type === 'announcement') ? item.id : null
   })
-  /** A Scripture group from the Order of service, which opens in the combine editor. */
+  /** A Scripture group from the Schedule, which opens in the combine editor. */
   const groupItemId = useOperatorStore((s) => {
     const item = s.service?.items.find((i) => i.id === s.activeItemId)
     return item?.type === 'scripture' && item.payload.group && s.deckKey === `item:${item.id}` ? item.id : null

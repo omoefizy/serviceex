@@ -1,4 +1,4 @@
-import { Bookmark, EyeOff, LayoutTemplate, ListPlus, Paintbrush, Pin, PinOff, Play, RefreshCw, SkipForward, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { Bookmark, EyeOff, LayoutTemplate, ListPlus, Pin, PinOff, Play, RefreshCw, SkipForward, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { hasFormatting, matching, plainText, richOrPlain, trimRich } from '../../shared/richText'
 import type { AppSettings, LowerThirdAnimation, RichText, SavedLowerThirdLine } from '../../shared/types'
@@ -13,8 +13,7 @@ import type { DesignerDocument } from './Designer'
 import { DesignsLibrary } from './DesignsLibrary'
 import type { FormatControl } from './FormatToolbar'
 import { RichTextEditor } from './RichTextEditor'
-import { HeaderPopover } from './LivePreview'
-import { ErrorNote, Panel } from './ui'
+import { ErrorNote } from './ui'
 
 const ANIMATIONS: { value: LowerThirdAnimation; label: string }[] = [
   { value: 'slide', label: 'Slide' },
@@ -103,100 +102,9 @@ function HeadlineField({ typing }: { typing: ReturnType<typeof useLowerThirdTypi
 }
 
 /**
- * The Lower third card under Preview: the headline, a picker of the saved lines, and Show and Hide in one toggle that
- * reads ON AIR while it is up. Edit style opens the whole panel (body, template, saved lines, points, animation).
- */
-export function LowerThirdCard() {
-  const live = useOperatorStore((s) => s.live.lowerThird)
-  const savedLines = useOperatorStore((s) => s.settings.lowerThirdSavedLines)
-  const show = useOperatorStore((s) => s.showLowerThird)
-  const hide = useOperatorStore((s) => s.hideLowerThird)
-  const typing = useLowerThirdTyping()
-  const [styleOpen, setStyleOpen] = useState(false)
-  const { draft } = typing
-  const empty = !draft.headline.trim() && !draft.body.trim()
-  const edited = live !== null && !empty && !sameLine(draft, live)
-  const saved = [...savedLines].sort((a, b) => Number(b.pinned) - Number(a.pinned))
-
-  return (
-    <Panel
-      className={`lower-third-card${live ? ' on-air' : ''}`}
-      title="Lower third"
-      meta={
-        <span className={`lower-third-status${live ? ' live' : ''}`} role="status">
-          {live ? 'ON AIR' : 'Off'}
-        </span>
-      }
-      actions={
-        <HeaderPopover
-          label="Lower third style"
-          text="Edit style"
-          tooltip="Body text, template, saved lines, points, animation and timing"
-          icon={<Paintbrush size={14} aria-hidden="true" />}
-          open={styleOpen}
-          onOpenChange={setStyleOpen}
-          className="lower-third-popover above"
-        >
-          <LowerThirdPanel headline={false} />
-        </HeaderPopover>
-      }
-    >
-      <div className="lower-third-card-row">
-        <HeadlineField typing={typing} />
-        {saved.length > 0 && (
-          <select
-            className="input lower-third-saved"
-            aria-label="Saved lower thirds"
-            title="Put a saved line in the field; Enter or Show puts it up"
-            value=""
-            onChange={(e) => {
-              const line = saved.find((l) => l.id === e.target.value)
-              if (line) typing.type({ headline: line.headline, body: line.body, headlineRich: line.headlineRich, bodyRich: line.bodyRich })
-            }}
-          >
-            <option value="" disabled>
-              Saved
-            </option>
-            {saved.map((line) => (
-              <option key={line.id} value={line.id}>
-                {line.body ? `${line.headline} · ${line.body}` : line.headline}
-              </option>
-            ))}
-          </select>
-        )}
-        {edited ? (
-          <button type="button" className="button primary lower-third-toggle" onClick={show} title={`Change the live lower third to this (Enter or ${MOD}Enter)`}>
-            <RefreshCw size={14} aria-hidden="true" /> Update
-          </button>
-        ) : (
-          <button
-            type="button"
-            className={`button lower-third-toggle${live ? ' on' : ' primary'}`}
-            aria-pressed={live !== null}
-            disabled={!live && empty}
-            title={live ? 'On air. Take it off (Esc)' : 'Show it on every output (Enter)'}
-            onClick={live ? hide : show}
-          >
-            {live ? (
-              <>
-                <EyeOff size={14} aria-hidden="true" /> Hide
-              </>
-            ) : (
-              <>
-                <Play size={14} aria-hidden="true" /> Show
-              </>
-            )}
-          </button>
-        )}
-      </div>
-    </Panel>
-  )
-}
-
-/**
  * Types a lower third and puts it on every output, on top of everything. Enter shows it, Esc hides it, Up and Down step through the
  * lines used this service, and Cmd+L (Ctrl+L) jumps to the headline from anywhere. Below: saved lines and a sermon's
- * points. Without `headline` it leaves the headline to the Lower third card, which shows it.
+ * points. Without `headline` it leaves the headline to the Lower thirds workspace, which shows it.
  */
 export function LowerThirdPanel({ headline = true }: { headline?: boolean }) {
   const settings = useOperatorStore((s) => s.settings)

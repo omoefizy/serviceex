@@ -8,7 +8,6 @@ import {
   Eraser,
   EyeOff,
   Highlighter,
-  ListOrdered,
   Pencil,
   MousePointerClick,
   Play,
@@ -27,8 +26,7 @@ import type { DualTranslation, HighlightKind, LivePowerPointStatus, LowerThirdDi
 import { reportError, type ErrorLike } from '../lib/errors'
 import { pickHighlightColor } from '../lib/highlights'
 import { editScriptureText } from '../lib/scriptureGroup'
-import { MOD } from '../lib/shortcuts'
-import { parseVerseCaption, slideLines } from '../lib/slides'
+import { CLEAR_LOWER_THIRD_KEY, MOD } from '../lib/shortcuts'
 import { slideTranslation } from '../lib/translations'
 import { useDismiss } from '../lib/useDismiss'
 import {
@@ -40,7 +38,6 @@ import {
   selectPreviewSlide,
   slideTheme,
   useOperatorStore,
-  type DeckSlide,
   type TranslationTarget,
 } from '../store'
 import { CombineTray } from './CombineModal'
@@ -421,10 +418,8 @@ export function PreviewMonitor() {
   const slideCount = useOperatorStore((s) => s.slides.length)
   const logoUrl = useOperatorStore((s) => s.settings.logoUrl)
   const goLiveHighlighted = useOperatorStore((s) => s.goLiveHighlighted)
-  const waiting = useOperatorStore((s) => (s.live.slideIndex === null ? 0 : s.live.slides.length - s.live.slideIndex - 1))
   const scripture = useOperatorStore((s) => s.deckType === 'scripture')
   const [toolsOpen, setToolsOpen] = useState(false)
-  const [queueOpen, setQueueOpen] = useState(false)
   // The lower third staged here, drawn by the overlay layers as it would go on air; compared as a string, so the
   // screen redraws only when it changes.
   const lowerThirdJson = useOperatorStore((s) => JSON.stringify(selectPreviewLowerThirdDisplay(s)))
@@ -459,23 +454,6 @@ export function PreviewMonitor() {
               onClick={() => editScriptureText(highlightIndex)}
             />
           )}
-          <HeaderPopover
-            label="Queue"
-            text="Queue"
-            tooltip="The slides of the live item still to come: what Next brings on screen"
-            icon={<ListOrdered size={15} aria-hidden="true" />}
-            badge={waiting}
-            open={queueOpen}
-            onOpenChange={setQueueOpen}
-            className="queue-popover"
-          >
-            <div className="queue-popover-head">
-              <strong>Queue</strong>
-              <span className="monitor-meta">{waiting} waiting</span>
-              <UpNextMeta />
-            </div>
-            <WaitingList />
-          </HeaderPopover>
           <HeaderPopover label="Preview tools" tooltip="Highlighting and translations for the preview" icon={<SlidersHorizontal size={16} />} open={toolsOpen} onOpenChange={setToolsOpen}>
             <HighlightBar where="preview" />
             <TranslationBar where="preview" part="chips" />
@@ -533,6 +511,8 @@ export function LiveMonitor() {
   const [dismissedFailure, setDismissedFailure] = useState(0)
   const [error, setError] = useState<ErrorLike | null>(null)
   const [toolsOpen, setToolsOpen] = useState(false)
+  const lowerThirdOnAir = useOperatorStore((s) => s.live.lowerThird !== null)
+  const hideLowerThird = useOperatorStore((s) => s.hideLowerThird)
 
   async function resend() {
     try {
@@ -584,6 +564,18 @@ export function LiveMonitor() {
       meta={<OnAirChip />}
       actions={
         <>
+          {lowerThirdOnAir && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="monitor-header-button clear-lower-third"
+              icon={<EyeOff size={14} aria-hidden="true" />}
+              title={`Take the lower third off air, leaving the slide (${CLEAR_LOWER_THIRD_KEY})`}
+              onClick={hideLowerThird}
+            >
+              Clear lower third
+            </Button>
+          )}
           <HeaderPopover label="Live tools" tooltip="Highlighting, crossfade, translations, Go Back" icon={<SlidersHorizontal size={16} />} open={toolsOpen} onOpenChange={setToolsOpen} className="live-tools-popover">
             <HighlightBar where="live" />
             <label className="fade-control">
@@ -664,43 +656,5 @@ function Transport() {
         Next
       </Button>
     </div>
-  )
-}
-
-/** "Sermon, then Offering": the next items in the Order of service after the live one. */
-function UpNextMeta() {
-  const next = useOperatorStore((s) => {
-    const items = s.service?.items ?? []
-    const at = items.findIndex((item) => item.id === s.live.scheduleItemId)
-    return at === -1 ? '' : items.slice(at + 1, at + 3).map((item) => item.title).join(', then ')
-  })
-  return next ? <span className="up-next-meta">Up next: {next}</span> : null
-}
-
-/** "John 3:17" from a verse caption ("John 3:17 KJV"); a song's section label, or the slide's number. */
-function slideName(slide: DeckSlide, index: number): string {
-  const verse = slide.caption ? parseVerseCaption(slide.caption) : null
-  if (verse) return `${verse.book} ${verse.chapter}:${verse.verse}${verse.part ?? ''}`
-  return slide.label || slide.caption || `Slide ${index + 1}`
-}
-
-/** The slides after the live one, one line each: what Next brings on screen. */
-function WaitingList() {
-  const live = useOperatorStore((s) => s.live)
-  const start = live.slideIndex === null ? null : live.slideIndex + 1
-  const waiting = start === null ? [] : live.slides.slice(start)
-  if (waiting.length === 0) return <p className="queue-note">{start === null ? 'Nothing is live yet.' : 'This is the last slide of the item.'}</p>
-  return (
-    <ol className="queue-list" aria-label="Waiting to go live">
-      {waiting.map((slide, i) => {
-        const text = slide.page ? slide.pageText?.split('\n')[0] || 'Presentation page' : slideLines(slide.text).map((line) => line.text).join(' ')
-        return (
-          <li key={start! + i} className="queue-row" title={text}>
-            <span className="queue-ref">{slideName(slide, start! + i)}</span>
-            <span className="queue-text">{text}</span>
-          </li>
-        )
-      })}
-    </ol>
   )
 }

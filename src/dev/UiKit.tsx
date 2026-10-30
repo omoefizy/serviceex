@@ -513,7 +513,7 @@ export default function UiKit() {
       </Section>
 
       <Section id="panel" title="Panel">
-        <Panel title="Order of service" meta="6 items" actions={<Button size="sm">Add</Button>} footer={<Button size="lg">Add song, slide or verse</Button>}>
+        <Panel title="Schedule" meta="6 items" actions={<Button size="sm">Add</Button>} footer={<Button size="lg">Add song, slide or verse</Button>}>
           <p className="kit-note">A panel: 16px corners, a Bricolage 17px title, the body under it.</p>
         </Panel>
       </Section>

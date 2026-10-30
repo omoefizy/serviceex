@@ -247,6 +247,7 @@ const designs: DesignsApi = {
   create: (name, style) => ipcRenderer.invoke('designs:create', name, style),
   update: (id, name, style) => ipcRenderer.invoke('designs:update', id, name, style),
   delete: (id) => ipcRenderer.invoke('designs:delete', id),
+  saveAsset: (bytes, extension) => ipcRenderer.invoke('designs:saveAsset', bytes, extension),
 }
 
 const output: WorshipDeckApi['output'] = {
