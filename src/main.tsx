@@ -6,6 +6,7 @@ import { RasterizeView } from './components/RasterizeView'
 import { StageView } from './components/StageView'
 import { StreamKeyView, StreamView } from './components/StreamView'
 import { installFonts } from './lib/fonts'
+import { migrateLegacyStorage } from './lib/legacyStorage'
 import { setEntitlements } from '../shared/features'
 // The UI fonts are bundled, not linked, so the app looks the same offline.
 import '@fontsource/figtree/400.css'
@@ -16,6 +17,8 @@ import '@fontsource/bricolage-grotesque/600.css'
 import '@fontsource/bricolage-grotesque/700.css'
 import './index.css'
 
+// Before anything reads its saved layout: settings kept under the WorshipDeck name move to ServiceEx's.
+migrateLegacyStorage(window.localStorage)
 installFonts()
 
 // Dev only: every shared component and state at #/ui-kit. Production builds drop it, and its import, entirely.

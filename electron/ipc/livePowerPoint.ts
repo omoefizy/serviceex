@@ -48,8 +48,10 @@ function assertTarget(value: unknown): PowerPointTarget | null {
 export function registerLivePowerPointIpc({ getOutputWindow, getOperatorWindow, outputKeepsOnTop, resourcesDir }: Options): LivePowerPoint {
   const controller = createSlideShowController((name) => path.join(resourcesDir, name))
   // PowerPoint for Mac is sandboxed; copies inside its own container open without a "Grant File Access" prompt.
-  const copyDir = path.join(process.platform === 'darwin' ? MAC_POWERPOINT_TMP : os.tmpdir(), 'WorshipDeck-live')
-  // Copies left by a session that did not end cleanly.
+  const tempRoot = process.platform === 'darwin' ? MAC_POWERPOINT_TMP : os.tmpdir()
+  const copyDir = path.join(tempRoot, 'ServiceEx-live')
+  // Copies left by a session that did not end cleanly, also under the name before the rename.
+  rm(path.join(tempRoot, 'WorshipDeck-live'), { recursive: true, force: true }).catch(() => undefined)
   rm(copyDir, { recursive: true, force: true })
     .then(() => mkdir(copyDir, { recursive: true }))
     .catch(() => undefined)
@@ -59,7 +61,7 @@ export function registerLivePowerPointIpc({ getOutputWindow, getOperatorWindow, 
     if (win && !win.isDestroyed()) win.webContents.send('livePowerPoint:status', status)
   }
 
-  // When a WorshipDeck window last lost the keyboard; PowerPoint taking it just now is given back.
+  // When a ServiceEx window last lost the keyboard; PowerPoint taking it just now is given back.
   let blurredAt = 0
   app.on('browser-window-blur', () => {
     blurredAt = Date.now()

@@ -110,7 +110,7 @@ export interface ComSlide {
 
 /** Exports each slide as a PNG into `outDir` with desktop PowerPoint through COM, read only and in the background. */
 export async function exportWithWindowsPowerPoint(file: string, outDir: string, script: string, signal?: AbortSignal): Promise<ComSlide[]> {
-  const work = await mkdtemp(path.join(os.tmpdir(), 'worshipdeck-ppt-'))
+  const work = await mkdtemp(path.join(os.tmpdir(), 'serviceex-ppt-'))
   try {
     const copy = path.join(work, `presentation${path.extname(file)}`)
     await copyFile(file, copy)
@@ -169,12 +169,12 @@ export async function exportWithMacPowerPoint(file: string, script: string, sign
     () => MAC_POWERPOINT_TMP,
     () => os.tmpdir(),
   )
-  const work = await mkdtemp(path.join(parent, 'WorshipDeck-'))
+  const work = await mkdtemp(path.join(parent, 'ServiceEx-'))
   try {
     const copy = path.join(work, `presentation${path.extname(file)}`)
     const pdf = path.join(work, 'presentation.pdf')
     await copyFile(file, copy)
-    // The first run asks the operator to let WorshipDeck control PowerPoint; osascript waits for the answer.
+    // The first run asks the operator to let ServiceEx control PowerPoint; osascript waits for the answer.
     await run('osascript', [script, copy, pdf], MAC_TIMEOUT_MS, signal).catch((error: RunError) => {
       if (error instanceof ImportCancelledError) throw error
       throw macPowerPointError(error, path.basename(file))
@@ -188,7 +188,7 @@ export async function exportWithMacPowerPoint(file: string, script: string, sign
 
 /** Converts to PDF with LibreOffice headless, using its own profile so it runs even while LibreOffice is open. */
 export async function exportWithLibreOffice(file: string, soffice: string, signal?: AbortSignal): Promise<Uint8Array> {
-  const work = await mkdtemp(path.join(os.tmpdir(), 'worshipdeck-lo-'))
+  const work = await mkdtemp(path.join(os.tmpdir(), 'serviceex-lo-'))
   try {
     const copy = path.join(work, `presentation${path.extname(file)}`)
     await copyFile(file, copy)

@@ -45,7 +45,7 @@ export async function renderSermonPdf(sermon: Sermon, options: SermonExportOptio
 
 /** Prints a page to PDF from a temporary file in a hidden, sandboxed window that may not navigate anywhere. */
 export async function printHtml(html: string, footerLine: string): Promise<Buffer> {
-  const file = path.join(app.getPath('temp'), `worshipdeck-sermon-${process.pid}-${Date.now()}.html`)
+  const file = path.join(app.getPath('temp'), `serviceex-sermon-${process.pid}-${Date.now()}.html`)
   await writeFile(file, html, 'utf8')
   const win = new BrowserWindow({
     show: false,

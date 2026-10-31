@@ -94,12 +94,12 @@ export function SlideGrid() {
   const [formatting, setFormatting] = useState(false)
   /** Thumbnail width in pixels, from the zoom slider; the grid never draws them under 180. */
   const [thumbWidth, setThumbWidth] = usePersistentState(
-    'worshipdeck.thumbWidth',
+    'serviceex.thumbWidth',
     180,
     (v): v is number => typeof v === 'number' && v >= 120 && v <= 400,
   )
   /** Thumbnails, or compact numbered rows of slide text. */
-  const [view, setView] = usePersistentState<SlideView>('worshipdeck.slideView', 'grid', (v): v is SlideView => v === 'grid' || v === 'list')
+  const [view, setView] = usePersistentState<SlideView>('serviceex.slideView', 'grid', (v): v is SlideView => v === 'grid' || v === 'list')
   const gridRef = useRef<HTMLDivElement>(null)
   /** The slide a library item is being dragged over. */
   const [dropIndex, setDropIndex] = useState<number | null>(null)

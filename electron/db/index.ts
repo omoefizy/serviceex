@@ -3,8 +3,10 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import Database from 'better-sqlite3'
 import { ensureVerseIndex, initSchema } from './schema'
+import { DB_FILE } from '../userDataMigration'
 
-const dbPath = path.join(app.getPath('userData'), 'worshipdeck.db')
+// A WorshipDeck database was moved here and renamed by ../migrateUserData before this module loads.
+const dbPath = path.join(app.getPath('userData'), DB_FILE)
 
 /** The KJV and WEB the installers ship, from `npm run import:bible -- --bundle`. */
 const bundledBiblePath = app.isPackaged

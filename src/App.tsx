@@ -110,7 +110,7 @@ function App() {
   /** The finder's tab row, where the Scripture tab puts its translation and search. */
   const [finderTools, setFinderTools] = useState<HTMLDivElement | null>(null)
   const welcome = useWelcome()
-  const [scheduleCollapsed, setScheduleCollapsed] = usePersistentState('worshipdeck.scheduleCollapsed', false, isBoolean)
+  const [scheduleCollapsed, setScheduleCollapsed] = usePersistentState('serviceex.scheduleCollapsed', false, isBoolean)
   const editingSongId = useOperatorStore((s) => s.editingSongId)
   const slidesItem = useOperatorStore((s) => s.deckType === 'song' || s.deckType === 'presentation')
 

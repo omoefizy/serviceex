@@ -1,4 +1,4 @@
-// Downloads the public domain KJV and WEB Bibles and loads them into the WorshipDeck database.
+// Downloads the public domain KJV and WEB Bibles and loads them into the ServiceEx database.
 //
 //   npm run import:bible                 imports into the app's database
 //   npm run import:bible -- --db <path>  imports into another database file
@@ -33,7 +33,12 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const CACHE_DIR = path.join(ROOT, 'data', 'bible')
 const BUNDLE_PATH = path.join(ROOT, 'vendor', 'bible', 'bible.db')
 
-/** Where Electron's app.getPath('userData') points for an app named "worshipdeck". */
+/**
+ * The app's database: under app.getPath('userData') for an app named "ServiceEx". Before ServiceEx's first launch
+ * after the rename the data is still in WorshipDeck's folder, so that database is used; the app moves it on launch
+ * (see electron/userDataMigration.ts). Writing a new ServiceEx database first would make the app keep it and skip
+ * the move.
+ */
 function defaultDbPath(): string {
   const home = os.homedir()
   const base =
@@ -42,7 +47,10 @@ function defaultDbPath(): string {
       : process.platform === 'win32'
         ? (process.env.APPDATA ?? path.join(home, 'AppData', 'Roaming'))
         : (process.env.XDG_CONFIG_HOME ?? path.join(home, '.config'))
-  return path.join(base, 'worshipdeck', 'worshipdeck.db')
+  const current = path.join(base, 'ServiceEx', 'serviceex.db')
+  if (existsSync(current)) return current
+  const legacy = ['worshipdeck', 'WorshipDeck'].map((name) => path.join(base, name, 'worshipdeck.db')).find((file) => existsSync(file))
+  return legacy ?? current
 }
 
 function parseArgs(argv: string[]): { dbPath: string; refresh: boolean; bundle: boolean } {

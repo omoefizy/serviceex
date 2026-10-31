@@ -53,7 +53,7 @@ const PASSAGES = [
 
 /** A 2 by 1 pixel PNG. */
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR42mP8z8DwnwEKGAEAJgUD/ThwagAAAABJRU5ErkJggg==', 'base64')
-const dir = makeTempDirSync('worshipdeck-pptx-')
+const dir = makeTempDirSync('serviceex-pptx-')
 afterAll(() => removeTempSync(dir))
 
 async function slideXml(buffer: Buffer): Promise<string[]> {

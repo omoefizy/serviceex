@@ -136,7 +136,7 @@ export function loadBookStructure(book: string): Promise<number[]> {
 export type VersionFilter = BibleVersionCode | 'both'
 
 /** The Scripture tab's version choice, kept in localStorage under this key. */
-export const SCRIPTURE_VERSION_KEY = 'worshipdeck.scripture.version'
+export const SCRIPTURE_VERSION_KEY = 'serviceex.scripture.version'
 
 export const isVersionFilter = (v: unknown): v is VersionFilter => typeof v === 'string' && /^(?:both|[A-Z0-9][A-Z0-9-]{0,11})$/.test(v)
 

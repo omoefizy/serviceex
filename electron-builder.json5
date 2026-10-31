@@ -1,9 +1,15 @@
 // @see - https://www.electron.build/configuration/configuration
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "com.worshipdeck.app",
+  "appId": "com.serviceex.app",
   "asar": true,
-  "productName": "WorshipDeck",
+  "productName": "ServiceEx",
+  // Releases and update metadata (latest.yml, latest-mac.yml) are published to this GitHub repository.
+  "publish": {
+    "provider": "github",
+    "owner": "omoefizy",
+    "repo": "serviceex-releases"
+  },
   // The icons come from `npm run icons`, made from assets/brand/icon.svg.
   "directories": {
     "output": "release/${version}"
@@ -71,7 +77,7 @@
     "icon": "build/icon.icns",
     "entitlements": "build/entitlements.mac.plist",
     "entitlementsInherit": "build/entitlements.mac.plist",
-    "artifactName": "${productName}-Mac-${version}-${arch}.${ext}"
+    "artifactName": "ServiceEx-Mac-${version}-${arch}.dmg"
   },
   // The mounted disk image's icon.
   "dmg": {
@@ -87,7 +93,7 @@
       }
     ],
     "icon": "build/icon.ico",
-    "artifactName": "${productName}-Windows-${version}-Setup.${ext}"
+    "artifactName": "ServiceEx-Windows-${version}-Setup.exe"
   },
   // Installs per user, without administrator rights, so it cannot add a Windows Firewall rule for Sharing (netsh needs
   // an administrator; a per machine install would move existing installs). Windows asks to allow the app the first
@@ -107,6 +113,6 @@
     ],
     // One PNG per size, named NxN.png.
     "icon": "build/icons",
-    "artifactName": "${productName}-Linux-${version}.${ext}"
+    "artifactName": "ServiceEx-Linux-${version}.${ext}"
   }
 }

@@ -1,4 +1,4 @@
--- Exports a presentation to PDF with Microsoft PowerPoint for Mac. WorshipDeck runs this through osascript with
+-- Exports a presentation to PDF with Microsoft PowerPoint for Mac. ServiceEx runs this through osascript with
 -- the path of a private copy of the presentation (never the operator's original) and the PDF to write.
 -- PowerPoint is quit afterwards only when this script launched it.
 on run argv

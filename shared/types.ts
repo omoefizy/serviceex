@@ -2001,7 +2001,7 @@ export interface FontsApi {
   onChanged(listener: () => void): () => void
 }
 
-export interface WorshipDeckApi {
+export interface ServiceExApi {
   songs: SongsApi
   bible: BibleApi
   services: ServicesApi

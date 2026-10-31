@@ -149,7 +149,7 @@ export function StreamPanel() {
   // A string compares by value, so the preview redraws only when the stream changes.
   const streamJson = useOperatorStore((s) => JSON.stringify(selectStreamState(s)))
   const stream = useMemo(() => JSON.parse(streamJson) as StreamState, [streamJson])
-  const [guides, setGuides] = usePersistentState('worshipdeck.streamGuides', true, isBoolean)
+  const [guides, setGuides] = usePersistentState('serviceex.streamGuides', true, isBoolean)
   const [displays, setDisplays] = useState<DisplayInfo[]>([])
   const [error, setError] = useState<ErrorLike | null>(null)
 

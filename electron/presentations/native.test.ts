@@ -51,7 +51,7 @@ describe.skipIf(!ffmpeg)('Native mode', () => {
   let media: ReturnType<typeof memoryMediaStore>
 
   beforeAll(async () => {
-    work = await makeTempDir('worshipdeck-native-')
+    work = await makeTempDir('serviceex-native-')
     const video = path.join(work, 'motion.mp4')
     const logo = path.join(work, 'logo.png')
     execFileSync(ffmpeg!, ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=640x360:rate=15', '-t', '2', '-pix_fmt', 'yuv420p', video])

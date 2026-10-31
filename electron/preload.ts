@@ -32,7 +32,7 @@ import type {
   LicenseApi,
   SermonAiProgress,
   SermonsApi,
-  WorshipDeckApi,
+  ServiceExApi,
 } from '../shared/types'
 import type { AccountApi, AccountState } from '../shared/account'
 
@@ -250,7 +250,7 @@ const designs: DesignsApi = {
   saveAsset: (bytes, extension) => ipcRenderer.invoke('designs:saveAsset', bytes, extension),
 }
 
-const output: WorshipDeckApi['output'] = {
+const output: ServiceExApi['output'] = {
   send: (state) => ipcRenderer.send('output:send', state),
   onState(listener) {
     const handler = (_event: Electron.IpcRendererEvent, state: OutputState) => listener(state)
@@ -426,7 +426,7 @@ const sermons: SermonsApi = {
   },
 }
 
-const api: WorshipDeckApi = {
+const api: ServiceExApi = {
   songs,
   bible,
   services,

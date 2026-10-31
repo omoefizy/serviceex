@@ -79,7 +79,7 @@ describe('PresentationLibrary', () => {
   }
 
   beforeEach(async () => {
-    root = await makeTempDir('worshipdeck-library-')
+    root = await makeTempDir('serviceex-library-')
     conversions = 0
     updates = []
     library = new PresentationLibrary({

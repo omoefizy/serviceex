@@ -67,7 +67,7 @@ async function buildNative(source: PresentationSource, hash: string): Promise<Na
       },
     },
     ffmpeg: findFfmpeg(),
-    workDir: path.join(os.tmpdir(), `worshipdeck-native-${randomBytes(4).toString('hex')}`),
+    workDir: path.join(os.tmpdir(), `serviceex-native-${randomBytes(4).toString('hex')}`),
     title: source.title,
   })
 }
@@ -230,7 +230,7 @@ export function registerPresentationIpc({ createRasterWindow, getOperatorWindow,
   ipcMain.handle('presentations:testConversion', async () => {
     const status = await engineStatus(getAppSettings().presentationEngine)
     if (!status.active) throw new Error(status.message ?? 'No presentation engine is available')
-    const work = await mkdtemp(path.join(os.tmpdir(), 'worshipdeck-test-'))
+    const work = await mkdtemp(path.join(os.tmpdir(), 'serviceex-test-'))
     try {
       const file = path.join(work, 'Test conversion.pptx')
       await samplePresentation(file)

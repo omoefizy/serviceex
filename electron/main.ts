@@ -1,6 +1,8 @@
 import { app, BrowserWindow, screen } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+// Before ./db opens the database: moves the WorshipDeck data folder into ServiceEx's on the first launch.
+import { finishUserDataMigration } from './migrateUserData'
 import './db'
 import { seedBuiltinThemes } from './db/themes'
 import { seedBuiltinDesigns } from './db/designs'
@@ -376,6 +378,8 @@ app.whenReady().then(async () => {
   if (VITE_DEV_SERVER_URL) app.dock?.setIcon(path.join(process.env.APP_ROOT, 'build/icon-mac.png'))
   // The About panel on Windows and Linux (macOS's shows the app icon).
   app.setAboutPanelOptions({ iconPath: path.join(process.env.VITE_PUBLIC, 'app-icon.png') })
+  // Before anything reads a saved key: keys sealed under the WorshipDeck name are sealed again under ServiceEx's.
+  await finishUserDataMigration()
   // First: what the licence allows is fixed now, for this whole run, before any feature starts.
   await loadLicense()
   registerLicenseIpc()

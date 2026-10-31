@@ -40,7 +40,7 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
-  folder = makeTempDirSync('worshipdeck-license-')
+  folder = makeTempDirSync('serviceex-license-')
 })
 
 afterEach(() => {

@@ -32,10 +32,10 @@ describe('Public networks on Windows', () => {
 
 describe('the firewall command', () => {
   it('allows the app on Private networks only, on Windows', () => {
-    const command = firewallCommand('C:\\Users\\Pat\\AppData\\Local\\Programs\\WorshipDeck\\WorshipDeck.exe', 'win32')
+    const command = firewallCommand('C:\\Users\\Pat\\AppData\\Local\\Programs\\ServiceEx\\ServiceEx.exe', 'win32')
     expect(command).toBe(
-      'netsh advfirewall firewall add rule name="ServiceEx Sharing" dir=in action=allow program="C:\\Users\\Pat\\AppData\\Local\\Programs\\WorshipDeck\\WorshipDeck.exe" enable=yes profile=private',
+      'netsh advfirewall firewall add rule name="ServiceEx Sharing" dir=in action=allow program="C:\\Users\\Pat\\AppData\\Local\\Programs\\ServiceEx\\ServiceEx.exe" enable=yes profile=private',
     )
-    expect(firewallCommand('/Applications/WorshipDeck.app', 'darwin')).toBeNull()
+    expect(firewallCommand('/Applications/ServiceEx.app', 'darwin')).toBeNull()
   })
 })

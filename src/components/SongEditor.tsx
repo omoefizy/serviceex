@@ -36,7 +36,7 @@ interface Draft {
 }
 
 // Drafts live in this window's localStorage, one per song, until the song is saved or the draft discarded.
-const draftKey = (id: number) => `worshipdeck.songDraft.${id}`
+const draftKey = (id: number) => `serviceex.songDraft.${id}`
 
 function isForm(value: unknown): value is Form {
   const form = value as Partial<Form> | null

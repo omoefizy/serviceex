@@ -71,7 +71,7 @@ export function ScripturePanel({ toolbar = null }: { toolbar?: HTMLElement | nul
   const [version, setVersion] = usePersistentState<VersionFilter>(SCRIPTURE_VERSION_KEY, 'KJV', isVersionFilter)
   const [testament, setTestament] = useState<Testament>('all')
   const [bookFilter, setBookFilter] = useState<string | null>(null)
-  const [recent, setRecent] = usePersistentState<string[]>('worshipdeck.scripture.recent', [], isStringList)
+  const [recent, setRecent] = usePersistentState<string[]>('serviceex.scripture.recent', [], isStringList)
   /** Verses per chapter, by book, from the database. */
   const [structure, setStructure] = useState<BookStructures>({})
   /** The rows of the books or chapter listing, and the listing they are for. */

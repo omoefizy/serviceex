@@ -7,7 +7,7 @@ import { CONTENT_COLORS } from '../styles/contentColors'
 GlobalWorkerOptions.workerSrc = workerUrl
 
 /** Drag-and-drop type for a library item; the data is its id. */
-export const MEDIA_DRAG_TYPE = 'application/x-worshipdeck-media'
+export const MEDIA_DRAG_TYPE = 'application/x-serviceex-media'
 
 /** Filters by name or tag. */
 export function matchesSearch(item: MediaItem, search: string): boolean {

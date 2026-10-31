@@ -1,11 +1,11 @@
-# Live PowerPoint for WorshipDeck on Windows: plays private copies of presentations (never the operator's
+# Live PowerPoint for ServiceEx on Windows: plays private copies of presentations (never the operator's
 # originals) as slide shows over the output display, through desktop PowerPoint's COM interface.
 # NOT YET TESTED ON WINDOWS. Written against the documented PowerPoint object model.
 #
 # One long-lived process: reads one JSON command per line on standard input, such as
 #   {"id":3,"cmd":"start","copy":"C:\\...\\deck.pptx","slide":4,"useTimings":false,"x":0,"y":0,"width":1440,"height":810}
 # and writes one JSON answer per line: {"id":3,"ok":true,"result":...} or {"id":3,"ok":false,"error":"..."}.
-# Positions are in points, as PowerPoint's SlideShowWindow uses them; WorshipDeck converts.
+# Positions are in points, as PowerPoint's SlideShowWindow uses them; ServiceEx converts.
 # Show results are {slide, state, step, steps, frame}, or null when no show of that copy is running.
 
 $ErrorActionPreference = 'Stop'

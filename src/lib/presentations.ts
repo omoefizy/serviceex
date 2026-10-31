@@ -10,7 +10,7 @@ export const droppedPaths = (e: DragEvent) =>
   [...e.dataTransfer.files].map((file) => window.api.presentations.pathForFile(file)).filter(Boolean)
 
 /** Where the Presentations panel keeps how PowerPoint files import, Image or Native mode. */
-export const IMPORT_MODE_KEY = 'worshipdeck.pptxImportMode'
+export const IMPORT_MODE_KEY = 'serviceex.pptxImportMode'
 
 export const isPresentationMode = (value: unknown): value is PresentationMode => value === 'image' || value === 'native'
 

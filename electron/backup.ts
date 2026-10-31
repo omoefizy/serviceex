@@ -6,7 +6,7 @@ import { db } from './db'
 import { getAppSettings, setAppSettings } from './db/settings'
 
 const KEEP = 20
-const PREFIX = 'worshipdeck-backup-'
+const PREFIX = 'serviceex-backup-'
 
 /** Copies the database into the backup folder (safe while the app is writing) and resolves to the file. */
 export async function backupNow(): Promise<string> {

@@ -1,4 +1,4 @@
-# Exports every slide of a presentation as a PNG with desktop PowerPoint through COM, for WorshipDeck.
+# Exports every slide of a presentation as a PNG with desktop PowerPoint through COM, for ServiceEx.
 # Opens the file read only and without a window, writes slide-001.png, slide-002.png... into OutputDir, fitted
 # inside 1920x1080 at the slide's own shape (hidden slides left out), then slides.json with the count, titles,
 # notes, and for each slide whether it has animations (TimeLine.MainSequence.Count) or a transition. PowerPoint is

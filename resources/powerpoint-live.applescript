@@ -1,5 +1,5 @@
--- Live PowerPoint for WorshipDeck on macOS: plays a private copy of a presentation (never the operator's
--- original) as a slide show over the output display. WorshipDeck runs it through osascript once per command:
+-- Live PowerPoint for ServiceEx on macOS: plays a private copy of a presentation (never the operator's
+-- original) as a slide show over the output display. ServiceEx runs it through osascript once per command:
 --   running                                      whether PowerPoint is running
 --   open <copy>                                  opens the copy (if it is not open yet); prints the slide count
 --   start <copy> <slide> <timings> <x> <y> <w> <h>  ends its show, starts one from <slide> to the end over those
@@ -9,7 +9,7 @@
 --   close <copy>                                 ends its show and closes it without saving
 --   quit                                         quits PowerPoint when no presentation is open in it
 -- Show commands print "<slide index>|<state>|<left>,<top>,<width>,<height>", or "none" when no show is running.
--- PowerPoint for Mac cannot go to a slide inside a running show (go to slide fails with -50), so WorshipDeck
+-- PowerPoint for Mac cannot go to a slide inside a running show (go to slide fails with -50), so ServiceEx
 -- starts the show again from that slide instead.
 
 on run argv
@@ -81,7 +81,7 @@ on run argv
 					set pointer type of (slideshow view of win) to slide show pointer always hidden
 				end try
 				-- The full screen show is a space of its own; macOS shows it only once PowerPoint is brought forward.
-				-- WorshipDeck takes the keyboard back straight after.
+				-- ServiceEx takes the keyboard back straight after.
 				activate
 				return my describe(win)
 			end if
