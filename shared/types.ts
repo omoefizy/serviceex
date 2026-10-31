@@ -1320,6 +1320,8 @@ export interface AppSettings {
   sharingLibrarySync: boolean
   /** The most library sync may use, in KB per second; 0 for no limit. */
   sharingBandwidthKbps: number
+  /** Sends one anonymous install report at first launch (see electron/service/installReport). On by default. */
+  shareInstallCount: boolean
 }
 
 /** The highlighter colors live highlighting offers, in the order the number keys 1 to 5 pick them. */

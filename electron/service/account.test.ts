@@ -19,6 +19,8 @@ let opened: string[]
 let client: ServiceClient
 let account: AccountService
 let key: KeyObject | null
+/** What the Privacy setting gives: the install id while sharing is on, null while off. */
+let installId: string | null
 
 function setUp(now = () => Date.now(), sleep: (ms: number) => Promise<void> = async () => undefined) {
   saved = null
@@ -26,6 +28,7 @@ function setUp(now = () => Date.now(), sleep: (ms: number) => Promise<void> = as
   states = []
   opened = []
   key = server.publicKey
+  installId = null
   client = new ServiceClient({
     baseUrl: () => server.url,
     fetch: (url, init) => fetch(url, init),
@@ -40,6 +43,7 @@ function setUp(now = () => Date.now(), sleep: (ms: number) => Promise<void> = as
     machineId: async () => MACHINE,
     platform: 'macos',
     appVersion: '1.4.0',
+    installId: async () => installId,
     publicKey: () => key,
     configured: () => true,
     encryptionAvailable: () => true,
@@ -88,11 +92,17 @@ describe('signing in', () => {
     expect(state.balance).toMatchObject({ totalSeconds: 7200, nearestExpiry: { expiresAt: '2027-03-01T00:00:00.000Z', seconds: 7200 } })
     expect(state.allowance).toMatchObject({ remainingTokens: 20_000 })
     // The machine id goes with the code (for the free grant) and the activation; the tokens stay in the store.
-    expect(server.calls('/auth/verify')[0].body).toMatchObject({ email: server.email, code: FAKE_CODE, machine_id: MACHINE })
+    expect(server.calls('/auth/verify')[0].body).toEqual({ email: server.email, code: FAKE_CODE, machine_id: MACHINE, platform: 'macos', app_version: '1.4.0' })
     expect(server.calls('/licenses/activate')[0].body).toEqual({ machine_id: MACHINE, platform: 'macos', app_version: '1.4.0' })
     expect(saved?.email).toBe(server.email)
     expect(JSON.stringify(state)).not.toContain(saved!.accessToken)
     expect(licenseFile?.token.split('.')).toHaveLength(3)
+  })
+
+  it('sends the install id with the code only while sharing the install count', async () => {
+    installId = '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b'
+    expect((await signIn()).ok).toBe(true)
+    expect(server.calls('/auth/verify')[0].body).toMatchObject({ platform: 'macos', app_version: '1.4.0', install_id: installId })
   })
 
   it('counts the trial in the total when more is left than the licence allowance', async () => {

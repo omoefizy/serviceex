@@ -628,6 +628,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sharingCueAlert: 'off',
   sharingLibrarySync: false,
   sharingBandwidthKbps: 0,
+  shareInstallCount: true,
 }
 
 /** A settings answer with every key present, so a key missing after an update or a bad answer cannot break a panel. */

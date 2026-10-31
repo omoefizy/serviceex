@@ -27,6 +27,7 @@ import {
   Quote,
   RefreshCw,
   Save,
+  ShieldCheck,
   Sparkles,
   Square,
   Stethoscope,
@@ -2298,6 +2299,18 @@ export function SettingsPanel() {
                 newest 20 are kept
               </span>
             </div>
+          </Section>
+
+          <Section icon={<ShieldCheck size={16} aria-hidden="true" />} title="Privacy">
+            <Toggle
+              checked={settings.shareInstallCount}
+              onChange={(e) => run(() => updateSettings({ shareInstallCount: e.target.checked }))}
+            >
+              Share anonymous install count
+            </Toggle>
+            <p className="hint">
+              Once, after installing, ServiceEx sends a random install number, your system, the app version and language, and never anything about you or your church.
+            </p>
           </Section>
 
           <DiagnosticsSection />

@@ -110,6 +110,7 @@ const DEFAULTS: AppSettings = {
   sharingCueAlert: 'off',
   sharingLibrarySync: false,
   sharingBandwidthKbps: 0,
+  shareInstallCount: true,
 }
 
 export const FADE_LIMITS = { min: 0, max: 1500 }
@@ -206,6 +207,7 @@ const KEYS: Record<keyof AppSettings, string> = {
   sharingCueAlert: 'sharing.cueAlert',
   sharingLibrarySync: 'sharing.librarySync',
   sharingBandwidthKbps: 'sharing.bandwidthKbps',
+  shareInstallCount: 'privacy.shareInstallCount',
 }
 
 export const ALERT_LIMITS = {
@@ -464,6 +466,7 @@ function clean<K extends keyof AppSettings>(key: K, value: unknown): AppSettings
     case 'sharingAutoAccept':
     case 'sharingDeviceChips':
     case 'sharingLibrarySync':
+    case 'shareInstallCount':
       return typeof value === 'boolean' ? v : undefined
     case 'sharingCueAlert':
       return value === 'off' || value === 'sound' || value === 'flash' ? v : undefined

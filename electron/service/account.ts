@@ -28,6 +28,8 @@ export interface AccountDeps {
   machineId(): Promise<string>
   platform: 'windows' | 'macos' | 'linux'
   appVersion: string
+  /** The anonymous install id, sent with the code so a new account can be counted against installs; null while sharing is off. */
+  installId?(): Promise<string | null>
   /** The key licence tokens are checked with, or null when this build has none. */
   publicKey(): KeyObject | null
   /** The id tokens must name for that key (packaged builds), or null to accept any. */
@@ -176,8 +178,19 @@ export class AccountService {
       const answer = await this.deps.client.request<{ access_token: string; refresh_token: string; expires_in: number; account: { email: string } }>(
         'POST',
         '/auth/verify',
-        // The machine id claims this computer's one free listening grant.
-        { body: { email: address, code: digits, machine_id: await this.deps.machineId() }, auth: false },
+        // The machine id claims this computer's one free listening grant. Platform, version and install id are kept only
+        // on a new account, to compare signups with downloads.
+        {
+          body: {
+            email: address,
+            code: digits,
+            machine_id: await this.deps.machineId(),
+            platform: this.deps.platform,
+            app_version: this.deps.appVersion,
+            install_id: (await this.deps.installId?.().catch(() => null)) ?? undefined,
+          },
+          auth: false,
+        },
       )
       await this.deps.client.setSession({
         accessToken: answer.access_token,
