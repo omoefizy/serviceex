@@ -1,0 +1,192 @@
+# Builds the ServiceEx installers and uploads them to a release on omoefizy/serviceex-releases, where the app's
+# updater (electron-builder's github provider, see electron-builder.json5) also looks for latest.yml and latest-mac.yml.
+#
+# Runs when a version tag is pushed (git tag v0.1.0 && git push origin v0.1.0), or by hand from the Actions tab.
+# The tag must match the version in package.json. A run started by hand releases the version in package.json.
+#
+# The release is created as a draft if it does not exist yet, so nothing is public until it is published on GitHub
+# (or with `gh release edit v0.1.0 --repo omoefizy/serviceex-releases --draft=false`). Running again for the same
+# version replaces the files on the existing release.
+#
+# Secrets: RELEASES_TOKEN, a fine-grained personal access token with Contents: read and write on
+# omoefizy/serviceex-releases. This repository's own GITHUB_TOKEN cannot write to another repository.
+#
+# Nothing is signed yet. The signing secrets are commented out below, marked SIGNING, ready for later.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+# One release run per ref at a time; a second run for the same tag waits rather than racing the uploads.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  RELEASES_REPO: omoefizy/serviceex-releases
+
+jobs:
+  # Works out the version and tag, and makes sure the release exists before both builds upload to it, so the two
+  # builds never race to create it.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version
+        id: version
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "$tag" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version (expected $tag)."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Releasing ServiceEx $version as $tag on $RELEASES_REPO"
+
+      - name: Create the release if it does not exist
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::The RELEASES_TOKEN secret is not set (Settings, Secrets and variables, Actions)."
+            exit 1
+          fi
+          if gh release view "$TAG" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists on $RELEASES_REPO; uploads will replace its files."
+          else
+            gh release create "$TAG" --repo "$RELEASES_REPO" --draft \
+              --title "ServiceEx $VERSION" \
+              --notes "ServiceEx $VERSION. Windows: ServiceEx-Windows-$VERSION-Setup.exe. Mac: ServiceEx-Mac-$VERSION-arm64.dmg (Apple Silicon) or ServiceEx-Mac-$VERSION-x64.dmg (Intel)."
+            echo "Created draft release $TAG on $RELEASES_REPO."
+          fi
+
+  windows:
+    needs: prepare
+    runs-on: windows-latest
+    env:
+      # No code signing yet: do not look for a certificate.
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+      # SIGNING (Windows), for later: a base64 .pfx (or https link) and its password. Uncomment both, add the
+      # secrets, and remove CSC_IDENTITY_AUTO_DISCOVERY above.
+      # WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+      # WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22.18 or later runs the TypeScript scripts in scripts/ directly.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+
+      # whisper.cpp's server for the offline sermon listener, put where electron-builder's extraResources looks.
+      - name: Fetch whisper.cpp
+        run: npm run fetch:whisper
+
+      # better-sqlite3 needs no rebuild: it ships prebuilt N-API binaries for every platform and architecture, which
+      # work in Electron unchanged (npmRebuild is off in electron-builder.json5). check-release verifies the
+      # packaged app carries win32-x64 and loads it.
+      - name: Build the installer
+        run: npm run build:win
+
+      - name: Check the installer and native module
+        run: node scripts/check-release.ts win
+
+      - name: Upload to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          cd "release/$VERSION"
+          files=("ServiceEx-Windows-$VERSION-Setup.exe" latest.yml)
+          # The blockmap lets the updater download only what changed; it is optional, so upload it when present.
+          if [[ -f "ServiceEx-Windows-$VERSION-Setup.exe.blockmap" ]]; then files+=("ServiceEx-Windows-$VERSION-Setup.exe.blockmap"); fi
+          gh release upload "$TAG" "${files[@]}" --repo "$RELEASES_REPO" --clobber
+
+  mac:
+    needs: prepare
+    # Apple Silicon. Builds the arm64 and the x64 (Intel) dmg.
+    runs-on: macos-latest
+    env:
+      # No code signing yet: do not look for a certificate in the keychain.
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+      # SIGNING (macOS), for later: the Developer ID Application certificate as a base64 .p12 and its password, and
+      # the Apple account for notarization. Uncomment, add the secrets, remove CSC_IDENTITY_AUTO_DISCOVERY above, and
+      # turn on notarization in electron-builder.json5 ("mac": { "notarize": true }).
+      # CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+      # CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+      # APPLE_ID: ${{ secrets.APPLE_ID }}
+      # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+
+      # whisper.cpp built from source for each architecture.
+      - name: Fetch whisper.cpp
+        run: |
+          command -v cmake >/dev/null || brew install cmake
+          WHISPER_ARCH=arm64 npm run fetch:whisper
+          WHISPER_ARCH=x64 npm run fetch:whisper
+
+      # As on Windows, better-sqlite3 ships darwin-arm64 and darwin-x64 binaries, so there is nothing to rebuild;
+      # check-release verifies each app carries its own architecture's and loads it (x64 through Rosetta if the
+      # runner has it).
+      - name: Build both dmgs
+        run: npm run dist:mac
+
+      - name: Check the dmgs and native module
+        run: node scripts/check-release.ts mac
+
+      - name: Upload to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          cd "release/$VERSION"
+          files=("ServiceEx-Mac-$VERSION-arm64.dmg" "ServiceEx-Mac-$VERSION-x64.dmg" latest-mac.yml)
+          for arch in arm64 x64; do
+            if [[ -f "ServiceEx-Mac-$VERSION-$arch.dmg.blockmap" ]]; then files+=("ServiceEx-Mac-$VERSION-$arch.dmg.blockmap"); fi
+          done
+          gh release upload "$TAG" "${files[@]}" --repo "$RELEASES_REPO" --clobber

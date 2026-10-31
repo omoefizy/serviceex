@@ -2,7 +2,7 @@
   "name": "serviceex",
   "productName": "ServiceEx",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,9 @@
     "clean": "node -e \"for (const dir of ['dist', 'dist-electron']) require('fs').rmSync(dir, { recursive: true, force: true })\"",
     "build:mac": "npm run clean && tsc && vite build && npm run import:bible -- --bundle && electron-builder --mac --publish never",
     "build:win": "npm run clean && tsc && vite build && npm run import:bible -- --bundle && electron-builder --win --publish never",
+    "dist:mac": "npm run clean && tsc && vite build && npm run import:bible -- --bundle && electron-builder --mac dmg --arm64 --x64 --publish never",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "typecheck": "tsc",
     "test": "vitest run",
     "preview": "vite preview",
     "import:bible": "node scripts/import-bible.ts",
