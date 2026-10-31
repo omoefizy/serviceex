@@ -1,0 +1,48 @@
+# TEMPORARY: runs the sharing decline test 100 times on Windows and Linux to measure how often it fails on the real
+# platform. Delete once Windows shows 100 of 100 passes.
+name: Repro sharing decline test
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: How many times to run the test
+        default: '100'
+
+jobs:
+  repro:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run the decline test in a loop
+        shell: bash
+        env:
+          ITERATIONS: ${{ inputs.iterations }}
+        run: |
+          failed=()
+          for i in $(seq 1 "$ITERATIONS"); do
+            if npx vitest run electron/sharing/sharing.test.ts -t "declined by the receiver, stops the sender" > "run-$i.log" 2>&1; then
+              echo "iteration $i: pass"
+            else
+              echo "iteration $i: FAIL"
+              failed+=("$i")
+            fi
+          done
+          echo "::notice title=${{ runner.os }}::${#failed[@]} of $ITERATIONS failed${failed:+ (iterations: ${failed[*]})}"
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "----- Output of first failure (iteration ${failed[0]}) -----"
+            cat "run-${failed[0]}.log"
+            exit 1
+          fi

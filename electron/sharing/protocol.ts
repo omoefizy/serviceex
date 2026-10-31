@@ -20,8 +20,11 @@ export const responseAad = (fromId: string, toId: string, nonce: string) => `ser
 /** Operations on the sealed channel, with what each sends and gets back. */
 export interface SecureOps {
   ping: { request: Record<string, never>; response: { name: string } }
-  /** Offers a file. The answer is how many bytes the receiver already has, to carry on from. */
-  offer: { request: { transferId: string; name: string; size: number; sha256: string }; response: { offset: number } }
+  /**
+   * Offers a file. The answer is how many bytes the receiver already has, to carry on from. `resume` marks the sender
+   * finding its place mid transfer rather than asking again, so a transfer declined meanwhile stays declined.
+   */
+  offer: { request: { transferId: string; name: string; size: number; sha256: string; resume?: boolean }; response: { offset: number } }
   /** Bytes at `offset`; the body holds them. */
   chunk: { request: { transferId: string; offset: number }; response: { offset: number } }
   /** All bytes sent: the receiver checks the hash and puts the file in its Inbox. */

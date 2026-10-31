@@ -309,14 +309,15 @@ export async function sendFile(target: PeerTarget, myId: string, file: string, o
     }
   }
 
-  const offer = async () => {
-    const answer = await secureRequest(target, myId, 'offer', { transferId, name, size, sha256 }, undefined, undefined, signal)
+  /** The first offer asks; a later one (`resume`) only finds where to carry on from, and is refused once declined. */
+  const offer = async (resume: boolean) => {
+    const answer = await secureRequest(target, myId, 'offer', { transferId, name, size, sha256, ...(resume ? { resume } : {}) }, undefined, undefined, signal)
     if (!answer.ok) throw refusal(answer)
     return answer.offset
   }
 
   try {
-    let offset = await retrying(offer, 0)
+    let offset = await retrying(() => offer(false), 0)
     options.onProgress?.(offset, size, false)
     const handle = await openFile(file, 'r')
     try {
@@ -330,7 +331,7 @@ export async function sendFile(target: PeerTarget, myId: string, file: string, o
           const answer = await secureRequest(target, myId, 'chunk', { transferId, offset: at }, buffer, undefined, signal)
           if (answer.ok) return answer.offset
           // Out of step (the chunk arrived but its answer was lost, say): ask where to carry on from.
-          if (answer.code === 'offset' || answer.code === 'unknown') return offer()
+          if (answer.code === 'offset' || answer.code === 'unknown') return offer(true)
           throw refusal(answer)
         }, at)
         options.onProgress?.(offset, size, false)

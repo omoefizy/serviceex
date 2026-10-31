@@ -546,6 +546,37 @@ describe('stopping a transfer', () => {
     expect(await readdir(receiver.inbox.partialFolder)).toEqual([])
     expect(await secureRequest(target, sender.me.id, 'chunk', { transferId, offset: 0 }, randomBytes(1000))).toMatchObject({ ok: false, code: 'declined' })
   })
+
+  it('declined while the last step moves the file in, rejects the sender and leaves nothing in the Inbox', async () => {
+    const receiver = await startReceiver()
+    const sender = await makeSender()
+    const target = await pair(receiver, sender)
+    const file = await randomFile('Late.mp4', 300_000)
+    // The decline lands exactly while the finished file is being moved into the Inbox, after every chunk was taken.
+    const add = receiver.inbox.add.bind(receiver.inbox)
+    receiver.inbox.add = async (...args) => {
+      const item = await add(...args)
+      await receiver.server.decline(receiver.incoming[0].id)
+      return item
+    }
+    await expect(sendFile(target, sender.me.id, file, { name: 'Late.mp4', limitMb: 10, chunkBytes: 100_000 })).rejects.toBeInstanceOf(DeclinedError)
+    expect(receiver.received).toEqual([])
+    expect(receiver.inbox.list()).toEqual([])
+    expect(receiver.incoming.at(-1)).toMatchObject({ name: 'Late.mp4', state: 'declined' })
+    expect(await readdir(receiver.inbox.partialFolder)).toEqual([])
+  })
+
+  it('refuses a sender finding its place again after a decline, but takes a fresh offer', async () => {
+    const receiver = await startReceiver()
+    const sender = await makeSender()
+    const target = await pair(receiver, sender)
+    const transferId = randomId()
+    const fields = { transferId, name: 'Loop.mp4', size: 2_000, sha256: 'a'.repeat(64) }
+    await secureRequest(target, sender.me.id, 'offer', fields)
+    await receiver.server.decline(`${sender.me.id}-${transferId}`)
+    expect(await secureRequest(target, sender.me.id, 'offer', { ...fields, resume: true })).toMatchObject({ ok: false, code: 'declined' })
+    expect(await secureRequest(target, sender.me.id, 'offer', fields)).toMatchObject({ ok: true, offset: 0 })
+  })
 })
 
 describe('old partial files', () => {

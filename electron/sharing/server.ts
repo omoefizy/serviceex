@@ -197,8 +197,10 @@ export class ShareServer {
     if (!match) throw new Error('Bad incoming id')
     const [, fromId, transferId] = match
     const { part, meta } = this.partialPaths(fromId, transferId)
-    const info = await this.readMeta(meta)
+    // Refuse the sender before anything else is awaited: chunks and the finish keep arriving meanwhile, and one that
+    // slips past would let the sender finish as if nothing had happened.
     this.declined.add(incomingId)
+    const info = await this.readMeta(meta)
     if (info) this.report(fromId, transferId, info, 0, 'declined')
     await this.discard(part, meta)
   }
@@ -432,6 +434,8 @@ export class ShareServer {
     const size = header.size as number
     const sha256 = header.sha256
     if (typeof sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(sha256)) return { ok: false, error: 'Bad offer', code: 'bad' }
+    // A sender finding out where to carry on from, mid transfer, is not asking again.
+    if (header.resume === true && this.declined.has(`${fromId}-${header.transferId as string}`)) return this.declinedAnswer()
     const problem = shareProblem(name, size, this.options.limitMb())
     if (problem) return { ok: false, error: problem, code: problem.includes('limit') ? 'size' : 'type' }
 
@@ -462,6 +466,8 @@ export class ShareServer {
     const incomingId = `${fromId}-${header.transferId as string}`
     if (this.declined.has(incomingId)) return this.declinedAnswer()
     const info = await this.readMeta(meta)
+    // Declined while the meta was read: its files are gone, but the sender must hear it was declined.
+    if (this.declined.has(incomingId)) return this.declinedAnswer()
     if (!info || !existsSync(part)) return { ok: false, error: 'Offer the file first', code: 'unknown' }
     const key = part
     if (this.busy.has(key)) return { ok: false, error: 'A chunk is already being written', code: 'offset' }
@@ -492,17 +498,31 @@ export class ShareServer {
   private async finish(fromId: string, fromName: string, header: Record<string, unknown>): Promise<SealedResponse<SecureOps['finish']['response']>> {
     const { part, meta } = this.partialPaths(fromId, header.transferId)
     const transferId = header.transferId as string
-    if (this.declined.has(`${fromId}-${transferId}`)) return this.declinedAnswer()
+    const incomingId = `${fromId}-${transferId}`
+    if (this.declined.has(incomingId)) return this.declinedAnswer()
     const info = await this.readMeta(meta)
+    if (this.declined.has(incomingId)) return this.declinedAnswer()
     if (!info || !existsSync(part)) return { ok: false, error: 'Offer the file first', code: 'unknown' }
-    const have = (await stat(part)).size
+    const have = await stat(part).then((s) => s.size, () => null)
+    // Declined while this was checked, or the hash read: the decline wins until the sender has been answered.
+    if (this.declined.has(incomingId)) return this.declinedAnswer()
+    if (have === null) return { ok: false, error: 'Offer the file first', code: 'unknown' }
     if (have !== info.size) return { ok: false, error: `Only ${have} of ${info.size} bytes arrived`, code: 'offset' }
-    if ((await sha256File(part)) !== info.sha256) {
+    const hash = await sha256File(part)
+    if (this.declined.has(incomingId)) return this.declinedAnswer()
+    if (hash !== info.sha256) {
       await this.discard(part, meta)
       this.report(fromId, transferId, info, 0, 'failed')
       return { ok: false, error: 'The file was damaged on the way (its checksum does not match). Send it again.', code: 'hash' }
     }
     const item = await this.options.inbox.add(part, info.name, info.size, { id: fromId, name: fromName })
+    if (this.declined.has(incomingId)) {
+      // Declined while the file was moved in: take it back out.
+      await this.options.inbox.remove(item.id)
+      await this.discard(part, meta)
+      this.report(fromId, transferId, info, 0, 'declined')
+      return this.declinedAnswer()
+    }
     await rm(meta, { force: true })
     this.report(fromId, transferId, info, info.size, 'done')
     this.options.onReceived(item)
@@ -512,9 +532,10 @@ export class ShareServer {
   /** The sender stopped: what arrived is deleted. */
   private async cancel(fromId: string, header: Record<string, unknown>): Promise<SealedResponse<SecureOps['cancel']['response']>> {
     const { part, meta } = this.partialPaths(fromId, header.transferId)
-    const info = await this.readMeta(meta)
-    // A chunk still being written finds this and deletes what it wrote; offering the file again clears it.
+    // A chunk still being written finds this and deletes what it wrote; offering the file again clears it. Set before
+    // anything is awaited, so nothing arriving meanwhile slips through.
     this.declined.add(`${fromId}-${header.transferId as string}`)
+    const info = await this.readMeta(meta)
     await this.discard(part, meta)
     if (info) this.report(fromId, header.transferId as string, info, 0, 'cancelled')
     return { ok: true, cancelled: true }
